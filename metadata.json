@@ -1,0 +1,6 @@
+{
+  "name": "GOODLIFE Event Tickets",
+  "description": "Premium mobile-first ticketing, verification, and checkout platform for the GOODLIFE event with M-Pesa STK push and WhatsApp delivery.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

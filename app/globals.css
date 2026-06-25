@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-black: #050505;
+  --color-brand-off-white: #F4F4F0;
+  --color-brand-bg: #EAEAE4;
+  --color-brand-accent: #FF3300; /* Safety Orange/Red */
+  
+  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bebas-neue), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --brand-off-white: #F4F4F0;
+  --brand-bg: #EAEAE4;
+  --brand-navy: #050505;
+  --brand-navy-light: #FF3300;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 15s linear infinite;
+}
+
+/* Brutalist custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--brand-bg);
+  border-left: 2px solid var(--brand-navy);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--brand-navy);
+  border: 1px solid var(--brand-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-navy-light);
+}
+
+/* Firefox scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--brand-navy) var(--brand-bg);
+}
