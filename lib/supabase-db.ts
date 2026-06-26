@@ -354,7 +354,7 @@ let localEventDetails: EventDetails = {
   ticker_text: "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦",
   logo_url: "",
   simulators_enabled: true,
-  operator_notifications_enabled: true,
+  operator_notifications_enabled: false,
   footer_title: "GOODLIFE TICKETING",
   footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS",
   whatsapp_message: ""
@@ -453,7 +453,7 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
         updated.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦",
         updated.logo_url || "",
         updated.simulators_enabled ?? true,
-        updated.operator_notifications_enabled ?? true,
+        updated.operator_notifications_enabled ?? false,
         updated.footer_title || "GOODLIFE TICKETING",
         updated.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS",
         updated.whatsapp_message || ""

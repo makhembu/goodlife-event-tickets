@@ -57,14 +57,14 @@ export default function TierSalesBreakdown({
               key={t.type}
               className={`space-y-2 p-3 ${
                 isBest
-                  ? "bg-amber-50 border-2 border-amber-400"
+                  ? "bg-[var(--brand-warning-bg)] border-2 border-brand-warning"
                   : "border border-transparent"
               }`}
             >
               <div className="flex justify-between items-end">
                 <div>
                   <span className="font-black text-xs block">{t.name}</span>
-                  <span className="text-[10px] text-slate-500 uppercase font-medium">
+                  <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-medium">
                     Sold: {t.stats.sold} tickets &middot; Ksh{" "}
                     {t.stats.revenue.toLocaleString()}
                   </span>
@@ -76,18 +76,20 @@ export default function TierSalesBreakdown({
                 </div>
                 <span className="font-extrabold text-sm">{pct}%</span>
               </div>
-              <div className="h-4 w-full bg-slate-100 border-2 border-[var(--brand-navy)] overflow-hidden">
+              <div className="h-4 w-full bg-[var(--brand-navy)]/5 border-2 border-[var(--brand-navy)] overflow-hidden">
                 <div
-                  className={`h-full transition-all duration-500 ${
+                  className={`h-full transition-all duration-500 relative overflow-hidden ${
                     isBest
-                      ? "bg-amber-500"
+                      ? "bg-brand-warning"
                       : "bg-[var(--brand-navy)]"
                   }`}
                   style={{ width: `${pct}%` }}
-                />
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
+                </div>
               </div>
               {isBest && (
-                <span className="text-[9px] font-black uppercase text-amber-700 block flex items-center gap-1">
+                <span className="text-[9px] font-black uppercase text-brand-warning block flex items-center gap-1">
                   <span aria-hidden="true">&#9733;</span> BEST SELLER
                 </span>
               )}

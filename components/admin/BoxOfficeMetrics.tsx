@@ -45,7 +45,7 @@ export default function BoxOfficeMetrics({
         <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">CHECKED-IN GUESTS</span>
         <span className="text-2xl font-black block mt-2">
           {scanCount}
-          <span className="text-xs text-slate-500 font-bold"> / {totalTicketsSold}</span>
+          <span className="text-xs text-[var(--brand-navy-light)] font-bold"> / {totalTicketsSold}</span>
         </span>
         <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase mt-1">
           Check-in: {checkinPct}%

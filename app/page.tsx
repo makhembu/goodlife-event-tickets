@@ -27,6 +27,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier } from "@/lib/supabase-db";
 import TicketStamp from "@/components/TicketStamp";
+import confetti from "canvas-confetti";
 
 
 
@@ -105,6 +106,36 @@ export default function TicketCheckoutPage() {
       .then(data => { if (data.isAdmin) setIsAdmin(true); })
       .catch(() => {});
   }, []);
+  // Fire confetti + animate vault header when a new ticket arrives
+  const [celebrationId, setCelebrationId] = useState<string | null>(null);
+  useEffect(() => {
+    if (generatedTicketId && !celebrationId) {
+      setCelebrationId(generatedTicketId);
+      setTimeout(() => {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ["#C79A56", "#142B4C", "#16a34a"],
+        });
+        setTimeout(() => {
+          confetti({
+            particleCount: 40,
+            spread: 40,
+            origin: { x: 0.3, y: 0.6 },
+            colors: ["#142B4C", "#C79A56"],
+          });
+          confetti({
+            particleCount: 40,
+            spread: 40,
+            origin: { x: 0.7, y: 0.6 },
+            colors: ["#C79A56", "#142B4C"],
+          });
+        }, 200);
+      }, 300);
+    }
+  }, [generatedTicketId, celebrationId]);
+
   // Initialize myTickets from local storage
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -128,22 +159,39 @@ export default function TicketCheckoutPage() {
     }
   }, [generatedTicketId, myTickets]);
 
-  // Fetch metadata for stored tickets
+  // Fetch metadata for stored tickets — batch with Promise.all, prune 404s
   useEffect(() => {
     if (myTickets.length === 0) return;
-    
-    myTickets.forEach(async (id) => {
+    const needed = myTickets.filter(id => !ticketDetailsMap[id]);
+    if (needed.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(needed.map(async (id) => {
       try {
         const res = await fetch(`/api/tickets/${id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTicketDetailsMap(prev => {
-            if (prev[id]) return prev;
-            return { ...prev, [id]: data };
-          });
+        if (res.ok) return { id, data: await res.json() };
+        if (res.status === 404) return { id, dead: true };
+        return null;
+      } catch { return null; }
+    })).then(results => {
+      if (cancelled) return;
+      const fresh: Record<string, any> = {};
+      const deadIds: string[] = [];
+      results.forEach(r => {
+        if (!r) return;
+        if ((r as any).dead) deadIds.push(r.id);
+        else if ((r as any).data) fresh[(r as any).id] = (r as any).data;
+      });
+      if (deadIds.length) {
+        const pruned = myTickets.filter(id => !deadIds.includes(id));
+        setMyTickets(pruned);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("my_goodlife_purchases", JSON.stringify(pruned));
         }
-      } catch (e) {}
+      }
+      setTicketDetailsMap(prev => Object.keys(fresh).length ? { ...prev, ...fresh } : prev);
     });
+    return () => { cancelled = true; };
   }, [myTickets]);
 
   // Dynamic Event Details from Database
@@ -375,35 +423,35 @@ export default function TicketCheckoutPage() {
   };
 
   return (
-    <div className="min-h-screen bg-brand-bg py-8 px-4 md:px-12 text-brand-black font-sans selection:bg-brand-accent selection:text-white relative overflow-x-clip">
+    <div className="min-h-screen bg-brand-bg py-8 px-4 md:px-12 text-brand-navy font-sans selection:bg-brand-accent selection:text-brand-off-white relative overflow-x-clip">
       
       {/* Decorative Grid Background */}
-      <div className="absolute inset-0 z-0 pointer-events-none opacity-20" 
-           style={{ backgroundImage: 'radial-gradient(#050505 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-20"
+           style={{ backgroundImage: 'radial-gradient(rgba(20,43,76,0.18) 1px, transparent 1px), radial-gradient(rgba(199,154,86,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
         {/* HEADER NAVBAR */}
-        <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-black pb-3 mb-4 md:pb-6 md:mb-8 gap-2 md:gap-4">
+        <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-3 mb-4 md:pb-6 md:mb-8 gap-2 md:gap-4">
           <button
             type="button"
             className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
             onClick={handleLogoTap}
             aria-label={isAdmin ? `${eventDetails.title} home` : "Open staff access after five taps"}
           >
-            <div className="p-1 md:p-2 border-2 border-brand-black bg-brand-accent shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] flex items-center justify-center">
+            <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-[2px_2px_0px_0px_rgba(20,43,76,0.38)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)] flex items-center justify-center">
               {eventDetails.logo_url ? (
                 <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
               ) : (
-                <Flame className="w-5 h-5 md:w-6 md:h-6 text-brand-black" strokeWidth={2.5} />
+                <Flame className="w-5 h-5 md:w-6 md:h-6 text-brand-navy" strokeWidth={2.5} />
               )}
             </div>
-            <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-black pt-1">{eventDetails.title}</span>
+            <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">{eventDetails.title}</span>
           </button>
           <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
             {myTickets.length > 0 && (
               <button 
                 onClick={() => document.getElementById("my-tickets-section")?.scrollIntoView({ behavior: "smooth" })}
-                className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-black bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-black hover:bg-brand-black hover:text-brand-off-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap"
+                className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-[2px_2px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap"
               >
                 My Tickets ({myTickets.length})
               </button>
@@ -413,13 +461,13 @@ export default function TicketCheckoutPage() {
               <>
                 <Link
                   href="/admin/dashboard"
-                  className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-black bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-black hover:bg-brand-black hover:text-brand-off-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1"
+                  className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-[2px_2px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1"
                 >
                   <Settings className="w-3 h-3 md:w-4 md:h-4" /> Admin
                 </Link>
                 <Link
                   href="/admin/scanner"
-                  className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-black bg-brand-accent px-2 py-1 md:px-4 md:py-2 text-brand-black hover:bg-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
+                  className="text-[9px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-off-white shadow-[2px_2px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
                 >
                   <ScannerIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
                 </Link>
@@ -435,23 +483,23 @@ export default function TicketCheckoutPage() {
               initial={{ opacity: 0, y: -16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              className="fixed top-4 right-4 z-50 border-4 border-brand-black bg-brand-black text-brand-off-white p-4 shadow-[8px_8px_0px_0px_#FF3300] flex flex-col gap-3 min-w-[200px]"
+              className="fixed top-4 right-4 z-50 border-4 border-brand-navy bg-brand-navy text-brand-off-white p-4 shadow-[8px_8px_0px_0px_rgba(199,154,86,0.32)] flex flex-col gap-3 w-[90vw] max-w-[280px]"
             >
               <div className="flex items-center justify-between border-b-2 border-brand-off-white/20 pb-2 mb-1">
                 <span className="font-display text-lg uppercase tracking-widest text-brand-accent">Staff Only</span>
-                <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-white text-xl leading-none">&times;</button>
+                <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-brand-off-white text-xl leading-none">&times;</button>
               </div>
               <Link
                 href="/admin/dashboard"
                 onClick={() => setShowSecretMenu(false)}
-                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-off-white/30 px-4 py-3 hover:bg-brand-off-white hover:text-brand-black transition-colors flex items-center gap-2"
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-off-white/30 px-4 py-3 hover:bg-brand-off-white hover:text-brand-navy transition-colors flex items-center gap-2"
               >
                 <Settings className="w-4 h-4" /> Admin Console
               </Link>
               <Link
                 href="/admin/scanner"
                 onClick={() => setShowSecretMenu(false)}
-                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center gap-2"
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
               >
                 <ScannerIcon className="w-4 h-4" /> Gate Scanner
               </Link>
@@ -465,23 +513,23 @@ export default function TicketCheckoutPage() {
           <section className="lg:col-span-5 space-y-6 md:space-y-8">
             
             {/* HERO FLYER MOTIF CARD */}
-            <div className="border-4 border-brand-black bg-brand-off-white p-3 md:p-6 relative shadow-[4px_4px_0px_0px_#050505] md:shadow-[8px_8px_0px_0px_#050505]">
+            <div className="border-4 border-brand-navy bg-brand-off-white p-3 md:p-6 relative shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)] md:shadow-[8px_8px_0px_0px_rgba(20,43,76,0.35)]">
               
               {/* Top Right Label badge */}
-              <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 bg-brand-accent text-brand-black border-2 border-brand-black px-2 py-0.5 md:px-4 md:py-1 text-[10px] md:text-xs font-black tracking-widest uppercase shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] rotate-3">
+              <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 bg-brand-accent text-brand-navy border-2 border-brand-navy px-2 py-0.5 md:px-4 md:py-1 text-[10px] md:text-xs font-black tracking-widest uppercase shadow-[2px_2px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] rotate-3">
                 LIVE EVENT
               </div>
 
               <div className="relative flex flex-col md:space-y-4">
-                <div className="absolute top-2 left-2 z-10 w-fit max-w-[90%] bg-brand-off-white/95 backdrop-blur-sm border-2 border-brand-black p-2 md:p-3 shadow-[4px_4px_0px_0px_#050505] pointer-events-none md:pointer-events-auto">
-                  <span className="text-[9px] md:text-xs font-black tracking-widest text-brand-black uppercase block bg-brand-black text-white w-fit px-1.5 py-0.5 md:px-2 md:py-0.5 mb-1 md:mb-2">
+                <div className="absolute top-2 left-2 z-10 w-fit max-w-[90%] bg-brand-off-white/95 backdrop-blur-sm border-2 border-brand-navy p-2 md:p-3 shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] pointer-events-none md:pointer-events-auto">
+                  <span className="text-[9px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-1.5 py-0.5 md:px-2 md:py-0.5 mb-1 md:mb-2">
                     {eventDetails.tag}
                   </span>
-                  <h1 className="text-3xl sm:text-4xl md:text-6xl font-display uppercase text-brand-black leading-none mt-1 md:mt-2">
+                  <h1 className="text-3xl sm:text-4xl md:text-6xl font-display uppercase text-brand-navy leading-none mt-1 md:mt-2">
                     {eventDetails.title}
                   </h1>
-                  <p className="text-[10px] md:text-sm font-bold uppercase tracking-widest text-brand-black mt-1 md:mt-2 flex items-center gap-1.5 md:gap-2">
-                    <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-black bg-brand-accent animate-pulse shrink-0" />
+                  <p className="text-[10px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1 md:mt-2 flex items-center gap-1.5 md:gap-2">
+                    <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
                     <span className="truncate">{eventDetails.subtitle}</span>
                   </p>
                 </div>
@@ -490,7 +538,7 @@ export default function TicketCheckoutPage() {
                 <button 
                   type="button"
                   onClick={() => setIsFlyerExpanded(true)}
-                  className="block relative w-full aspect-[3/4] border-2 border-brand-black shadow-[4px_4px_0px_0px_#050505] overflow-hidden bg-white group cursor-pointer hover:shadow-[2px_2px_0px_0px_#050505] transition-all duration-300 hover:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-brand-accent mt-0 md:my-4"
+                  className="block relative w-full aspect-[3/4] border-2 border-brand-navy shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)] overflow-hidden bg-brand-off-white group cursor-pointer hover:shadow-[2px_2px_0px_0px_rgba(20,43,76,0.38)] transition-all duration-300 hover:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-brand-accent mt-0 md:my-4"
                 >
                   {isVideoFlyer ? (
                     <video 
@@ -512,10 +560,10 @@ export default function TicketCheckoutPage() {
                     />
                   )}
                   {/* Subtle top gradient to hide the printed title under the absolute box */}
-                  <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-white via-white/80 to-transparent pointer-events-none" />
+                  <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
                   {/* Warning Bar bottom with seamless marquee */}
-                  <div className="absolute bottom-0 left-0 w-full h-6 bg-brand-accent border-t-2 border-brand-black overflow-hidden flex items-center">
-                    <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-black pt-1">
+                  <div className="absolute bottom-0 left-0 w-full h-6 bg-brand-accent border-t-2 border-brand-navy overflow-hidden flex items-center">
+                    <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-1">
                       <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
                       <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
                     </div>
@@ -524,20 +572,20 @@ export default function TicketCheckoutPage() {
 
                 {/* Venue / Till details */}
                 <div className="grid grid-cols-2 gap-4 text-xs font-black uppercase pt-2">
-                  <div className="bg-white p-4 border-2 border-brand-black shadow-[4px_4px_0px_0px_#050505]">
-                    <span className="block text-[10px] text-brand-black border-b border-brand-black pb-1 mb-1">LOCATION</span>
-                    <span className="text-brand-black truncate block">{eventDetails.venue}</span>
+                  <div className="bg-brand-off-white p-4 border-2 border-brand-navy shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)]">
+                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1">LOCATION</span>
+                    <span className="text-brand-navy truncate block">{eventDetails.venue}</span>
                   </div>
-                  <div className="bg-brand-accent p-4 border-2 border-brand-black shadow-[4px_4px_0px_0px_#050505]">
-                    <span className="block text-[10px] text-brand-black border-b border-brand-black pb-1 mb-1">PAYMENT TILL</span>
-                    <span className="text-brand-black truncate block text-sm">#{eventDetails.till_number}</span>
+                  <div className="bg-brand-accent p-4 border-2 border-brand-navy shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)]">
+                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1">PAYMENT TILL</span>
+                    <span className="text-brand-navy truncate block text-sm">#{eventDetails.till_number}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* SYSTEM REGULATORY ADVISORIES — collapsible accordion */}
-            <div className="border-4 border-brand-black bg-brand-black text-brand-off-white shadow-[8px_8px_0px_0px_#FF3300]">
+            <div className="border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-[8px_8px_0px_0px_rgba(199,154,86,0.42)]">
               <button
                 type="button"
                 onClick={() => setRulesOpen(o => !o)}
@@ -565,13 +613,13 @@ export default function TicketCheckoutPage() {
             {/* Booking container: constrain to remaining viewport height below header */}
             <div
               id="booking-container"
-              className="border-4 border-brand-black bg-brand-off-white p-4 md:p-8 relative shadow-[12px_12px_0px_0px_#050505] overflow-y-auto"
+              className="border-4 border-brand-navy bg-brand-off-white p-4 md:p-8 relative shadow-[12px_12px_0px_0px_rgba(199,154,86,0.35)] overflow-y-auto"
               style={headerBottom > 0 && !isSmallScreen && isTallScreen
                 ? { maxHeight: `calc(100dvh - ${headerBottom + 16}px)` }
                 : undefined}
             >
-              <h2 className="text-2xl md:text-4xl font-display uppercase border-b-4 border-brand-black pb-1.5 mb-2.5 md:pb-3 md:mb-5 flex items-center gap-2 md:gap-3 text-brand-black">
-                <div className="bg-brand-black text-brand-off-white p-1">
+              <h2 className="text-2xl md:text-4xl font-display uppercase border-b-4 border-brand-navy pb-1.5 mb-2.5 md:pb-3 md:mb-5 flex items-center gap-2 md:gap-3 text-brand-navy">
+                <div className="bg-brand-navy text-brand-off-white p-1">
                   <TicketIcon className="w-5 h-5 md:w-8 md:h-8" />
                 </div>
                 GET YOUR TICKETS
@@ -581,7 +629,7 @@ export default function TicketCheckoutPage() {
                 
                 {/* TICKET TIER SELECTION GRID */}
                 <div className="space-y-1.5 md:space-y-3">
-                  <div className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                  <div className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                     01. CHOOSE PACKAGE
                   </div>
                   
@@ -597,8 +645,8 @@ export default function TicketCheckoutPage() {
                           onClick={() => setSelectedTier(tier.id)}
                           className={`text-left p-2 md:p-3.5 border-4 transition-all duration-75 relative flex flex-col justify-between gap-1 md:gap-2.5 ${
                             isSelected 
-                             ? "border-brand-black bg-brand-black text-brand-off-white shadow-[4px_4px_0px_0px_#FF3300] md:shadow-[6px_6px_0px_0px_#FF3300] translate-x-0.5 -translate-y-0.5" 
-                              : "border-brand-black bg-white text-brand-black hover:bg-brand-bg shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] active:translate-x-1 active:-translate-y-1"
+                             ? "border-brand-navy bg-brand-navy text-brand-off-white shadow-[4px_4px_0px_0px_rgba(199,154,86,0.42)] md:shadow-[6px_6px_0px_0px_rgba(199,154,86,0.42)] translate-x-0.5 -translate-y-0.5" 
+                              : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-bg shadow-[2px_2px_0px_0px_rgba(20,43,76,0.38)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)] active:translate-x-1 active:-translate-y-1"
                           }`}
                         >
                           <div className="space-y-0.5">
@@ -607,24 +655,24 @@ export default function TicketCheckoutPage() {
                                 {tier.name}
                               </span>
                               <span className={`text-[8px] md:text-[9px] px-1 md:px-1.5 py-0.2 font-bold uppercase border-2 ${
-                                isSelected ? "border-brand-off-white bg-brand-accent text-brand-black" : "border-brand-black bg-brand-black text-white"
+                                isSelected ? "border-brand-off-white bg-brand-accent text-brand-navy" : "border-brand-navy bg-brand-navy text-brand-off-white"
                               }`}>
                                 {tier.tag}
                               </span>
                             </div>
-                            <p className={`text-[9px] md:text-[10px] font-mono uppercase leading-tight ${isSelected ? "text-brand-off-white/80" : "text-brand-black/60"}`}>
+                            <p className={`text-[9px] md:text-[10px] font-mono uppercase leading-tight ${isSelected ? "text-brand-off-white/80" : "text-brand-navy/60"}`}>
                               {tier.desc}
                             </p>
                             {/* SCARCITY MARKER */}
                             <div className="flex items-center gap-1 mt-0.5">
-                              <span className={`w-1 h-1 md:w-1.2 md:h-1.2 rounded-full animate-pulse ${isSelected ? "bg-[#00FF00]" : "bg-brand-accent"}`}></span>
+                              <span className={`w-1 h-1 md:w-1.2 md:h-1.2 rounded-full animate-pulse ${isSelected ? "bg-brand-accent" : "bg-brand-navy-light"}`}></span>
                               <span className={`text-[8px] md:text-[8.5px] font-bold tracking-widest uppercase ${isSelected ? "text-brand-off-white" : "text-brand-accent"}`}>
                                 SELLING FAST
                               </span>
                             </div>
                           </div>
                           <div className="text-left mt-1 md:mt-auto">
-                            <span className={`block font-display text-base sm:text-lg md:text-3xl leading-none ${isSelected ? "text-brand-accent" : "text-brand-black"}`}>
+                            <span className={`block font-display text-base sm:text-lg md:text-3xl leading-none ${isSelected ? "text-brand-accent" : "text-brand-navy"}`}>
                               KES {tier.price.toLocaleString()}
                             </span>
                           </div>
@@ -639,7 +687,7 @@ export default function TicketCheckoutPage() {
                   <div className="space-y-2.5 md:space-y-5 flex flex-col">
                     {/* STEP 2: BUYER FULL NAME */}
                     <div className="space-y-1 md:space-y-2">
-                      <label htmlFor="buyer-name" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                      <label htmlFor="buyer-name" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                         02. YOUR DETAILS
                       </label>
                       <input
@@ -651,21 +699,21 @@ export default function TicketCheckoutPage() {
                         placeholder="E.g. Amani Mwangi"
                         value={buyerName}
                         onChange={(e) => setBuyerName(e.target.value)}
-                        className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-black bg-white font-mono text-xs md:text-sm uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_#050505] transition-all text-brand-black"
+                        className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] transition-all text-brand-navy"
                       />
                     </div>
 
                     {/* STEP 3: TICKET QUANTITY */}
                     <div className="space-y-1 md:space-y-2">
-                      <div id="quantity-label" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                      <div id="quantity-label" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                         03. HOW MANY PASSES?
                       </div>
-                      <div className="flex border-4 border-brand-black bg-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] w-fit" role="group" aria-labelledby="quantity-label">
+                      <div className="flex border-4 border-brand-navy bg-brand-off-white shadow-[2px_2px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] w-fit" role="group" aria-labelledby="quantity-label">
                         <button
                           type="button"
                           aria-label="Decrease ticket quantity"
                           onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-12 h-12 border-r-4 border-brand-black font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
+                          className="w-12 h-12 border-r-4 border-brand-navy font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center"
                         >
                           -
                         </button>
@@ -680,7 +728,7 @@ export default function TicketCheckoutPage() {
                           type="button"
                           aria-label="Increase ticket quantity"
                           onClick={() => setQuantity(Math.min(10, quantity + 1))}
-                          className="w-12 h-12 border-l-4 border-brand-black font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
+                          className="w-12 h-12 border-l-4 border-brand-navy font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center"
                         >
                           +
                         </button>
@@ -692,11 +740,11 @@ export default function TicketCheckoutPage() {
                   <div className="space-y-2.5 md:space-y-5 flex flex-col">
                     {/* STEP 4: M-PESA NUMBER */}
                     <div className="space-y-1 md:space-y-2">
-                      <label htmlFor="mpesa-number" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                      <label htmlFor="mpesa-number" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                         04. M-PESA NUMBER
                       </label>
                       <div className="relative flex items-stretch">
-                        <div className="flex items-center justify-center px-3 md:px-5 border-4 border-r-0 border-brand-black bg-brand-black text-brand-off-white pointer-events-none">
+                        <div className="flex items-center justify-center px-3 md:px-5 border-4 border-r-0 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
                           <Phone className="h-4 w-4 md:h-5 md:w-5" />
                         </div>
                         <input
@@ -706,32 +754,35 @@ export default function TicketCheckoutPage() {
                           inputMode="tel"
                           autoComplete="tel"
                           required
+                          aria-describedby="mpesa-hint"
                           placeholder="0712 345 678"
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
-                          className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-black bg-white font-mono text-xs md:text-sm uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_#050505] transition-all text-brand-black"
+                          className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] transition-all text-brand-navy"
                         />
                       </div>
-                      <p className="text-xs text-brand-black/75 font-mono uppercase bg-brand-black/5 px-3 py-2 border-l-4 border-brand-accent">
-                        STK push to <strong className="text-brand-black">{phoneNumber || "your number"}</strong> — <span className="text-brand-accent font-bold">ENTER PIN</span> when prompted on your phone. Ticket delivered here via WhatsApp.
+                      {!showWhatsAppField && (
+                        <p id="mpesa-hint" className="text-[10px] text-brand-navy/75 font-mono uppercase bg-brand-navy/5 px-3 py-1.5 border-l-4 border-brand-accent">
+                        <span className="text-brand-accent font-bold">ENTER PIN</span> on your phone. Ticket sent via WhatsApp.
                       </p>
+                      )}
 
                       {!showWhatsAppField ? (
                         <button
                           type="button"
                           onClick={() => setShowWhatsAppField(true)}
-                          className="w-full flex items-center gap-2 border-4 border-dashed border-brand-black/40 bg-brand-off-white/50 px-3 py-2.5 hover:border-brand-black hover:bg-brand-accent/10 transition-colors group cursor-pointer"
+                          className="w-full flex items-center gap-2 border-2 border-dashed border-brand-navy/40 bg-brand-off-white/50 px-3 py-2 hover:border-brand-navy hover:bg-brand-accent/10 transition-colors group cursor-pointer"
                         >
-                          <svg aria-hidden="true" className="w-4 h-4 shrink-0 text-brand-black/40 group-hover:text-brand-black transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
-                          <span className="text-[10px] font-black uppercase tracking-wider text-brand-black/60 group-hover:text-brand-black transition-colors">
+                          <svg aria-hidden="true" className="w-4 h-4 shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-brand-navy/60 group-hover:text-brand-navy transition-colors">
                             Send ticket to a different WhatsApp number
                           </span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-auto shrink-0 text-brand-black/40 group-hover:text-brand-black transition-colors" />
+                          <ArrowRight className="w-3.5 h-3.5 ml-auto shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" />
                         </button>
                       ) : (
-                        <div className="border-4 border-brand-black bg-white">
+                        <div className="border-2 border-brand-navy bg-brand-off-white">
                           <div className="flex items-stretch">
-                            <div className="flex items-center justify-center px-3 border-r-4 border-brand-black bg-brand-black text-white pointer-events-none">
+                            <div className="flex items-center justify-center px-3 border-r-2 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
                               <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
                             </div>
                             <input
@@ -744,26 +795,23 @@ export default function TicketCheckoutPage() {
                               placeholder="WhatsApp number"
                               value={whatsappNumber}
                               onChange={(e) => setWhatsappNumber(e.target.value)}
-                              className="flex-1 min-w-0 px-3 py-2.5 font-mono text-[10px] uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/5 text-brand-black border-0"
+                              className="flex-1 min-w-0 px-3 py-2 font-mono text-[10px] uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/5 text-brand-navy border-0"
                             />
                             <button
                               type="button"
                               onClick={() => { setShowWhatsAppField(false); setWhatsappNumber(""); }}
                               aria-label="Remove WhatsApp number"
-                              className="px-3 border-l-4 border-brand-black bg-white text-brand-black/30 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors font-mono text-sm font-bold"
+                              className="px-3 border-l-2 border-brand-navy bg-brand-off-white text-brand-navy/30 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors font-mono text-sm font-bold"
                             >
                               X
                             </button>
                           </div>
-                          <p className="text-[8px] font-mono uppercase text-brand-black/40 bg-brand-black/5 px-3 py-1.5 border-t-4 border-brand-black">
-                            Leave blank to send ticket only to your M-Pesa number
-                          </p>
                         </div>
                       )}
                     </div>
 
                     {/* TOTAL RECEIPT BLOCK */}
-                    <div className="mt-auto px-2.5 py-1.5 md:px-3 md:py-2 border-4 border-brand-black bg-brand-black text-brand-off-white shadow-[2px_2px_0px_0px_#FF3300] md:shadow-[4px_4px_0px_0px_#FF3300] flex items-center justify-between">
+                    <div className="mt-auto px-2.5 py-1.5 md:px-3 md:py-2 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-[2px_2px_0px_0px_rgba(199,154,86,0.32)] md:shadow-[4px_4px_0px_0px_rgba(199,154,86,0.32)] flex items-center justify-between">
                       <span className="text-[8.5px] font-mono uppercase opacity-70">TOTAL DUE</span>
                       <span className="font-display text-xl md:text-3xl leading-none block text-brand-accent">
                         KES {((TICKET_TIERS.find(t => t.id === safeSelectedTier)?.price || 500) * quantity).toLocaleString()}
@@ -776,15 +824,15 @@ export default function TicketCheckoutPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className={`w-full py-2.5 sm:py-3.5 md:py-4 border-4 border-brand-black font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-1 md:mt-2 ${
+                  className={`w-full py-2.5 sm:py-3.5 md:py-4 border-4 border-brand-navy font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-1 md:mt-2 ${
                     loading 
-                      ? "bg-brand-bg text-brand-black/30 cursor-not-allowed shadow-none" 
-                      : "bg-brand-accent text-brand-black hover:bg-white shadow-[4px_4px_0px_0px_#050505] md:shadow-[8px_8px_0px_0px_#050505] active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
+                      ? "bg-brand-bg text-brand-navy/30 cursor-not-allowed shadow-none" 
+                      : "bg-brand-accent text-brand-navy hover:bg-brand-off-white shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] md:shadow-[8px_8px_0px_0px_rgba(20,43,76,0.24)] active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
                   }`}
                 >
                   {loading ? (
                     <>
-                      <div className="animate-spin border-4 border-brand-black border-t-transparent w-5 h-5 md:w-6 md:h-6" />
+                      <div className="animate-spin border-4 border-brand-navy border-t-transparent w-5 h-5 md:w-6 md:h-6" />
                       PROCESSING...
                     </>
                   ) : (
@@ -802,8 +850,8 @@ export default function TicketCheckoutPage() {
                 </button>
 
                 {/* Gateway Reassurance */}
-                <p className="text-[10px] text-center font-mono uppercase text-brand-black/60 mt-2 flex items-center justify-center gap-1.5 select-none">
-                  <ShieldCheck className="w-3.5 h-3.5 text-brand-black/60 shrink-0" strokeWidth={2.5} />
+                <p className="text-[10px] text-center font-mono uppercase text-brand-navy/60 mt-2 flex items-center justify-center gap-1.5 select-none">
+                  <ShieldCheck className="w-3.5 h-3.5 text-brand-navy/60 shrink-0" strokeWidth={2.5} />
                   <span>SECURED BY PAYSTACK.</span>
                   <span>AN INSTANT M-PESA PIN PROMPT WILL BE SENT.</span>
                 </p>
@@ -811,13 +859,13 @@ export default function TicketCheckoutPage() {
 
               {/* PAYMENT STATUS DISPLAY */}
               {statusMessage && (
-                <div ref={statusRef} role="status" aria-live="polite" className="mt-8 p-5 border-4 border-brand-black bg-white shadow-[4px_4px_0px_0px_#050505]">
+                <div ref={statusRef} role="status" aria-live="polite" className="mt-8 p-5 border-4 border-brand-navy bg-brand-off-white shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)]">
                   <span className="text-brand-accent font-display text-xl uppercase block mb-2">PAYMENT UPDATE</span>
-                  <p className="font-mono text-xs text-brand-black uppercase leading-relaxed">{statusMessage}</p>
+                  <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
 
                   {paystackPollingTimedOut && paystackReference && !generatedTicketId && (
-                    <div className="mt-4 pt-4 border-t-2 border-brand-black/20 space-y-3">
-                      <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-red-700" : "text-amber-700"}`}>
+                    <div className="mt-4 pt-4 border-t-2 border-brand-navy/20 space-y-3">
+                      <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-accent" : "text-brand-navy-light"}`}>
                         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-[10px] font-mono uppercase leading-relaxed">
                           {statusMessage.toLowerCase().includes("failed")
@@ -828,7 +876,7 @@ export default function TicketCheckoutPage() {
                       <button
                         onClick={handleManualStatusCheck}
                         disabled={loading}
-                        className="w-full py-3 border-2 border-brand-black bg-brand-black text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        className="w-full py-3 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                       >
                         {loading ? (
                           <>CHECKING...</>
@@ -849,14 +897,21 @@ export default function TicketCheckoutPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 20 }}
-                    className="mt-8 p-6 border-4 border-brand-black bg-brand-black text-brand-off-white shadow-[8px_8px_0px_0px_#FF3300]"
+                    className="mt-8 p-6 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-[8px_8px_0px_0px_rgba(199,154,86,0.42)]"
                   >
                     <button 
                       onClick={() => setIsVaultOpen(!isVaultOpen)}
                       className="w-full flex items-center justify-between border-b-2 border-brand-off-white/20 pb-3 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="font-display text-3xl uppercase pt-1">YOU ARE IN!</span>
+                        <motion.span
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ delay: 0.4, duration: 0.35, ease: [0.25, 1, 0.5, 1] }}
+                          className="font-display text-3xl uppercase pt-1"
+                        >
+                          YOU ARE IN!
+                        </motion.span>
                       </div>
                       <div className="text-brand-accent">
                         {isVaultOpen ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
@@ -880,14 +935,14 @@ export default function TicketCheckoutPage() {
                       {myTickets.map(ticketId => {
                         const details = ticketDetailsMap[ticketId];
                         return (
-                        <div key={ticketId} className="border-2 border-brand-off-white/20 p-4 space-y-3 bg-brand-black/50">
+                        <div key={ticketId} className="border-2 border-brand-off-white/20 p-4 space-y-3 bg-brand-navy/50">
                           <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 border-b-2 border-brand-off-white/10 pb-3 mb-3">
                             <div>
                               <p className="text-[10px] font-mono uppercase text-brand-accent mb-1">
-                                TICKET ID: <span className="font-bold text-white ml-1">{ticketId}</span>
+                                TICKET ID: <span className="font-bold text-brand-off-white ml-1">{ticketId}</span>
                               </p>
                               {details && (
-                                <p className="text-xl font-display uppercase text-white leading-none mt-2">
+                                <p className="text-xl font-display uppercase text-brand-off-white leading-none mt-2">
                                   {details.ticket_type}
                                 </p>
                               )}
@@ -897,7 +952,7 @@ export default function TicketCheckoutPage() {
                                 <p className="text-[10px] font-mono uppercase text-brand-off-white/70 mb-1">
                                   ATTENDEE
                                 </p>
-                                <p className="text-sm font-bold text-white uppercase">
+                                <p className="text-sm font-bold text-brand-off-white uppercase">
                                   {details.buyer_name} <span className="text-brand-accent ml-2">KES {details.amount_paid}</span>
                                 </p>
                               </div>
@@ -908,7 +963,7 @@ export default function TicketCheckoutPage() {
                               href={`/api/tickets/${ticketId}/download`}
                               target="_blank"
                               rel="noreferrer"
-                              className="w-full py-4 border-4 border-brand-accent bg-brand-accent text-brand-black font-display text-2xl uppercase hover:bg-white transition-colors flex items-center justify-center gap-2"
+                              className="w-full py-4 border-4 border-brand-accent bg-brand-accent text-brand-navy font-display text-2xl uppercase hover:bg-brand-off-white transition-colors flex items-center justify-center gap-2"
                             >
                               <Download className="w-6 h-6" strokeWidth={2.5} /> DOWNLOAD
                             </a>
@@ -916,7 +971,7 @@ export default function TicketCheckoutPage() {
                               href={`https://wa.me/?text=I%20got%20my%20ticket%20for%20${encodeURIComponent(eventDetails.title)}.%20Get%20yours%20here:%20${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "https://goodlife.com")}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="w-full py-4 border-4 border-[#25D366] bg-[#25D366] text-brand-black font-display text-2xl uppercase hover:bg-white transition-colors flex items-center justify-center gap-2"
+                              className="w-full py-4 border-4 border-brand-accent bg-brand-accent text-brand-navy font-display text-2xl uppercase hover:bg-brand-off-white transition-colors flex items-center justify-center gap-2"
                             >
                               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
                               SHARE
@@ -952,11 +1007,11 @@ export default function TicketCheckoutPage() {
 
         </main>
 
-        <footer className="w-full text-center pb-12 pt-8 border-t-4 border-brand-black mt-12">
-          <p className="font-display text-xl uppercase tracking-widest text-brand-black">
+        <footer className="w-full text-center pb-12 pt-8 border-t-4 border-brand-navy mt-12">
+          <p className="font-display text-xl uppercase tracking-widest text-brand-navy">
             © 2026 {eventDetails.footer_title || `${eventDetails.title} TICKETING`}
           </p>
-          <p className="font-mono text-[10px] uppercase mt-2 text-brand-black/60">
+          <p className="font-mono text-[10px] uppercase mt-2 text-brand-navy/60">
             {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
           </p>
         </footer>
@@ -975,7 +1030,7 @@ export default function TicketCheckoutPage() {
               onClick={() => {
                 document.getElementById("booking-container")?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="px-6 py-3 border-4 border-brand-black bg-brand-accent text-brand-black font-display text-xl uppercase tracking-widest shadow-[6px_6px_0px_0px_#050505] active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+              className="px-6 py-3 border-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase tracking-widest shadow-[6px_6px_0px_0px_rgba(20,43,76,0.24)] active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 whitespace-nowrap"
             >
               <TicketIcon className="w-5 h-5" />
               SECURE TICKETS
@@ -988,7 +1043,7 @@ export default function TicketCheckoutPage() {
       <AnimatePresence>
         {isFlyerExpanded && (
           <motion.div 
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-black/90 p-4 md:p-12 cursor-pointer backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-navy/90 p-4 md:p-12 cursor-pointer backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-label={`${eventDetails.title} flyer preview`}
@@ -999,7 +1054,7 @@ export default function TicketCheckoutPage() {
             transition={{ duration: 0.25 }}
           >
             <motion.div 
-              className="relative w-full h-full max-w-5xl max-h-[90vh] border-8 border-brand-black shadow-[16px_16px_0px_0px_#FF3300] bg-white overflow-hidden cursor-default"
+              className="relative w-full h-full max-w-5xl max-h-[90vh] border-8 border-brand-navy shadow-[16px_16px_0px_0px_rgba(199,154,86,0.42)] bg-brand-off-white overflow-hidden cursor-default"
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
@@ -1013,7 +1068,7 @@ export default function TicketCheckoutPage() {
                   controls 
                   loop 
                   playsInline 
-                  className="w-full h-full object-contain bg-black"
+                  className="w-full h-full object-contain bg-brand-navy"
                 />
               ) : (
                 <Image 
@@ -1029,7 +1084,7 @@ export default function TicketCheckoutPage() {
               <button 
                 type="button"
                 aria-label="Close flyer preview"
-                className="absolute top-4 right-4 md:top-8 md:right-8 bg-brand-accent border-2 md:border-4 border-brand-black px-2.5 py-1 md:px-4 md:py-2 text-sm md:text-2xl font-black uppercase text-brand-black shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] hover:bg-white hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] md:hover:translate-x-1 md:hover:translate-y-1 transition-all z-[110] flex items-center justify-center leading-none"
+                className="absolute top-4 right-4 md:top-8 md:right-8 bg-brand-accent border-2 md:border-4 border-brand-navy px-2.5 py-1 md:px-4 md:py-2 text-sm md:text-2xl font-black uppercase text-brand-navy shadow-[2px_2px_0px_0px_rgba(20,43,76,0.38)] md:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.38)] hover:bg-brand-off-white hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] md:hover:translate-x-1 md:hover:translate-y-1 transition-all z-[110] flex items-center justify-center leading-none"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsFlyerExpanded(false);

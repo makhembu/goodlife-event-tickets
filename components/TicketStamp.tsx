@@ -24,10 +24,10 @@ const variants = {
     rotate: 8,
   },
   used: {
-    border: "border-amber-600",
-    text: "text-amber-700",
-    bg: "bg-amber-100",
-    shadow: "shadow-[4px_4px_0px_0px_#d97706]",
+    border: "border-brand-warning",
+    text: "text-brand-warning",
+    bg: "bg-[var(--brand-warning-bg)]",
+    shadow: "shadow-[4px_4px_0px_0px_#C79A56]",
     rotate: -4,
   },
 };

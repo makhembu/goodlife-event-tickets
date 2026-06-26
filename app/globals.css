@@ -1,20 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-black: #050505;
-  --color-brand-off-white: #F4F4F0;
-  --color-brand-bg: #EAEAE4;
-  --color-brand-accent: #FF3300; /* Safety Orange/Red */
+  --color-brand-black: #142B4C;
+  --color-brand-navy: #142B4C;
+  --color-brand-navy-light: #2B547E;
+  --color-brand-off-white: #F3ECE1;
+  --color-brand-bg: #E8E4D7;
+  --color-brand-accent: #C79A56; /* Warm leather accent */
+  --color-brand-danger: #A5323C;
+  --color-brand-danger-bg: #F4D8D9;
+  --color-brand-success: #2A7A57;
+  --color-brand-success-bg: #D9EEE6;
+  --color-brand-warning: #C79A56;
+  --color-brand-warning-bg: #F6E9CF;
   
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bebas-neue), ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
-  --brand-off-white: #F4F4F0;
-  --brand-bg: #EAEAE4;
-  --brand-navy: #050505;
-  --brand-navy-light: #FF3300;
+  --brand-off-white: #F3ECE1;
+  --brand-bg: #E8E4D7;
+  --brand-navy: #142B4C;
+  --brand-navy-light: #C79A56;
 }
 
 @keyframes marquee {
@@ -24,6 +32,29 @@
 
 .animate-marquee {
   animation: marquee 15s linear infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 12px 4px rgba(22, 163, 74, 0.3); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 0.8s ease-out;
+}
+
+.animate-float {
+  animation: float 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }
 
 /* Brutalist custom scrollbars */

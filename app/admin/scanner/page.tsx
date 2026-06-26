@@ -114,7 +114,16 @@ export default function ScannerControlPage() {
       // Prepend to history stack
       setRecentScans(prev => [data, ...prev.slice(0, 9)]);
 
-      // Audio feedback if possible
+      // Haptic + audio feedback
+      try {
+        if (data.success) {
+          navigator.vibrate?.(50);
+        } else if (data.alreadyScanned) {
+          navigator.vibrate?.([80, 40, 80]);
+        } else {
+          navigator.vibrate?.([100, 50, 100]);
+        }
+      } catch {}
       try {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const osc = audioCtx.createOscillator();
@@ -123,13 +132,11 @@ export default function ScannerControlPage() {
         gain.connect(audioCtx.destination);
 
         if (data.success) {
-          // Double high alert (Success)
           osc.frequency.setValueAtTime(600, audioCtx.currentTime);
           gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
           osc.start();
           osc.stop(audioCtx.currentTime + 0.15);
         } else {
-          // Low flat buzz (Already scanned or invalid)
           osc.frequency.setValueAtTime(150, audioCtx.currentTime);
           gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
           osc.start();
@@ -285,7 +292,7 @@ export default function ScannerControlPage() {
               <button
                 type="button"
                 onClick={() => setShowSimulators(!showSimulators)}
-                className="text-[9px] font-black uppercase border border-[var(--brand-navy)] px-1.5 py-0.5 hover:bg-[var(--brand-navy)] hover:text-white transition-colors cursor-pointer bg-white text-[var(--brand-navy)]"
+                className="text-[9px] font-black uppercase border border-[var(--brand-navy)] px-1.5 py-0.5 hover:bg-[var(--brand-navy)] hover:text-brand-off-white transition-colors cursor-pointer bg-brand-off-white text-[var(--brand-navy)]"
               >
                 Simulators: {showSimulators ? "HIDE" : "SHOW"}
               </button>
@@ -297,7 +304,7 @@ export default function ScannerControlPage() {
             type="text"
             value={scannerName}
             onChange={(e) => setScannerName(e.target.value)}
-            className="w-full py-1.5 px-3 bg-white border-2 border-[var(--brand-navy)] font-bold text-xs uppercase focus:outline-none"
+            className="w-full py-1.5 px-3 bg-brand-off-white border-2 border-[var(--brand-navy)] font-bold text-xs uppercase focus:outline-none"
             placeholder="Enter your name..."
           />
         </div>
@@ -310,7 +317,7 @@ export default function ScannerControlPage() {
           </h2>
 
           {/* VIEWPORT AREA */}
-          <div className="relative aspect-square w-full bg-slate-900 border-2 border-[var(--brand-navy)] mb-4 overflow-hidden flex flex-col items-center justify-center text-[var(--brand-off-white)]" aria-label="Camera scanner viewport">
+          <div className="relative aspect-square w-full bg-[var(--brand-navy)] border-2 border-[var(--brand-navy)] mb-4 overflow-hidden flex flex-col items-center justify-center text-[var(--brand-off-white)]" aria-label="Camera scanner viewport">
             
             {scannerActive ? (
               <div className="relative w-full h-full">
@@ -393,9 +400,9 @@ export default function ScannerControlPage() {
               transition={{ type: "spring", stiffness: 200, damping: 20 }}
               role="status"
               aria-live="assertive"
-              className={`border-4 p-5 ${
-                lastScanResult.success 
-                  ? "border-green-600 bg-green-50 text-green-900" 
+              className={`border-4 p-5 animate-glow-pulse ${
+                lastScanResult.success
+                  ? "border-green-600 bg-green-50 text-green-900"
                   : "border-red-600 bg-red-50 text-red-900"
               } shadow-[4px_4px_0px_0px_currentColor]`}
             >
@@ -440,10 +447,10 @@ export default function ScannerControlPage() {
         </AnimatePresence>
 
         {!lastScanResult && dbTickets.length === 0 && (
-          <div className="border-4 border-[var(--brand-navy)]/20 bg-white p-8 text-center space-y-3">
-            <ShieldCheck className="w-10 h-10 mx-auto text-[var(--brand-navy-light)]" />
+          <div className="border-4 border-[var(--brand-navy)]/20 bg-brand-off-white p-8 text-center space-y-3">
+            <ShieldCheck className="w-10 h-10 mx-auto text-[var(--brand-navy-light)] animate-float" />
             <p className="text-xs font-black uppercase text-[var(--brand-navy-light)]">Scan or enter a ticket ID to begin</p>
-            <p className="text-[10px] text-slate-400 font-medium">
+            <p className="text-[10px] text-[var(--brand-navy)]/40 font-medium">
               Point the camera at a QR code or type a ticket ID manually.
             </p>
           </div>
@@ -466,7 +473,7 @@ export default function ScannerControlPage() {
                 className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border-b-2 -mb-[2px] transition-colors ${
                   listTab === "active"
                     ? "border-[var(--brand-navy-light)] text-[var(--brand-navy-light)]"
-                    : "border-transparent text-slate-400 hover:text-slate-600"
+                    : "border-transparent text-[var(--brand-navy)]/40 hover:text-[var(--brand-navy)]/60"
                 }`}
               >
                 ACTIVE ({activeTickets.length})
@@ -476,7 +483,7 @@ export default function ScannerControlPage() {
                 className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border-b-2 -mb-[2px] transition-colors ${
                   listTab === "scanned"
                     ? "border-[var(--brand-navy-light)] text-[var(--brand-navy-light)]"
-                    : "border-transparent text-slate-400 hover:text-slate-600"
+                    : "border-transparent text-[var(--brand-navy)]/40 hover:text-[var(--brand-navy)]/60"
                 }`}
               >
                 SCANNED ({scannedTickets.length})
@@ -485,11 +492,11 @@ export default function ScannerControlPage() {
 
             <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
               {unscannedTicketsList.length === 0 ? (
-                <p className="text-[10px] text-center font-bold text-slate-500 py-3">
+                <p className="text-[10px] text-center font-bold text-[var(--brand-navy-light)] py-3">
                   No tickets in local storage. Purchase inside the main portal first.
                 </p>
               ) : activeCatalog.length === 0 ? (
-                <p className="text-[10px] text-center font-bold text-slate-400 py-3">
+                <p className="text-[10px] text-center font-bold text-[var(--brand-navy)]/40 py-3">
                   No {listTab === "active" ? "active" : "scanned"} tickets in this batch.
                 </p>
               ) : (
@@ -505,7 +512,7 @@ export default function ScannerControlPage() {
                   >
                     <div className="text-left">
                       <span className="font-mono block text-xs font-black">{ticket.id}</span>
-                      <span className="text-[9px] uppercase text-slate-600">
+                      <span className="text-[9px] uppercase text-[var(--brand-navy)]/60">
                         Tier: {ticket.ticket_type} | Ph: {ticket.phone_number}
                       </span>
                     </div>
@@ -529,14 +536,14 @@ export default function ScannerControlPage() {
         )}
 
         {/* ALL SCANNED TICKETS LEDGER (LATEST TO OLDEST) */}
-        <div className="border-4 border-[var(--brand-navy)] bg-white p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] space-y-3">
+        <div className="border-4 border-[var(--brand-navy)] bg-brand-off-white p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] space-y-3">
           <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] block border-b border-[var(--brand-navy)] pb-1">
             SCANNED TICKETS LEDGER
           </span>
           <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
             {dbTickets.filter(t => t.is_scanned).length === 0 ? (
-              <p className="text-[10px] text-center font-bold text-slate-500 py-3 uppercase">
-                No tickets scanned at the gate yet.
+              <p className="text-[10px] text-center font-bold text-[var(--brand-navy-light)] py-3 uppercase">
+                No tickets checked in yet. Scan a QR code or enter a ticket ID above.
               </p>
             ) : (
               dbTickets
@@ -571,12 +578,12 @@ export default function ScannerControlPage() {
 
         {/* SCAN HISTORY FLOW */}
         {recentScans.length > 0 && (
-          <div className="border-4 border-[var(--brand-navy)] bg-white p-4 space-y-2 shadow-[4px_4px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 space-y-2 shadow-[4px_4px_0px_0px_var(--brand-navy)]">
             <div className="flex items-center justify-between border-b-2 border-[var(--brand-navy)] pb-2">
               <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" /> SCAN LOG
               </span>
-              <span className="text-[9px] font-mono text-slate-500 font-bold">
+              <span className="text-[9px] font-mono text-[var(--brand-navy-light)] font-bold">
                 Last {recentScans.length} scans
               </span>
             </div>

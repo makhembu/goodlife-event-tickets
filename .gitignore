@@ -10,3 +10,7 @@ coverage/
 
 # Local Netlify folder
 .netlify
+
+# Playwright screenshots
+checkout-whatsapp-open.png
+.playwright-mcp/
