@@ -95,10 +95,10 @@ export async function generateTicketPdf(
   const bebasBytes = fs.readFileSync(bebasPath);
   const fDisplay = await pdfDoc.embedFont(bebasBytes);
 
-  // ── Palette (Editorial Brutalism) ─────────────────────────────────────────
-  const BRAND_OFF_WHITE = hex("#F2EFEB");
-  const BRAND_BLACK     = hex("#050505");
-  const BRAND_ACCENT    = hex("#FF3300");
+  // ── Palette (GOODLIFE Denim) ────────────────────────────────────────────
+  const BRAND_OFF_WHITE = hex("#F3ECE1");
+  const BRAND_BLACK     = hex("#142B4C");
+  const BRAND_ACCENT    = hex("#C79A56");
   const WHITE           = rgb(1, 1, 1);
 
   // ── Zone boundaries ───────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ export async function generateTicketPdf(
   const scanUrl = `${domainUrl.replace(/\/$/, "")}/admin/scanner?ticket=${ticket.id}`;
   const qrDataUrl = await QRCode.toDataURL(scanUrl, {
     margin: 1, width: 240,
-    color: { dark: "#050505", light: "#FFFFFF" }
+    color: { dark: "#142B4C", light: "#FFFFFF" }
   });
   const qrImg = await pdfDoc.embedPng(Buffer.from(
     qrDataUrl.replace(/^data:image\/png;base64,/, ""), "base64"

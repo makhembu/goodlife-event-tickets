@@ -550,9 +550,9 @@ export default function TicketCheckoutPage() {
                       className="w-full h-full object-contain pointer-events-none"
                     />
                   ) : (
-                    <Image 
-                      src={eventDetails.flyer_url} 
-                      alt={`${eventDetails.title} Flyer`} 
+                    <Image
+                      src={eventDetails.flyer_url}
+                      alt={`${eventDetails.title} Flyer`}
                       fill
                       priority
                       className="object-contain transition-all duration-700"
