@@ -1,11 +1,11 @@
 {
-  "name": "ai-studio-applet",
+  "name": "goodlife-event-tickets",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "clean": "next clean"
   },

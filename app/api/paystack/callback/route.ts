@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTicket, insertPaymentLog } from "@/lib/supabase-db";
-import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
+import { sendTicketViaWhatsApp, notifyOperators } from "@/lib/whatsapp";
 import crypto from "crypto";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     const quantity = Number(metadata.quantity) || 1;
     const buyerName = metadata.buyer_name || email;
     const phoneNumber = metadata.phone_number || email;
+    const whatsappNumber = metadata.whatsapp_number || "";
 
     // Verify transaction with Paystack
     const verifyRes = await fetch(`${PAYSTACK_API}/transaction/verify/${reference}`, {
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
     const createdTickets = [];
 
     for (let i = 1; i <= quantity; i++) {
-      const ticketId = quantity === 1 ? `GL-${reference}` : `GL-${reference}-${i}`;
+      const ticketId = quantity === 1 ? reference : `${reference}-${i}`;
       const ticket = await createTicket({
         id: ticketId,
         mpesa_receipt: reference,
@@ -89,8 +90,8 @@ export async function POST(request: NextRequest) {
         ssl: { rejectUnauthorized: false },
       });
       await pool.query(
-        "UPDATE pending_payments SET status = 'completed', ticket_id = $1 WHERE checkout_request_id = $2",
-        [createdTickets[0].id, reference]
+        "UPDATE pending_payments SET status = 'completed', ticket_id = $1, whatsapp_number = COALESCE(NULLIF(whatsapp_number, ''), $3) WHERE checkout_request_id = $2",
+        [createdTickets[0].id, reference, whatsappNumber]
       );
       await pool.end();
     } catch (e) {
@@ -98,12 +99,20 @@ export async function POST(request: NextRequest) {
     }
 
     // WhatsApp dispatch
+    const deliveryPhone = whatsappNumber || phoneNumber;
     for (const ticket of createdTickets) {
       try {
-        await sendTicketViaWhatsApp(ticket.id, phoneNumber);
+        await sendTicketViaWhatsApp(ticket.id, deliveryPhone);
       } catch (wsErr) {
         console.error(`WhatsApp delivery failed for ticket ${ticket.id}:`, wsErr);
       }
+    }
+
+    // Notify operators of the purchase
+    try {
+      await notifyOperators(buyerName, ticketType, quantity, amountPaid, reference);
+    } catch (opErr) {
+      console.error("Operator notification broadcast failed:", opErr);
     }
 
     return NextResponse.json({ success: true, tickets: createdTickets.length });

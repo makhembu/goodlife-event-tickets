@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createTicket, fetchPendingPayment, insertPaymentLog } from "@/lib/supabase-db";
-import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
+import { sendTicketViaWhatsApp, notifyOperators } from "@/lib/whatsapp";
 
 export async function POST(request: NextRequest) {
   try {
@@ -140,6 +140,13 @@ export async function POST(request: NextRequest) {
       } catch (wsErr) {
         console.error(`WhatsApp delivery failed for ticket ${ticket.id}:`, wsErr);
       }
+    }
+
+    // Notify operators of the purchase
+    try {
+      await notifyOperators(buyer_name, ticket_type, quantity, amount_paid, mpesa_receipt || checkoutRequestId);
+    } catch (opErr) {
+      console.error("Operator notification broadcast failed:", opErr);
     }
 
     return NextResponse.json({

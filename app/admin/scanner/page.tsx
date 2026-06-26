@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { fetchEventDetails, EventDetails } from "@/lib/supabase-db";
+import TicketStamp from "@/components/TicketStamp";
 
 interface ScannedResult {
   success: boolean;
@@ -277,7 +278,7 @@ export default function ScannerControlPage() {
         {/* SCAN CONFIG BAR */}
         <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 relative shadow-[4px_4px_0px_0px_var(--brand-navy)]">
           <div className="flex justify-between items-center mb-1.5">
-            <label className="text-xs font-black tracking-widest uppercase text-[var(--brand-navy)] block">
+            <label htmlFor="scanner-name" className="text-xs font-black tracking-widest uppercase text-[var(--brand-navy)] block">
               1. STAFF NAME
             </label>
             {eventDetails?.simulators_enabled !== false && (
@@ -291,6 +292,8 @@ export default function ScannerControlPage() {
             )}
           </div>
           <input
+            id="scanner-name"
+            name="scannerName"
             type="text"
             value={scannerName}
             onChange={(e) => setScannerName(e.target.value)}
@@ -307,7 +310,7 @@ export default function ScannerControlPage() {
           </h2>
 
           {/* VIEWPORT AREA */}
-          <div className="relative aspect-square w-full bg-slate-900 border-2 border-[var(--brand-navy)] mb-4 overflow-hidden flex flex-col items-center justify-center text-[var(--brand-off-white)]">
+          <div className="relative aspect-square w-full bg-slate-900 border-2 border-[var(--brand-navy)] mb-4 overflow-hidden flex flex-col items-center justify-center text-[var(--brand-off-white)]" aria-label="Camera scanner viewport">
             
             {scannerActive ? (
               <div className="relative w-full h-full">
@@ -348,9 +351,9 @@ export default function ScannerControlPage() {
 
           {/* MANUAL GATE OVERRIDE AND BYPASS KEYPAD */}
           <div className="border-t-2 border-[var(--brand-navy)] pt-4 space-y-3">
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] block">
+            <label htmlFor="manual-ticket-id" className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] block">
               2. MANUAL TICKET LOOKUP
-            </span>
+            </label>
             
             <form 
               onSubmit={(e) => {
@@ -360,6 +363,8 @@ export default function ScannerControlPage() {
               className="flex gap-2"
             >
               <input
+                id="manual-ticket-id"
+                name="manualTicketId"
                 type="text"
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
@@ -382,42 +387,48 @@ export default function ScannerControlPage() {
           {lastScanResult && (
             <motion.div
               key={JSON.stringify(lastScanResult)}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className={`border-4 p-4 ${
+              initial={{ opacity: 0, scale: 0.92, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 5 }}
+              transition={{ type: "spring", stiffness: 200, damping: 20 }}
+              role="status"
+              aria-live="assertive"
+              className={`border-4 p-5 ${
                 lastScanResult.success 
                   ? "border-green-600 bg-green-50 text-green-900" 
                   : "border-red-600 bg-red-50 text-red-900"
               } shadow-[4px_4px_0px_0px_currentColor]`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-4">
                 {lastScanResult.success ? (
-                  <UserCheck className="w-8 h-8 shrink-0 text-green-700" />
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-green-100 border-2 border-green-500 flex items-center justify-center">
+                    <UserCheck className="w-6 h-6 text-green-700" />
+                  </div>
                 ) : (
-                  <AlertTriangle className="w-8 h-8 shrink-0 text-red-700" />
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-red-100 border-2 border-red-500 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-red-700" />
+                  </div>
                 )}
                 
-                <div className="space-y-1.5 flex-1">
-                  <span className={`text-[10px] tracking-widest uppercase font-black px-2 py-0.5 inline-block ${
-                    lastScanResult.success ? "bg-green-700 text-white" : "bg-red-700 text-white"
-                  }`}>
-                    {lastScanResult.success ? "TICKET VALID" : "INVALID OR ALREADY USED"}
-                  </span>
+                <div className="space-y-2 flex-1">
+                  <TicketStamp
+                    text={lastScanResult.success ? "ENTRY CLEARED" : lastScanResult.alreadyScanned ? "ALREADY USED" : "STOP"}
+                    variant={lastScanResult.success ? "success" : lastScanResult.alreadyScanned ? "used" : "fail"}
+                  />
                   
-                  <h3 className="font-extrabold text-sm uppercase leading-tight">
+                  <h3 className="font-extrabold text-lg uppercase leading-tight">
                     {lastScanResult.message}
                   </h3>
 
                   {lastScanResult.ticket && (
-                    <div className="text-[11px] space-y-0.5 pt-1.5 border-t border-current/20 font-bold">
-                      <p>👤 ATTENDEE: <strong className="uppercase">{lastScanResult.ticket.buyer_name || "UNKNOWN"}</strong></p>
-                      <p>🎫 ACCESS TYPE: <strong className="underline">{lastScanResult.ticket.ticket_type}</strong></p>
-                      <p>📲 PHONE ENROLLED: {lastScanResult.ticket.phone_number}</p>
-                      <p>🗃️ RECEIPT CODE: {lastScanResult.ticket.mpesa_receipt}</p>
+                    <div className="text-[13px] space-y-1.5 pt-2 border-t border-current/20 font-bold">
+                      <p>ATTENDEE: <strong className="uppercase tracking-wide">{lastScanResult.ticket.buyer_name || "UNKNOWN"}</strong></p>
+                      <p>ACCESS TYPE: <strong className="underline decoration-2">{lastScanResult.ticket.ticket_type}</strong></p>
+                      <p>PHONE: <span className="font-mono">{lastScanResult.ticket.phone_number}</span></p>
+                      <p>RECEIPT: <span className="font-mono">{lastScanResult.ticket.mpesa_receipt}</span></p>
                       {lastScanResult.ticket.scanned_at && (
-                        <p className="font-mono text-[9px] text-slate-600">
-                          CONSUMPTION RECORDED: {new Date(lastScanResult.ticket.scanned_at).toLocaleString()}
+                        <p className="text-[10px] text-current/60 font-mono">
+                          SCANNED {new Date(lastScanResult.ticket.scanned_at).toLocaleString()}
                         </p>
                       )}
                     </div>
@@ -428,14 +439,24 @@ export default function ScannerControlPage() {
           )}
         </AnimatePresence>
 
+        {!lastScanResult && dbTickets.length === 0 && (
+          <div className="border-4 border-[var(--brand-navy)]/20 bg-white p-8 text-center space-y-3">
+            <ShieldCheck className="w-10 h-10 mx-auto text-[var(--brand-navy-light)]" />
+            <p className="text-xs font-black uppercase text-[var(--brand-navy-light)]">Scan or enter a ticket ID to begin</p>
+            <p className="text-[10px] text-slate-400 font-medium">
+              Point the camera at a QR code or type a ticket ID manually.
+            </p>
+          </div>
+        )}
+
         {eventDetails?.simulators_enabled !== false && showSimulators && (
           /* DEV FAST-CLICK SIMULATED DATABASE */
           <div className="border-4 border-dashed border-[var(--brand-navy-light)] bg-[var(--brand-off-white)] p-4 space-y-3">
             <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block border-b border-dashed border-[var(--brand-navy-light)] pb-1">
-              💻 DEVELOPER QUICK-CLICK SIMULATORS
+              STAFF TEST SCANS
             </span>
             <p className="text-[11px] leading-tight font-medium text-[var(--brand-navy-light)]">
-              No live camera? No problem! Click directly on any of the loaded database records below to simulate a digital screen barcode scan at the gate instantly.
+              Use saved local tickets to test gate decisions without opening the camera.
             </p>
 
             {/* Tabs */}
@@ -479,7 +500,7 @@ export default function ScannerControlPage() {
                     className={`w-full p-2.5 text-left border-2 text-[11px] font-bold flex justify-between items-center transition-all ${
                       ticket.is_scanned 
                         ? "bg-red-50 border-red-300 text-red-900 hover:bg-red-100" 
-                        : "bg-green-50 border-green-300 text-green-900 hover:bg-green-150"
+                        : "bg-green-50 border-green-300 text-green-900 hover:bg-green-100"
                     }`}
                   >
                     <div className="text-left">
@@ -510,7 +531,7 @@ export default function ScannerControlPage() {
         {/* ALL SCANNED TICKETS LEDGER (LATEST TO OLDEST) */}
         <div className="border-4 border-[var(--brand-navy)] bg-white p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] space-y-3">
           <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] block border-b border-[var(--brand-navy)] pb-1">
-            📋 SCANNED TICKETS CHECK-IN LEDGER
+            SCANNED TICKETS LEDGER
           </span>
           <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
             {dbTickets.filter(t => t.is_scanned).length === 0 ? (
@@ -524,7 +545,7 @@ export default function ScannerControlPage() {
                 .map((ticket) => (
                   <div
                     key={ticket.id}
-                    className="p-2.5 border-2 border-red-250 bg-red-50 text-red-950 text-[11px] font-bold flex justify-between items-center"
+                    className="p-2.5 border-2 border-red-300 bg-red-50 text-red-950 text-[11px] font-bold flex justify-between items-center"
                   >
                     <div className="text-left">
                       <span className="font-mono block text-xs font-black">{ticket.id}</span>
@@ -550,23 +571,37 @@ export default function ScannerControlPage() {
 
         {/* SCAN HISTORY FLOW */}
         {recentScans.length > 0 && (
-          <div className="border-2 border-[var(--brand-navy)] bg-white p-4 space-y-2">
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] block">
-              3. RECENT SCANS
-            </span>
-            <div className="space-y-1.5">
+          <div className="border-4 border-[var(--brand-navy)] bg-white p-4 space-y-2 shadow-[4px_4px_0px_0px_var(--brand-navy)]">
+            <div className="flex items-center justify-between border-b-2 border-[var(--brand-navy)] pb-2">
+              <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> SCAN LOG
+              </span>
+              <span className="text-[9px] font-mono text-slate-500 font-bold">
+                Last {recentScans.length} scans
+              </span>
+            </div>
+            <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
               {recentScans.map((scan, i) => (
                 <div 
                   key={i} 
-                  className={`p-2 font-mono text-[10px] font-bold flex justify-between items-center border ${
-                    scan.success ? "border-green-300 bg-green-50/50" : "border-red-300 bg-red-50/50"
+                  className={`flex items-center justify-between p-2 text-[10px] font-bold border-l-4 ${
+                    scan.success 
+                      ? "border-l-green-500 bg-green-50 text-green-900" 
+                      : "border-l-red-500 bg-red-50 text-red-900"
                   }`}
                 >
-                  <span className="uppercase text-slate-700">
-                    {scan.ticket?.id || "INVALID ACCESS"}
-                  </span>
-                  <span className={scan.success ? "text-green-800" : "text-red-800"}>
-                    {scan.success ? "OK ENTRY" : "REJECTED"}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-2 h-2 shrink-0 rounded-full ${
+                      scan.success ? "bg-green-500" : "bg-red-500"
+                    }`} />
+                    <span className="font-mono uppercase truncate">
+                      {scan.ticket?.id || "INVALID"}
+                    </span>
+                  </div>
+                  <span className={`shrink-0 ml-2 text-[8.5px] tracking-widest px-1 ${
+                    scan.success ? "bg-green-200" : "bg-red-200"
+                  }`}>
+                    {scan.success ? "CLEARED" : "DENIED"}
                   </span>
                 </div>
               ))}
@@ -578,3 +613,4 @@ export default function ScannerControlPage() {
     </div>
   );
 }
+

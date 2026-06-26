@@ -6,7 +6,7 @@ const PAYSTACK_API = "https://api.paystack.co";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, phone_number, ticket_type, buyer_name, quantity = 1 } = await request.json();
+    const { email, phone_number, ticket_type, buyer_name, quantity = 1, whatsapp_number = "" } = await request.json();
 
     if (!email || !phone_number || !ticket_type || !buyer_name) {
       return NextResponse.json(
@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
 
     const reference = "GL-" + Math.random().toString(36).substring(2, 12).toUpperCase();
 
+    const formattedPhone = phone_number.replace(/[^0-9]/g, "");
+    const mpesaPhone = formattedPhone.startsWith("0")
+      ? "+254" + formattedPhone.slice(1)
+      : formattedPhone.startsWith("254")
+        ? "+" + formattedPhone
+        : formattedPhone;
+
     await createPendingPayment({
       checkout_request_id: reference,
       phone_number,
@@ -39,9 +46,10 @@ export async function POST(request: NextRequest) {
       quantity: Number(quantity),
       buyer_name,
       amount: cost,
+      whatsapp_number: whatsapp_number || "",
     });
 
-    const paystackRes = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
+    const paystackRes = await fetch(`${PAYSTACK_API}/charge`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
@@ -52,9 +60,8 @@ export async function POST(request: NextRequest) {
         amount: amountInKobo,
         currency: "KES",
         reference,
-        channels: ["mpesa"],
         mobile_money: {
-          phone: phone_number,
+          phone: mpesaPhone,
           provider: "mpesa",
         },
         metadata: {
@@ -62,6 +69,7 @@ export async function POST(request: NextRequest) {
           quantity: Number(quantity),
           buyer_name,
           phone_number,
+          whatsapp_number: whatsapp_number || "",
         },
       }),
     });
@@ -69,9 +77,9 @@ export async function POST(request: NextRequest) {
     const data = await paystackRes.json();
 
     if (!data.status) {
-      console.error("Paystack initialize error:", data);
+      console.error("Paystack charge error:", data);
       return NextResponse.json(
-        { error: data.message || "Paystack STK Push initialization failed." },
+        { error: data.message || "Paystack STK Push failed." },
         { status: 400 }
       );
     }

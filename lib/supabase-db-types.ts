@@ -11,6 +11,7 @@ export interface Ticket {
   buyer_name: string;
   pdf_data?: string | null; // base64 cached PDF
   deleted_at?: string | null;
+  whatsapp_number?: string | null;
 }
 
 export interface EventDetails {
@@ -27,6 +28,7 @@ export interface EventDetails {
   simulators_enabled?: boolean;
   footer_title?: string;
   footer_legal?: string;
+  whatsapp_message?: string;
 }
 
 export interface PendingPayment {
@@ -39,6 +41,7 @@ export interface PendingPayment {
   created_at?: string;
   status?: string;
   ticket_id?: string;
+  whatsapp_number?: string;
 }
 
 export interface TicketTier {

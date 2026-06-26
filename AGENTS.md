@@ -12,6 +12,16 @@ npm run lint      # ESLint (flat config, eslint-config-next)
 npm run clean     # next clean
 ```
 
+## Deploy (Netlify)
+
+```sh
+npm run build                                         # produces .next/ + standalone/
+netlify deploy --prod --dir=.next                      # deploy to production
+# Netlify env vars set via dashboard or CLI:
+#   PAYSTACK_SECRET_KEY, PAYSTACK_PUBLIC_KEY, APP_URL, DATABASE_URL,
+#   SUPABASE_*, GEMINI_API_KEY, DARAJA_*, WHATSAPP_*
+```
+
 ## Architecture
 
 - **Dual database**: Supabase (`@supabase/ssr` via `utils/supabase/`) and Neon PostgreSQL (raw `pg` pool via `lib/neon-client.ts`). Main data layer is `lib/supabase-db.ts` — isomorphic file with server-side `pg` queries and client-side `localStorage`/`fetch` fallbacks guarded by `typeof window === "undefined"`.
@@ -30,13 +40,14 @@ npm run clean     # next clean
 | `app/page.tsx` | Checkout page with dev simulation panel |
 | `app/admin/dashboard/page.tsx` | Admin CRUD + metrics |
 | `app/admin/scanner/page.tsx` | QR + manual ticket verification |
-| `app/api/mpesa/stkpush/route.ts` | M-Pesa STK Push initiation |
-| `app/api/mpesa/callback/route.ts` | Callback webhook + ticket creation |
+| `app/api/paystack/initialize/route.ts` | Paystack M-Pesa STK Push initiation |
+| `app/api/paystack/callback/route.ts` | Paystack webhook + ticket creation |
+| `app/api/paystack/verify/route.ts` | Frontend payment status polling |
 | `scripts/` | DB schema migration and seeding scripts |
 
 ## Env vars (see `.env.example`)
 
-`GEMINI_API_KEY`, `APP_URL`, `DATABASE_URL`, Supabase (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`), Daraja M-Pesa (`DARAJA_*`), WhatsApp gateway.
+`GEMINI_API_KEY`, `APP_URL`, `DATABASE_URL`, Supabase (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`), Paystack (`PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`), Daraja M-Pesa (`DARAJA_*`), WhatsApp gateway.
 
 ## Quirks & conventions
 

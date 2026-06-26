@@ -233,8 +233,8 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
       }
     }
     await neonQuery(
-      `INSERT INTO tickets (id, mpesa_receipt, phone_number, ticket_type, amount_paid, purchase_time, is_scanned, scanned_at, scanned_by, buyer_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO tickets (id, mpesa_receipt, phone_number, ticket_type, amount_paid, purchase_time, is_scanned, scanned_at, scanned_by, buyer_name, whatsapp_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         newTicket.id,
         newTicket.mpesa_receipt,
@@ -245,7 +245,8 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
         newTicket.is_scanned,
         newTicket.scanned_at,
         newTicket.scanned_by,
-        newTicket.buyer_name
+        newTicket.buyer_name,
+        newTicket.whatsapp_number || ""
       ]
     );
     return newTicket;
@@ -310,6 +311,21 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
       "UPDATE tickets SET is_scanned = TRUE, scanned_at = $1, scanned_by = $2 WHERE id = $3",
       [updatedTicket.scanned_at, updatedTicket.scanned_by, id]
     );
+
+    // Send scan notification via WhatsApp
+    try {
+      const { sendScanNotification } = await import("@/lib/whatsapp");
+      sendScanNotification(
+        id,
+        ticket.phone_number,
+        ticket.buyer_name,
+        ticket.ticket_type,
+        scannerName
+      ).catch(e => console.error("Error dispatching scan notification:", e));
+    } catch (err) {
+      console.error("Failed to import/dispatch scan notification:", err);
+    }
+
     return {
       success: true,
       ticket: updatedTicket,
@@ -339,7 +355,8 @@ let localEventDetails: EventDetails = {
   logo_url: "",
   simulators_enabled: true,
   footer_title: "GOODLIFE TICKETING",
-  footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS"
+  footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS",
+  whatsapp_message: ""
 };
 
 function getLocalEventDetails(): EventDetails {
@@ -407,8 +424,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
   // Server side - Neon SQL
   try {
     await neonQuery(
-      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, footer_title, footer_legal)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, footer_title, footer_legal, whatsapp_message)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title,
          subtitle = EXCLUDED.subtitle,
@@ -421,7 +438,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
          logo_url = EXCLUDED.logo_url,
          simulators_enabled = EXCLUDED.simulators_enabled,
          footer_title = EXCLUDED.footer_title,
-         footer_legal = EXCLUDED.footer_legal`,
+         footer_legal = EXCLUDED.footer_legal,
+         whatsapp_message = EXCLUDED.whatsapp_message`,
       [
         updated.title,
         updated.subtitle,
@@ -434,7 +452,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
         updated.logo_url || "",
         updated.simulators_enabled ?? true,
         updated.footer_title || "GOODLIFE TICKETING",
-        updated.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"
+        updated.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS",
+        updated.whatsapp_message || ""
       ]
     );
     return updated;
@@ -535,6 +554,79 @@ export async function deleteTicketTier(id: string): Promise<boolean> {
   }
 }
 
+// Permanently delete ticket
+export async function permanentlyDeleteTicket(id: string): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/tickets/${id}?permanent=true`, {
+        method: "DELETE"
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("API permanentlyDeleteTicket failed.", e);
+      return false;
+    }
+  }
+
+  // Server side - Neon SQL
+  try {
+    await neonQuery("DELETE FROM tickets WHERE id = $1", [id]);
+    return true;
+  } catch (err) {
+    console.error("Neon permanentlyDeleteTicket error:", err);
+    return false;
+  }
+}
+
+// Permanently delete ticket tier
+export async function permanentlyDeleteTicketTier(id: string): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/ticket-tiers/${id}?permanent=true`, {
+        method: "DELETE"
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("API permanentlyDeleteTicketTier failed.", e);
+      return false;
+    }
+  }
+
+  // Server side - Neon SQL
+  try {
+    await neonQuery("DELETE FROM ticket_tiers WHERE id = $1", [id]);
+    return true;
+  } catch (err) {
+    console.error("Neon permanentlyDeleteTicketTier error:", err);
+    return false;
+  }
+}
+
+// Empty Trash
+export async function emptyTrash(): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/trash/clear`, {
+        method: "POST"
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("API emptyTrash failed.", e);
+      return false;
+    }
+  }
+
+  // Server side - Neon SQL
+  try {
+    await neonQuery("DELETE FROM tickets WHERE deleted_at IS NOT NULL");
+    await neonQuery("DELETE FROM ticket_tiers WHERE deleted_at IS NOT NULL");
+    return true;
+  } catch (err) {
+    console.error("Neon emptyTrash error:", err);
+    return false;
+  }
+}
+
 export async function fetchDeletedTickets(): Promise<Ticket[]> {
   if (typeof window !== "undefined") return [];
   try {
@@ -609,15 +701,16 @@ export async function createPendingPayment(payment: PendingPayment): Promise<Pen
   // Server side - Neon SQL
   try {
     await neonQuery(
-      `INSERT INTO pending_payments (checkout_request_id, phone_number, ticket_type, quantity, buyer_name, amount)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO pending_payments (checkout_request_id, phone_number, ticket_type, quantity, buyer_name, amount, whatsapp_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         payment.checkout_request_id,
         payment.phone_number,
         payment.ticket_type,
         payment.quantity,
         payment.buyer_name,
-        payment.amount
+        payment.amount,
+        payment.whatsapp_number || ""
       ]
     );
     return payment;
@@ -868,5 +961,49 @@ export async function fetchPaymentLogs(): Promise<any[]> {
   } catch (err) {
     console.error("Neon fetchPaymentLogs error:", err);
     return [];
+  }
+}
+
+export async function deletePaymentLog(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  try {
+    await neonQuery("DELETE FROM payment_logs WHERE id = $1", [id]);
+    return true;
+  } catch (err) {
+    console.error("Neon deletePaymentLog error:", err);
+    return false;
+  }
+}
+
+export async function deleteAllPaymentLogs(): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  try {
+    await neonQuery("DELETE FROM payment_logs", []);
+    return true;
+  } catch (err) {
+    console.error("Neon deleteAllPaymentLogs error:", err);
+    return false;
+  }
+}
+
+export async function deletePendingPayment(checkoutRequestId: string): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  try {
+    await neonQuery("DELETE FROM pending_payments WHERE checkout_request_id = $1", [checkoutRequestId]);
+    return true;
+  } catch (err) {
+    console.error("Neon deletePendingPayment error:", err);
+    return false;
+  }
+}
+
+export async function clearAllPendingPayments(): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  try {
+    await neonQuery("DELETE FROM pending_payments", []);
+    return true;
+  } catch (err) {
+    console.error("Neon clearAllPendingPayments error:", err);
+    return false;
   }
 }

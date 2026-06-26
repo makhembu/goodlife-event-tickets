@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GOODLIFE WhatsApp Setup</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 400px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 24px;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .qr-container {
+      background: #f8fafc;
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      width: 250px;
+      height: 250px;
+      margin: 0 auto 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    #qr-image {
+      max-width: 100%;
+      max-height: 100%;
+      display: none;
+    }
+    .status {
+      font-weight: bold;
+      color: #ef4444;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .btn {
+      background: #25d366;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #20ba59;
+    }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #25d366;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Link Bot WhatsApp</h1>
+    <p>Open WhatsApp on your phone -> Go to Linked Devices -> Scan this QR code.</p>
+    
+    <div class="qr-container" id="qr-box">
+      <div class="loader" id="loader"></div>
+      <img id="qr-image" alt="WhatsApp Link QR Code">
+    </div>
+
+    <div class="status" id="status-text">Status: Checking...</div>
+    <button class="btn" onclick="fetchQR()">Refresh QR Code</button>
+  </div>
+
+  <script>
+    const gatewayUrl = "https://evolution-api-production-2634f.up.railway.app";
+    const apiKey = "6d7282c9b78363b8d7bd5e54570cc13be3e1584471269fb1c3bde06fe8c51296";
+    const sessionId = "goodlife-tickets";
+
+    async function fetchQR() {
+      const loader = document.getElementById("loader");
+      const qrImage = document.getElementById("qr-image");
+      const statusText = document.getElementById("status-text");
+
+      loader.style.display = "block";
+      qrImage.style.display = "none";
+      statusText.innerText = "Status: Fetching...";
+      statusText.style.color = "#eab308";
+
+      try {
+        const res = await fetch(`${gatewayUrl}/instance/connect/${sessionId}`, {
+          headers: { "apikey": apiKey }
+        });
+        const data = await res.json();
+
+        if (data.status === "open" && data.qrcode && data.qrcode.base64) {
+          qrImage.src = data.qrcode.base64;
+          loader.style.display = "none";
+          qrImage.style.display = "block";
+          statusText.innerText = "Status: Ready to Scan";
+          statusText.style.color = "#25d366";
+        } else if (data.status === "connected" || data.instance?.status === "connected") {
+          loader.style.display = "none";
+          statusText.innerText = "Status: Connected!";
+          statusText.style.color = "#25d366";
+        } else {
+          loader.style.display = "none";
+          statusText.innerText = `Status: ${data.status || "Waiting/Initializing"}`;
+          statusText.style.color = "#ef4444";
+        }
+      } catch (err) {
+        loader.style.display = "none";
+        statusText.innerText = "Status: Failed to fetch";
+        statusText.style.color = "#ef4444";
+        console.error(err);
+      }
+    }
+
+    // Auto load on mount
+    fetchQR();
+    // Poll every 10 seconds to update status
+    setInterval(fetchQR, 10000);
+  </script>
+</body>
+</html>

@@ -22,7 +22,13 @@ CREATE TABLE IF NOT EXISTS event_details (
   venue TEXT NOT NULL DEFAULT 'MARARA CAMP, THIKA',
   till_number TEXT NOT NULL DEFAULT '5761205',
   flyer_url TEXT NOT NULL DEFAULT '/flyer.png',
-  regulations TEXT NOT NULL DEFAULT 'Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified.'
+  regulations TEXT NOT NULL DEFAULT 'Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified.',
+  ticker_text TEXT DEFAULT '',
+  logo_url TEXT DEFAULT '',
+  simulators_enabled BOOLEAN DEFAULT TRUE,
+  footer_title VARCHAR(255) DEFAULT 'GOODLIFE TICKETING',
+  footer_legal VARCHAR(255) DEFAULT 'STRICTLY 18+ NO OUTSIDE DRINKS',
+  whatsapp_message TEXT DEFAULT ''
 );
 
 -- Insert default row
@@ -38,5 +44,8 @@ CREATE TABLE IF NOT EXISTS pending_payments (
   quantity INTEGER NOT NULL,
   buyer_name TEXT NOT NULL,
   amount NUMERIC NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  status TEXT DEFAULT '',
+  ticket_id TEXT DEFAULT '',
+  whatsapp_number TEXT DEFAULT ''
 );

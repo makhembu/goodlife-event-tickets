@@ -15,23 +15,21 @@ import {
   createTicketTier,
   updateTicketTier,
   deleteTicketTier,
+  permanentlyDeleteTicket,
+  permanentlyDeleteTicketTier,
+  emptyTrash,
   TicketTier
 } from "@/lib/supabase-db";
 import { 
-  Coins, 
-  Users, 
-  TrendingUp, 
   Sparkles, 
   Grid, 
   RefreshCw, 
   Activity, 
   CheckCircle, 
   AlertTriangle, 
-  Tent, 
   Clock, 
   Lock, 
   X,
-  FileCheck2,
   ArrowLeft,
   Edit,
   Trash2,
@@ -42,6 +40,8 @@ import {
   EyeOff
 } from "lucide-react";
 import Link from "next/link";
+import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
+import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 
 interface MetricsState {
   totalCashCollected: number;
@@ -77,6 +77,12 @@ export default function AdminDashboardPage() {
 
   // Payment Logs states
   const [paymentLogs, setPaymentLogs] = useState<any[]>([]);
+
+  // Tickets CSV export filter states
+  const [exportTicketTypeFilter, setExportTicketTypeFilter] = useState("");
+  const [exportTicketStatusFilter, setExportTicketStatusFilter] = useState<"all" | "active" | "scanned">("all");
+  const [exportDateFrom, setExportDateFrom] = useState("");
+  const [exportDateTo, setExportDateTo] = useState("");
   
   // Pending Payments (orphaned) states
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
@@ -85,9 +91,17 @@ export default function AdminDashboardPage() {
   const [resolveAmount, setResolveAmount] = useState(0);
   const [resolveMessage, setResolveMessage] = useState("");
 
-  // Deletion modals states
+  // Selections for bulk actions
+  const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
+  const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
+  const [selectedPaymentLogIds, setSelectedPaymentLogIds] = useState<number[]>([]);
+  const [selectedTrashTicketIds, setSelectedTrashTicketIds] = useState<string[]>([]);
+  const [selectedTrashTierIds, setSelectedTrashTierIds] = useState<string[]>([]);
   const [deletingTicketId, setDeletingTicketId] = useState<string | null>(null);
   const [deletingTierId, setDeletingTierId] = useState<string | null>(null);
+  const [trashPassword, setTrashPassword] = useState("");
+  const [showTrashPasswordModal, setShowTrashPasswordModal] = useState(false);
+  const [trashActionType, setTrashActionType] = useState<"clear_all" | "delete_selected" | "">("");
 
   // Trash / restore states
   const [deletedTickets, setDeletedTickets] = useState<Ticket[]>([]);
@@ -117,7 +131,13 @@ export default function AdminDashboardPage() {
     try {
       const details = await fetchEventDetails();
       setEventDetails(details);
-      setEventFormState(details);
+      
+      const defaultTemplate = `*{{eventTitle}} TICKET SECURED!* 🎫✨\n\nTicket Confirmed for {{eventTitle}} {{eventSubtitle}}.\n\n📄 *Ticket ID:* {{ticketId}}\n📲 *Phone:* {{phoneNumber}}\n\n👉 *Download PDF Ticket:* {{pdfUrl}}\n\nPresent the PDF QR Code at the entry for digital scanning.\n\n*REGULATIONS:*\n📍 VENUE: {{eventVenue}}\n{{eventRegulations}}`;
+      
+      setEventFormState({
+        ...details,
+        whatsapp_message: details.whatsapp_message || defaultTemplate
+      });
     } catch (err) {
       console.error("Failed to load event details:", err);
     }
@@ -188,7 +208,7 @@ export default function AdminDashboardPage() {
 
   const handleRestoreTier = async (id: string) => {
     try {
-      await fetch(`/api/admin/ticket-tiers/${id}`, {
+      await fetch(`/api/ticket-tiers/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deleted_at: null })
@@ -207,11 +227,11 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    const headers = ["ID", "Checkout Request ID", "M-Pesa Receipt", "Phone Number", "Amount (KES)", "Status", "Result Description", "Created At"];
+    const headers = ["ID", "Checkout Request ID", "Receipt", "Phone Number", "Amount (KES)", "Status", "Result Description", "Created At"];
     const rows = paymentLogs.map(log => [
       log.id,
       log.checkout_request_id || "",
-      log.mpesa_receipt || "",
+      log.mpesa_receipt || log.receipt || "",
       log.phone_number || "",
       log.amount || "0",
       log.status,
@@ -232,6 +252,97 @@ export default function AdminDashboardPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportTicketsCSV = () => {
+    if (!data) return;
+    let filtered = [...data.tickets];
+
+    if (exportTicketTypeFilter) {
+      filtered = filtered.filter(t => t.ticket_type === exportTicketTypeFilter);
+    }
+    if (exportTicketStatusFilter === "active") {
+      filtered = filtered.filter(t => !t.is_scanned);
+    } else if (exportTicketStatusFilter === "scanned") {
+      filtered = filtered.filter(t => t.is_scanned);
+    }
+    if (exportDateFrom) {
+      const from = new Date(exportDateFrom).getTime();
+      filtered = filtered.filter(t => new Date(t.purchase_time).getTime() >= from);
+    }
+    if (exportDateTo) {
+      const to = new Date(exportDateTo).getTime() + 86400000;
+      filtered = filtered.filter(t => new Date(t.purchase_time).getTime() <= to);
+    }
+
+    if (filtered.length === 0) {
+      alert("No tickets match the current filters.");
+      return;
+    }
+
+    const headers = ["Ticket ID", "Receipt", "Buyer Name", "Phone", "Ticket Type", "Amount (KES)", "Purchase Date", "Status", "Scanned At", "Scanned By"];
+    const rows = filtered.map(t => [
+      t.id,
+      t.mpesa_receipt,
+      `"${(t.buyer_name || "").replace(/"/g, '""')}"`,
+      t.phone_number,
+      t.ticket_type,
+      Number(t.amount_paid).toString(),
+      new Date(t.purchase_time).toLocaleString(),
+      t.is_scanned ? "SCANNED" : "ACTIVE",
+      t.scanned_at ? new Date(t.scanned_at).toLocaleString() : "",
+      t.scanned_by || ""
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `GOODLIFE-TICKETS-EXPORT-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDeletePaymentLog = async (id: number) => {
+    if (!confirm("Delete this payment log entry?")) return;
+    try {
+      const res = await fetch(`/api/admin/payment-logs?id=${id}`, { method: "DELETE" });
+      if (res.ok) loadPaymentLogs();
+    } catch (err) {
+      console.error("Failed to delete payment log:", err);
+    }
+  };
+
+  const handleClearAllPaymentLogs = async () => {
+    if (!confirm("Delete ALL payment log entries? This cannot be undone.")) return;
+    try {
+      const res = await fetch("/api/admin/payment-logs?all=true", { method: "DELETE" });
+      if (res.ok) loadPaymentLogs();
+    } catch (err) {
+      console.error("Failed to clear payment logs:", err);
+    }
+  };
+
+  const handleClearAllPendingPayments = async () => {
+    if (!confirm("Delete ALL pending payment records? This cannot be undone.")) return;
+    try {
+      const res = await fetch("/api/admin/pending-payments?all=true", { method: "DELETE" });
+      if (res.ok) loadPendingPayments();
+    } catch (err) {
+      console.error("Failed to clear pending payments:", err);
+    }
+  };
+
+  const handleDeletePendingPayment = async (checkoutRequestId: string) => {
+    if (!confirm(`Delete pending payment ${checkoutRequestId}?`)) return;
+    try {
+      const res = await fetch(`/api/admin/pending-payments?checkout_request_id=${encodeURIComponent(checkoutRequestId)}`, { method: "DELETE" });
+      if (res.ok) loadPendingPayments();
+    } catch (err) {
+      console.error("Failed to delete pending payment:", err);
+    }
   };
 
   const handleResolvePayment = async (e: React.FormEvent) => {
@@ -349,6 +460,38 @@ export default function AdminDashboardPage() {
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to delete ticket:", err);
+    }
+  };
+
+  const handleTrashPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (trashPassword !== "GoodlifeAdmin2026!") {
+      alert("Incorrect admin password. Access denied.");
+      return;
+    }
+
+    try {
+      if (trashActionType === "clear_all") {
+        await emptyTrash();
+        setSelectedTrashTicketIds([]);
+        setSelectedTrashTierIds([]);
+      } else if (trashActionType === "delete_selected") {
+        for (const id of selectedTrashTicketIds) {
+          await permanentlyDeleteTicket(id);
+        }
+        for (const id of selectedTrashTierIds) {
+          await permanentlyDeleteTicketTier(id);
+        }
+        setSelectedTrashTicketIds([]);
+        setSelectedTrashTierIds([]);
+      }
+      setShowTrashPasswordModal(false);
+      loadDeletedItems();
+      loadDashboardMetrics();
+      loadTicketTiers();
+    } catch (err) {
+      console.error("Failed to execute permanent delete:", err);
+      alert("Database error executing delete.");
     }
   };
 
@@ -513,83 +656,18 @@ export default function AdminDashboardPage() {
 
       <div className="max-w-4xl mx-auto space-y-6">
 
-        {/* METRICS SUMMARY BENTO LAYOUT */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] relative">
-            <Coins className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">TILL 5761205 REVENUE</span>
-            <span className="text-2xl font-black block mt-2">KES {data.totalCashCollected.toLocaleString()}</span>
-            <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase mt-1">Confirmed M-Pesa Revenue</p>
-          </div>
+        <BoxOfficeMetrics
+          totalCashCollected={data.totalCashCollected}
+          totalTicketsSold={data.totalTicketsSold}
+          recentSalesAmount={data.recentSalesAmount}
+          scanCount={data.scanCount}
+        />
 
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] relative">
-            <Users className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">PASSES SOLD</span>
-            <span className="text-2xl font-black block mt-2">{data.totalTicketsSold}</span>
-            <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase mt-1">Unique secure receipts</p>
-          </div>
-
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] relative">
-            <TrendingUp className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">RECENT SALES (24H)</span>
-            <span className="text-2xl font-black block mt-2">KES {data.recentSalesAmount.toLocaleString()}</span>
-            <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase mt-1">Velocity payment speed</p>
-          </div>
-
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-[4px_4px_0px_0px_var(--brand-navy)] relative">
-            <FileCheck2 className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-            <span className="text-[10px] tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">CHECKED-IN GUESTS</span>
-            <span className="text-2xl font-black block mt-2">{data.scanCount} <span className="text-xs text-slate-500 font-bold">/ {data.totalTicketsSold}</span></span>
-            <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase mt-1">
-              Check-in percentage: {data.totalTicketsSold ? Math.round((data.scanCount / data.totalTicketsSold) * 100) : 0}%
-            </p>
-          </div>
-
-        </div>
-
-        {/* TICKET TIER SALES BREAKDOWN */}
-        {(() => {
-          const tierSales = Object.entries(data.campingTiers).map(([type, stats]) => {
-            const tierDef = ticketTiers.find(t => t.id === type);
-            return { type, stats, name: tierDef?.name || type, tag: tierDef?.tag || "" };
-          });
-          const best = tierSales.reduce((a, b) => (a.stats.sold > b.stats.sold ? a : b), tierSales[0]);
-          return (
-            <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-5 relative shadow-[4px_4px_0px_0px_var(--brand-navy)]">
-              <span className="text-xs font-black tracking-widest uppercase text-[var(--brand-navy)] block mb-4 border-b-2 border-[var(--brand-navy)] pb-2 flex items-center gap-2">
-                <Tent className="w-4 h-4 fill-[var(--brand-navy)]" /> TICKET TIER SALES
-              </span>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {tierSales.map((t) => {
-                  const pct = data.totalTicketsSold ? Math.round((t.stats.sold / data.totalTicketsSold) * 100) : 0;
-                  const isBest = best && t.type === best.type && t.stats.sold > 0;
-                  return (
-                    <div key={t.type} className={`space-y-2 p-3 ${isBest ? "bg-amber-50 border-2 border-amber-400" : "border border-transparent"}`}>
-                      <div className="flex justify-between items-end">
-                        <div>
-                          <span className="font-black text-xs block">{t.name}</span>
-                          <span className="text-[10px] text-slate-500 uppercase font-medium">
-                            Sold: {t.stats.sold} tickets &middot; Ksh {t.stats.revenue.toLocaleString()}
-                          </span>
-                          {t.tag && <span className="text-[9px] ml-1.5 font-bold text-[var(--brand-accent)] uppercase">[{t.tag}]</span>}
-                        </div>
-                        <span className="font-extrabold text-sm">{pct}%</span>
-                      </div>
-                      <div className="h-4 w-full bg-slate-100 border-2 border-[var(--brand-navy)] overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-500 ${isBest ? "bg-amber-500" : "bg-[var(--brand-navy)]"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      {isBest && <span className="text-[9px] font-black uppercase text-amber-700 block">&#9733; BEST SELLER</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
+        <TierSalesBreakdown
+          campingTiers={data.campingTiers}
+          totalTicketsSold={data.totalTicketsSold}
+          ticketTiers={ticketTiers}
+        />
 
         {/* TABS SELECTION BAR */}
         <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[4px_4px_0px_0px_var(--brand-navy)] overflow-hidden">
@@ -621,7 +699,7 @@ export default function AdminDashboardPage() {
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
             }`}
           >
-            M-Pesa Payments ({paymentLogs.length})
+            Payments ({paymentLogs.length})
           </button>
           <button
             onClick={() => { setActiveTab("trash"); loadDeletedItems(); }}
@@ -658,6 +736,51 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            {/* CSV Export Row with Filters */}
+            <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border-b-2 border-[var(--brand-navy)]">
+              <span className="text-[9px] font-black uppercase text-slate-600 mr-1">EXPORT:</span>
+              <select
+                value={exportTicketTypeFilter}
+                onChange={(e) => setExportTicketTypeFilter(e.target.value)}
+                className="text-[10px] border border-slate-300 px-1.5 py-1 bg-white font-mono"
+              >
+                <option value="">All Types</option>
+                {ticketTiers.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <select
+                value={exportTicketStatusFilter}
+                onChange={(e) => setExportTicketStatusFilter(e.target.value as any)}
+                className="text-[10px] border border-slate-300 px-1.5 py-1 bg-white font-mono"
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active Only</option>
+                <option value="scanned">Scanned Only</option>
+              </select>
+              <input
+                type="date"
+                value={exportDateFrom}
+                onChange={(e) => setExportDateFrom(e.target.value)}
+                className="text-[10px] border border-slate-300 px-1.5 py-1 bg-white font-mono"
+                title="From date"
+              />
+              <span className="text-[9px] text-slate-400">-</span>
+              <input
+                type="date"
+                value={exportDateTo}
+                onChange={(e) => setExportDateTo(e.target.value)}
+                className="text-[10px] border border-slate-300 px-1.5 py-1 bg-white font-mono"
+                title="To date"
+              />
+              <button
+                onClick={handleExportTicketsCSV}
+                className="text-[10px] font-black uppercase border border-[var(--brand-navy)] bg-[var(--brand-navy)] text-white px-2.5 py-1 hover:opacity-80 flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" /> CSV
+              </button>
+            </div>
+
             {/* Active / Scanned sub-tabs */}
             <div className="flex border-b-2 border-[var(--brand-navy)] bg-slate-50/50">
               {(["all", "active", "scanned"] as const).map((tab) => {
@@ -680,11 +803,108 @@ export default function AdminDashboardPage() {
               })}
             </div>
 
-            <div className="overflow-x-auto md:overflow-visible">
+            {selectedTicketIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-amber-50 border-b-2 border-[var(--brand-navy)] text-xs font-black uppercase">
+                <span className="text-amber-900">Selected: {selectedTicketIds.length} tickets</span>
+                <button
+                  onClick={async () => {
+                    if (confirm("Send selected tickets to Trash?")) {
+                      for (const id of selectedTicketIds) {
+                        await fetch(`/api/admin/tickets/${id}`, { method: "DELETE" });
+                      }
+                      setSelectedTicketIds([]);
+                      loadDashboardMetrics();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 cursor-pointer border border-red-700"
+                >
+                  Send to Trash
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm("Resend selected tickets via WhatsApp?")) {
+                      for (const id of selectedTicketIds) {
+                        const ticketObj = metrics?.tickets.find(tk => tk.id === id);
+                        if (ticketObj) {
+                          await fetch("/api/admin/send-whatsapp", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ ticketId: id, phoneNumber: ticketObj.phone_number })
+                          });
+                        }
+                      }
+                      alert("WhatsApp tickets queued for resending.");
+                      setSelectedTicketIds([]);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-[var(--brand-navy)] text-white text-[10px] font-black uppercase hover:opacity-90 cursor-pointer border border-[var(--brand-navy)]"
+                >
+                  Resend WhatsApp
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm("Mark selected tickets as Scanned?")) {
+                      for (const id of selectedTicketIds) {
+                        await fetch(`/api/admin/tickets/${id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ is_scanned: true, scanned_at: new Date().toISOString(), scanned_by: "Admin Bulk Action" })
+                        });
+                      }
+                      setSelectedTicketIds([]);
+                      loadDashboardMetrics();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 cursor-pointer border border-green-700"
+                >
+                  Mark Scanned
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm("Mark selected tickets as Active (Unscanned)?")) {
+                      for (const id of selectedTicketIds) {
+                        await fetch(`/api/admin/tickets/${id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ is_scanned: false, scanned_at: null, scanned_by: null })
+                        });
+                      }
+                      setSelectedTicketIds([]);
+                      loadDashboardMetrics();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-blue-600 text-white text-[10px] font-black uppercase hover:bg-blue-700 cursor-pointer border border-blue-700"
+                >
+                  Mark Active
+                </button>
+                <button
+                  onClick={() => setSelectedTicketIds([])}
+                  className="px-2.5 py-1 bg-white text-slate-700 text-[10px] font-black uppercase hover:bg-slate-100 cursor-pointer border border-slate-300 ml-auto"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
               {/* Desktop Table View */}
               <table className="hidden md:table w-full text-left text-xs">
                 <thead>
                   <tr className="border-b-2 border-[var(--brand-navy)] bg-slate-50 uppercase text-[var(--brand-navy)] font-black">
+                    <th className="p-3 w-8">
+                      <input 
+                        type="checkbox"
+                        checked={filteredTickets.length > 0 && selectedTicketIds.length === filteredTickets.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTicketIds(filteredTickets.map(tk => tk.id));
+                          } else {
+                            setSelectedTicketIds([]);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                      />
+                    </th>
                     <th className="p-3">TICKET ID / RECEIPT</th>
                     <th className="p-3">ATTENDEE</th>
                     <th className="p-3">TIER TYPE</th>
@@ -698,13 +918,27 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-[var(--brand-navy)]/15 font-medium text-slate-800">
                   {filteredTickets.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
+                      <td colSpan={9} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
                         {data.tickets.length === 0 ? "Zero tickets cataloged. Purchase a ticket or create one manually above." : `No ${ledgerTab === "scanned" ? "used" : "active"} tickets in this batch.`}
                       </td>
                     </tr>
                   ) : (
                     filteredTickets.map((t) => (
                       <tr key={t.id} className="hover:bg-[var(--brand-navy)]/5">
+                        <td className="p-3">
+                          <input 
+                            type="checkbox"
+                            checked={selectedTicketIds.includes(t.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTicketIds([...selectedTicketIds, t.id]);
+                              } else {
+                                setSelectedTicketIds(selectedTicketIds.filter(id => id !== t.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                          />
+                        </td>
                         <td className="p-3 flex flex-col">
                           <span className="font-mono font-black text-slate-900">{t.id}</span>
                           <span className="text-[10px] font-mono text-slate-500">M-Pesa: {t.mpesa_receipt}</span>
@@ -877,11 +1111,83 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto md:overflow-visible">
+            {selectedTierIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-amber-50 border-b-2 border-[var(--brand-navy)] text-xs font-black uppercase">
+                <span className="text-amber-900">Selected: {selectedTierIds.length} tiers</span>
+                <button
+                  onClick={async () => {
+                    if (confirm("Send selected tiers to Trash?")) {
+                      for (const id of selectedTierIds) {
+                        await fetch(`/api/ticket-tiers/${id}`, { method: "DELETE" });
+                      }
+                      setSelectedTierIds([]);
+                      loadTicketTiers();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 cursor-pointer border border-red-700"
+                >
+                  Send to Trash
+                </button>
+                <button
+                  onClick={async () => {
+                    for (const id of selectedTierIds) {
+                      await fetch(`/api/ticket-tiers/${id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ hidden: true })
+                      });
+                    }
+                    setSelectedTierIds([]);
+                    loadTicketTiers();
+                  }}
+                  className="px-2.5 py-1 bg-amber-600 text-white text-[10px] font-black uppercase hover:bg-amber-700 cursor-pointer border border-amber-700"
+                >
+                  Hide selected
+                </button>
+                <button
+                  onClick={async () => {
+                    for (const id of selectedTierIds) {
+                      await fetch(`/api/ticket-tiers/${id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ hidden: false })
+                      });
+                    }
+                    setSelectedTierIds([]);
+                    loadTicketTiers();
+                  }}
+                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 cursor-pointer border border-green-700"
+                >
+                  Show selected
+                </button>
+                <button
+                  onClick={() => setSelectedTierIds([])}
+                  className="px-2.5 py-1 bg-white text-slate-700 text-[10px] font-black uppercase hover:bg-slate-100 cursor-pointer border border-slate-300 ml-auto"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
               {/* Desktop Table View */}
               <table className="hidden md:table w-full text-left text-xs">
                 <thead>
                   <tr className="border-b-2 border-[var(--brand-navy)] bg-slate-50 uppercase text-[var(--brand-navy)] font-black font-sans">
+                    <th className="p-3 w-8">
+                      <input 
+                        type="checkbox"
+                        checked={ticketTiers.length > 0 && selectedTierIds.length === ticketTiers.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTierIds(ticketTiers.map(tk => tk.id));
+                          } else {
+                            setSelectedTierIds([]);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                      />
+                    </th>
                     <th className="p-3">TIER ID</th>
                     <th className="p-3">DISPLAY NAME</th>
                     <th className="p-3">PRICE (KES)</th>
@@ -894,13 +1200,27 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-[var(--brand-navy)]/15 font-medium text-slate-800">
                   {ticketTiers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
+                      <td colSpan={8} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
                         No ticket tiers defined. Add one above.
                       </td>
                     </tr>
                   ) : (
                     ticketTiers.map((t) => (
                       <tr key={t.id} className="hover:bg-[var(--brand-navy)]/5">
+                        <td className="p-3">
+                          <input 
+                            type="checkbox"
+                            checked={selectedTierIds.includes(t.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTierIds([...selectedTierIds, t.id]);
+                              } else {
+                                setSelectedTierIds(selectedTierIds.filter(id => id !== t.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                          />
+                        </td>
                         <td className="p-3 font-mono font-black text-slate-900">{t.id}</td>
                         <td className="p-3 font-bold uppercase">{t.name}</td>
                         <td className="p-3 font-black text-slate-900">KES {Number(t.price).toLocaleString()}</td>
@@ -1048,6 +1368,19 @@ export default function AdminDashboardPage() {
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
               <span className="text-xs font-black tracking-widest uppercase">Trash</span>
               <div className="flex gap-2">
+                {(deletedTickets.length > 0 || deletedTiers.length > 0) && (
+                  <button 
+                    onClick={() => {
+                      setTrashActionType("clear_all");
+                      setTrashPassword("");
+                      setShowTrashPasswordModal(true);
+                    }}
+                    className="px-2 py-1 border border-red-400 hover:bg-red-600 hover:text-white text-xs font-black uppercase flex items-center gap-1 text-red-400"
+                    title="Permanently empty all trash items"
+                  >
+                    <Trash2 className="w-3 h-3" /> Empty Trash
+                  </button>
+                )}
                 <button 
                   onClick={loadDeletedItems}
                   className="p-1 border border-white hover:bg-white/10"
@@ -1057,6 +1390,60 @@ export default function AdminDashboardPage() {
                 </button>
               </div>
             </div>
+
+            {/* Bulk Toolbar for Trash */}
+            {(selectedTrashTicketIds.length > 0 || selectedTrashTierIds.length > 0) && (
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-amber-50 border-b-2 border-[var(--brand-navy)] text-xs font-black uppercase">
+                <span className="text-amber-900">Selected: {selectedTrashTicketIds.length} tickets, {selectedTrashTierIds.length} tiers</span>
+                <button
+                  onClick={async () => {
+                    if (confirm("Restore all selected items?")) {
+                      for (const id of selectedTrashTicketIds) {
+                        await fetch(`/api/admin/tickets/${id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ deleted_at: null })
+                        });
+                      }
+                      for (const id of selectedTrashTierIds) {
+                        await fetch(`/api/ticket-tiers/${id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ deleted_at: null })
+                        });
+                      }
+                      setSelectedTrashTicketIds([]);
+                      setSelectedTrashTierIds([]);
+                      loadDeletedItems();
+                      loadDashboardMetrics();
+                      loadTicketTiers();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 cursor-pointer border border-green-700"
+                >
+                  Bulk Restore
+                </button>
+                <button
+                  onClick={() => {
+                    setTrashActionType("delete_selected");
+                    setTrashPassword("");
+                    setShowTrashPasswordModal(true);
+                  }}
+                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 cursor-pointer border border-red-700"
+                >
+                  Bulk Permanent Delete
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedTrashTicketIds([]);
+                    setSelectedTrashTierIds([]);
+                  }}
+                  className="px-2.5 py-1 bg-white text-slate-700 text-[10px] font-black uppercase hover:bg-slate-100 cursor-pointer border border-slate-300 ml-auto"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
 
             {/* Deleted Tickets */}
             <div className="p-3 border-b-2 border-[var(--brand-navy)]">
@@ -1072,19 +1459,47 @@ export default function AdminDashboardPage() {
                 <div className="space-y-2">
                   {deletedTickets.map(t => (
                     <div key={t.id} className="flex items-center justify-between bg-red-50 border border-red-200 p-2">
-                      <div className="text-[10px]">
-                        <span className="font-black">{t.id}</span> — {t.ticket_type} — {t.phone_number}
-                        <br />
-                        <span className="text-slate-500">
-                          Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
-                        </span>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <input 
+                          type="checkbox"
+                          checked={selectedTrashTicketIds.includes(t.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTrashTicketIds([...selectedTrashTicketIds, t.id]);
+                            } else {
+                              setSelectedTrashTicketIds(selectedTrashTicketIds.filter(id => id !== t.id));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-black">{t.id}</span> — {t.ticket_type} — {t.phone_number}
+                          <br />
+                          <span className="text-slate-500">
+                            Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
+                          </span>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleRestoreTicket(t.id)}
-                        className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 flex items-center gap-1"
-                      >
-                        Restore
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleRestoreTicket(t.id)}
+                          className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTrashActionType("delete_selected");
+                            setSelectedTrashTicketIds([t.id]);
+                            setSelectedTrashTierIds([]);
+                            setTrashPassword("");
+                            setShowTrashPasswordModal(true);
+                          }}
+                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1105,19 +1520,47 @@ export default function AdminDashboardPage() {
                 <div className="space-y-2">
                   {deletedTiers.map(t => (
                     <div key={t.id} className="flex items-center justify-between bg-red-50 border border-red-200 p-2">
-                      <div className="text-[10px]">
-                        <span className="font-black">{t.name}</span> — KES {Number(t.price).toLocaleString()}
-                        <br />
-                        <span className="text-slate-500">
-                          Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
-                        </span>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <input 
+                          type="checkbox"
+                          checked={selectedTrashTierIds.includes(t.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTrashTierIds([...selectedTrashTierIds, t.id]);
+                            } else {
+                              setSelectedTrashTierIds(selectedTrashTierIds.filter(id => id !== t.id));
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-black">{t.name}</span> — KES {Number(t.price).toLocaleString()}
+                          <br />
+                          <span className="text-slate-500">
+                            Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
+                          </span>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleRestoreTier(t.id)}
-                        className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 flex items-center gap-1"
-                      >
-                        Restore
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleRestoreTier(t.id)}
+                          className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTrashActionType("delete_selected");
+                            setSelectedTrashTicketIds([]);
+                            setSelectedTrashTierIds([t.id]);
+                            setTrashPassword("");
+                            setShowTrashPasswordModal(true);
+                          }}
+                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1125,13 +1568,13 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="p-3 bg-slate-50 border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-slate-500">
-              Deleted items can be restored. Soft-delete only.
+              Deleted items can be restored, or permanently cleared with password.
             </div>
           </div>
         ) : (
           <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)] font-sans">
-              <span className="text-xs font-black tracking-widest uppercase">M-PESA PAYMENT & CALLBACK LOGS</span>
+              <span className="text-xs font-black tracking-widest uppercase">PAYMENT LOGS (Paystack + M-Pesa)</span>
               <div className="flex gap-2">
                 <button 
                   onClick={handleExportPayments}
@@ -1139,6 +1582,13 @@ export default function AdminDashboardPage() {
                   title="Export all logged payments to CSV"
                 >
                   <Download className="w-3.5 h-3.5" /> Export CSV
+                </button>
+                <button 
+                  onClick={handleClearAllPaymentLogs}
+                  className="px-2 py-1 border border-red-400 hover:bg-red-600 hover:text-white text-xs font-black uppercase flex items-center gap-1 text-red-400"
+                  title="Delete all payment log entries"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear All
                 </button>
                 <button 
                   onClick={loadPaymentLogs}
@@ -1150,29 +1600,84 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto md:overflow-visible">
+            {selectedPaymentLogIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-amber-50 border-b-2 border-[var(--brand-navy)] text-xs font-black uppercase font-sans">
+                <span className="text-amber-900">Selected: {selectedPaymentLogIds.length} logs</span>
+                <button
+                  onClick={async () => {
+                    if (confirm("Delete selected payment logs permanently?")) {
+                      for (const id of selectedPaymentLogIds) {
+                        await fetch(`/api/admin/payment-logs?id=${id}`, { method: "DELETE" });
+                      }
+                      setSelectedPaymentLogIds([]);
+                      loadPaymentLogs();
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 cursor-pointer border border-red-700"
+                >
+                  Delete Permanently
+                </button>
+                <button
+                  onClick={() => setSelectedPaymentLogIds([])}
+                  className="px-2.5 py-1 bg-white text-slate-700 text-[10px] font-black uppercase hover:bg-slate-100 cursor-pointer border border-slate-300 ml-auto"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
               {/* Desktop Table View */}
               <table className="hidden md:table w-full text-left text-xs min-w-[600px] font-sans">
                 <thead>
-                  <tr className="border-b-2 border-[var(--brand-navy)] bg-slate-50 uppercase text-[var(--brand-navy)] font-black">
+                    <tr className="border-b-2 border-[var(--brand-navy)] bg-slate-50 uppercase text-[var(--brand-navy)] font-black">
+                    <th className="p-3 w-8">
+                      <input 
+                        type="checkbox"
+                        checked={paymentLogs.length > 0 && selectedPaymentLogIds.length === paymentLogs.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPaymentLogIds(paymentLogs.map(log => log.id));
+                          } else {
+                            setSelectedPaymentLogIds([]);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                      />
+                    </th>
                     <th className="p-3">DATE / TIME</th>
                     <th className="p-3">RECEIPT</th>
                     <th className="p-3">PHONE</th>
                     <th className="p-3">AMOUNT</th>
                     <th className="p-3">STATUS</th>
-                    <th className="p-3">M-PESA RESPONSE MESSAGE</th>
+                    <th className="p-3">RESPONSE MESSAGE</th>
+                    <th className="p-3 text-right">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--brand-navy)]/15 font-medium text-slate-800">
                   {paymentLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
+                      <td colSpan={9} className="p-6 text-center text-slate-500 uppercase font-black tracking-widest">
                         Zero payments logged yet. Webhook callbacks will record here.
                       </td>
                     </tr>
                   ) : (
                     paymentLogs.map((log) => (
                       <tr key={log.id} className="hover:bg-[var(--brand-navy)]/5">
+                        <td className="p-3">
+                          <input 
+                            type="checkbox"
+                            checked={selectedPaymentLogIds.includes(log.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedPaymentLogIds([...selectedPaymentLogIds, log.id]);
+                              } else {
+                                setSelectedPaymentLogIds(selectedPaymentLogIds.filter(id => id !== log.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
+                          />
+                        </td>
                         <td className="p-3 font-mono text-[10px] text-slate-600">
                           {new Date(log.created_at).toLocaleString()}
                         </td>
@@ -1194,6 +1699,15 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="p-3 font-mono text-[10px] max-w-xs truncate" title={log.result_desc}>
                           {log.result_desc}
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleDeletePaymentLog(log.id)}
+                            className="text-red-600 hover:text-red-800 text-[11px] font-bold uppercase flex items-center gap-0.5 justify-end"
+                            title="Delete this payment log entry"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1242,9 +1756,17 @@ export default function AdminDashboardPage() {
                           <span className="font-mono text-slate-600">{new Date(log.created_at).toLocaleString()}</span>
                         </div>
                         <div className="col-span-2">
-                          <span className="text-[10px] text-slate-500 uppercase font-bold block">M-Pesa Response Message</span>
+                          <span className="text-[10px] text-slate-500 uppercase font-bold block">Response Message</span>
                           <span className="font-mono text-[10px] text-slate-600 break-words">{log.result_desc || "No message response"}</span>
                         </div>
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button
+                          onClick={() => handleDeletePaymentLog(log.id)}
+                          className="text-red-600 hover:text-red-800 text-[10px] font-bold uppercase flex items-center gap-0.5"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1253,7 +1775,7 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="p-3 bg-slate-50 border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-slate-500">
-              Audit log of all Safaricom callback payloads.
+              Audit log of all Paystack + M-Pesa transaction records.
             </div>
 
             {/* PENDING / ORPHANED PAYMENTS RECONCILIATION */}
@@ -1262,13 +1784,22 @@ export default function AdminDashboardPage() {
                 <span className="text-xs font-black tracking-widest uppercase text-amber-900 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4" /> PENDING PAYMENTS ({pendingPayments.length})
                 </span>
-                <button
-                  onClick={loadPendingPayments}
-                  className="p-1 border border-amber-900/30 hover:bg-amber-200 text-amber-900"
-                  title="Refresh pending payments"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleClearAllPendingPayments}
+                    className="px-2 py-1 border border-red-600/30 hover:bg-red-600 hover:text-white text-xs font-black uppercase flex items-center gap-1 text-red-700"
+                    title="Delete all pending payment records"
+                  >
+                    <Trash2 className="w-3 h-3" /> Clear All
+                  </button>
+                  <button
+                    onClick={loadPendingPayments}
+                    className="p-1 border border-amber-900/30 hover:bg-amber-200 text-amber-900"
+                    title="Refresh pending payments"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {pendingPayments.length === 0 ? (
@@ -1293,17 +1824,26 @@ export default function AdminDashboardPage() {
                         <span className="font-mono">KES {Number(pp.amount).toLocaleString()}</span>
                         <span className="text-slate-400">{pp.created_at ? new Date(pp.created_at).toLocaleString() : ""}</span>
                       </div>
-                      <button
-                        onClick={() => {
-                          setResolvingPayment(pp);
-                          setResolveReceipt("");
-                          setResolveAmount(Number(pp.amount));
-                          setResolveMessage("");
-                        }}
-                        className="text-xs font-black uppercase border-2 border-amber-600 text-amber-900 px-3 py-1 hover:bg-amber-600 hover:text-white transition-colors"
-                      >
-                        Resolve & Create Tickets
-                      </button>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          onClick={() => {
+                            setResolvingPayment(pp);
+                            setResolveReceipt("");
+                            setResolveAmount(Number(pp.amount));
+                            setResolveMessage("");
+                          }}
+                          className="text-xs font-black uppercase border-2 border-amber-600 text-amber-900 px-3 py-1 hover:bg-amber-600 hover:text-white transition-colors"
+                        >
+                          Resolve & Create Tickets
+                        </button>
+                        <button
+                          onClick={() => handleDeletePendingPayment(pp.checkout_request_id)}
+                          className="text-xs font-black uppercase border-2 border-red-300 text-red-600 px-3 py-1 hover:bg-red-600 hover:text-white transition-colors"
+                          title="Delete this pending payment record"
+                        >
+                          <Trash2 className="w-3 h-3 inline-block" /> Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1458,6 +1998,22 @@ export default function AdminDashboardPage() {
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
                 </div>
+                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
+                  <label className="text-xs font-black uppercase flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
+                    WhatsApp Message Template (optional)
+                  </label>
+                  <p className="text-[9px] text-slate-500 font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{phoneNumber}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{pdfUrl}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{eventTitle}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{eventSubtitle}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{eventVenue}}'}</code> <code className="bg-slate-100 px-1 font-mono text-[9px]">{'{{eventRegulations}}'}</code>
+                  </p>
+                  <textarea
+                    rows={4}
+                    value={eventFormState.whatsapp_message || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_message: e.target.value })}
+                    placeholder="Leave empty to use the default template."
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-2 pt-4 border-t border-[var(--brand-navy)]/15 shrink-0">
                 <button
@@ -1530,6 +2086,16 @@ export default function AdminDashboardPage() {
                     required
                     value={ticketFormState.phone_number || ""}
                     onChange={(e) => setTicketFormState({ ...ticketFormState, phone_number: e.target.value })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-black uppercase block mb-1">Alt WhatsApp Number (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +254..."
+                    value={ticketFormState.whatsapp_number || ""}
+                    onChange={(e) => setTicketFormState({ ...ticketFormState, whatsapp_number: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
                   />
                 </div>
@@ -1678,6 +2244,16 @@ export default function AdminDashboardPage() {
                     required
                     value={ticketFormState.phone_number || ""}
                     onChange={(e) => setTicketFormState({ ...ticketFormState, phone_number: e.target.value })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-black uppercase block mb-1">Alt WhatsApp Number (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +254..."
+                    value={ticketFormState.whatsapp_number || ""}
+                    onChange={(e) => setTicketFormState({ ...ticketFormState, whatsapp_number: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
                   />
                 </div>
@@ -2015,10 +2591,10 @@ export default function AdminDashboardPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
-              Confirm Deletion
+              Send to Trash
             </h3>
             <p className="text-xs font-bold text-[var(--brand-navy)] mb-6 uppercase">
-              Are you sure you want to permanently delete ticket <span className="font-mono text-red-600 font-black">{deletingTicketId}</span>? This action is irreversible.
+              Are you sure you want to send ticket <span className="font-mono text-red-600 font-black">{deletingTicketId}</span> to the Trash? You can restore it later.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -2033,7 +2609,7 @@ export default function AdminDashboardPage() {
                 onClick={handleConfirmDeleteTicket}
                 className="px-4 py-2 bg-red-600 text-white border-2 border-red-600 text-xs font-black uppercase cursor-pointer hover:bg-red-700 transition-colors"
               >
-                DELETE TICKET
+                Send to Trash
               </button>
             </div>
           </div>
@@ -2113,10 +2689,10 @@ export default function AdminDashboardPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
-              Confirm Deletion
+              Send to Trash
             </h3>
             <p className="text-xs font-bold text-[var(--brand-navy)] mb-6 uppercase">
-              Are you sure you want to permanently delete ticket tier <span className="font-mono text-red-600 font-black">{deletingTierId}</span>? This action is irreversible.
+              Are you sure you want to send ticket tier <span className="font-mono text-red-600 font-black">{deletingTierId}</span> to the Trash? You can restore it later.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -2131,9 +2707,60 @@ export default function AdminDashboardPage() {
                 onClick={handleConfirmDeleteTier}
                 className="px-4 py-2 bg-red-600 text-white border-2 border-red-600 text-xs font-black uppercase cursor-pointer hover:bg-red-700 transition-colors"
               >
-                DELETE TIER
+                Send to Trash
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRASH PASSWORD CONFIRMATION MODAL */}
+      {showTrashPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
+            <button
+              onClick={() => setShowTrashPasswordModal(false)}
+              className="absolute top-4 right-4 p-1 hover:bg-red-50 text-red-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
+              Trash Authorization Required
+            </h3>
+            <form onSubmit={handleTrashPasswordSubmit} className="space-y-4">
+              <p className="text-xs font-bold text-[var(--brand-navy)] uppercase">
+                {trashActionType === "clear_all" 
+                  ? "Are you sure you want to permanently empty the trash? All deleted items will be lost forever."
+                  : "Are you sure you want to permanently delete the selected items? This action cannot be undone."
+                }
+              </p>
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Admin Password</label>
+                <input
+                  type="password"
+                  required
+                  value={trashPassword}
+                  onChange={(e) => setTrashPassword(e.target.value)}
+                  placeholder="Enter GoodlifeAdmin2026!"
+                  className="w-full border-2 border-[var(--brand-navy)] px-3 py-2 font-mono text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTrashPasswordModal(false)}
+                  className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase bg-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-red-600 text-white border-2 border-red-600 text-xs font-black uppercase cursor-pointer hover:bg-red-700 transition-colors"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

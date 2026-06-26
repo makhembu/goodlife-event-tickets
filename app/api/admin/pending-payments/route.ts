@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAllPendingPayments, resolvePendingPayment } from "@/lib/supabase-db";
+import { fetchAllPendingPayments, resolvePendingPayment, deletePendingPayment, clearAllPendingPayments } from "@/lib/supabase-db";
 
 export async function GET() {
   try {
@@ -24,6 +24,28 @@ export async function POST(request: NextRequest) {
 
     const result = await resolvePendingPayment(checkout_request_id, mpesa_receipt, amount_paid);
     return NextResponse.json(result);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const checkoutRequestId = searchParams.get("checkout_request_id");
+    const all = searchParams.get("all");
+
+    if (all === "true") {
+      const ok = await clearAllPendingPayments();
+      return NextResponse.json({ success: ok });
+    }
+
+    if (!checkoutRequestId) {
+      return NextResponse.json({ error: "Missing ?checkout_request_id= or ?all=true" }, { status: 400 });
+    }
+
+    const ok = await deletePendingPayment(checkoutRequestId);
+    return NextResponse.json({ success: ok });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

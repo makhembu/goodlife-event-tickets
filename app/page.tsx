@@ -26,16 +26,18 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier } from "@/lib/supabase-db";
+import TicketStamp from "@/components/TicketStamp";
 
 
 
 export default function TicketCheckoutPage() {
   // Booking Form States
-  const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [selectedTier, setSelectedTier] = useState("ADV 500");
+  const [selectedTier, setSelectedTier] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [showWhatsAppField, setShowWhatsAppField] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState("");
   
   // App Processing States
   const [loading, setLoading] = useState(false);
@@ -56,18 +58,21 @@ export default function TicketCheckoutPage() {
   const [paystackReference, setPaystackReference] = useState<string | null>(null);
   const [paystackPollingTimedOut, setPaystackPollingTimedOut] = useState(false);
 
-  // Secret admin access (5x logo tap — fallback when not logged in)
+  // Secret admin access (5x logo tap fallback when not logged in)
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showSecretMenu, setShowSecretMenu] = useState(false);
   const logoTapTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = React.useRef<HTMLElement>(null);
+  const statusRef = React.useRef<HTMLDivElement>(null);
   const [headerBottom, setHeaderBottom] = useState(0);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
+  const [isTallScreen, setIsTallScreen] = useState(false);
 
   // Measure real header bottom (including page top padding) on mount + resize
   useEffect(() => {
     const update = () => {
       setIsSmallScreen(window.innerWidth < 1024);
+      setIsTallScreen(window.innerHeight > 850);
       if (headerRef.current) {
         // getBoundingClientRect gives position relative to viewport
         setHeaderBottom(Math.round(headerRef.current.getBoundingClientRect().bottom));
@@ -146,11 +151,11 @@ export default function TicketCheckoutPage() {
     id: 1,
     title: "GOODLIFE",
     subtitle: "237-THIKA | JULY 11",
-    tag: "SMWHR INC · MARARA CAMP",
+    tag: "SMWHR INC / MARARA CAMP",
     venue: "MARARA CAMP, THIKA",
     till_number: "5761205",
     flyer_url: "/flyer.png",
-    regulations: "Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified."
+    regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification."
   });
 
   // Dynamic Ticket Tiers from Database
@@ -187,10 +192,10 @@ export default function TicketCheckoutPage() {
   const TICKET_TIERS = React.useMemo(() => {
     if (ticketTiers.length === 0) {
       return [
-        { id: "ADV 500", name: "ADV 500", price: 500, desc: "Advance Ticket entry validation", tag: "ADVANCE" },
+        { id: "ADV 500", name: "ADV 500", price: 500, desc: "Advance entry pass", tag: "ADVANCE" },
         { id: "2PX CAMPING", name: "2PX CAMPING", price: 2500, desc: "Includes shared tent + mattress setup", tag: "2 PEOPLE" },
-        { id: "4PX CAMPING", name: "4PX CAMPING", price: 2400, desc: "Includes tent + sleeping sleeping bag/mat", tag: "4 PEOPLE" },
-        { id: "6PX 3000", name: "6PX 3000", price: 3000, desc: "Premium group camp setting", tag: "6 PEOPLE" }
+        { id: "4PX CAMPING", name: "4PX CAMPING", price: 2400, desc: "Includes tent + sleeping mats", tag: "4 PEOPLE" },
+        { id: "6PX 3000", name: "6PX 3000", price: 3000, desc: "Group camp setup", tag: "6 PEOPLE" }
       ];
     }
     return ticketTiers
@@ -215,6 +220,16 @@ export default function TicketCheckoutPage() {
   const safeSelectedTier = React.useMemo(() => {
     const available = TICKET_TIERS.map(t => t.id);
     return available.includes(selectedTier) ? selectedTier : available[0];
+  }, [TICKET_TIERS, selectedTier]);
+
+  // Automatically select the first available tier if the current selection becomes invalid
+  useEffect(() => {
+    if (TICKET_TIERS.length > 0) {
+      const available = TICKET_TIERS.map(t => t.id);
+      if (!available.includes(selectedTier)) {
+        setSelectedTier(available[0]);
+      }
+    }
   }, [TICKET_TIERS, selectedTier]);
 
   // State to track scroll for sticky bottom CTA on mobile
@@ -243,24 +258,27 @@ export default function TicketCheckoutPage() {
     setGeneratedTicketId(null);
     setStatusMessage("");
 
-    if (!email) {
-      setStatusMessage("Please enter your email address.");
+    if (!phoneNumber) {
+      setStatusMessage("Please enter your M-Pesa phone number.");
       return;
     }
 
     setLoading(true);
-    setStatusMessage("Initializing Paystack M-Pesa STK Push...");
+    setStatusMessage("Initializing M-Pesa STK Push...");
+
+    const autoEmail = phoneNumber.replace(/[^0-9]/g, "") + "@example.goodlife.com";
 
     try {
       const res = await fetch("/api/paystack/initialize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
+          email: autoEmail,
           phone_number: phoneNumber,
           ticket_type: safeSelectedTier,
           buyer_name: buyerName,
-          quantity: Number(quantity)
+          quantity: Number(quantity),
+          whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : ""
         })
       });
 
@@ -290,14 +308,14 @@ export default function TicketCheckoutPage() {
             const data = await res.json();
             if (data.status === "completed" && data.ticket_id) {
               setGeneratedTicketId(data.ticket_id);
-              setStatusMessage("PAYMENT VERIFIED! Ticket successfully generated.");
+              setStatusMessage("Payment confirmed. Your ticket is ready.");
               setLoading(false);
               clearInterval(interval);
             } else if (data.status === "failed") {
               clearInterval(interval);
               setLoading(false);
               setPaystackPollingTimedOut(true);
-              setStatusMessage("PAYMENT FAILED: Transaction was declined or cancelled. Please try again.");
+        setStatusMessage("Payment failed: transaction was declined or cancelled. Please try again.");
             }
           }
         } catch (err) {
@@ -311,13 +329,20 @@ export default function TicketCheckoutPage() {
     };
   }, [paystackReference, generatedTicketId]);
 
-  // Polling timeout — show manual retry after 2 minutes
+  // Auto-scroll to payment status when it changes
+  useEffect(() => {
+    if (statusMessage && statusRef.current) {
+      statusRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [statusMessage]);
+
+  // Polling timeout — show manual retry after 15 seconds
   useEffect(() => {
     if (!paystackReference || generatedTicketId) {
       setPaystackPollingTimedOut(false);
       return;
     }
-    const timer = setTimeout(() => setPaystackPollingTimedOut(true), 120000);
+    const timer = setTimeout(() => setPaystackPollingTimedOut(true), 15000);
     return () => clearTimeout(timer);
   }, [paystackReference, generatedTicketId]);
 
@@ -330,20 +355,20 @@ export default function TicketCheckoutPage() {
         const data = await res.json();
         if (data.status === "completed" && data.ticket_id) {
           setGeneratedTicketId(data.ticket_id);
-          setStatusMessage("PAYMENT VERIFIED! Ticket successfully generated.");
+          setStatusMessage("Payment confirmed. Your ticket is ready.");
           setLoading(false);
           setPaystackPollingTimedOut(false);
         } else if (data.status === "failed") {
-          setStatusMessage("PAYMENT FAILED: Transaction was declined or cancelled. Please try again.");
+          setStatusMessage("Payment failed: transaction was declined or cancelled. Please try again.");
           setLoading(false);
         } else {
-          setStatusMessage("STATUS CHECK: Payment not yet confirmed. Please try again or contact admin.");
+          setStatusMessage("Status check: payment is not confirmed yet. Try again or contact admin.");
         }
       } else {
-        setStatusMessage("STATUS CHECK: Server error. Contact admin if payment was deducted.");
+        setStatusMessage("Status check: server error. Contact admin if payment was deducted.");
       }
     } catch {
-      setStatusMessage("STATUS CHECK: Network error. Check your connection and try again.");
+      setStatusMessage("Status check: network error. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -359,20 +384,21 @@ export default function TicketCheckoutPage() {
       <div className="relative z-10 max-w-6xl mx-auto">
         {/* HEADER NAVBAR */}
         <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-black pb-3 mb-4 md:pb-6 md:mb-8 gap-2 md:gap-4">
-          <div
-            className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none"
+          <button
+            type="button"
+            className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
             onClick={handleLogoTap}
-            title=""
+            aria-label={isAdmin ? `${eventDetails.title} home` : "Open staff access after five taps"}
           >
             <div className="p-1 md:p-2 border-2 border-brand-black bg-brand-accent shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] flex items-center justify-center">
               {eventDetails.logo_url ? (
-                <img src={eventDetails.logo_url} alt="Logo" className="w-5 h-5 md:w-6 md:h-6 object-contain" />
+                <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
               ) : (
                 <Flame className="w-5 h-5 md:w-6 md:h-6 text-brand-black" strokeWidth={2.5} />
               )}
             </div>
             <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-black pt-1">{eventDetails.title}</span>
-          </div>
+          </button>
           <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
             {myTickets.length > 0 && (
               <button 
@@ -413,7 +439,7 @@ export default function TicketCheckoutPage() {
             >
               <div className="flex items-center justify-between border-b-2 border-brand-off-white/20 pb-2 mb-1">
                 <span className="font-display text-lg uppercase tracking-widest text-brand-accent">Staff Only</span>
-                <button onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-white text-xl leading-none">&times;</button>
+                <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-white text-xl leading-none">&times;</button>
               </div>
               <Link
                 href="/admin/dashboard"
@@ -540,7 +566,7 @@ export default function TicketCheckoutPage() {
             <div
               id="booking-container"
               className="border-4 border-brand-black bg-brand-off-white p-4 md:p-8 relative shadow-[12px_12px_0px_0px_#050505] overflow-y-auto"
-              style={headerBottom > 0
+              style={headerBottom > 0 && !isSmallScreen && isTallScreen
                 ? { maxHeight: `calc(100dvh - ${headerBottom + 16}px)` }
                 : undefined}
             >
@@ -548,7 +574,7 @@ export default function TicketCheckoutPage() {
                 <div className="bg-brand-black text-brand-off-white p-1">
                   <TicketIcon className="w-5 h-5 md:w-8 md:h-8" />
                 </div>
-                GET YOUR PASSES
+                GET YOUR TICKETS
               </h2>
 
               <form onSubmit={handleCheckout} className="space-y-3 md:space-y-5">
@@ -613,14 +639,16 @@ export default function TicketCheckoutPage() {
                   <div className="space-y-2.5 md:space-y-5 flex flex-col">
                     {/* STEP 2: BUYER FULL NAME */}
                     <div className="space-y-1 md:space-y-2">
-                      <div className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                      <label htmlFor="buyer-name" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                         02. YOUR DETAILS
-                      </div>
+                      </label>
                       <input
                         id="buyer-name"
+                        name="buyerName"
                         type="text"
+                        autoComplete="name"
                         required
-                        placeholder="E.G. JOHN DOE"
+                        placeholder="E.g. Amani Mwangi"
                         value={buyerName}
                         onChange={(e) => setBuyerName(e.target.value)}
                         className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-black bg-white font-mono text-xs md:text-sm uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_#050505] transition-all text-brand-black"
@@ -629,26 +657,30 @@ export default function TicketCheckoutPage() {
 
                     {/* STEP 3: TICKET QUANTITY */}
                     <div className="space-y-1 md:space-y-2">
-                      <div className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                      <div id="quantity-label" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                         03. HOW MANY PASSES?
                       </div>
-                      <div className="flex border-4 border-brand-black bg-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] w-fit">
+                      <div className="flex border-4 border-brand-black bg-white shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] w-fit" role="group" aria-labelledby="quantity-label">
                         <button
                           type="button"
+                          aria-label="Decrease ticket quantity"
                           onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-8 h-8 md:w-12 md:h-12 border-r-4 border-brand-black font-display text-lg md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
+                          className="w-12 h-12 border-r-4 border-brand-black font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
                         >
                           -
                         </button>
                         <span
-                          className="w-10 md:w-16 flex items-center justify-center font-display text-xl md:text-3xl bg-brand-bg"
+                          className="w-12 md:w-16 h-12 flex items-center justify-center font-display text-xl md:text-3xl bg-brand-bg"
+                          aria-live="polite"
+                          aria-atomic="true"
                         >
                           {quantity}
                         </span>
                         <button
                           type="button"
+                          aria-label="Increase ticket quantity"
                           onClick={() => setQuantity(Math.min(10, quantity + 1))}
-                          className="w-8 h-8 md:w-12 md:h-12 border-l-4 border-brand-black font-display text-lg md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
+                          className="w-12 h-12 border-l-4 border-brand-black font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-black transition-colors flex items-center justify-center"
                         >
                           +
                         </button>
@@ -658,25 +690,21 @@ export default function TicketCheckoutPage() {
 
                   {/* RIGHT COLUMN: Phone Number & Total */}
                   <div className="space-y-2.5 md:space-y-5 flex flex-col">
-                    {/* STEP 4: EMAIL + PHONE */}
+                    {/* STEP 4: M-PESA NUMBER */}
                     <div className="space-y-1 md:space-y-2">
-                      <div className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
-                        04. CONTACT DETAILS
-                      </div>
-                      <input
-                        type="email"
-                        required
-                        placeholder="EMAIL ADDRESS"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-black bg-white font-mono text-xs md:text-sm lowercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_#050505] transition-all text-brand-black"
-                      />
+                      <label htmlFor="mpesa-number" className="bg-brand-black text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                        04. M-PESA NUMBER
+                      </label>
                       <div className="relative flex items-stretch">
                         <div className="flex items-center justify-center px-3 md:px-5 border-4 border-r-0 border-brand-black bg-brand-black text-brand-off-white pointer-events-none">
                           <Phone className="h-4 w-4 md:h-5 md:w-5" />
                         </div>
                         <input
+                           id="mpesa-number"
+                          name="phoneNumber"
                           type="text"
+                          inputMode="tel"
+                          autoComplete="tel"
                           required
                           placeholder="0712 345 678"
                           value={phoneNumber}
@@ -684,9 +712,54 @@ export default function TicketCheckoutPage() {
                           className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-black bg-white font-mono text-xs md:text-sm uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-[4px_4px_0px_0px_#050505] transition-all text-brand-black"
                         />
                       </div>
-                      <p className="text-[8.5px] md:text-[9px] text-brand-black/60 font-mono uppercase bg-brand-black/5 px-2 py-1 md:p-3 border-l-4 border-brand-black">
-                        M-Pesa STK push via Paystack. Enter PIN on your phone.
+                      <p className="text-xs text-brand-black/75 font-mono uppercase bg-brand-black/5 px-3 py-2 border-l-4 border-brand-accent">
+                        STK push to <strong className="text-brand-black">{phoneNumber || "your number"}</strong> — <span className="text-brand-accent font-bold">ENTER PIN</span> when prompted on your phone. Ticket delivered here via WhatsApp.
                       </p>
+
+                      {!showWhatsAppField ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowWhatsAppField(true)}
+                          className="w-full flex items-center gap-2 border-4 border-dashed border-brand-black/40 bg-brand-off-white/50 px-3 py-2.5 hover:border-brand-black hover:bg-brand-accent/10 transition-colors group cursor-pointer"
+                        >
+                          <svg aria-hidden="true" className="w-4 h-4 shrink-0 text-brand-black/40 group-hover:text-brand-black transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-brand-black/60 group-hover:text-brand-black transition-colors">
+                            Send ticket to a different WhatsApp number
+                          </span>
+                          <ArrowRight className="w-3.5 h-3.5 ml-auto shrink-0 text-brand-black/40 group-hover:text-brand-black transition-colors" />
+                        </button>
+                      ) : (
+                        <div className="border-4 border-brand-black bg-white">
+                          <div className="flex items-stretch">
+                            <div className="flex items-center justify-center px-3 border-r-4 border-brand-black bg-brand-black text-white pointer-events-none">
+                              <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
+                            </div>
+                            <input
+                              id="whatsapp-number"
+                              name="whatsappNumber"
+                              type="text"
+                              inputMode="tel"
+                              autoComplete="tel"
+                              aria-label="Different number for WhatsApp delivery"
+                              placeholder="WhatsApp number"
+                              value={whatsappNumber}
+                              onChange={(e) => setWhatsappNumber(e.target.value)}
+                              className="flex-1 min-w-0 px-3 py-2.5 font-mono text-[10px] uppercase placeholder-brand-black/30 focus:outline-none focus:bg-brand-accent/5 text-brand-black border-0"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => { setShowWhatsAppField(false); setWhatsappNumber(""); }}
+                              aria-label="Remove WhatsApp number"
+                              className="px-3 border-l-4 border-brand-black bg-white text-brand-black/30 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors font-mono text-sm font-bold"
+                            >
+                              X
+                            </button>
+                          </div>
+                          <p className="text-[8px] font-mono uppercase text-brand-black/40 bg-brand-black/5 px-3 py-1.5 border-t-4 border-brand-black">
+                            Leave blank to send ticket only to your M-Pesa number
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* TOTAL RECEIPT BLOCK */}
@@ -727,20 +800,27 @@ export default function TicketCheckoutPage() {
                     </>
                   )}
                 </button>
+
+                {/* Gateway Reassurance */}
+                <p className="text-[10px] text-center font-mono uppercase text-brand-black/60 mt-2 flex items-center justify-center gap-1.5 select-none">
+                  <ShieldCheck className="w-3.5 h-3.5 text-brand-black/60 shrink-0" strokeWidth={2.5} />
+                  <span>SECURED BY PAYSTACK.</span>
+                  <span>AN INSTANT M-PESA PIN PROMPT WILL BE SENT.</span>
+                </p>
               </form>
 
               {/* PAYMENT STATUS DISPLAY */}
               {statusMessage && (
-                <div className="mt-8 p-5 border-4 border-brand-black bg-white shadow-[4px_4px_0px_0px_#050505]">
+                <div ref={statusRef} role="status" aria-live="polite" className="mt-8 p-5 border-4 border-brand-black bg-white shadow-[4px_4px_0px_0px_#050505]">
                   <span className="text-brand-accent font-display text-xl uppercase block mb-2">PAYMENT UPDATE</span>
                   <p className="font-mono text-xs text-brand-black uppercase leading-relaxed">{statusMessage}</p>
 
                   {paystackPollingTimedOut && paystackReference && !generatedTicketId && (
                     <div className="mt-4 pt-4 border-t-2 border-brand-black/20 space-y-3">
-                      <div className={`flex items-start gap-2 ${statusMessage.includes("FAILED") ? "text-red-700" : "text-amber-700"}`}>
+                      <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-red-700" : "text-amber-700"}`}>
                         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-[10px] font-mono uppercase leading-relaxed">
-                          {statusMessage.includes("FAILED")
+                          {statusMessage.toLowerCase().includes("failed")
                             ? "Transaction was declined. Try again with sufficient M-Pesa balance."
                             : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
                         </p>
@@ -776,8 +856,7 @@ export default function TicketCheckoutPage() {
                       className="w-full flex items-center justify-between border-b-2 border-brand-off-white/20 pb-3 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
                     >
                       <div className="flex items-center gap-3">
-                        <CheckCircle2 className="w-8 h-8 text-brand-accent" />
-                        <span className="font-display text-3xl uppercase pt-1">YOU'RE IN!</span>
+                        <span className="font-display text-3xl uppercase pt-1">YOU ARE IN!</span>
                       </div>
                       <div className="text-brand-accent">
                         {isVaultOpen ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
@@ -834,13 +913,13 @@ export default function TicketCheckoutPage() {
                               <Download className="w-6 h-6" strokeWidth={2.5} /> DOWNLOAD
                             </a>
                             <a
-                              href={`https://wa.me/?text=Just%20copped%20my%20ticket%20for%20${encodeURIComponent(eventDetails.title)}!%20%F0%9F%94%A5%20Get%20yours%20here:%20${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "https://goodlife.com")}`}
+                              href={`https://wa.me/?text=I%20got%20my%20ticket%20for%20${encodeURIComponent(eventDetails.title)}.%20Get%20yours%20here:%20${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "https://goodlife.com")}`}
                               target="_blank"
                               rel="noreferrer"
                               className="w-full py-4 border-4 border-[#25D366] bg-[#25D366] text-brand-black font-display text-2xl uppercase hover:bg-white transition-colors flex items-center justify-center gap-2"
                             >
                               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
-                              FLEX IT
+                              SHARE
                             </a>
                           </div>
                           <div>
@@ -910,6 +989,9 @@ export default function TicketCheckoutPage() {
         {isFlyerExpanded && (
           <motion.div 
             className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-black/90 p-4 md:p-12 cursor-pointer backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${eventDetails.title} flyer preview`}
             onClick={() => setIsFlyerExpanded(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -945,6 +1027,8 @@ export default function TicketCheckoutPage() {
                 />
               )}
               <button 
+                type="button"
+                aria-label="Close flyer preview"
                 className="absolute top-4 right-4 md:top-8 md:right-8 bg-brand-accent border-2 md:border-4 border-brand-black px-2.5 py-1 md:px-4 md:py-2 text-sm md:text-2xl font-black uppercase text-brand-black shadow-[2px_2px_0px_0px_#050505] md:shadow-[4px_4px_0px_0px_#050505] hover:bg-white hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] md:hover:translate-x-1 md:hover:translate-y-1 transition-all z-[110] flex items-center justify-center leading-none"
                 onClick={(e) => {
                   e.stopPropagation();
