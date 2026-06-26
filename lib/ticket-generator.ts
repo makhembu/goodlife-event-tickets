@@ -98,6 +98,7 @@ export async function generateTicketPdf(
   // ── Palette (GOODLIFE Denim) ────────────────────────────────────────────
   const BRAND_OFF_WHITE = hex("#F3ECE1");
   const BRAND_BLACK     = hex("#142B4C");
+  const BRAND_NAVY_LIGHT = hex("#2B547E");
   const BRAND_ACCENT    = hex("#C79A56");
   const WHITE           = rgb(1, 1, 1);
 
@@ -245,13 +246,13 @@ export async function generateTicketPdf(
     let val = rawVal;
     while (fBold.widthOfTextAtSize(val, 14) > MAX_VAL_W && val.length > 3) val = val.slice(0, -1);
     if (val !== rawVal) val += "..";
-    drawField(page, label, val, col1X, fy, fBold, fDisplay, BRAND_ACCENT, BRAND_BLACK);
+    drawField(page, label, val, col1X, fy, fBold, fDisplay, BRAND_NAVY_LIGHT, BRAND_BLACK);
   }
   for (const [label, rawVal, fy] of rightFields) {
     let val = rawVal;
     while (fBold.widthOfTextAtSize(val, 14) > MAX_VAL_W && val.length > 3) val = val.slice(0, -1);
     if (val !== rawVal) val += "..";
-    drawField(page, label, val, col2X, fy, fBold, fDisplay, BRAND_ACCENT, BRAND_BLACK);
+    drawField(page, label, val, col2X, fy, fBold, fDisplay, BRAND_NAVY_LIGHT, BRAND_BLACK);
   }
 
   // ── Price ─────────────────────────────────────────────────────────────────
