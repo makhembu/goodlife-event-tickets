@@ -26,6 +26,7 @@ export interface EventDetails {
   ticker_text?: string;
   logo_url?: string | null; // optional custom logo image URL
   simulators_enabled?: boolean;
+  operator_notifications_enabled?: boolean;
   footer_title?: string;
   footer_legal?: string;
   whatsapp_message?: string;

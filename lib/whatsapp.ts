@@ -27,7 +27,9 @@ export async function sendTicketViaWhatsApp(
       eventRegs = ed.regulations?.replace(/\n/g, " | ") || eventRegs;
       whatsappTemplate = ed.whatsapp_message || "";
     }
-  } catch {}
+  } catch (err) {
+    console.warn("Failed to load event details for operator notifications:", err);
+  }
 
   let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
   if (formattedPhone.startsWith("0")) {
@@ -50,7 +52,7 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{eventVenue\}\}/g, eventVenue)
       .replace(/\{\{eventRegulations\}\}/g, eventRegs);
   } else {
-    messageText = `*${eventTitle} TICKET SECURED!* 🎫✨\n\nTicket Confirmed for ${eventTitle} ${eventSubtitle}.\n\n📄 *Ticket ID:* ${ticketId}\n📲 *Phone:* ${phoneNumber}\n\n👉 *Download PDF Ticket:* ${pdfUrl}\n\nPresent the PDF QR Code at the entry for digital scanning.\n\n*REGULATIONS:*\n📍 VENUE: ${eventVenue}\n${eventRegs}`;
+    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
 
   try {
@@ -188,6 +190,19 @@ export async function notifyOperators(
     .filter(n => n.length > 0);
 
   if (operators.length === 0) return;
+
+  let eventDetails: any = null;
+  try {
+    const { fetchEventDetails } = await import("@/lib/supabase-db");
+    eventDetails = await fetchEventDetails();
+  } catch (err) {
+    console.warn("Failed to load event details for operator broadcast check:", err);
+  }
+
+  if (eventDetails?.operator_notifications_enabled === false) {
+    console.log("Operator notifications are disabled in event settings. Skipping operator broadcast.");
+    return;
+  }
 
   const messageText = `🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* ${buyerName}\n🎫 *Tier:* ${ticketType} (Qty: ${quantity})\n💵 *Amount Paid:* KES ${amountPaid}\n📄 *Reference/ID:* ${reference}`;
 

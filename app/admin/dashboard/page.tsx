@@ -105,6 +105,8 @@ export default function AdminDashboardPage() {
 
   // Trash / restore states
   const [deletedTickets, setDeletedTickets] = useState<Ticket[]>([]);
+
+  const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
   const [deletedTiers, setDeletedTiers] = useState<TicketTier[]>([]);
   const [loadingTrash, setLoadingTrash] = useState(false);
 
@@ -132,11 +134,12 @@ export default function AdminDashboardPage() {
       const details = await fetchEventDetails();
       setEventDetails(details);
       
-      const defaultTemplate = `*{{eventTitle}} TICKET SECURED!* 🎫✨\n\nTicket Confirmed for {{eventTitle}} {{eventSubtitle}}.\n\n📄 *Ticket ID:* {{ticketId}}\n📲 *Phone:* {{phoneNumber}}\n\n👉 *Download PDF Ticket:* {{pdfUrl}}\n\nPresent the PDF QR Code at the entry for digital scanning.\n\n*REGULATIONS:*\n📍 VENUE: {{eventVenue}}\n{{eventRegulations}}`;
-      
       setEventFormState({
         ...details,
-        whatsapp_message: details.whatsapp_message || defaultTemplate
+        whatsapp_message: details.whatsapp_message?.trim()
+          ? details.whatsapp_message
+          : getDefaultWhatsAppTemplate(),
+        operator_notifications_enabled: details.operator_notifications_enabled ?? true
       });
     } catch (err) {
       console.error("Failed to load event details:", err);
@@ -627,7 +630,13 @@ export default function AdminDashboardPage() {
           <button
             onClick={() => {
               setIsEditingEvent(true);
-              setEventFormState(eventDetails || {});
+              setEventFormState({
+                ...eventDetails,
+                whatsapp_message: eventDetails?.whatsapp_message?.trim()
+                  ? eventDetails.whatsapp_message
+                  : getDefaultWhatsAppTemplate(),
+                operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? true
+              });
             }}
             className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-[var(--brand-off-white)]"
           >
@@ -1965,6 +1974,28 @@ export default function AdminDashboardPage() {
                       }`}
                     >
                       {eventFormState.simulators_enabled !== false ? "ENABLED" : "DISABLED"}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black uppercase block">Operator WhatsApp Notifications</span>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Enable or disable operator broadcast alerts</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEventFormState({
+                        ...eventFormState,
+                        operator_notifications_enabled: !(eventFormState.operator_notifications_enabled === false)
+                      })}
+                      className={`text-xs font-black px-4 py-2 border-2 uppercase transition-all cursor-pointer ${
+                        eventFormState.operator_notifications_enabled !== false
+                          ? "bg-green-600 border-green-600 text-white"
+                          : "bg-red-600 border-red-600 text-white"
+                      }`}
+                    >
+                      {eventFormState.operator_notifications_enabled !== false ? "ENABLED" : "DISABLED"}
                     </button>
                   </div>
                 </div>

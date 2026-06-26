@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS event_details (
   ticker_text TEXT DEFAULT '',
   logo_url TEXT DEFAULT '',
   simulators_enabled BOOLEAN DEFAULT TRUE,
+  operator_notifications_enabled BOOLEAN DEFAULT TRUE,
   footer_title VARCHAR(255) DEFAULT 'GOODLIFE TICKETING',
   footer_legal VARCHAR(255) DEFAULT 'STRICTLY 18+ NO OUTSIDE DRINKS',
   whatsapp_message TEXT DEFAULT ''

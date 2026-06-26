@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS event_details (
   flyer_url TEXT NOT NULL DEFAULT '/flyer.png',
   regulations TEXT NOT NULL DEFAULT 'Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified.',
   ticker_text TEXT NOT NULL DEFAULT 'NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦',
-  logo_url TEXT DEFAULT NULL
+  logo_url TEXT DEFAULT NULL,
+  operator_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+  whatsapp_message TEXT NOT NULL DEFAULT ''
 );
 
 -- Enable RLS
