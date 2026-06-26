@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
+import { getTicketById } from "@/lib/supabase-db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sent = await sendTicketViaWhatsApp(ticketId, phoneNumber);
+    const ticket = await getTicketById(ticketId);
+    const buyerName = ticket?.buyer_name || "";
+    const sent = await sendTicketViaWhatsApp(ticketId, phoneNumber, buyerName);
 
     if (!sent) {
       return NextResponse.json(

@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     // Call WhatsApp Dispatcher Service asynchronously for each ticket
     for (const ticket of createdTickets) {
       try {
-        await sendTicketViaWhatsApp(ticket.id, phone_number);
+        await sendTicketViaWhatsApp(ticket.id, phone_number, ticket.buyer_name);
       } catch (wsErr) {
         console.error(`WhatsApp delivery failed for ticket ${ticket.id}:`, wsErr);
       }

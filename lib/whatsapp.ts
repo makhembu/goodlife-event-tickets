@@ -1,6 +1,7 @@
 export async function sendTicketViaWhatsApp(
   ticketId: string,
-  phoneNumber: string
+  phoneNumber: string,
+  buyerName?: string
 ) {
   const url = process.env.WHATSAPP_GATEWAY_URL;
   const apiKey = process.env.WHATSAPP_API_KEY;
@@ -50,9 +51,10 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{eventTitle\}\}/g, eventTitle)
       .replace(/\{\{eventSubtitle\}\}/g, eventSubtitle)
       .replace(/\{\{eventVenue\}\}/g, eventVenue)
-      .replace(/\{\{eventRegulations\}\}/g, eventRegs);
+      .replace(/\{\{buyerName\}\}/g, buyerName || "")
+    .replace(/\{\{eventRegulations\}\}/g, eventRegs);
   } else {
-    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
+    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
 
   try {
@@ -204,7 +206,14 @@ export async function notifyOperators(
     return;
   }
 
-  const messageText = `🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* ${buyerName}\n🎫 *Tier:* ${ticketType} (Qty: ${quantity})\n💵 *Amount Paid:* KES ${amountPaid}\n📄 *Reference/ID:* ${reference}`;
+  const defaultOperatorTemplate = "🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* {{buyerName}}\n🎫 *Tier:* {{ticketType}} (Qty: {{quantity}})\n💵 *Amount Paid:* KES {{amountPaid}}\n📄 *Reference/ID:* {{reference}}";
+  const operatorTemplate = eventDetails?.whatsapp_operator_template || defaultOperatorTemplate;
+  const messageText = operatorTemplate
+    .replace(/\{\{buyerName\}\}/g, buyerName)
+    .replace(/\{\{ticketType\}\}/g, ticketType)
+    .replace(/\{\{quantity\}\}/g, String(quantity))
+    .replace(/\{\{amountPaid\}\}/g, String(amountPaid))
+    .replace(/\{\{reference\}\}/g, reference);
 
   const isWaha = process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism");
 
@@ -284,7 +293,19 @@ export async function sendScanNotification(
     formattedPhone = "254" + formattedPhone;
   }
 
-  const messageText = `🎫 *GOODLIFE ENTRY VALIDATED!* ✅\n\nYour ticket has been verified at the gate.\n\n👤 *Attendee:* ${buyerName}\n🎫 *Ticket Type:* ${ticketType}\n📄 *Ticket ID:* ${ticketId}\n💂‍♂️ *Scanned By:* ${scannerName}\n⏰ *Time:* ${new Date().toLocaleTimeString()}\n\nWelcome to GOODLIFE! Enjoy the experience! 🎉`;
+  const defaultScanTemplate = "🎫 *GOODLIFE ENTRY VALIDATED!* ✅\n\nYour ticket has been verified at the gate.\n\n👤 *Attendee:* {{buyerName}}\n🎫 *Ticket Type:* {{ticketType}}\n📄 *Ticket ID:* {{ticketId}}\n💂‍♂️ *Scanned By:* {{scannerName}}\n⏰ *Time:* {{scanTime}}\n\nWelcome to GOODLIFE! Enjoy the experience! 🎉";
+  let eventDetails: any = null;
+  try {
+    const { fetchEventDetails } = await import("@/lib/supabase-db");
+    eventDetails = await fetchEventDetails();
+  } catch {}
+  const scanTemplate = eventDetails?.whatsapp_scan_template || defaultScanTemplate;
+  const messageText = scanTemplate
+    .replace(/\{\{buyerName\}\}/g, buyerName)
+    .replace(/\{\{ticketType\}\}/g, ticketType)
+    .replace(/\{\{ticketId\}\}/g, ticketId)
+    .replace(/\{\{scannerName\}\}/g, scannerName)
+    .replace(/\{\{scanTime\}\}/g, new Date().toLocaleTimeString());
 
   const isWaha = process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism");
 

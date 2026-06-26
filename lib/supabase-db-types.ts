@@ -30,6 +30,8 @@ export interface EventDetails {
   footer_title?: string;
   footer_legal?: string;
   whatsapp_message?: string;
+  whatsapp_operator_template?: string;
+  whatsapp_scan_template?: string;
 }
 
 export interface PendingPayment {

@@ -161,7 +161,7 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
 
   // Server side - Neon SQL
   try {
-    const { rows } = await neonQuery("SELECT * FROM tickets WHERE id = $1 LIMIT 1", [id]);
+    const { rows } = await neonQuery("SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL LIMIT 1", [id]);
     if (rows.length === 0) return null;
     const r = rows[0];
     return {
@@ -181,7 +181,7 @@ export async function savePdfData(id: string, base64Pdf: string): Promise<void> 
   if (typeof window !== "undefined") return; // server-only
   try {
     await neonQuery(
-      "UPDATE tickets SET pdf_data = $1 WHERE id = $2",
+      "UPDATE tickets SET pdf_data = $1 WHERE id = $2 AND deleted_at IS NULL",
       [base64Pdf, id]
     );
   } catch (err) {
@@ -218,7 +218,7 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
     // Idempotency check: if a ticket with this mpesa_receipt already exists, return it
     if (newTicket.mpesa_receipt) {
       const { rows: existing } = await neonQuery(
-        "SELECT * FROM tickets WHERE mpesa_receipt = $1 LIMIT 1",
+        "SELECT * FROM tickets WHERE mpesa_receipt = $1 AND deleted_at IS NULL LIMIT 1",
         [newTicket.mpesa_receipt]
       );
       if (existing.length > 0) {
@@ -308,7 +308,7 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
   // Server side - Neon SQL
   try {
     await neonQuery(
-      "UPDATE tickets SET is_scanned = TRUE, scanned_at = $1, scanned_by = $2 WHERE id = $3",
+      "UPDATE tickets SET is_scanned = TRUE, scanned_at = $1, scanned_by = $2 WHERE id = $3 AND deleted_at IS NULL",
       [updatedTicket.scanned_at, updatedTicket.scanned_by, id]
     );
 
@@ -357,7 +357,9 @@ let localEventDetails: EventDetails = {
   operator_notifications_enabled: false,
   footer_title: "GOODLIFE TICKETING",
   footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS",
-  whatsapp_message: ""
+  whatsapp_message: "",
+  whatsapp_operator_template: "",
+  whatsapp_scan_template: "",
 };
 
 function getLocalEventDetails(): EventDetails {
@@ -425,8 +427,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
   // Server side - Neon SQL
   try {
     await neonQuery(
-      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message, whatsapp_operator_template, whatsapp_scan_template)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title,
          subtitle = EXCLUDED.subtitle,
@@ -441,7 +443,9 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
          operator_notifications_enabled = EXCLUDED.operator_notifications_enabled,
          footer_title = EXCLUDED.footer_title,
          footer_legal = EXCLUDED.footer_legal,
-         whatsapp_message = EXCLUDED.whatsapp_message`,
+         whatsapp_message = EXCLUDED.whatsapp_message,
+         whatsapp_operator_template = EXCLUDED.whatsapp_operator_template,
+         whatsapp_scan_template = EXCLUDED.whatsapp_scan_template`,
       [
         updated.title,
         updated.subtitle,
@@ -456,7 +460,9 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
         updated.operator_notifications_enabled ?? false,
         updated.footer_title || "GOODLIFE TICKETING",
         updated.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS",
-        updated.whatsapp_message || ""
+        updated.whatsapp_message || "",
+        updated.whatsapp_operator_template || "",
+        updated.whatsapp_scan_template || ""
       ]
     );
     return updated;
@@ -496,7 +502,7 @@ export async function updateTicket(id: string, updates: Partial<Ticket>): Promis
     const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
     const values = fields.map(f => (updates as any)[f]);
     await neonQuery(
-      `UPDATE tickets SET ${setClause} WHERE id = $1`,
+      `UPDATE tickets SET ${setClause} WHERE id = $1 AND deleted_at IS NULL`,
       [id, ...values]
     );
     return updatedTicket;
@@ -774,7 +780,7 @@ export async function resolvePendingPayment(
 
       try {
         const { sendTicketViaWhatsApp } = await import("@/lib/whatsapp");
-        await sendTicketViaWhatsApp(ticket.id, pending.phone_number);
+        await sendTicketViaWhatsApp(ticket.id, pending.phone_number, pending.buyer_name);
       } catch (wsErr) {
         console.error(`WhatsApp delivery failed for ticket ${ticket.id}:`, wsErr);
       }

@@ -108,9 +108,12 @@ export default function ScannerControlPage() {
         body: JSON.stringify({ scanned_by: scannerName })
       });
 
-      const data: ScannedResult = await res.json();
+      const data: ScannedResult = res.ok ? await res.json() : {
+        success: false,
+        message: `Server error (${res.status}). Try again or contact admin.`
+      };
       setLastScanResult(data);
-      
+
       // Prepend to history stack
       setRecentScans(prev => [data, ...prev.slice(0, 9)]);
 
@@ -186,6 +189,13 @@ export default function ScannerControlPage() {
               ticketId = parts[parts.length - 1];
             } else if (decodedText.startsWith("GL-")) {
               ticketId = decodedText;
+            } else {
+              // Not a GOODLIFE ticket QR — reject immediately
+              setLastScanResult({
+                success: false,
+                message: "INVALID QR: This code is not a GOODLIFE event ticket."
+              });
+              return;
             }
 
             await scanner.stop().catch(() => {});

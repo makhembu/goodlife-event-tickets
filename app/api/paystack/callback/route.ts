@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const deliveryPhone = whatsappNumber || phoneNumber;
     for (const ticket of createdTickets) {
       try {
-        await sendTicketViaWhatsApp(ticket.id, deliveryPhone);
+        await sendTicketViaWhatsApp(ticket.id, deliveryPhone, ticket.buyer_name);
       } catch (wsErr) {
         console.error(`WhatsApp delivery failed for ticket ${ticket.id}:`, wsErr);
       }

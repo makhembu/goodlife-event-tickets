@@ -114,7 +114,9 @@ export default function AdminDashboardPage() {
   // Trash / restore states
   const [deletedTickets, setDeletedTickets] = useState<Ticket[]>([]);
 
-  const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
+  const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
+  const getDefaultOperatorTemplate = () => "🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* {{buyerName}}\n🎫 *Tier:* {{ticketType}} (Qty: {{quantity}})\n💵 *Amount Paid:* KES {{amountPaid}}\n📄 *Reference/ID:* {{reference}}";
+  const getDefaultScanTemplate = () => "🎫 *GOODLIFE ENTRY VALIDATED!* ✅\n\nYour ticket has been verified at the gate.\n\n👤 *Attendee:* {{buyerName}}\n🎫 *Ticket Type:* {{ticketType}}\n📄 *Ticket ID:* {{ticketId}}\n💂‍♂️ *Scanned By:* {{scannerName}}\n⏰ *Time:* {{scanTime}}\n\nWelcome to GOODLIFE! Enjoy the experience! 🎉";
   const [deletedTiers, setDeletedTiers] = useState<TicketTier[]>([]);
   const [loadingTrash, setLoadingTrash] = useState(false);
 
@@ -164,6 +166,12 @@ export default function AdminDashboardPage() {
         whatsapp_message: details.whatsapp_message?.trim()
           ? details.whatsapp_message
           : getDefaultWhatsAppTemplate(),
+        whatsapp_operator_template: details.whatsapp_operator_template?.trim()
+          ? details.whatsapp_operator_template
+          : getDefaultOperatorTemplate(),
+        whatsapp_scan_template: details.whatsapp_scan_template?.trim()
+          ? details.whatsapp_scan_template
+          : getDefaultScanTemplate(),
         operator_notifications_enabled: details.operator_notifications_enabled ?? false
       });
     } catch (err) {
@@ -2124,13 +2132,43 @@ export default function AdminDashboardPage() {
                     WhatsApp Message Template (optional)
                   </label>
                   <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventRegulations}}'}</code>
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventRegulations}}'}</code>
                   </p>
                   <textarea
                     rows={4}
                     value={eventFormState.whatsapp_message || ""}
                     onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_message: e.target.value })}
                     placeholder="Leave empty to use the default template."
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
+                  <label className="text-xs font-black uppercase flex items-center gap-2">
+                    Operator WhatsApp Template (optional)
+                  </label>
+                  <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{quantity}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{amountPaid}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{reference}}'}</code>
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={eventFormState.whatsapp_operator_template || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_operator_template: e.target.value })}
+                    placeholder="Leave empty to use the default operator template."
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
+                  <label className="text-xs font-black uppercase flex items-center gap-2">
+                    Scan Notification Template (optional)
+                  </label>
+                  <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{scannerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{scanTime}}'}</code>
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={eventFormState.whatsapp_scan_template || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_scan_template: e.target.value })}
+                    placeholder="Leave empty to use the default scan template."
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
                   />
                 </div>
