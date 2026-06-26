@@ -305,7 +305,7 @@ export async function sendScanNotification(
     .replace(/\{\{ticketType\}\}/g, ticketType)
     .replace(/\{\{ticketId\}\}/g, ticketId)
     .replace(/\{\{scannerName\}\}/g, scannerName)
-    .replace(/\{\{scanTime\}\}/g, new Date().toLocaleTimeString());
+    .replace(/\{\{scanTime\}\}/g, new Date().toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi", hour: "2-digit", minute: "2-digit" }));
 
   const isWaha = process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism");
 

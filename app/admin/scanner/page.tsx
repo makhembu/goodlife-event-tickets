@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { 
+import { fmtDate, fmtTime } from "@/lib/utils";
+import {
   QrCode, 
   Flame, 
   Search, 
@@ -448,7 +449,7 @@ export default function ScannerControlPage() {
                       <p>RECEIPT: <span className="font-mono">{lastScanResult.ticket.mpesa_receipt}</span></p>
                       {lastScanResult.ticket.scanned_at && (
                         <p className="text-[10px] text-current/60 font-mono">
-                          SCANNED {new Date(lastScanResult.ticket.scanned_at).toLocaleString()}
+                          SCANNED {fmtDate(lastScanResult.ticket.scanned_at)}
                         </p>
                       )}
                     </div>
@@ -537,7 +538,7 @@ export default function ScannerControlPage() {
                       </span>
                       {ticket.is_scanned && (
                         <span className="text-[8px] font-mono mt-0.5 text-red-700 font-bold">
-                          {new Date(ticket.scanned_at).toLocaleTimeString()}
+                          {fmtTime(ticket.scanned_at)}
                         </span>
                       )}
                     </div>
@@ -579,7 +580,7 @@ export default function ScannerControlPage() {
                       </span>
                       {ticket.scanned_at && (
                         <span className="text-[8px] font-mono mt-0.5 text-red-700 font-bold">
-                          {new Date(ticket.scanned_at).toLocaleTimeString()} by {ticket.scanned_by || "Gate"}
+                          {fmtTime(ticket.scanned_at)} by {ticket.scanned_by || "Gate"}
                         </span>
                       )}
                     </div>

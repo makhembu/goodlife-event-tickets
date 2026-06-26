@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
+import { fmtDate, fmtTime } from "@/lib/utils";
 import {
   fetchDashboardMetrics, 
   processTicketScan, 
@@ -59,6 +60,7 @@ interface MetricsState {
 export default function AdminDashboardPage() {
   const [metrics, setMetrics] = useState<MetricsState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"ledger" | "tiers" | "payments" | "trash" | "paystack">("ledger");
   const [ledgerTab, setLedgerTab] = useState<"all" | "active" | "scanned">("all");
 
@@ -273,7 +275,7 @@ export default function AdminDashboardPage() {
       log.amount || "0",
       log.status,
       `"${(log.result_desc || "").replace(/"/g, '""')}"`,
-      new Date(log.created_at).toLocaleString()
+      fmtDate(log.created_at)
     ]);
 
     const csvContent = [
@@ -325,9 +327,9 @@ export default function AdminDashboardPage() {
       t.phone_number,
       t.ticket_type,
       Number(t.amount_paid).toString(),
-      new Date(t.purchase_time).toLocaleString(),
+      fmtDate(t.purchase_time),
       t.is_scanned ? "SCANNED" : "ACTIVE",
-      t.scanned_at ? new Date(t.scanned_at).toLocaleString() : "",
+      t.scanned_at ? fmtDate(t.scanned_at) : "",
       t.scanned_by || ""
     ]);
 
@@ -459,6 +461,7 @@ export default function AdminDashboardPage() {
 
   const handleSaveEventDetails = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving("event");
     try {
       const updated = await updateEventDetails(eventFormState);
       setEventDetails(updated);
@@ -466,7 +469,7 @@ export default function AdminDashboardPage() {
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to update event details:", err);
-    }
+    } finally { setSaving(null); }
   };
 
   const handleEditTicketClick = (ticket: Ticket) => {
@@ -477,13 +480,14 @@ export default function AdminDashboardPage() {
   const handleSaveTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTicket) return;
+    setSaving("ticket");
     try {
       await updateTicket(editingTicket.id, ticketFormState);
       setEditingTicket(null);
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to update ticket:", err);
-    }
+    } finally { setSaving(null); }
   };
 
   const handleDeleteTicketClick = (id: string) => {
@@ -549,6 +553,7 @@ export default function AdminDashboardPage() {
 
   const handleSaveCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving("create");
     try {
       const ticket = await createTicket(ticketFormState as Ticket);
       if (ticket?.id) {
@@ -576,7 +581,7 @@ export default function AdminDashboardPage() {
       loadDashboardMetrics();
     } catch (err: any) {
       alert("Failed to create ticket: " + (err.message || "Unknown error"));
-    }
+    } finally { setSaving(null); }
   };
 
   const handleCreateTierClick = () => {
@@ -594,6 +599,7 @@ export default function AdminDashboardPage() {
 
   const handleSaveCreateTier = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving("tier");
     try {
       await createTicketTier(tierFormState as TicketTier);
       setIsCreatingTier(false);
@@ -601,7 +607,7 @@ export default function AdminDashboardPage() {
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to create ticket tier:", err);
-    }
+    } finally { setSaving(null); }
   };
 
   const handleEditTierClick = (tier: TicketTier) => {
@@ -612,6 +618,7 @@ export default function AdminDashboardPage() {
   const handleSaveTier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTier) return;
+    setSaving("edit-tier");
     try {
       await updateTicketTier(editingTier.id, tierFormState);
       setEditingTier(null);
@@ -619,7 +626,7 @@ export default function AdminDashboardPage() {
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to update ticket tier:", err);
-    }
+    } finally { setSaving(null); }
   };
 
   const handleToggleHiddenTier = async (tier: TicketTier) => {
@@ -1063,7 +1070,7 @@ export default function AdminDashboardPage() {
                         <td className="p-3 font-mono">{t.phone_number}</td>
                         <td className="p-3 font-black text-[var(--brand-navy)]">KES {Number(t.amount_paid).toLocaleString()}</td>
                         <td className="p-3 font-mono text-[10px] text-[var(--brand-navy)]/60">
-                          {new Date(t.purchase_time).toLocaleString()}
+                          {fmtDate(t.purchase_time)}
                         </td>
                         <td className="p-3">
                           {t.is_scanned ? (
@@ -1077,7 +1084,7 @@ export default function AdminDashboardPage() {
                           )}
                           {t.is_scanned && t.scanned_at && (
                             <span className="block text-[8px] font-mono text-red-600 mt-1">
-                              At {new Date(t.scanned_at).toLocaleTimeString()} by {t.scanned_by}
+                              At {fmtTime(t.scanned_at)} by {t.scanned_by}
                             </span>
                           )}
                         </td>
@@ -1166,10 +1173,10 @@ export default function AdminDashboardPage() {
                         </div>
                         <div className="col-span-2">
                           <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
-                          <span className="font-mono text-[var(--brand-navy)]/60">{new Date(t.purchase_time).toLocaleString()}</span>
+                          <span className="font-mono text-[var(--brand-navy)]/60">{fmtDate(t.purchase_time)}</span>
                           {t.is_scanned && t.scanned_at && (
                             <span className="block text-[8px] font-mono text-red-600 mt-1">
-                              Scanned at {new Date(t.scanned_at).toLocaleTimeString()} by {t.scanned_by}
+                              Scanned at {fmtTime(t.scanned_at)} by {t.scanned_by}
                             </span>
                           )}
                         </div>
@@ -1601,7 +1608,7 @@ export default function AdminDashboardPage() {
                           <span className="font-black">{t.id}</span> — {t.ticket_type} — {t.phone_number}
                           <br />
                           <span className="text-[var(--brand-navy-light)]">
-                            Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
+                            Deleted: {t.deleted_at ? fmtDate(t.deleted_at) : "unknown"}
                           </span>
                         </div>
                       </div>
@@ -1662,7 +1669,7 @@ export default function AdminDashboardPage() {
                           <span className="font-black">{t.name}</span> — KES {Number(t.price).toLocaleString()}
                           <br />
                           <span className="text-[var(--brand-navy-light)]">
-                            Deleted: {t.deleted_at ? new Date(t.deleted_at).toLocaleString() : "unknown"}
+                            Deleted: {t.deleted_at ? fmtDate(t.deleted_at) : "unknown"}
                           </span>
                         </div>
                       </div>
@@ -1806,7 +1813,7 @@ export default function AdminDashboardPage() {
                           />
                         </td>
                         <td className="p-3 font-mono text-[10px] text-[var(--brand-navy)]/60">
-                          {new Date(log.created_at).toLocaleString()}
+                          {fmtDate(log.created_at)}
                         </td>
                         <td className="p-3 font-mono font-bold">{log.mpesa_receipt || "PENDING"}</td>
                         <td className="p-3 font-mono">{log.phone_number || "N/A"}</td>
@@ -1880,7 +1887,7 @@ export default function AdminDashboardPage() {
                         </div>
                         <div className="col-span-2">
                           <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
-                          <span className="font-mono text-[var(--brand-navy)]/60">{new Date(log.created_at).toLocaleString()}</span>
+                          <span className="font-mono text-[var(--brand-navy)]/60">{fmtDate(log.created_at)}</span>
                         </div>
                         <div className="col-span-2">
                           <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Response Message</span>
@@ -1949,7 +1956,7 @@ export default function AdminDashboardPage() {
                       <div className="flex gap-4 text-xs">
                         <span className="font-black">{pp.ticket_type} × {pp.quantity}</span>
                         <span className="font-mono">KES {Number(pp.amount).toLocaleString()}</span>
-                        <span className="text-[var(--brand-navy)]/40">{pp.created_at ? new Date(pp.created_at).toLocaleString() : ""}</span>
+                        <span className="text-[var(--brand-navy)]/40">{pp.created_at ? fmtDate(pp.created_at) : ""}</span>
                       </div>
                       <div className="flex gap-2 items-center">
                         <button
@@ -2215,9 +2222,10 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving === "event"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-3.5 h-3.5" /> Save Changes
+                  {saving === "event" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> SAVING...</> : <><Save className="w-3.5 h-3.5" /> Save Changes</>}
                 </button>
               </div>
             </form>
@@ -2355,7 +2363,7 @@ export default function AdminDashboardPage() {
                       <input
                         type="text"
                         disabled
-                        value={ticketFormState.scanned_at ? new Date(ticketFormState.scanned_at).toLocaleString() : ""}
+                        value={ticketFormState.scanned_at ? fmtDate(ticketFormState.scanned_at) : ""}
                         className="w-full px-3 py-2 border-2 border-[var(--brand-navy)]/20 bg-[var(--brand-bg)] font-mono text-xs text-[var(--brand-navy-light)] cursor-not-allowed"
                       />
                     </div>
@@ -2372,9 +2380,10 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving === "ticket"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-3.5 h-3.5" /> Save
+                  {saving === "ticket" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> SAVING...</> : <><Save className="w-3.5 h-3.5" /> Save</>}
                 </button>
               </div>
             </form>
@@ -2500,9 +2509,10 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving === "create"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Create Ticket
+                  {saving === "create" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> CREATING...</> : <><Plus className="w-3.5 h-3.5" /> Create Ticket</>}
                 </button>
               </div>
             </form>
@@ -2636,9 +2646,10 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving === "tier"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add Tier
+                  {saving === "tier" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> ADDING...</> : <><Plus className="w-3.5 h-3.5" /> Add Tier</>}
                 </button>
               </div>
             </form>
@@ -2766,9 +2777,10 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving === "edit-tier"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-3.5 h-3.5" /> Save Changes
+                  {saving === "edit-tier" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> SAVING...</> : <><Save className="w-3.5 h-3.5" /> Save Changes</>}
                 </button>
               </div>
             </form>
