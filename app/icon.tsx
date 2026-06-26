@@ -25,25 +25,25 @@ export default async function Icon() {
     console.error("Failed to generate dynamic icon:", e);
   }
 
-  // Fallback: Red Flame icon rendered using ImageResponse
+  // Fallback: Brand flame icon in navy + gold
   return new ImageResponse(
     (
       <div
         style={{
-          fontSize: 22,
-          background: '#050505',
+          fontSize: 24,
+          background: '#142B4C',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#FF3300',
+          color: '#C79A56',
           fontWeight: 900,
-          border: '2px solid #FF3300',
+          border: '2px solid #C79A56',
           borderRadius: '4px',
         }}
       >
-        🔥
+        G
       </div>
     ),
     {

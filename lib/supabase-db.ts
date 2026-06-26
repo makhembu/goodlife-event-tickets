@@ -358,6 +358,7 @@ let localEventDetails: EventDetails = {
   footer_title: "GOODLIFE TICKETING",
   footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS",
   whatsapp_message: "",
+  payment_contact: "",
   whatsapp_operator_template: "",
   whatsapp_scan_template: "",
 };
@@ -427,8 +428,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
   // Server side - Neon SQL
   try {
     await neonQuery(
-      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message, whatsapp_operator_template, whatsapp_scan_template)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message, payment_contact, whatsapp_operator_template, whatsapp_scan_template)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title,
          subtitle = EXCLUDED.subtitle,
@@ -444,6 +445,7 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
          footer_title = EXCLUDED.footer_title,
          footer_legal = EXCLUDED.footer_legal,
          whatsapp_message = EXCLUDED.whatsapp_message,
+         payment_contact = EXCLUDED.payment_contact,
          whatsapp_operator_template = EXCLUDED.whatsapp_operator_template,
          whatsapp_scan_template = EXCLUDED.whatsapp_scan_template`,
       [
@@ -461,6 +463,7 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
         updated.footer_title || "GOODLIFE TICKETING",
         updated.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS",
         updated.whatsapp_message || "",
+        updated.payment_contact || "",
         updated.whatsapp_operator_template || "",
         updated.whatsapp_scan_template || ""
       ]

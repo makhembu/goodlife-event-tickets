@@ -206,7 +206,7 @@ export async function notifyOperators(
     return;
   }
 
-  const defaultOperatorTemplate = "🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* {{buyerName}}\n🎫 *Tier:* {{ticketType}} (Qty: {{quantity}})\n💵 *Amount Paid:* KES {{amountPaid}}\n📄 *Reference/ID:* {{reference}}";
+  const defaultOperatorTemplate = `*NEW TICKET SECURED*\n\nBuyer: {{buyerName}}\nTicket Type: {{ticketType}} (Qty: {{quantity}})\nAmount Paid: KES {{amountPaid}}\nReference/ID: {{reference}}`;
   const operatorTemplate = eventDetails?.whatsapp_operator_template || defaultOperatorTemplate;
   const messageText = operatorTemplate
     .replace(/\{\{buyerName\}\}/g, buyerName)
@@ -293,7 +293,7 @@ export async function sendScanNotification(
     formattedPhone = "254" + formattedPhone;
   }
 
-  const defaultScanTemplate = "🎫 *GOODLIFE ENTRY VALIDATED!* ✅\n\nYour ticket has been verified at the gate.\n\n👤 *Attendee:* {{buyerName}}\n🎫 *Ticket Type:* {{ticketType}}\n📄 *Ticket ID:* {{ticketId}}\n💂‍♂️ *Scanned By:* {{scannerName}}\n⏰ *Time:* {{scanTime}}\n\nWelcome to GOODLIFE! Enjoy the experience! 🎉";
+  const defaultScanTemplate = `*GOODLIFE GATE ENTRY VALIDATED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nTicket Type: {{ticketType}}\nScanned By: {{scannerName}}\nTime: {{scanTime}}`;
   let eventDetails: any = null;
   try {
     const { fetchEventDetails } = await import("@/lib/supabase-db");

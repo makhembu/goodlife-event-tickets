@@ -30,6 +30,7 @@ export interface EventDetails {
   footer_title?: string;
   footer_legal?: string;
   whatsapp_message?: string;
+  payment_contact?: string;
   whatsapp_operator_template?: string;
   whatsapp_scan_template?: string;
 }

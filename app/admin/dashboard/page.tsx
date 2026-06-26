@@ -115,8 +115,8 @@ export default function AdminDashboardPage() {
   const [deletedTickets, setDeletedTickets] = useState<Ticket[]>([]);
 
   const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
-  const getDefaultOperatorTemplate = () => "🔔 *NEW TICKET SECURED!* 🎫\n\n👤 *Buyer:* {{buyerName}}\n🎫 *Tier:* {{ticketType}} (Qty: {{quantity}})\n💵 *Amount Paid:* KES {{amountPaid}}\n📄 *Reference/ID:* {{reference}}";
-  const getDefaultScanTemplate = () => "🎫 *GOODLIFE ENTRY VALIDATED!* ✅\n\nYour ticket has been verified at the gate.\n\n👤 *Attendee:* {{buyerName}}\n🎫 *Ticket Type:* {{ticketType}}\n📄 *Ticket ID:* {{ticketId}}\n💂‍♂️ *Scanned By:* {{scannerName}}\n⏰ *Time:* {{scanTime}}\n\nWelcome to GOODLIFE! Enjoy the experience! 🎉";
+  const getDefaultOperatorTemplate = () => `*NEW TICKET SECURED*\n\nBuyer: {{buyerName}}\nTicket Type: {{ticketType}} (Qty: {{quantity}})\nAmount Paid: KES {{amountPaid}}\nReference/ID: {{reference}}`;
+  const getDefaultScanTemplate = () => `*{{eventTitle}} GATE ENTRY VALIDATED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nTicket Type: {{ticketType}}\nScanned By: {{scannerName}}\nTime: {{scanTime}}`;
   const [deletedTiers, setDeletedTiers] = useState<TicketTier[]>([]);
   const [loadingTrash, setLoadingTrash] = useState(false);
 
@@ -166,6 +166,7 @@ export default function AdminDashboardPage() {
         whatsapp_message: details.whatsapp_message?.trim()
           ? details.whatsapp_message
           : getDefaultWhatsAppTemplate(),
+        payment_contact: details.payment_contact || "",
         whatsapp_operator_template: details.whatsapp_operator_template?.trim()
           ? details.whatsapp_operator_template
           : getDefaultOperatorTemplate(),
@@ -550,12 +551,26 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     try {
       const ticket = await createTicket(ticketFormState as Ticket);
-      if (sendWhatsApp && ticket?.id && ticket?.phone_number) {
-        await fetch("/api/admin/send-whatsapp", {
+      if (ticket?.id) {
+        if (sendWhatsApp && ticket.phone_number) {
+          await fetch("/api/admin/send-whatsapp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticketId: ticket.id, phoneNumber: ticket.phone_number }),
+          });
+        }
+        // Notify operators
+        await fetch("/api/admin/notify-operators", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticketId: ticket.id, phoneNumber: ticket.phone_number }),
-        });
+          body: JSON.stringify({
+            buyerName: ticket.buyer_name,
+            ticketType: ticket.ticket_type,
+            quantity: 1,
+            amountPaid: ticket.amount_paid,
+            reference: ticket.id,
+          }),
+        }).catch(() => {});
       }
       setIsCreatingTicket(false);
       loadDashboardMetrics();
@@ -703,6 +718,13 @@ export default function AdminDashboardPage() {
                 whatsapp_message: eventDetails?.whatsapp_message?.trim()
                   ? eventDetails.whatsapp_message
                   : getDefaultWhatsAppTemplate(),
+                payment_contact: eventDetails?.payment_contact || "",
+                whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
+                  ? eventDetails.whatsapp_operator_template
+                  : getDefaultOperatorTemplate(),
+                whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
+                  ? eventDetails.whatsapp_scan_template
+                  : getDefaultScanTemplate(),
                 operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
               });
             }}
@@ -2022,6 +2044,16 @@ export default function AdminDashboardPage() {
                     required
                     value={eventFormState.till_number || ""}
                     onChange={(e) => setEventFormState({ ...eventFormState, till_number: e.target.value })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase">Payment Contact (for till users)</label>
+                  <input
+                    type="text"
+                    value={eventFormState.payment_contact || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, payment_contact: e.target.value })}
+                    placeholder="e.g. +254 700 000 000"
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
                 </div>

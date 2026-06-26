@@ -855,6 +855,19 @@ export default function TicketCheckoutPage() {
                   <span>SECURED BY PAYSTACK.</span>
                   <span>AN INSTANT M-PESA PIN PROMPT WILL BE SENT.</span>
                 </p>
+                {eventDetails?.payment_contact && (
+                  <div className="mt-3 p-4 border-4 border-brand-navy bg-brand-accent/10 shadow-[4px_4px_0px_0px_rgba(199,154,86,0.35)]">
+                    <p className="text-[10px] font-black uppercase text-brand-navy tracking-wider text-center">
+                      Prefer to send via M-Pesa Till?
+                    </p>
+                    <p className="text-2xl font-display text-brand-accent text-center mt-1 tracking-wide">
+                      #<span className="text-3xl">{eventDetails.till_number}</span>
+                    </p>
+                    <p className="text-[9px] font-mono uppercase text-brand-navy/70 text-center mt-2 pt-2 border-t-2 border-brand-navy/20">
+                      Send M-Pesa confirmation to <strong className="text-brand-navy">{eventDetails.payment_contact}</strong> to receive your ticket
+                    </p>
+                  </div>
+                )}
               </form>
 
               {/* PAYMENT STATUS DISPLAY */}

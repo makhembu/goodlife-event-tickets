@@ -189,6 +189,9 @@ export default function ScannerControlPage() {
               ticketId = parts[parts.length - 1];
             } else if (decodedText.startsWith("GL-")) {
               ticketId = decodedText;
+            } else if (decodedText.includes("/admin/scanner?ticket=")) {
+              const u = new URL(decodedText);
+              ticketId = u.searchParams.get("ticket") || decodedText;
             } else {
               // Not a GOODLIFE ticket QR — reject immediately
               setLastScanResult({
