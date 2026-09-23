@@ -1,3 +1,20 @@
+export interface Event {
+  id: number;
+  title: string;
+  subtitle: string;
+  tag: string;
+  venue: string;
+  flyer_url: string;
+  logo_url: string;
+  regulations: string;
+  ticker_text: string;
+  till_number: string;
+  event_date: string | null;
+  created_at: string;
+  archived_at: string | null;
+  is_active: boolean;
+}
+
 export interface Ticket {
   id: string;
   mpesa_receipt: string;
@@ -12,6 +29,7 @@ export interface Ticket {
   pdf_data?: string | null; // base64 cached PDF
   deleted_at?: string | null;
   whatsapp_number?: string | null;
+  event_id?: number | null;
 }
 
 export interface EventDetails {
@@ -24,7 +42,8 @@ export interface EventDetails {
   flyer_url: string;
   regulations: string;
   ticker_text?: string;
-  logo_url?: string | null; // optional custom logo image URL
+  logo_url?: string | null;
+  event_date?: string | null; // proper DATE field: "2026-09-05"
   simulators_enabled?: boolean;
   operator_notifications_enabled?: boolean;
   footer_title?: string;
@@ -46,6 +65,8 @@ export interface PendingPayment {
   status?: string;
   ticket_id?: string;
   whatsapp_number?: string;
+  mpesa_reference?: string;
+  event_id?: number | null;
 }
 
 export interface TicketTier {
@@ -54,8 +75,14 @@ export interface TicketTier {
   price: number;
   description: string;
   tag: string;
-  show_only_on_event_day: boolean;
-  hide_on_event_day: boolean;
+  available_from?: string | null;
+  available_until?: string | null;
+  max_quantity?: number | null;
+  sold_count?: number | null;
   hidden: boolean;
   deleted_at?: string | null;
+  event_id?: number | null;
+  // Legacy fields kept for migration compat
+  show_only_on_event_day?: boolean;
+  hide_on_event_day?: boolean;
 }

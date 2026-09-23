@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "apple-hig": {
+      "source": "nexu-io/open-design",
+      "sourceType": "github",
+      "skillPath": "skills/apple-hig/SKILL.md",
+      "computedHash": "eb92437ee278fa286e3fbd02e1712510ba6c888769b2cd590e8f1478757bee2f"
+    },
+    "ios-hig-design": {
+      "source": "wondelai/skills",
+      "sourceType": "github",
+      "skillPath": "ios-hig-design/SKILL.md",
+      "computedHash": "21049394e5852a37cd547cd60428a7b1ed1a74f8bf476d4cc61f12923fadeccf"
+    },
     "supabase": {
       "source": "supabase/agent-skills",
       "sourceType": "github",

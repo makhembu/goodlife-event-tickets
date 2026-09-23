@@ -1,8 +1,27 @@
 -- SQL Schema to create the tickets, event_details, and pending_payments tables in Neon PostgreSQL
 
+-- Events table (multi-event support)
+CREATE TABLE IF NOT EXISTS events (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  subtitle TEXT DEFAULT '',
+  tag TEXT DEFAULT '',
+  venue TEXT DEFAULT '',
+  flyer_url TEXT DEFAULT '/flyer.png',
+  logo_url TEXT DEFAULT '',
+  regulations TEXT DEFAULT '',
+  ticker_text TEXT DEFAULT '',
+  till_number TEXT DEFAULT '',
+  event_date TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  archived_at TIMESTAMP WITH TIME ZONE,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Tickets table
 CREATE TABLE IF NOT EXISTS tickets (
   id TEXT PRIMARY KEY,
-  mpesa_receipt TEXT UNIQUE NOT NULL,
+  mpesa_receipt TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   ticket_type TEXT NOT NULL,
   amount_paid NUMERIC NOT NULL,
@@ -10,8 +29,11 @@ CREATE TABLE IF NOT EXISTS tickets (
   is_scanned BOOLEAN DEFAULT false NOT NULL,
   scanned_at TIMESTAMP WITH TIME ZONE,
   scanned_by TEXT,
-  buyer_name TEXT NOT NULL DEFAULT 'Guest'
+  buyer_name TEXT NOT NULL DEFAULT 'Guest',
+  event_id INTEGER REFERENCES events(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_tickets_event_id ON tickets(event_id);
 
 -- Create event_details table
 CREATE TABLE IF NOT EXISTS event_details (
@@ -29,7 +51,8 @@ CREATE TABLE IF NOT EXISTS event_details (
   operator_notifications_enabled BOOLEAN DEFAULT FALSE,
   footer_title VARCHAR(255) DEFAULT 'GOODLIFE TICKETING',
   footer_legal VARCHAR(255) DEFAULT 'STRICTLY 18+ NO OUTSIDE DRINKS',
-  whatsapp_message TEXT DEFAULT ''
+  whatsapp_message TEXT DEFAULT '',
+  event_id INTEGER REFERENCES events(id)
 );
 
 -- Insert default row
@@ -48,5 +71,6 @@ CREATE TABLE IF NOT EXISTS pending_payments (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   status TEXT DEFAULT '',
   ticket_id TEXT DEFAULT '',
-  whatsapp_number TEXT DEFAULT ''
+  whatsapp_number TEXT DEFAULT '',
+  mpesa_reference TEXT DEFAULT ''
 );

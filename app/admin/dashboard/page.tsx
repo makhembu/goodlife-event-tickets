@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { fmtDate, fmtTime } from "@/lib/utils";
 import {
   fetchDashboardMetrics, 
+  fetchActiveEvent,
   processTicketScan, 
   Ticket,
   EventDetails,
@@ -40,13 +41,12 @@ import {
   Download,
   Eye,
   EyeOff,
-  BarChart3,
-  Wallet,
   ListChecks
 } from "lucide-react";
 import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
+import EventSelector from "@/components/EventSelector";
 
 interface MetricsState {
   totalCashCollected: number;
@@ -60,8 +60,10 @@ interface MetricsState {
 export default function AdminDashboardPage() {
   const [metrics, setMetrics] = useState<MetricsState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(1); // null = all events, number = specific event (default 1: GOODLIFE XP)
+  const selectedEventIdRef = React.useRef<number | null>(1);
   const [saving, setSaving] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"ledger" | "tiers" | "payments" | "trash" | "paystack">("ledger");
+  const [activeTab, setActiveTab] = useState<"ledger" | "tiers" | "payment-requests" | "payments" | "trash">("ledger");
   const [ledgerTab, setLedgerTab] = useState<"all" | "active" | "scanned">("all");
 
   // Event details editing states
@@ -74,6 +76,7 @@ export default function AdminDashboardPage() {
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
   const [ticketFormState, setTicketFormState] = useState<Partial<Ticket>>({});
   const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [isCrewPass, setIsCrewPass] = useState(false);
 
   // Ticket Tier editing states
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([]);
@@ -96,6 +99,10 @@ export default function AdminDashboardPage() {
   const [resolveReceipt, setResolveReceipt] = useState("");
   const [resolveAmount, setResolveAmount] = useState(0);
   const [resolveMessage, setResolveMessage] = useState("");
+
+  // Till payment requests state
+  const [tillPayments, setTillPayments] = useState<any[]>([]);
+  const [approvingPayment, setApprovingPayment] = useState<string | null>(null);
 
   // Selections for bulk actions
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
@@ -146,16 +153,26 @@ export default function AdminDashboardPage() {
     window.location.href = "/login";
   };
 
-  const loadDashboardMetrics = async () => {
+  const loadDashboardMetrics = async (eventId?: number | null) => {
     setLoading(true);
     try {
-      const data = await fetchDashboardMetrics();
+      const targetId = eventId !== undefined ? eventId : selectedEventIdRef.current;
+      // null = "All Events", mapped to -1 for the API
+      const queryId = targetId === null ? -1 : targetId;
+      const data = await fetchDashboardMetrics(queryId);
       setMetrics(data);
     } catch (err) {
       console.error("Failed to load metrics:", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEventSelect = (eventId: number | null) => {
+    setSelectedEventId(eventId);
+    selectedEventIdRef.current = eventId;
+    loadDashboardMetrics(eventId);
+    loadTicketTiers(eventId && eventId > 0 ? eventId : undefined);
   };
 
   const loadEventDetails = async () => {
@@ -182,9 +199,9 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const loadTicketTiers = async () => {
+  const loadTicketTiers = async (eventId?: number) => {
     try {
-      const tiers = await fetchTicketTiers();
+      const tiers = await fetchTicketTiers(eventId);
       setTicketTiers(tiers);
     } catch (err) {
       console.error("Failed to load ticket tiers:", err);
@@ -412,20 +429,87 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const loadTillPayments = async () => {
+    try {
+      const res = await fetch("/api/admin/pending-payments");
+      if (res.ok) {
+        const all = await res.json();
+        const till = all.filter((p: any) => p.status === "till_pending");
+        setTillPayments(till);
+      }
+    } catch (err) {
+      console.error("Failed to load till payments:", err);
+    }
+  };
+
+  const handleApproveTillPayment = async (pp: any) => {
+    if (!confirm(`Approve payment from ${pp.buyer_name} (${pp.mpesa_reference || "no ref"}) and create tickets?`)) return;
+    setApprovingPayment(pp.checkout_request_id);
+    try {
+      const ref = pp.mpesa_reference || pp.checkout_request_id.replace("TILL-", "").split("-")[0];
+      const res = await fetch("/api/admin/pending-payments/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkout_request_id: pp.checkout_request_id,
+          mpesa_reference: ref
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Tickets created: ${data.message}`);
+        loadTillPayments();
+        loadDashboardMetrics();
+      } else {
+        alert(`Failed: ${data.message}`);
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setApprovingPayment(null);
+    }
+  };
+
+  const handleRejectTillPayment = async (checkoutRequestId: string) => {
+    if (!confirm("Reject this payment request?")) return;
+    try {
+      await fetch("/api/admin/pending-payments/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checkout_request_id: checkoutRequestId })
+      });
+      loadTillPayments();
+    } catch (err) {
+      console.error("Failed to reject:", err);
+    }
+  };
+
   // Load metrics initially
   const didLoad = React.useRef(false);
   useEffect(() => {
     if (didLoad.current) return;
     didLoad.current = true;
-    loadDashboardMetrics();
+
+    // Fetch active event first to sync selectedEventId if needed
+    fetchActiveEvent().then((active) => {
+      const activeId = active?.id ?? 1;
+      setSelectedEventId(activeId);
+      selectedEventIdRef.current = activeId;
+      loadDashboardMetrics(activeId);
+      loadTicketTiers(activeId);
+    }).catch(() => {
+      loadDashboardMetrics(1);
+      loadTicketTiers(1);
+    });
+
     loadEventDetails();
-    loadTicketTiers();
     loadPaymentLogs();
     loadPendingPayments();
+    loadTillPayments();
 
-    // Auto refresh every 30 seconds
+    // Auto refresh every 30 seconds for currently selected event
     const timer = setInterval(() => {
-      loadDashboardMetrics();
+      loadDashboardMetrics(selectedEventIdRef.current);
     }, 30000);
 
     return () => {
@@ -540,6 +624,7 @@ export default function AdminDashboardPage() {
   const handleCreateTicketClick = () => {
     setIsCreatingTicket(true);
     setSendWhatsApp(false);
+    setIsCrewPass(false);
     const firstTier = ticketTiers.length > 0 ? ticketTiers[0] : null;
     setTicketFormState({
       id: "GL-" + Math.random().toString(36).substring(2, 10).toUpperCase(),
@@ -555,7 +640,10 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     setSaving("create");
     try {
-      const ticket = await createTicket(ticketFormState as Ticket);
+      const ticket = await createTicket({
+        ...ticketFormState,
+        event_id: ticketFormState.event_id ?? (selectedEventId && selectedEventId > 0 ? selectedEventId : undefined)
+      } as Ticket);
       if (ticket?.id) {
         if (sendWhatsApp && ticket.phone_number) {
           await fetch("/api/admin/send-whatsapp", {
@@ -578,7 +666,7 @@ export default function AdminDashboardPage() {
         }).catch(() => {});
       }
       setIsCreatingTicket(false);
-      loadDashboardMetrics();
+      loadDashboardMetrics(selectedEventId);
     } catch (err: any) {
       alert("Failed to create ticket: " + (err.message || "Unknown error"));
     } finally { setSaving(null); }
@@ -592,6 +680,9 @@ export default function AdminDashboardPage() {
       price: 0,
       description: "",
       tag: "",
+      available_from: null,
+      available_until: null,
+      max_quantity: null,
       show_only_on_event_day: false,
       hide_on_event_day: false
     });
@@ -601,12 +692,16 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     setSaving("tier");
     try {
-      await createTicketTier(tierFormState as TicketTier);
+      await createTicketTier({
+        ...tierFormState,
+        event_id: tierFormState.event_id ?? (selectedEventId && selectedEventId > 0 ? selectedEventId : undefined)
+      } as TicketTier);
       setIsCreatingTier(false);
-      loadTicketTiers();
-      loadDashboardMetrics();
-    } catch (err) {
+      await loadTicketTiers(selectedEventId && selectedEventId > 0 ? selectedEventId : undefined);
+      await loadDashboardMetrics(selectedEventId);
+    } catch (err: any) {
       console.error("Failed to create ticket tier:", err);
+      alert("Failed to create ticket tier: " + (err.message || "Unknown error"));
     } finally { setSaving(null); }
   };
 
@@ -708,12 +803,15 @@ export default function AdminDashboardPage() {
       {/* BRANDING HEADER SYSTEM */}
       <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between sm:items-center border-b-4 border-[var(--brand-navy)] pb-4 mb-6 gap-4">
         <div>
-          <span className="font-sans font-black tracking-widest text-[10px] bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
+          <span className="font-sans font-black tracking-widest text-[11px] bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
             ADMIN CONSOLE
           </span>
           <h1 className="text-3xl font-sans font-black tracking-tighter uppercase mt-1 leading-none text-[var(--brand-navy)]">
             {(eventDetails?.title || "GOODLIFE").toUpperCase()} ADMIN
           </h1>
+          <div className="mt-2">
+            <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
+          </div>
         </div>
 
         <div className="flex gap-2 shrink-0 flex-wrap">
@@ -776,7 +874,7 @@ export default function AdminDashboardPage() {
         />
 
         {/* TABS SELECTION BAR */}
-        <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[4px_4px_0px_0px_var(--brand-navy)] overflow-hidden">
+        <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-md) overflow-hidden">
           <button
             onClick={() => setActiveTab("ledger")}
             className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors ${
@@ -808,14 +906,14 @@ export default function AdminDashboardPage() {
             Payments ({paymentLogs.length})
           </button>
           <button
-            onClick={() => setActiveTab("paystack")}
+            onClick={() => setActiveTab("payment-requests")}
             className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
-              activeTab === "paystack"
+              activeTab === "payment-requests"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
             }`}
           >
-            Paystack
+            Payment Requests ({tillPayments.length})
           </button>
           <button
             onClick={() => { setActiveTab("trash"); loadDeletedItems(); }}
@@ -830,7 +928,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {activeTab === "ledger" ? (
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
             
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
               <span className="text-xs font-black tracking-widest uppercase">TICKET SALES LOG</span>
@@ -843,7 +941,7 @@ export default function AdminDashboardPage() {
                   <Plus className="w-3.5 h-3.5" /> Manual Ticket
                 </button>
                 <button 
-                  onClick={loadDashboardMetrics}
+                  onClick={() => loadDashboardMetrics(selectedEventId)}
                   className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/20 active:scale-95 transition-all duration-150"
                   title="Refresh master ledger"
                 >
@@ -854,11 +952,11 @@ export default function AdminDashboardPage() {
 
             {/* CSV Export Row with Filters */}
             <div className="flex flex-wrap items-center gap-2 p-2 bg-[var(--brand-off-white)] border-b-2 border-[var(--brand-navy)]">
-              <span className="text-[9px] font-black uppercase text-[var(--brand-navy)] mr-1">EXPORT:</span>
+              <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] mr-1">EXPORT:</span>
               <select
                 value={exportTicketTypeFilter}
                 onChange={(e) => setExportTicketTypeFilter(e.target.value)}
-                className="text-[10px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
+                className="text-[11px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
               >
                 <option value="">All Types</option>
                 {ticketTiers.map(t => (
@@ -868,7 +966,7 @@ export default function AdminDashboardPage() {
               <select
                 value={exportTicketStatusFilter}
                 onChange={(e) => setExportTicketStatusFilter(e.target.value as any)}
-                className="text-[10px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
+                className="text-[11px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
               >
                 <option value="all">All Status</option>
                 <option value="active">Active Only</option>
@@ -878,20 +976,20 @@ export default function AdminDashboardPage() {
                 type="date"
                 value={exportDateFrom}
                 onChange={(e) => setExportDateFrom(e.target.value)}
-                className="text-[10px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
+                className="text-[11px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
                 title="From date"
               />
-              <span className="text-[9px] text-[var(--brand-navy)]/60">-</span>
+              <span className="text-[11px] text-[var(--brand-navy)]/60">-</span>
               <input
                 type="date"
                 value={exportDateTo}
                 onChange={(e) => setExportDateTo(e.target.value)}
-                className="text-[10px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
+                className="text-[11px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
                 title="To date"
               />
               <button
                 onClick={handleExportTicketsCSV}
-                className="text-[10px] font-black uppercase border border-[var(--brand-navy)] bg-[var(--brand-navy)] text-white px-2.5 py-1 hover:opacity-80 active:scale-95 transition-all duration-150 flex items-center gap-1"
+                className="text-[11px] font-black uppercase border border-[var(--brand-navy)] bg-[var(--brand-navy)] text-white px-2.5 py-1 hover:opacity-80 active:scale-95 transition-all duration-150 flex items-center gap-1"
               >
                 <Download className="w-3 h-3" /> CSV
               </button>
@@ -907,7 +1005,7 @@ export default function AdminDashboardPage() {
                   <button
                     key={tab}
                     onClick={() => setLedgerTab(tab)}
-                    className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest border-b-2 -mb-[2px] transition-colors ${
+                    className={`flex-1 py-2 text-[11px] font-black uppercase tracking-widest border-b-2 -mb-[2px] transition-colors ${
                       ledgerTab === tab
                         ? "border-[var(--brand-navy)] text-[var(--brand-navy)]"
                         : "border-transparent text-[var(--brand-navy)]/40 hover:text-[var(--brand-navy)]/60"
@@ -932,7 +1030,7 @@ export default function AdminDashboardPage() {
                       loadDashboardMetrics();
                     }
                   }}
-                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
+                  className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
                 >
                   Send to Trash
                 </button>
@@ -955,7 +1053,7 @@ export default function AdminDashboardPage() {
                     alert(`${ok} sent to their own numbers, ${fail} failed.`);
                     if (ok > 0) { setSelectedTicketIds([]); loadDashboardMetrics(); }
                   }}
-                  className="px-2.5 py-1 bg-[var(--brand-navy)] text-white text-[10px] font-black uppercase hover:opacity-90 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]"
+                  className="px-2.5 py-1 bg-[var(--brand-navy)] text-white text-[11px] font-black uppercase hover:opacity-90 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]"
                 >
                   Resend WhatsApp
                 </button>
@@ -973,7 +1071,7 @@ export default function AdminDashboardPage() {
                       loadDashboardMetrics();
                     }
                   }}
-                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
+                  className="px-2.5 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
                 >
                   Mark Scanned
                 </button>
@@ -991,13 +1089,13 @@ export default function AdminDashboardPage() {
                       loadDashboardMetrics();
                     }
                   }}
-                  className="px-2.5 py-1 bg-blue-600 text-white text-[10px] font-black uppercase hover:bg-blue-700 active:scale-95 transition-all duration-150 cursor-pointer border border-blue-700"
+                  className="px-2.5 py-1 bg-blue-600 text-white text-[11px] font-black uppercase hover:bg-blue-700 active:scale-95 transition-all duration-150 cursor-pointer border border-blue-700"
                 >
                   Mark Active
                 </button>
                 <button
                   onClick={() => setSelectedTicketIds([])}
-                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy)] text-[10px] font-black uppercase hover:bg-[var(--brand-bg)] active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
+                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy)] text-[11px] font-black uppercase hover:bg-[var(--brand-bg)] active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
                 >
                   Deselect All
                 </button>
@@ -1059,7 +1157,7 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="p-3 flex flex-col">
                           <span className="font-mono font-black text-[var(--brand-navy)]">{t.id}</span>
-                          <span className="text-[10px] font-mono text-[var(--brand-navy-light)]">M-Pesa: {t.mpesa_receipt}</span>
+                          <span className="text-[11px] font-mono text-[var(--brand-navy-light)]">M-Pesa: {t.mpesa_receipt}</span>
                         </td>
                         <td className="p-3 font-bold text-[var(--brand-navy)] uppercase">{t.buyer_name}</td>
                         <td className="p-3 uppercase">
@@ -1068,22 +1166,22 @@ export default function AdminDashboardPage() {
                           </span>
                         </td>
                         <td className="p-3 font-mono">{t.phone_number}</td>
-                        <td className="p-3 font-black text-[var(--brand-navy)]">KES {Number(t.amount_paid).toLocaleString()}</td>
-                        <td className="p-3 font-mono text-[10px] text-[var(--brand-navy)]/60">
+                        <td className="p-3 font-black text-[var(--brand-navy)]">{t.ticket_type?.startsWith("CREW/") ? "Crew Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</td>
+                        <td className="p-3 font-mono text-[11px] text-[var(--brand-navy)]/60">
                           {fmtDate(t.purchase_time)}
                         </td>
                         <td className="p-3">
                           {t.is_scanned ? (
-                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[9px] flex items-center gap-1 w-max">
+                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[11px] flex items-center gap-1 w-max">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" /> SCANNED
                             </span>
                           ) : (
-                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[9px] flex items-center gap-1 w-max">
+                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[11px] flex items-center gap-1 w-max">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-600" /> ACTIVE
                             </span>
                           )}
                           {t.is_scanned && t.scanned_at && (
-                            <span className="block text-[8px] font-mono text-red-600 mt-1">
+                            <span className="block text-[11px] font-mono text-red-600 mt-1">
                               At {fmtTime(t.scanned_at)} by {t.scanned_by}
                             </span>
                           )}
@@ -1137,15 +1235,15 @@ export default function AdminDashboardPage() {
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col">
                           <span className="font-mono font-black text-[var(--brand-navy)] text-sm">{t.id}</span>
-                          <span className="text-[10px] font-mono text-[var(--brand-navy-light)]">M-Pesa: {t.mpesa_receipt}</span>
+                          <span className="text-[11px] font-mono text-[var(--brand-navy-light)]">M-Pesa: {t.mpesa_receipt}</span>
                         </div>
                         <div>
                           {t.is_scanned ? (
-                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[9px] flex items-center gap-1 w-max">
+                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[11px] flex items-center gap-1 w-max">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" /> SCANNED
                             </span>
                           ) : (
-                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[9px] flex items-center gap-1 w-max">
+                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[11px] flex items-center gap-1 w-max">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-600" /> ACTIVE
                             </span>
                           )}
@@ -1154,28 +1252,28 @@ export default function AdminDashboardPage() {
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Attendee</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Attendee</span>
                           <span className="font-bold text-[var(--brand-navy)] uppercase">{t.buyer_name}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Tier Type</span>
-                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-1.5 py-0.5 border border-[var(--brand-navy)]/20 font-black uppercase text-[10px] inline-block">
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Tier Type</span>
+                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-1.5 py-0.5 border border-[var(--brand-navy)]/20 font-black uppercase text-[11px] inline-block">
                             {t.ticket_type}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Phone</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Phone</span>
                           <span className="font-mono">{t.phone_number}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Amount Paid</span>
-                          <span className="font-black text-[var(--brand-navy)]">KES {Number(t.amount_paid).toLocaleString()}</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">{t.ticket_type?.startsWith("CREW/") ? "Pass Type" : "Amount Paid"}</span>
+                          <span className="font-black text-[var(--brand-navy)]">{t.ticket_type?.startsWith("CREW/") ? "Crew Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</span>
                         </div>
                         <div className="col-span-2">
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
                           <span className="font-mono text-[var(--brand-navy)]/60">{fmtDate(t.purchase_time)}</span>
                           {t.is_scanned && t.scanned_at && (
-                            <span className="block text-[8px] font-mono text-red-600 mt-1">
+                            <span className="block text-[11px] font-mono text-red-600 mt-1">
                               Scanned at {fmtTime(t.scanned_at)} by {t.scanned_by}
                             </span>
                           )}
@@ -1217,12 +1315,12 @@ export default function AdminDashboardPage() {
               </div>
             </div>
             
-            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
+            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[11px] text-[var(--brand-navy-light)]">
               Sales system active: 2026-06-17
             </div>
           </div>
         ) : activeTab === "tiers" ? (
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
               <span className="text-xs font-black tracking-widest uppercase">Manage Event Ticket Tiers</span>
               <div className="flex gap-2">
@@ -1234,7 +1332,7 @@ export default function AdminDashboardPage() {
                   <Plus className="w-3.5 h-3.5" /> Add Tier
                 </button>
                 <button 
-                  onClick={loadTicketTiers}
+                  onClick={() => loadTicketTiers(selectedEventId && selectedEventId > 0 ? selectedEventId : undefined)}
                   className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10"
                   title="Refresh ticket tiers"
                 >
@@ -1256,7 +1354,7 @@ export default function AdminDashboardPage() {
                       loadTicketTiers();
                     }
                   }}
-                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
+                  className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
                 >
                   Send to Trash
                 </button>
@@ -1272,7 +1370,7 @@ export default function AdminDashboardPage() {
                     setSelectedTierIds([]);
                     loadTicketTiers();
                   }}
-                  className="px-2.5 py-1 bg-brand-warning text-white text-[10px] font-black uppercase hover:bg-brand-warning active:scale-95 transition-all duration-150 cursor-pointer border border-brand-warning"
+                  className="px-2.5 py-1 bg-brand-warning text-white text-[11px] font-black uppercase hover:bg-brand-warning active:scale-95 transition-all duration-150 cursor-pointer border border-brand-warning"
                 >
                   Hide selected
                 </button>
@@ -1288,13 +1386,13 @@ export default function AdminDashboardPage() {
                     setSelectedTierIds([]);
                     loadTicketTiers();
                   }}
-                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
+                  className="px-2.5 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
                 >
                   Show selected
                 </button>
                 <button
                   onClick={() => setSelectedTierIds([])}
-                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[10px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
+                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[11px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
                 >
                   Deselect All
                 </button>
@@ -1357,29 +1455,29 @@ export default function AdminDashboardPage() {
                         <td className="p-3 font-bold uppercase">{t.name}</td>
                         <td className="p-3 font-black text-[var(--brand-navy)]">KES {Number(t.price).toLocaleString()}</td>
                         <td className="p-3 uppercase">
-                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-2 py-0.5 border border-[var(--brand-navy)]/20 font-black text-[10px]">
+                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-2 py-0.5 border border-[var(--brand-navy)]/20 font-black text-[11px]">
                             {t.tag}
                           </span>
                         </td>
                         <td className="p-3 text-[var(--brand-navy)]/60">{t.description}</td>
                         <td className="p-3">
                           {t.hidden && (
-                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[9px] block w-max mb-0.5">
+                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[11px] block w-max mb-0.5">
                               HIDDEN
                             </span>
                           )}
                           {t.show_only_on_event_day && (
-                            <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-2 py-0.5 uppercase text-[9px] block w-max">
+                            <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-2 py-0.5 uppercase text-[11px] block w-max">
                               SHOW ON EVENT DAY ONLY
                             </span>
                           )}
                           {t.hide_on_event_day && (
-                            <span className="bg-[var(--brand-navy)]/5 border border-[var(--brand-navy)]/20 text-[var(--brand-navy-light)] font-bold px-2 py-0.5 uppercase text-[9px] block w-max">
+                            <span className="bg-[var(--brand-navy)]/5 border border-[var(--brand-navy)]/20 text-[var(--brand-navy-light)] font-bold px-2 py-0.5 uppercase text-[11px] block w-max">
                               HIDE ON EVENT DAY
                             </span>
                           )}
                           {!t.show_only_on_event_day && !t.hide_on_event_day && !t.hidden && (
-                            <span className="bg-blue-100 border border-blue-300 text-blue-900 font-bold px-2 py-0.5 uppercase text-[9px] block w-max">
+                            <span className="bg-blue-100 border border-blue-300 text-blue-900 font-bold px-2 py-0.5 uppercase text-[11px] block w-max">
                               ALWAYS VISIBLE
                             </span>
                           )}
@@ -1431,36 +1529,36 @@ export default function AdminDashboardPage() {
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Tag / Badge</span>
-                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-1.5 py-0.5 border border-[var(--brand-navy)]/20 font-black text-[9px] uppercase inline-block font-sans">
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Tag / Badge</span>
+                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-1.5 py-0.5 border border-[var(--brand-navy)]/20 font-black text-[11px] uppercase inline-block font-sans">
                             {t.tag}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Behavior</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Behavior</span>
                           {t.hidden && (
-                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-1.5 py-0.5 uppercase text-[9px] inline-block">
+                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-1.5 py-0.5 uppercase text-[11px] inline-block">
                               HIDDEN
                             </span>
                           )}
                           {t.show_only_on_event_day && (
-                            <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-1.5 py-0.5 uppercase text-[9px] inline-block">
+                            <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-1.5 py-0.5 uppercase text-[11px] inline-block">
                               EVENT DAY ONLY
                             </span>
                           )}
                           {t.hide_on_event_day && (
-                            <span className="bg-[var(--brand-navy)]/5 border border-[var(--brand-navy)]/20 text-[var(--brand-navy-light)] font-bold px-1.5 py-0.5 uppercase text-[9px] inline-block">
+                            <span className="bg-[var(--brand-navy)]/5 border border-[var(--brand-navy)]/20 text-[var(--brand-navy-light)] font-bold px-1.5 py-0.5 uppercase text-[11px] inline-block">
                               HIDE ON EVENT DAY
                             </span>
                           )}
                           {!t.show_only_on_event_day && !t.hide_on_event_day && !t.hidden && (
-                            <span className="bg-blue-100 border border-blue-300 text-blue-900 font-bold px-1.5 py-0.5 uppercase text-[9px] inline-block">
+                            <span className="bg-blue-100 border border-blue-300 text-blue-900 font-bold px-1.5 py-0.5 uppercase text-[11px] inline-block">
                               ALWAYS VISIBLE
                             </span>
                           )}
                         </div>
                         <div className="col-span-2">
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Description</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Description</span>
                           <span className="text-[var(--brand-navy)]/60">{t.description}</span>
                         </div>
                       </div>
@@ -1491,12 +1589,12 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
+            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[11px] text-[var(--brand-navy-light)]">
               Ticket tiers catalog dynamically synced.
             </div>
           </div>
         ) : activeTab === "trash" ? (
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
               <span className="text-xs font-black tracking-widest uppercase">Trash</span>
               <div className="flex gap-2">
@@ -1551,7 +1649,7 @@ export default function AdminDashboardPage() {
                       loadTicketTiers();
                     }
                   }}
-                  className="px-2.5 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
+                  className="px-2.5 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
                 >
                   Bulk Restore
                 </button>
@@ -1561,7 +1659,7 @@ export default function AdminDashboardPage() {
                     setTrashPassword("");
                     setShowTrashPasswordModal(true);
                   }}
-                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
+                  className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
                 >
                   Bulk Permanent Delete
                 </button>
@@ -1570,7 +1668,7 @@ export default function AdminDashboardPage() {
                     setSelectedTrashTicketIds([]);
                     setSelectedTrashTierIds([]);
                   }}
-                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[10px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
+                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[11px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
                 >
                   Deselect All
                 </button>
@@ -1579,19 +1677,19 @@ export default function AdminDashboardPage() {
 
             {/* Deleted Tickets */}
             <div className="p-3 border-b-2 border-[var(--brand-navy)]">
-              <h3 className="text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+              <h3 className="text-[11px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-400" />
                 Deleted Tickets ({deletedTickets.length})
               </h3>
               {loadingTrash ? (
-                <div className="text-[10px] text-[var(--brand-navy)]/40 font-mono">Loading...</div>
+                <div className="text-[11px] text-[var(--brand-navy)]/40 font-mono">Loading...</div>
               ) : deletedTickets.length === 0 ? (
-                <div className="text-[10px] text-[var(--brand-navy)]/40 font-mono py-2 italic">No deleted tickets.</div>
+                <div className="text-[11px] text-[var(--brand-navy)]/40 font-mono py-2 italic">No deleted tickets.</div>
               ) : (
                 <div className="space-y-2">
                   {deletedTickets.map(t => (
                     <div key={t.id} className="flex items-center justify-between bg-red-50 border border-red-200 p-2">
-                      <div className="flex items-center gap-2 text-[10px]">
+                      <div className="flex items-center gap-2 text-[11px]">
                         <input 
                           type="checkbox"
                           checked={selectedTrashTicketIds.includes(t.id)}
@@ -1615,7 +1713,7 @@ export default function AdminDashboardPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleRestoreTicket(t.id)}
-                          className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 flex items-center gap-1 cursor-pointer"
                         >
                           Restore
                         </button>
@@ -1627,7 +1725,7 @@ export default function AdminDashboardPage() {
                             setTrashPassword("");
                             setShowTrashPasswordModal(true);
                           }}
-                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
                         >
                           Delete
                         </button>
@@ -1640,19 +1738,19 @@ export default function AdminDashboardPage() {
 
             {/* Deleted Ticket Tiers */}
             <div className="p-3">
-              <h3 className="text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+              <h3 className="text-[11px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-400" />
                 Deleted Ticket Tiers ({deletedTiers.length})
               </h3>
               {loadingTrash ? (
-                <div className="text-[10px] text-[var(--brand-navy)]/40 font-mono">Loading...</div>
+                <div className="text-[11px] text-[var(--brand-navy)]/40 font-mono">Loading...</div>
               ) : deletedTiers.length === 0 ? (
-                <div className="text-[10px] text-[var(--brand-navy)]/40 font-mono py-2 italic">No deleted ticket tiers.</div>
+                <div className="text-[11px] text-[var(--brand-navy)]/40 font-mono py-2 italic">No deleted ticket tiers.</div>
               ) : (
                 <div className="space-y-2">
                   {deletedTiers.map(t => (
                     <div key={t.id} className="flex items-center justify-between bg-red-50 border border-red-200 p-2">
-                      <div className="flex items-center gap-2 text-[10px]">
+                      <div className="flex items-center gap-2 text-[11px]">
                         <input 
                           type="checkbox"
                           checked={selectedTrashTierIds.includes(t.id)}
@@ -1676,7 +1774,7 @@ export default function AdminDashboardPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleRestoreTier(t.id)}
-                          className="px-2 py-1 bg-green-600 text-white text-[10px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 flex items-center gap-1 cursor-pointer"
                         >
                           Restore
                         </button>
@@ -1688,7 +1786,7 @@ export default function AdminDashboardPage() {
                             setTrashPassword("");
                             setShowTrashPasswordModal(true);
                           }}
-                          className="px-2 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 flex items-center gap-1 cursor-pointer"
                         >
                           Delete
                         </button>
@@ -1699,14 +1797,81 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
+            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[11px] text-[var(--brand-navy-light)]">
               Deleted items can be restored, or permanently cleared with password.
             </div>
           </div>
-        ) : activeTab === "paystack" ? (
-          <PaystackPanel />
+        ) : activeTab === "payment-requests" ? (
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
+            <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
+              <span className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
+                <ListChecks className="w-4 h-4" /> PAYMENT REQUESTS ({tillPayments.length})
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={loadTillPayments}
+                  className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10"
+                  title="Refresh payment requests"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {tillPayments.length === 0 ? (
+              <div className="p-8 text-center text-[var(--brand-navy-light)] uppercase font-black tracking-widest text-xs">
+                No pending payment requests.
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--brand-navy)]/15">
+                {tillPayments.map((pp) => (
+                  <div key={pp.checkout_request_id} className="p-4 space-y-3 hover:bg-[var(--brand-warning-bg)]/30">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono font-black text-xs text-brand-warning block">{pp.checkout_request_id}</span>
+                        <span className="text-[11px] text-[var(--brand-navy-light)]">{pp.buyer_name} · {pp.phone_number}</span>
+                      </div>
+                      <span className="bg-blue-100 border border-blue-300 text-blue-900 font-bold px-2 py-0.5 uppercase text-[11px]">
+                        TILL PENDING
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-xs items-center">
+                      <span className="font-black">{pp.ticket_type} × {pp.quantity}</span>
+                      <span className="font-mono">KES {Number(pp.amount).toLocaleString()}</span>
+                      {pp.mpesa_reference && (
+                        <span className="font-mono bg-brand-navy/5 px-2 py-0.5 border border-brand-navy/20">
+                          REF: {pp.mpesa_reference}
+                        </span>
+                      )}
+                      <span className="text-[var(--brand-navy)]/40">{pp.created_at ? fmtDate(pp.created_at) : ""}</span>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => handleApproveTillPayment(pp)}
+                        disabled={approvingPayment === pp.checkout_request_id}
+                        className="text-xs font-black uppercase border-2 border-green-600 text-green-700 px-4 py-1.5 hover:bg-green-600 hover:text-white active:scale-95 transition-all duration-150 disabled:opacity-40"
+                      >
+                        {approvingPayment === pp.checkout_request_id ? "APPROVING..." : "APPROVE & CREATE TICKETS"}
+                      </button>
+                      <button
+                        onClick={() => handleRejectTillPayment(pp.checkout_request_id)}
+                        className="text-xs font-black uppercase border-2 border-red-300 text-red-600 px-3 py-1.5 hover:bg-red-600 hover:text-white active:scale-95 transition-all duration-150"
+                      >
+                        REJECT
+                      </button>
+                    </div>
+                    {pp.whatsapp_number && (
+                      <p className="text-[11px] font-mono text-[var(--brand-navy-light)]">
+                        WhatsApp: {pp.whatsapp_number}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
             <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)] font-sans">
               <span className="text-xs font-black tracking-widest uppercase">PAYMENT LOGS (Paystack + M-Pesa)</span>
               <div className="flex gap-2">
@@ -1747,13 +1912,13 @@ export default function AdminDashboardPage() {
                       loadPaymentLogs();
                     }
                   }}
-                  className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
+                  className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
                 >
                   Delete Permanently
                 </button>
                 <button
                   onClick={() => setSelectedPaymentLogIds([])}
-                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[10px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
+                  className="px-2.5 py-1 bg-[var(--brand-off-white)] text-[var(--brand-navy-light)] text-[11px] font-black uppercase hover:bg-[var(--brand-navy)]/5 active:scale-95 transition-all duration-150 cursor-pointer border border-[var(--brand-navy)]/20 ml-auto"
                 >
                   Deselect All
                 </button>
@@ -1812,7 +1977,7 @@ export default function AdminDashboardPage() {
                             className="w-3.5 h-3.5 accent-[var(--brand-navy)] cursor-pointer"
                           />
                         </td>
-                        <td className="p-3 font-mono text-[10px] text-[var(--brand-navy)]/60">
+                        <td className="p-3 font-mono text-[11px] text-[var(--brand-navy)]/60">
                           {fmtDate(log.created_at)}
                         </td>
                         <td className="p-3 font-mono font-bold">{log.mpesa_receipt || "PENDING"}</td>
@@ -1822,16 +1987,16 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="p-3">
                           {log.status === "success" ? (
-                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[9px] w-max block">
+                            <span className="bg-green-100 border border-green-300 text-green-900 font-bold px-2 py-0.5 uppercase text-[11px] w-max block">
                               SUCCESS
                             </span>
                           ) : (
-                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[9px] w-max block">
+                            <span className="bg-red-100 border border-red-300 text-red-900 font-bold px-2 py-0.5 uppercase text-[11px] w-max block">
                               FAILED
                             </span>
                           )}
                         </td>
-                        <td className="p-3 font-mono text-[10px] max-w-xs truncate" title={log.result_desc}>
+                        <td className="p-3 font-mono text-[11px] max-w-xs truncate" title={log.result_desc}>
                           {log.result_desc}
                         </td>
                         <td className="p-3 text-right">
@@ -1860,16 +2025,16 @@ export default function AdminDashboardPage() {
                     <div key={log.id} className="p-4 space-y-3 hover:bg-[var(--brand-navy)]/5">
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col">
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Receipt</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Receipt</span>
                           <span className="font-mono font-black text-[var(--brand-navy)] text-sm">{log.mpesa_receipt || "PENDING"}</span>
                         </div>
                         <div>
                           {log.status === "success" ? (
-                            <span className="bg-green-100 border border-green-300 text-green-950 font-bold px-2 py-0.5 uppercase text-[9px] w-max block">
+                            <span className="bg-green-100 border border-green-300 text-green-950 font-bold px-2 py-0.5 uppercase text-[11px] w-max block">
                               SUCCESS
                             </span>
                           ) : (
-                            <span className="bg-red-100 border border-red-300 text-red-950 font-bold px-2 py-0.5 uppercase text-[9px] w-max block">
+                            <span className="bg-red-100 border border-red-300 text-red-950 font-bold px-2 py-0.5 uppercase text-[11px] w-max block">
                               FAILED
                             </span>
                           )}
@@ -1878,26 +2043,26 @@ export default function AdminDashboardPage() {
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Phone</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Phone</span>
                           <span className="font-mono">{log.phone_number || "N/A"}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Amount</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Amount</span>
                           <span className="font-black text-[var(--brand-navy)]">{log.amount ? `KES ${Number(log.amount).toLocaleString()}` : "N/A"}</span>
                         </div>
                         <div className="col-span-2">
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
                           <span className="font-mono text-[var(--brand-navy)]/60">{fmtDate(log.created_at)}</span>
                         </div>
                         <div className="col-span-2">
-                          <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-bold block">Response Message</span>
-                          <span className="font-mono text-[10px] text-[var(--brand-navy)]/60 break-words">{log.result_desc || "No message response"}</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Response Message</span>
+                          <span className="font-mono text-[11px] text-[var(--brand-navy)]/60 break-words">{log.result_desc || "No message response"}</span>
                         </div>
                       </div>
                       <div className="flex justify-end pt-1">
                         <button
                           onClick={() => handleDeletePaymentLog(log.id)}
-                          className="text-red-600 hover:text-red-800 text-[10px] font-bold uppercase flex items-center gap-0.5"
+                          className="text-red-600 hover:text-red-800 text-[11px] font-bold uppercase flex items-center gap-0.5"
                         >
                           <Trash2 className="w-3 h-3" /> Delete
                         </button>
@@ -1908,7 +2073,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
+            <div className="p-3 bg-[var(--brand-bg)]border-t-2 border-[var(--brand-navy)] text-right font-mono text-[11px] text-[var(--brand-navy-light)]">
               Audit log of all Paystack + M-Pesa transaction records.
             </div>
 
@@ -1947,9 +2112,9 @@ export default function AdminDashboardPage() {
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="font-mono font-black text-xs text-brand-warning block">{pp.checkout_request_id}</span>
-                          <span className="text-[10px] text-[var(--brand-navy-light)]">{pp.buyer_name} · {pp.phone_number}</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)]">{pp.buyer_name} · {pp.phone_number}</span>
                         </div>
-                        <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-2 py-0.5 uppercase text-[9px]">
+                        <span className="bg-[var(--brand-warning-bg)] border border-brand-warning text-brand-warning font-bold px-2 py-0.5 uppercase text-[11px]">
                           {pp.status || "PENDING"}
                         </span>
                       </div>
@@ -1991,7 +2156,7 @@ export default function AdminDashboardPage() {
       {/* EVENT DETAILS EDIT MODAL */}
       {isEditingEvent && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90vh] flex flex-col p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90vh] flex flex-col p-6 relative shadow-(--shadow-brut-xl)">
             <button
               autoFocus
               onClick={() => setIsEditingEvent(false)}
@@ -2015,7 +2180,7 @@ export default function AdminDashboardPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Subtitle (Date)</label>
+                  <label className="text-xs font-black uppercase">Subtitle</label>
                   <input
                     type="text"
                     required
@@ -2031,6 +2196,15 @@ export default function AdminDashboardPage() {
                     required
                     value={eventFormState.tag || ""}
                     onChange={(e) => setEventFormState({ ...eventFormState, tag: e.target.value })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase">Event Date</label>
+                  <input
+                    type="date"
+                    value={eventFormState.event_date || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, event_date: e.target.value || null })}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
                 </div>
@@ -2098,7 +2272,7 @@ export default function AdminDashboardPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-black uppercase block">Developer Simulators Panel</span>
-                      <span className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase block">Toggle local checkout bypass simulators on homepage</span>
+                      <span className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase block">Toggle local checkout bypass simulators on homepage</span>
                     </div>
                     <button
                       type="button"
@@ -2117,7 +2291,7 @@ export default function AdminDashboardPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-black uppercase block">Operator WhatsApp Notifications</span>
-                      <span className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase block">Enable or disable operator broadcast alerts</span>
+                      <span className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase block">Enable or disable operator broadcast alerts</span>
                     </div>
                     <button
                       type="button"
@@ -2170,8 +2344,8 @@ export default function AdminDashboardPage() {
                     <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
                     WhatsApp Message Template (optional)
                   </label>
-                  <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{eventRegulations}}'}</code>
+                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventRegulations}}'}</code>
                   </p>
                   <textarea
                     rows={4}
@@ -2185,8 +2359,8 @@ export default function AdminDashboardPage() {
                   <label className="text-xs font-black uppercase flex items-center gap-2">
                     Operator WhatsApp Template (optional)
                   </label>
-                  <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{quantity}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{amountPaid}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{reference}}'}</code>
+                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{quantity}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{amountPaid}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{reference}}'}</code>
                   </p>
                   <textarea
                     rows={3}
@@ -2200,8 +2374,8 @@ export default function AdminDashboardPage() {
                   <label className="text-xs font-black uppercase flex items-center gap-2">
                     Scan Notification Template (optional)
                   </label>
-                  <p className="text-[9px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{scannerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[9px]">{'{{scanTime}}'}</code>
+                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{scannerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{scanTime}}'}</code>
                   </p>
                   <textarea
                     rows={3}
@@ -2236,7 +2410,7 @@ export default function AdminDashboardPage() {
       {/* TICKET EDIT MODAL */}
       {editingTicket && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setEditingTicket(null)}
               className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
@@ -2394,7 +2568,7 @@ export default function AdminDashboardPage() {
       {/* CREATE MANUAL TICKET MODAL */}
       {isCreatingTicket && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl)">
             <button 
               onClick={() => setIsCreatingTicket(false)}
               className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
@@ -2402,9 +2576,29 @@ export default function AdminDashboardPage() {
               <X className="w-6 h-6" />
             </button>
             <h3 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-4">
-              Create Manual Ticket
+              {isCrewPass ? "Create Crew Pass" : "Create Manual Ticket"}
             </h3>
             <form onSubmit={handleSaveCreateTicket} className="space-y-4">
+              <label className="flex items-center gap-2 cursor-pointer pb-1">
+                <input
+                  type="checkbox"
+                  checked={isCrewPass}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsCrewPass(checked);
+                    if (checked) {
+                      setTicketFormState(prev => ({
+                        ...prev,
+                        ticket_type: "CREW",
+                        amount_paid: 0,
+                        mpesa_receipt: "CREW-" + prev.id
+                      }));
+                    }
+                  }}
+                  className="w-4 h-4 accent-[var(--brand-navy)]"
+                />
+                <span className="text-xs font-black uppercase">Crew Pass (no charge)</span>
+              </label>
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-black uppercase block mb-1">Ticket ID (Optional / Auto-Gen)</label>
@@ -2416,6 +2610,7 @@ export default function AdminDashboardPage() {
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
                   />
                 </div>
+                {!isCrewPass && (
                 <div>
                   <label className="text-xs font-black uppercase block mb-1">M-Pesa Receipt Code</label>
                   <input
@@ -2426,8 +2621,9 @@ export default function AdminDashboardPage() {
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
                   />
                 </div>
+                )}
                 <div>
-                  <label className="text-xs font-black uppercase block mb-1">Attendee / Buyer Name</label>
+                  <label className="text-xs font-black uppercase block mb-1">Attendee / Crew Name</label>
                   <input
                     type="text"
                     required
@@ -2456,6 +2652,32 @@ export default function AdminDashboardPage() {
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
                   />
                 </div>
+                {isCrewPass ? (
+                  <div>
+                    <label className="text-xs font-black uppercase block mb-1">Crew Role</label>
+                    <input
+                      type="text"
+                      required
+                      value={ticketFormState.ticket_type || "CREW"}
+                      onChange={(e) => setTicketFormState({ ...ticketFormState, ticket_type: e.target.value.toUpperCase() })}
+                      placeholder="e.g. SECURITY, BAR, STAGE"
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    />
+                    <div className="mt-1 flex gap-1">
+                      {["SECURITY", "BAR", "STAGE", "MEDIA", "VENDOR"].map(role => (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => setTicketFormState({ ...ticketFormState, ticket_type: "CREW/" + role })}
+                          className={`px-2 py-0.5 text-[11px] font-black uppercase border border-[var(--brand-navy)] transition-all duration-150 active:scale-95 ${ticketFormState.ticket_type === "CREW/" + role ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]" : "text-[var(--brand-navy)]"}`}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-[var(--brand-navy-light)] font-bold mt-1">KES 0 — not counted in revenue</p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-black uppercase block mb-1">Ticket Tier Type</label>
@@ -2489,6 +2711,7 @@ export default function AdminDashboardPage() {
                     />
                   </div>
                 </div>
+                )}
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -2512,7 +2735,7 @@ export default function AdminDashboardPage() {
                   disabled={saving === "create"}
                   className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {saving === "create" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> CREATING...</> : <><Plus className="w-3.5 h-3.5" /> Create Ticket</>}
+                  {saving === "create" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> CREATING...</> : <><Plus className="w-3.5 h-3.5" /> {isCrewPass ? "Create Crew Pass" : "Create Ticket"}</>}
                 </button>
               </div>
             </form>
@@ -2524,7 +2747,7 @@ export default function AdminDashboardPage() {
       {/* CREATE TICKET TIER MODAL */}
       {isCreatingTier && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setIsCreatingTier(false)}
               className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
@@ -2534,8 +2757,8 @@ export default function AdminDashboardPage() {
             <h3 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-1">
               Add Ticket Tier
             </h3>
-            <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase mb-4">
-              Gate tiers are shown only on the day of the event. Advance tiers are hidden on event day.
+            <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase mb-4">
+              Set date windows for each tier to control when it appears on checkout. Add capacity limits to create scarcity.
             </p>
             <form onSubmit={handleSaveCreateTier} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -2596,45 +2819,48 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Event Day Behavior */}
-              <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-2 bg-[var(--brand-bg)]">
-                <span className="text-[10px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
-                  Event Day Behaviour
+                            {/* Sale Window & Capacity */}
+              <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-3 bg-[var(--brand-bg)]">
+                <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
+                  Sale Window &amp; Capacity
                 </span>
-                <label className="flex items-start gap-2 cursor-pointer">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Available From</label>
+                    <input
+                      type="datetime-local"
+                      value={tierFormState.available_from ? new Date(tierFormState.available_from).toISOString().slice(0, 16) : ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, available_from: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Available Until</label>
+                    <input
+                      type="datetime-local"
+                      value={tierFormState.available_until ? new Date(tierFormState.available_until).toISOString().slice(0, 16) : ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, available_until: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
                   <input
-                    type="checkbox"
-                    checked={!!tierFormState.show_only_on_event_day}
-                    onChange={(e) => setTierFormState({
-                      ...tierFormState,
-                      show_only_on_event_day: e.target.checked,
-                      hide_on_event_day: e.target.checked ? false : tierFormState.hide_on_event_day
-                    })}
-                    className="mt-0.5 w-4 h-4 accent-brand-warning"
+                    type="number"
+                    min="0"
+                    placeholder="Leave empty for unlimited"
+                    value={tierFormState.max_quantity || ""}
+                    onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
                   />
-                  <span className="text-xs font-bold">
-                    <span className="text-brand-warning font-black">GATE TIER</span> — Show ONLY on event day (day-of-gate pricing)
-                  </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!tierFormState.hide_on_event_day}
-                    onChange={(e) => setTierFormState({
-                      ...tierFormState,
-                      hide_on_event_day: e.target.checked,
-                      show_only_on_event_day: e.target.checked ? false : tierFormState.show_only_on_event_day
-                    })}
-                    className="mt-0.5 w-4 h-4 accent-[var(--brand-navy)]"
-                  />
-                  <span className="text-xs font-bold">
-                    <span className="text-[var(--brand-navy)] font-black">ADVANCE TIER</span> — Hide on event day (pre-sale only)
-                  </span>
-                </label>
-                <p className="text-[9px] text-[var(--brand-navy)]/40 font-medium pt-1">
-                  Leave both unchecked = always visible on checkout.
+                </div>
+                <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
+                  Leave dates empty = always visible. Capacity empty = unlimited.
                 </p>
               </div>
+
+
 
               <div className="flex justify-end gap-2 pt-2 border-t border-[var(--brand-navy)]/15">
                 <button
@@ -2660,7 +2886,7 @@ export default function AdminDashboardPage() {
       {/* EDIT TICKET TIER MODAL */}
       {editingTier && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setEditingTier(null)}
               className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
@@ -2670,7 +2896,7 @@ export default function AdminDashboardPage() {
             <h3 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-1">
               Edit Ticket Tier
             </h3>
-            <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase mb-4">
+            <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase mb-4">
               Editing: <span className="text-[var(--brand-navy)]">{editingTier.id}</span>
             </p>
             <form onSubmit={handleSaveTier} className="space-y-4">
@@ -2727,45 +2953,48 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Event Day Behavior */}
-              <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-2 bg-[var(--brand-bg)]">
-                <span className="text-[10px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
-                  Event Day Behaviour (Gate Tier Settings)
+                            {/* Sale Window & Capacity */}
+              <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-3 bg-[var(--brand-bg)]">
+                <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
+                  Sale Window &amp; Capacity
                 </span>
-                <label className="flex items-start gap-2 cursor-pointer">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Available From</label>
+                    <input
+                      type="datetime-local"
+                      value={tierFormState.available_from ? new Date(tierFormState.available_from).toISOString().slice(0, 16) : ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, available_from: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Available Until</label>
+                    <input
+                      type="datetime-local"
+                      value={tierFormState.available_until ? new Date(tierFormState.available_until).toISOString().slice(0, 16) : ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, available_until: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
                   <input
-                    type="checkbox"
-                    checked={!!tierFormState.show_only_on_event_day}
-                    onChange={(e) => setTierFormState({
-                      ...tierFormState,
-                      show_only_on_event_day: e.target.checked,
-                      hide_on_event_day: e.target.checked ? false : tierFormState.hide_on_event_day
-                    })}
-                    className="mt-0.5 w-4 h-4 accent-brand-warning"
+                    type="number"
+                    min="0"
+                    placeholder="Leave empty for unlimited"
+                    value={tierFormState.max_quantity || ""}
+                    onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
                   />
-                  <span className="text-xs font-bold">
-                    <span className="text-brand-warning font-black">GATE TIER</span> — Show ONLY on event day (day-of-gate pricing)
-                  </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!tierFormState.hide_on_event_day}
-                    onChange={(e) => setTierFormState({
-                      ...tierFormState,
-                      hide_on_event_day: e.target.checked,
-                      show_only_on_event_day: e.target.checked ? false : tierFormState.show_only_on_event_day
-                    })}
-                    className="mt-0.5 w-4 h-4 accent-[var(--brand-navy)]"
-                  />
-                  <span className="text-xs font-bold">
-                    <span className="text-[var(--brand-navy)] font-black">ADVANCE TIER</span> — Hide on event day (pre-sale only)
-                  </span>
-                </label>
-                <p className="text-[9px] text-[var(--brand-navy)]/40 font-medium pt-1">
-                  Leave both unchecked = always visible on checkout.
+                </div>
+                <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
+                  Leave dates empty = always visible. Capacity empty = unlimited.
                 </p>
               </div>
+
+
 
               <div className="flex justify-end gap-2 pt-2 border-t border-[var(--brand-navy)]/15">
                 <button
@@ -2791,7 +3020,7 @@ export default function AdminDashboardPage() {
       {/* DELETE TICKET CONFIRM MODAL */}
       {deletingTicketId && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
               Send to Trash
             </h3>
@@ -2821,7 +3050,7 @@ export default function AdminDashboardPage() {
       {/* RESOLVE PENDING PAYMENT MODAL */}
       {resolvingPayment && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-brand-warning bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-[8px_8px_0px_0px_#D97706]">
+          <div className="border-4 border-brand-warning bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl-accent)">
             <button
               onClick={() => setResolvingPayment(null)}
               className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-warning-bg)] text-brand-warning z-10"
@@ -2834,13 +3063,13 @@ export default function AdminDashboardPage() {
 
             <div className="space-y-3 text-sm mb-4">
               <div className="bg-[var(--brand-warning-bg)] p-3 border border-brand-warning space-y-1">
-                <p><span className="font-bold uppercase text-[10px] text-[var(--brand-navy-light)]">Checkout ID</span><br /><span className="font-mono text-xs">{resolvingPayment.checkout_request_id}</span></p>
-                <p><span className="font-bold uppercase text-[10px] text-[var(--brand-navy-light)]">Buyer</span><br /><span className="font-black">{resolvingPayment.buyer_name} · {resolvingPayment.phone_number}</span></p>
-                <p><span className="font-bold uppercase text-[10px] text-[var(--brand-navy-light)]">Tickets</span><br /><span>{resolvingPayment.ticket_type} × {resolvingPayment.quantity} = KES {Number(resolvingPayment.amount).toLocaleString()}</span></p>
+                <p><span className="font-bold uppercase text-[11px] text-[var(--brand-navy-light)]">Checkout ID</span><br /><span className="font-mono text-xs">{resolvingPayment.checkout_request_id}</span></p>
+                <p><span className="font-bold uppercase text-[11px] text-[var(--brand-navy-light)]">Buyer</span><br /><span className="font-black">{resolvingPayment.buyer_name} · {resolvingPayment.phone_number}</span></p>
+                <p><span className="font-bold uppercase text-[11px] text-[var(--brand-navy-light)]">Tickets</span><br /><span>{resolvingPayment.ticket_type} × {resolvingPayment.quantity} = KES {Number(resolvingPayment.amount).toLocaleString()}</span></p>
               </div>
 
               <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase text-[var(--brand-navy)]/60">M-Pesa Receipt Code</label>
+                <label className="block text-[11px] font-black uppercase text-[var(--brand-navy)]/60">M-Pesa Receipt Code</label>
                 <input
                   type="text"
                   value={resolveReceipt}
@@ -2851,7 +3080,7 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase text-[var(--brand-navy)]/60">Amount Paid (KES)</label>
+                <label className="block text-[11px] font-black uppercase text-[var(--brand-navy)]/60">Amount Paid (KES)</label>
                 <input
                   type="number"
                   value={resolveAmount}
@@ -2889,7 +3118,7 @@ export default function AdminDashboardPage() {
       {/* DELETE TIER CONFIRM MODAL */}
       {deletingTierId && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
               Send to Trash
             </h3>
@@ -2919,7 +3148,7 @@ export default function AdminDashboardPage() {
       {/* TRASH PASSWORD CONFIRMATION MODAL */}
       {showTrashPasswordModal && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_#FF3300]">
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
             <button
               onClick={() => setShowTrashPasswordModal(false)}
               className="absolute top-4 right-4 p-1 hover:bg-red-50 text-red-600"
@@ -2937,7 +3166,7 @@ export default function AdminDashboardPage() {
                 }
               </p>
               <div>
-                <label className="block text-[10px] font-black uppercase text-[var(--brand-navy)]/60 mb-1">Admin Password</label>
+                <label className="block text-[11px] font-black uppercase text-[var(--brand-navy)]/60 mb-1">Admin Password</label>
                 <input
                   type="password"
                   required
@@ -2970,17 +3199,17 @@ export default function AdminDashboardPage() {
       {/* RESEND WHATSAPP MODAL */}
       {resendTicket && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape") setResendTicket(null); }}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-[8px_8px_0px_0px_var(--brand-navy)]">
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-xl)">
             <h3 className="text-lg font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-4 flex items-center gap-2">
               <svg className="w-5 h-5 text-green-700" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
               Resend WhatsApp Ticket
             </h3>
-            <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase mb-3">
+            <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase mb-3">
               Ticket: <span className="font-mono text-[var(--brand-navy)]">{resendTicket.id}</span>
             </p>
             <div className="space-y-3">
               <div>
-                <label className="text-[10px] font-black uppercase block mb-1">Phone Number</label>
+                <label className="text-[11px] font-black uppercase block mb-1">Phone Number</label>
                 <input
                   type="text"
                   value={resendPhone}
@@ -3010,7 +3239,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto text-center mt-12 mb-8 text-[10px] text-[var(--brand-navy-light)] font-bold tracking-widest uppercase">
+      <div className="max-w-4xl mx-auto text-center mt-12 mb-8 text-[11px] text-[var(--brand-navy-light)] font-bold tracking-widest uppercase">
         © {new Date().getFullYear()} {(eventDetails?.title || "GOODLIFE").toUpperCase()} MASTER ADMIN · SECURED TRANSACTION CHANNELS
       </div>
 
@@ -3018,134 +3247,4 @@ export default function AdminDashboardPage() {
   );
 }
 
-function PaystackPanel() {
-  const [failedTxs, setFailedTxs] = useState<any[]>([]);
-  const [totals, setTotals] = useState<any>(null);
-  const [settlements, setSettlements] = useState<any[]>([]);
-  const [loadingPaystack, setLoadingPaystack] = useState(true);
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/admin/paystack/transactions?status=failed&perPage=10").then(async r => r.ok ? r.json() : { status: false, data: [] }),
-      fetch("/api/admin/paystack/totals").then(async r => r.ok ? r.json() : { status: false, data: null }),
-      fetch("/api/admin/paystack/settlements?perPage=5").then(async r => r.ok ? r.json() : { status: false, data: [] }),
-    ]).then(([txRes, totalsRes, settleRes]) => {
-      if (txRes.status) setFailedTxs(txRes.data || []);
-      if (totalsRes.status) setTotals(totalsRes.data);
-      if (settleRes.status) setSettlements(settleRes.data || []);
-    }).catch(() => {}).finally(() => setLoadingPaystack(false));
-  }, []);
-
-  if (loadingPaystack) {
-    return (
-      <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)] p-8 text-center">
-        <p className="text-xs font-black tracking-widest uppercase text-[var(--brand-navy-light)]">Loading Paystack data...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-[6px_6px_0px_0px_var(--brand-navy)]">
-      <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
-        <span className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
-          <BarChart3 className="w-4 h-4" /> Paystack Overview
-        </span>
-        <button
-          onClick={() => {
-            setLoadingPaystack(true);
-            Promise.all([
-              fetch("/api/admin/paystack/transactions?status=failed&perPage=10").then(async r => r.ok ? r.json() : { status: false, data: [] }),
-              fetch("/api/admin/paystack/totals").then(async r => r.ok ? r.json() : { status: false, data: null }),
-              fetch("/api/admin/paystack/settlements?perPage=5").then(async r => r.ok ? r.json() : { status: false, data: [] }),
-            ]).then(([txRes, totalsRes, settleRes]) => {
-              if (txRes.status) setFailedTxs(txRes.data || []);
-              if (totalsRes.status) setTotals(totalsRes.data);
-              if (settleRes.status) setSettlements(settleRes.data || []);
-            }).catch(() => {}).finally(() => setLoadingPaystack(false));
-          }}
-          className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/20 active:scale-95 transition-all duration-150"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <div className="p-4 space-y-4">
-        {/* Totals Summary */}
-        {totals && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="border-2 border-[var(--brand-navy)] p-3 bg-[var(--brand-bg)]">
-              <span className="text-[10px] font-black uppercase text-[var(--brand-navy-light)] block">Total Volume</span>
-              <span className="text-lg font-black block">KES {(totals.total_volume / 100).toLocaleString()}</span>
-            </div>
-            <div className="border-2 border-[var(--brand-navy)] p-3 bg-[var(--brand-bg)]">
-              <span className="text-[10px] font-black uppercase text-[var(--brand-navy-light)] block">Transactions</span>
-              <span className="text-lg font-black block">{totals.total_transactions}</span>
-            </div>
-            <div className="border-2 border-[var(--brand-navy)] p-3 bg-[var(--brand-bg)]">
-              <span className="text-[10px] font-black uppercase text-[var(--brand-navy-light)] block">Pending Transfers</span>
-              <span className="text-lg font-black block">KES {(totals.pending_transfers / 100).toLocaleString()}</span>
-            </div>
-            <div className="border-2 border-[var(--brand-navy)] p-3 bg-[var(--brand-bg)]">
-              <span className="text-[10px] font-black uppercase text-[var(--brand-navy-light)] block">Unique Customers</span>
-              <span className="text-lg font-black block">{totals.unique_customers}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Failed Transactions */}
-        <div>
-          <span className="text-[10px] font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5 mb-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-brand-danger" /> Failed Transactions (last 10)
-          </span>
-          {failedTxs.length === 0 ? (
-            <p className="text-[10px] font-mono text-[var(--brand-navy-light)] italic">No failed transactions.</p>
-          ) : (
-            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
-              {failedTxs.map((tx: any) => (
-                <div key={tx.id} className="flex justify-between items-center p-2 bg-red-50 border border-red-200 text-[10px]">
-                  <div className="font-mono">
-                    <span className="font-black block">{tx.reference}</span>
-                    <span className="text-red-700">{tx.customer?.email || "—"} · {tx.amount ? `KES ${(tx.amount / 100).toLocaleString()}` : ""}</span>
-                  </div>
-                  <span className="text-[8px] font-black uppercase text-red-700">{tx.paid_at ? new Date(tx.paid_at).toLocaleDateString() : "—"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Settlements */}
-        <div>
-          <span className="text-[10px] font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5 mb-2">
-            <Wallet className="w-3.5 h-3.5" /> Settlements (last 5)
-          </span>
-          {settlements.length === 0 ? (
-            <p className="text-[10px] font-mono text-[var(--brand-navy-light)] italic">No settlements yet.</p>
-          ) : (
-            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
-              {settlements.map((s: any) => (
-                <div key={s.id} className="flex justify-between items-center p-2 border border-[var(--brand-navy)]/10 text-[10px]">
-                  <div className="font-mono">
-                    <span className="font-black block">
-                      KES {(s.amount / 100).toLocaleString()} ({s.transactions_count} txns)
-                    </span>
-                    <span className="text-[var(--brand-navy-light)]">
-                      Fees: KES {(s.total_fees / 100).toLocaleString()} · Status: {s.status}
-                    </span>
-                  </div>
-                  <span className="text-[8px] font-black uppercase">
-                    {s.settled_date ? new Date(s.settled_date).toLocaleDateString() : "Unsettled"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="p-3 bg-[var(--brand-bg)] border-t-2 border-[var(--brand-navy)] text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
-        Data from Paystack API. Totals are gross (pre-fees).
-      </div>
-    </div>
-  );
-}

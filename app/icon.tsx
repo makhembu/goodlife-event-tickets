@@ -31,15 +31,15 @@ export default async function Icon() {
       <div
         style={{
           fontSize: 24,
-          background: '#142B4C',
+          background: '#1A1A1A',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#C79A56',
+          color: '#C8A54A',
           fontWeight: 900,
-          border: '2px solid #C79A56',
+          border: '2px solid #C8A54A',
           borderRadius: '4px',
         }}
       >

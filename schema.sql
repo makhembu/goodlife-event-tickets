@@ -1,9 +1,33 @@
 -- SQL Schema to create the tickets table in Supabase
 -- Run this in your Supabase SQL Editor: https://supabase.com/dashboard/project/kbwftozaisewcpnfzcar/sql/new
 
+-- Events table (multi-event support)
+CREATE TABLE IF NOT EXISTS events (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  subtitle TEXT DEFAULT '',
+  tag TEXT DEFAULT '',
+  venue TEXT DEFAULT '',
+  flyer_url TEXT DEFAULT '/flyer.png',
+  logo_url TEXT DEFAULT '',
+  regulations TEXT DEFAULT '',
+  ticker_text TEXT DEFAULT '',
+  till_number TEXT DEFAULT '',
+  event_date TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  archived_at TIMESTAMP WITH TIME ZONE,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+-- RLS for events
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read events" ON events FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated full access events" ON events FOR ALL TO authenticated USING (true);
+
+-- Tickets table
 CREATE TABLE IF NOT EXISTS tickets (
   id TEXT PRIMARY KEY,
-  mpesa_receipt TEXT UNIQUE NOT NULL,
+  mpesa_receipt TEXT NOT NULL,
   phone_number TEXT NOT NULL,
   ticket_type TEXT NOT NULL,
   amount_paid NUMERIC NOT NULL,
@@ -12,8 +36,11 @@ CREATE TABLE IF NOT EXISTS tickets (
   scanned_at TIMESTAMP WITH TIME ZONE,
   scanned_by TEXT,
   buyer_name TEXT NOT NULL DEFAULT 'Guest',
-  pdf_data TEXT -- base64-encoded cached PDF, generated once on first download
+  pdf_data TEXT, -- base64-encoded cached PDF, generated once on first download
+  event_id INTEGER REFERENCES events(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_tickets_event_id ON tickets(event_id);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
@@ -72,7 +99,8 @@ CREATE TABLE IF NOT EXISTS pending_payments (
   quantity INTEGER NOT NULL,
   buyer_name TEXT NOT NULL,
   amount NUMERIC NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  event_id INTEGER REFERENCES events(id)
 );
 
 -- Enable RLS for pending_payments

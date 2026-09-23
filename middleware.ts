@@ -13,9 +13,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Protect admin API routes — return 401 JSON instead of redirect
-  // (skip login endpoint — that's where auth happens)
-  if (pathname === "/api/admin/login") {
+  // Allow /api/admin/me without auth
+  if (pathname === "/api/admin/me") {
     return NextResponse.next();
   }
 
@@ -26,13 +25,27 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api/admin/")) {
-    if (session !== "true") {
+    // Allow login, logout, and me endpoints without auth
+    const publicAdminRoutes = ["/api/admin/login", "/api/admin/logout", "/api/admin/me"];
+    if (!publicAdminRoutes.includes(pathname) && session !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
   // Protect ticket-tiers mutations
   if (pathname.startsWith("/api/ticket-tiers") && request.method !== "GET") {
+    if (session !== "true") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  // Protect events routes (except public GET on /api/events/active)
+  if (pathname.startsWith("/api/events")) {
+    // Allow public access to active event
+    if (pathname === "/api/events/active" && request.method === "GET") {
+      return NextResponse.next();
+    }
+    // Protect all other event routes
     if (session !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -57,5 +70,6 @@ export const config = {
     "/api/admin/:path*",
     "/api/event-details",
     "/api/ticket-tiers/:path*",
+    "/api/events/:path*",
   ],
 };

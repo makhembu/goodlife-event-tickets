@@ -50,13 +50,13 @@ export default function LoginPage() {
       
       {/* Decorative Grid Background */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-20"
-           style={{ backgroundImage: 'radial-gradient(rgba(20,43,76,0.18) 1px, transparent 1px), radial-gradient(rgba(199,154,86,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
+           style={{ backgroundImage: 'radial-gradient(rgba(200,165,74,0.18) 1px, transparent 1px), radial-gradient(rgba(200,165,74,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
 
-      <div className="relative z-10 max-w-md w-full space-y-8 border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-8 shadow-[8px_8px_0px_0px_rgba(199,154,86,0.35)]">
+      <div className="relative z-10 max-w-md w-full space-y-8 border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-8 shadow-(--shadow-brut-xl-accent)">
         
         {/* Torn Corner Decorative Element */}
         <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--brand-navy)] text-[var(--brand-off-white)] transform rotate-45 translate-x-10 -translate-y-10 flex items-end justify-center pb-2">
-          <span className="font-mono font-black text-[9px] tracking-widest uppercase -rotate-45 mb-2 translate-y-1 text-[var(--brand-accent)]">SECURE</span>
+          <span className="font-mono font-black text-[11px] tracking-widest uppercase -rotate-45 mb-2 translate-y-1 text-[var(--brand-off-white)]">SECURE</span>
         </div>
 
         <div className="text-center">
@@ -70,7 +70,7 @@ export default function LoginPage() {
               {title}
             </span>
           </div>
-          <span className="text-[10px] font-black tracking-widest bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
+          <span className="text-[11px] font-black tracking-widest bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
             ADMIN ACCESS GATEWAY
           </span>
           <h2 className="mt-4 text-4xl font-display uppercase leading-none text-[var(--brand-navy)]">
@@ -102,7 +102,7 @@ export default function LoginPage() {
                   placeholder="e.g. officer@goodlife.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] transition-all text-[var(--brand-navy)]"
+                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
                 />
               </div>
             </div>
@@ -125,7 +125,7 @@ export default function LoginPage() {
                   placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)] transition-all text-[var(--brand-navy)]"
+                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
                 />
               </div>
             </div>
@@ -133,7 +133,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div role="alert" className="text-[var(--brand-navy)] text-xs font-mono flex items-center gap-3 bg-[var(--brand-accent)] p-4 border-4 border-[var(--brand-navy)] shadow-[4px_4px_0px_0px_rgba(20,43,76,0.24)]">
+            <div role="alert" className="text-[var(--brand-navy)] text-xs font-mono flex items-center gap-3 bg-[var(--brand-accent)] p-4 border-4 border-[var(--brand-navy)] shadow-(--shadow-brut-sm-accent)">
               <AlertTriangle className="w-5 h-5 shrink-0 text-[var(--brand-navy)]" />
               <span className="uppercase">{error}</span>
             </div>
@@ -146,7 +146,7 @@ export default function LoginPage() {
               className={`w-full py-4 border-4 border-[var(--brand-navy)] font-display text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-3 transition-all duration-100 ${
                 loading
                   ? "bg-[var(--brand-bg)] text-[var(--brand-navy)]/30 cursor-not-allowed shadow-none"
-                  : "bg-[var(--brand-navy)] text-[var(--brand-off-white)] hover:bg-[var(--brand-navy-light)] shadow-[6px_6px_0px_0px_rgba(199,154,86,0.4)] hover:shadow-[8px_8px_0px_0px_rgba(199,154,86,0.4)] active:translate-y-[6px] active:translate-x-[6px] active:shadow-none"
+                  : "bg-[var(--brand-navy)] text-[var(--brand-off-white)] hover:bg-[var(--brand-navy-light)] shadow-(--shadow-brut-lg-accent) hover:shadow-(--shadow-brut-xl-accent) active:translate-y-[6px] active:translate-x-[6px] active:shadow-none"
               }`}
             >
               {loading ? (

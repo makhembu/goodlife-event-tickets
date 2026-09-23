@@ -14,7 +14,7 @@ interface TierDef {
 }
 
 interface TierSalesBreakdownProps {
-  campingTiers: Record<string, { sold: number; revenue: number; cap?: number }>;
+  campingTiers: Record<string, { sold: number; revenue: number; cap?: number; name?: string; tag?: string }>;
   totalTicketsSold: number;
   ticketTiers: TierDef[];
 }
@@ -24,25 +24,25 @@ export default function TierSalesBreakdown({
   totalTicketsSold,
   ticketTiers,
 }: TierSalesBreakdownProps) {
-  const tierSales = Object.entries(campingTiers).map(([type, stats]) => {
-    const tierDef = ticketTiers.find((t) => t.id === type);
+  const tierSales = Object.entries(campingTiers || {}).map(([type, stats]) => {
+    const tierDef = ticketTiers.find((t) => t.id === type || t.name?.toLowerCase() === type.toLowerCase());
     return {
       type,
       stats,
-      name: tierDef?.name || type,
-      tag: tierDef?.tag || "",
+      name: (stats as any).name || tierDef?.name || type,
+      tag: (stats as any).tag || tierDef?.tag || "",
     };
   });
 
-  const best = tierSales.reduce(
-    (a, b) => (a.stats.sold > b.stats.sold ? a : b),
-    tierSales[0]
-  );
+  // Sort: tiers with sales first (descending by sold tickets, then revenue), then remaining tiers
+  tierSales.sort((a, b) => b.stats.sold - a.stats.sold || b.stats.revenue - a.stats.revenue);
+
+  const best = tierSales.find((t) => t.stats.sold > 0);
 
   if (tierSales.length === 0) return null;
 
   return (
-    <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-5 relative shadow-[4px_4px_0px_0px_var(--brand-navy)]">
+    <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-5 relative shadow-(--shadow-brut-md)">
       <span className="text-xs font-black tracking-widest uppercase text-[var(--brand-navy)] block mb-4 border-b-2 border-[var(--brand-navy)] pb-2 flex items-center gap-2">
         <Tent className="w-4 h-4 fill-[var(--brand-navy)]" /> TICKET TIER SALES
       </span>
@@ -64,12 +64,12 @@ export default function TierSalesBreakdown({
               <div className="flex justify-between items-end">
                 <div>
                   <span className="font-black text-xs block">{t.name}</span>
-                  <span className="text-[10px] text-[var(--brand-navy-light)] uppercase font-medium">
+                  <span className="text-caption text-[var(--brand-navy-light)] uppercase font-medium">
                     Sold: {t.stats.sold} tickets &middot; Ksh{" "}
                     {t.stats.revenue.toLocaleString()}
                   </span>
                   {t.tag && (
-                    <span className="text-[9px] ml-1.5 font-bold text-[var(--brand-accent)] uppercase">
+                    <span className="text-caption ml-1.5 font-bold text-[var(--brand-accent)] uppercase">
                       [{t.tag}]
                     </span>
                   )}
@@ -89,7 +89,7 @@ export default function TierSalesBreakdown({
                 </div>
               </div>
               {isBest && (
-                <span className="text-[9px] font-black uppercase text-brand-warning block flex items-center gap-1">
+                <span className="text-caption font-black uppercase text-brand-warning block flex items-center gap-1">
                   <span aria-hidden="true">&#9733;</span> BEST SELLER
                 </span>
               )}

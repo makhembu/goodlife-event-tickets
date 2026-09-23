@@ -1,28 +1,62 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-black: #142B4C;
-  --color-brand-navy: #142B4C;
-  --color-brand-navy-light: #2B547E;
-  --color-brand-off-white: #F3ECE1;
-  --color-brand-bg: #E8E4D7;
-  --color-brand-accent: #C79A56; /* Warm leather accent */
-  --color-brand-danger: #A5323C;
-  --color-brand-danger-bg: #F4D8D9;
-  --color-brand-success: #2A7A57;
-  --color-brand-success-bg: #D9EEE6;
-  --color-brand-warning: #C79A56;
-  --color-brand-warning-bg: #F6E9CF;
+  --color-brand-black: #16181D;
+  --color-brand-navy: #16181D;      /* Deep Charcoal Ink */
+  --color-brand-navy-light: #2A2C33;
+  --color-brand-off-white: #FBF9F6; /* Soft Milk Cream */
+  --color-brand-bg: #F3ECE1;        /* Warm Sand Parchment */
+  --color-brand-accent: #DFBB7D;    /* Warm Sand Tan */
+  --color-brand-danger: #E84855;
+  --color-brand-danger-bg: #FADBD8;
+  --color-brand-success: #2ECC71;
+  --color-brand-success-bg: #D4EFDF;
+  --color-brand-warning: #F39C12;
+  --color-brand-warning-bg: #FCF3CF;
   
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bebas-neue), ui-sans-serif, system-ui, sans-serif;
+
+  /* Semantic type scale — HIG-aligned floors. Use these, not text-[Npx].
+     caption ≥11px (HIG minimum), footnote 12, body 14. */
+  --text-caption: 11px;
+  --text-caption--line-height: 1.45;
+  --text-caption--letter-spacing: 0.01em;
+  --text-footnote: 12px;
+  --text-footnote--line-height: 1.45;
+  --text-body: 14px;
+  --text-body--line-height: 1.5;
+
+  /* Brutalist shadow scale — one source of truth for offset shadows.
+     Offsets: 2xs 1 / xs 2 / sm+md 4 / lg 6 / xl 8. Full navy = solid CTA,
+     soft/strong = translucent navy for cards, accent = gold surfaces. */
+  --shadow-brut-2xs: 1px 1px 0px 0px var(--brand-navy);
+  --shadow-brut-xs: 2px 2px 0px 0px rgba(22, 24, 29, 0.3);
+  --shadow-brut-sm: 4px 4px 0px 0px rgba(22, 24, 29, 0.24);
+  --shadow-brut-sm-strong: 4px 4px 0px 0px rgba(22, 24, 29, 0.38);
+  --shadow-brut-md: 4px 4px 0px 0px var(--brand-navy);
+  --shadow-brut-lg: 6px 6px 0px 0px var(--brand-navy);
+  --shadow-brut-lg-soft: 6px 6px 0px 0px rgba(22, 24, 29, 0.24);
+  --shadow-brut-xl: 8px 8px 0px 0px var(--brand-navy);
+  --shadow-brut-2xl: 12px 12px 0px 0px var(--brand-navy);
+  --shadow-brut-3xl-accent: 16px 16px 0px 0px rgba(199, 154, 86, 0.42);
+  --shadow-brut-xl-soft: 8px 8px 0px 0px rgba(22, 24, 29, 0.3);
+  --shadow-brut-xs-accent: 2px 2px 0px 0px rgba(199, 154, 86, 0.45);
+  --shadow-brut-sm-accent: 4px 4px 0px 0px rgba(200, 165, 74, 0.28);
+  --shadow-brut-md-accent: 4px 4px 0px 0px #C79A56;
+  --shadow-brut-lg-accent: 6px 6px 0px 0px rgba(200, 165, 74, 0.4);
+  --shadow-brut-xl-accent: 8px 8px 0px 0px rgba(200, 165, 74, 0.4);
+  --shadow-brut-fire: 8px 8px 0px 0px #FF3300;
+  --shadow-brut-danger: 4px 4px 0px 0px #dc2626;
+  --shadow-brut-success: 4px 4px 0px 0px #16a34a;
 }
 
 :root {
-  --brand-off-white: #F3ECE1;
-  --brand-bg: #E8E4D7;
-  --brand-navy: #142B4C;
-  --brand-navy-light: #C79A56;
+  --brand-off-white: #FBF9F6;
+  --brand-bg: #F3ECE1;
+  --brand-navy: #16181D;
+  --brand-navy-light: #2A2C33;
+  --brand-accent: #DFBB7D;
 }
 
 @keyframes marquee {
@@ -63,21 +97,55 @@
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--brand-bg);
-  border-left: 2px solid var(--brand-navy);
+  background: #111111;
+  border-left: 1px solid rgba(200, 165, 74, 0.3);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--brand-navy);
-  border: 1px solid var(--brand-bg);
+  background: #C8A54A;
+  border-radius: 0px;
+  border: 1px solid #111111;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--brand-navy-light);
+  background: #D4B066;
+}
+
+/* Panel custom scrollbars */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #C8A54A #111111;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #111111;
+  border-left: 1px solid rgba(200, 165, 74, 0.3);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #C8A54A;
+  border-radius: 0px;
+  border: 1px solid #111111;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #D4B066;
 }
 
 /* Firefox scrollbars */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--brand-navy) var(--brand-bg);
+}
+
+/* Input placeholder contrast enforcement (HIG secondaryLabel ≈ 60% opacity) */
+::placeholder,
+::-webkit-input-placeholder,
+::-moz-placeholder,
+:-ms-input-placeholder {
+  color: var(--brand-navy) !important;
+  opacity: 0.55 !important;
+  font-weight: 400 !important;
+  font-style: italic !important;
 }
 
 :where(a, button, input, select, textarea, [role="button"], [role="radio"], [role="switch"], [tabindex]):focus-visible {
@@ -91,7 +159,7 @@
 }
 
 :where(button, [role="button"], input, select, textarea) {
-  min-height: 24px;
+  min-height: 32px;
 }
 
 .visually-hidden:not(:focus):not(:active) {
@@ -115,4 +183,15 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Taxi checkered pattern bar matching event poster */
+.taxi-checkered-bar {
+  background: repeating-linear-gradient(
+    90deg,
+    #E6BA7A,
+    #E6BA7A 12px,
+    #080808 12px,
+    #080808 24px
+  );
 }

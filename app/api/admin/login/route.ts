@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(request, "admin-login", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  if (!rl.allowed) return rl.response!;
+
   try {
     const { email, password } = await request.json();
 

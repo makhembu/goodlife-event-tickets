@@ -8,7 +8,9 @@ export async function GET(request: NextRequest) {
       const tickets = await fetchDeletedTickets();
       return NextResponse.json(tickets);
     }
-    const tickets = await fetchAllTickets();
+    const eventIdParam = searchParams.get("eventId");
+    const eventId = eventIdParam ? parseInt(eventIdParam) : undefined;
+    const tickets = await fetchAllTickets(eventId);
     return NextResponse.json(tickets);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

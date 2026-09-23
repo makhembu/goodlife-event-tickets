@@ -256,8 +256,9 @@ export async function generateTicketPdf(
   }
 
   // ── Price ─────────────────────────────────────────────────────────────────
-  drawTracked(page, "AMOUNT PAID", fBold, 8, PX + 2, PRICE_Y + 18, BRAND_BLACK, 1.2);
-  drawTracked(page, `KES ${Number(ticket.amount_paid).toLocaleString()}`, fDisplay, 22, PX + 2, PRICE_Y, BRAND_ACCENT, 1.0);
+  const isCrew = ticket.ticket_type?.startsWith("CREW/");
+  drawTracked(page, isCrew ? "CREW PASS" : "AMOUNT PAID", fBold, 8, PX + 2, PRICE_Y + 18, BRAND_BLACK, 1.2);
+  drawTracked(page, isCrew ? "—" : `KES ${Number(ticket.amount_paid).toLocaleString()}`, fDisplay, 22, PX + 2, PRICE_Y, BRAND_ACCENT, 1.0);
 
   // ── Brutalist Box Tag (Bottom right of main panel) ────────────────────────
   const orgStr = event.tag.toUpperCase();

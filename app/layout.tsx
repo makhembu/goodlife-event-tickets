@@ -23,25 +23,35 @@ export async function generateMetadata(): Promise<Metadata> {
   const subtitle = event?.subtitle || '237-THIKA | JULY 11';
   const venue = event?.venue || 'MARARA CAMP, THIKA';
   const flyerUrl = event?.flyer_url || '/flyer.png';
-  const description = `Official ticket checkout portal for ${title} - ${subtitle} at ${venue}.`;
+  const description = `Get your official tickets for ${title} (${subtitle}) at ${venue}. Instant M-Pesa checkout & instant WhatsApp PDF ticket delivery.`;
 
-  const baseUrl = process.env.APP_URL || 'https://goodlife-event-tickets.vercel.app';
+  const baseUrl = process.env.APP_URL || 'https://goodlife.smwhr.space';
   const absoluteImageUrl = flyerUrl.startsWith('http') ? flyerUrl : `${baseUrl}${flyerUrl}`;
 
   return {
-    title: `${title} | Secure Ticket Portal`,
+    metadataBase: new URL(baseUrl),
+    title: {
+      default: `${title} - ${subtitle} | Official Tickets`,
+      template: `%s | ${title}`,
+    },
     description,
+    keywords: [title, 'Goodlife tickets', 'Kenya events', 'Thika events', 'M-Pesa tickets', 'Marara Camp', subtitle],
+    authors: [{ name: 'GOODLIFE Events' }],
+    creator: 'GOODLIFE',
+    publisher: 'GOODLIFE',
     openGraph: {
       title: `${title} - ${subtitle}`,
       description,
       url: baseUrl,
-      siteName: title,
+      siteName: `${title} Event Tickets`,
+      locale: 'en_KE',
       images: [
         {
           url: absoluteImageUrl,
           width: 1200,
           height: 1600,
-          alt: `${title} Flyer`,
+          alt: `${title} - ${subtitle} Official Event Flyer`,
+          type: 'image/png',
         },
       ],
       type: 'website',
@@ -51,6 +61,17 @@ export async function generateMetadata(): Promise<Metadata> {
       title: `${title} - ${subtitle}`,
       description,
       images: [absoluteImageUrl],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-video-preview': -1,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
     },
   };
 }

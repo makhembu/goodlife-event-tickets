@@ -45,14 +45,14 @@ export async function sendTicketViaWhatsApp(
   let messageText: string;
   if (whatsappTemplate) {
     messageText = whatsappTemplate
-      .replace(/\{\{ticketId\}\}/g, ticketId)
-      .replace(/\{\{phoneNumber\}\}/g, phoneNumber)
-      .replace(/\{\{pdfUrl\}\}/g, pdfUrl)
-      .replace(/\{\{eventTitle\}\}/g, eventTitle)
-      .replace(/\{\{eventSubtitle\}\}/g, eventSubtitle)
-      .replace(/\{\{eventVenue\}\}/g, eventVenue)
-      .replace(/\{\{buyerName\}\}/g, buyerName || "")
-    .replace(/\{\{eventRegulations\}\}/g, eventRegs);
+      .replace(/\{\{ticketId\}\}/gi, ticketId)
+      .replace(/\{\{phoneNumber\}\}/gi, phoneNumber)
+      .replace(/\{\{pdfUrl\}\}/gi, pdfUrl)
+      .replace(/\{\{eventTitle\}\}/gi, eventTitle)
+      .replace(/\{\{eventSubtitle\}\}/gi, eventSubtitle)
+      .replace(/\{\{eventVenue\}\}/gi, eventVenue)
+      .replace(/\{\{buyerName\}\}/gi, buyerName || "")
+    .replace(/\{\{eventRegulations\}\}/gi, eventRegs);
   } else {
     messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
@@ -209,19 +209,43 @@ export async function notifyOperators(
   const defaultOperatorTemplate = `*NEW TICKET SECURED*\n\nBuyer: {{buyerName}}\nTicket Type: {{ticketType}} (Qty: {{quantity}})\nAmount Paid: KES {{amountPaid}}\nReference/ID: {{reference}}`;
   const operatorTemplate = eventDetails?.whatsapp_operator_template || defaultOperatorTemplate;
   const messageText = operatorTemplate
-    .replace(/\{\{buyerName\}\}/g, buyerName)
-    .replace(/\{\{ticketType\}\}/g, ticketType)
-    .replace(/\{\{quantity\}\}/g, String(quantity))
-    .replace(/\{\{amountPaid\}\}/g, String(amountPaid))
-    .replace(/\{\{reference\}\}/g, reference);
+    .replace(/\{\{buyerName\}\}/gi, buyerName)
+    .replace(/\{\{ticketType\}\}/gi, ticketType)
+    .replace(/\{\{quantity\}\}/gi, String(quantity))
+    .replace(/\{\{amountPaid\}\}/gi, String(amountPaid))
+    .replace(/\{\{reference\}\}/gi, reference);
 
-  const isWaha = process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism");
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha = !isWhapi && !isOpenWA && (process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism"));
 
   console.log(`Broadcasting alert to ${operators.length} operators...`);
 
   for (const operatorPhone of operators) {
     try {
-      if (isWaha) {
+      if (isOpenWA) {
+        const baseUrl = url.replace(/\/+$/, "");
+        const sid = sessionId || "session";
+        const targetUrl = `${baseUrl}/api/sessions/${sid}/messages/send-text`;
+        const headers = {
+          "x-api-key": apiKey || "",
+          "Content-Type": "application/json"
+        };
+        const bodyData = {
+          chatId: `${operatorPhone}@c.us`,
+          text: messageText
+        };
+        
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(bodyData)
+        });
+
+        if (!response.ok) {
+          console.warn(`Failed to send operator notification to ${operatorPhone}: HTTP ${response.status}`);
+        }
+      } else if (isWaha) {
         const baseUrl = url.replace(/\/+$/, "");
         const targetUrl = `${baseUrl}/api/sendText`;
         const headers = {
@@ -268,6 +292,60 @@ export async function notifyOperators(
   }
 }
 
+/**
+ * Send a free-form text message to all configured operators (OPERATOR_WHATSAPP_NUMBERS).
+ * Used for system alerts (e.g., low PayHero fee float) as well as purchase broadcasts.
+ */
+export async function sendOperatorText(messageText: string) {
+  const url = process.env.WHATSAPP_GATEWAY_URL;
+  const apiKey = process.env.WHATSAPP_API_KEY;
+  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const operatorsEnv = process.env.OPERATOR_WHATSAPP_NUMBERS;
+
+  if (!url || !operatorsEnv) return;
+
+  const operators = operatorsEnv
+    .split(",")
+    .map(n => n.trim().replace(/[^0-9]/g, ""))
+    .filter(n => n.length > 0);
+  if (operators.length === 0) return;
+
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha = !isWhapi && !isOpenWA && (process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism"));
+
+  for (const operatorPhone of operators) {
+    try {
+      if (isOpenWA) {
+        const baseUrl = url.replace(/\/+$/, "");
+        const sid = sessionId || "session";
+        await fetch(`${baseUrl}/api/sessions/${sid}/messages/send-text`, {
+          method: "POST",
+          headers: { "x-api-key": apiKey || "", "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: `${operatorPhone}@c.us`, text: messageText }),
+        });
+      } else if (isWaha) {
+        const baseUrl = url.replace(/\/+$/, "");
+        await fetch(`${baseUrl}/api/sendText`, {
+          method: "POST",
+          headers: { "X-Api-Key": apiKey || "", "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: `${operatorPhone}@c.us`, text: messageText, session: sessionId }),
+        });
+      } else {
+        // Evolution API Configuration Fallback
+        const baseUrl = url.replace(/\/+$/, "");
+        await fetch(`${baseUrl}/message/sendText/${sessionId}`, {
+          method: "POST",
+          headers: { "apikey": apiKey || "", "Content-Type": "application/json" },
+          body: JSON.stringify({ number: operatorPhone, text: messageText }),
+        });
+      }
+    } catch (err: any) {
+      console.warn(`Exception sending operator text to ${operatorPhone}:`, err.message);
+    }
+  }
+}
+
 export async function sendScanNotification(
   ticketId: string,
   phoneNumber: string,
@@ -301,16 +379,38 @@ export async function sendScanNotification(
   } catch {}
   const scanTemplate = eventDetails?.whatsapp_scan_template || defaultScanTemplate;
   const messageText = scanTemplate
-    .replace(/\{\{buyerName\}\}/g, buyerName)
-    .replace(/\{\{ticketType\}\}/g, ticketType)
-    .replace(/\{\{ticketId\}\}/g, ticketId)
-    .replace(/\{\{scannerName\}\}/g, scannerName)
-    .replace(/\{\{scanTime\}\}/g, new Date().toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi", hour: "2-digit", minute: "2-digit" }));
+    .replace(/\{\{buyerName\}\}/gi, buyerName)
+    .replace(/\{\{ticketType\}\}/gi, ticketType)
+    .replace(/\{\{ticketId\}\}/gi, ticketId)
+    .replace(/\{\{scannerName\}\}/gi, scannerName)
+    .replace(/\{\{scanTime\}\}/gi, new Date().toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi", hour: "2-digit", minute: "2-digit" }));
 
-  const isWaha = process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism");
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha = !isWhapi && !isOpenWA && (process.env.WHATSAPP_GATEWAY_TYPE === "waha" || url.includes("waha") || url.includes("compassionate-optimism"));
 
   try {
-    if (isWaha) {
+    if (isOpenWA) {
+      const baseUrl = url.replace(/\/+$/, "");
+      const sid = sessionId || "session";
+      const targetUrl = `${baseUrl}/api/sessions/${sid}/messages/send-text`;
+      const headers = {
+        "x-api-key": apiKey || "",
+        "Content-Type": "application/json"
+      };
+      const bodyData = {
+        chatId: `${formattedPhone}@c.us`,
+        text: messageText
+      };
+      
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyData)
+      });
+
+      return response.ok;
+    } else if (isWaha) {
       const baseUrl = url.replace(/\/+$/, "");
       const targetUrl = `${baseUrl}/api/sendText`;
       const headers = {

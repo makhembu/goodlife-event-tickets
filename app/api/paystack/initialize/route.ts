@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment, fetchTicketTiers } from "@/lib/supabase-db";
+import { createPendingPayment, fetchTicketTiers, fetchActiveEvent } from "@/lib/supabase-db";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API = "https://api.paystack.co";
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(request, "paystack-init", { maxRequests: 6, windowMs: 60 * 1000 });
+  if (!rl.allowed) return rl.response!;
+
   try {
     const { email, phone_number, ticket_type, buyer_name, quantity = 1, whatsapp_number = "" } = await request.json();
 
@@ -22,7 +26,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const allTiers = await fetchTicketTiers();
+    const activeEvent = await fetchActiveEvent();
+    const eventId = activeEvent?.id || 1;
+
+    const allTiers = await fetchTicketTiers(eventId);
     const matchedTier = allTiers.find(t => t.id === ticket_type);
     if (!matchedTier) {
       return NextResponse.json({ error: "Invalid ticket type selected." }, { status: 400 });
@@ -47,6 +54,7 @@ export async function POST(request: NextRequest) {
       buyer_name,
       amount: cost,
       whatsapp_number: whatsapp_number || "",
+      event_id: eventId,
     });
 
     const paystackRes = await fetch(`${PAYSTACK_API}/charge`, {
@@ -70,6 +78,7 @@ export async function POST(request: NextRequest) {
           buyer_name,
           phone_number,
           whatsapp_number: whatsapp_number || "",
+          event_id: eventId,
         },
       }),
     });
