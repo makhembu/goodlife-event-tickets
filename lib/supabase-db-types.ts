@@ -10,6 +10,11 @@ export interface Event {
   ticker_text: string;
   till_number: string;
   event_date: string | null;
+  status?: 'scheduled' | 'live' | 'closed' | 'archived';
+  sales_open_date?: string | null;
+  sales_close_date?: string | null;
+  next_event_title?: string;
+  recap_video_url?: string;
   created_at: string;
   archived_at: string | null;
   is_active: boolean;
@@ -44,6 +49,11 @@ export interface EventDetails {
   ticker_text?: string;
   logo_url?: string | null;
   event_date?: string | null; // proper DATE field: "2026-09-05"
+  status?: 'scheduled' | 'live' | 'closed' | 'archived';
+  sales_open_date?: string | null;
+  sales_close_date?: string | null;
+  next_event_title?: string;
+  recap_video_url?: string;
   simulators_enabled?: boolean;
   operator_notifications_enabled?: boolean;
   footer_title?: string;

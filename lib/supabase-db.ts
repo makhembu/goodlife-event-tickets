@@ -5,6 +5,7 @@ export type { Ticket, Event, EventDetails, PendingPayment, TicketTier };
 
 // Safe import for server-side pg pool to avoid breaking client bundle builds
 let neonQuery: any = null;
+let neonConnect: any = null;
 if (typeof window === "undefined") {
   try {
     // Directly require pg here so bundler keeps it server-only
@@ -17,6 +18,7 @@ if (typeof window === "undefined") {
       connectionTimeoutMillis: 5000
     });
     neonQuery = (text: string, params?: any[]) => _pool.query(text, params);
+    neonConnect = () => _pool.connect();
   } catch (e) {
     console.error("Failed to initialize Neon pool:", e);
   }
@@ -1520,3 +1522,856 @@ export async function clearAllPendingPayments(): Promise<boolean> {
     return false;
   }
 }
+// ==================== POS & CULTURAL HUB TYPES ====================
+
+export interface Vendor {
+  id: number;
+  name: string;
+  contact_phone: string;
+  contact_name: string;
+  logo_url: string;
+  created_at: string;
+}
+
+export interface VendorEventAssignment {
+  id: number;
+  vendor_id: number;
+  event_id: number;
+  commission_rate: number;
+  flat_fee: number;
+  status: 'active' | 'settled' | 'closed';
+  total_sales: number;
+  commission_owed: number;
+  settled_amount: number;
+}
+
+export interface VendorOperator {
+  id: number;
+  vendor_id: number;
+  name: string;
+  pin: string;
+  role: 'cashier' | 'manager';
+  is_active: boolean;
+}
+
+export interface VendorItem {
+  id: number;
+  vendor_id: number;
+  event_id: number;
+  name: string;
+  category: string;
+  price: number;
+  stock_qty: number | null;
+  low_stock_threshold: number;
+  image_url: string;
+  modifiers: { name: string; price_add: number }[];
+  is_available: boolean;
+  sort_order: number;
+}
+
+export interface PosSale {
+  id: string;
+  vendor_id: number;
+  event_id: number;
+  operator_id: number | null;
+  subtotal: number;
+  total: number;
+  payment_status: 'completed' | 'voided' | 'partial';
+  voided_by: number | null;
+  void_reason: string | null;
+  notes: string;
+  created_at: string;
+}
+
+export interface PosSaleItem {
+  id: number;
+  sale_id: string;
+  item_id: number | null;
+  item_name: string;
+  quantity: number;
+  unit_price: number;
+  modifiers: { name: string; price_add: number }[];
+  line_total: number;
+}
+
+export interface SplitPayment {
+  id: number;
+  sale_id: string;
+  method: 'cash' | 'mpesa' | 'tab';
+  amount: number;
+  payer_name?: string;
+  payer_phone?: string;
+  mpesa_ref?: string;
+  tab_id?: number | null;
+}
+
+export interface CustomerTab {
+  id: number;
+  customer_name: string;
+  customer_phone: string;
+  vendor_id: number;
+  event_id: number;
+  credit_limit: number;
+  balance: number;
+  status: 'open' | 'settled' | 'written_off';
+  created_at: string;
+  settled_at: string | null;
+}
+
+export interface TabTransaction {
+  id: number;
+  tab_id: number;
+  sale_id: string | null;
+  type: 'charge' | 'payment';
+  amount: number;
+  method: string;
+  mpesa_ref: string;
+  operator_id: number | null;
+  created_at: string;
+}
+
+export interface EventWaitlist {
+  id: number;
+  event_id: number;
+  phone_number: string;
+  created_at: string;
+  notified_at: string | null;
+}
+
+export interface EventGallery {
+  id: number;
+  event_id: number;
+  image_url: string;
+  thumbnail_url: string;
+  caption: string;
+  tag: string;
+  created_at: string;
+}
+
+export interface RadioSet {
+  id: number;
+  event_id: number;
+  title: string;
+  dj_name: string;
+  audio_url: string;
+  cover_url: string;
+  duration: string;
+  genre: string;
+  play_count: number;
+  created_at: string;
+}
+
+// ==================== VENDOR ADMINISTRATION ====================
+
+export async function fetchAllVendors(): Promise<Vendor[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/admin/vendors");
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  try {
+    const { rows } = await neonQuery("SELECT * FROM vendors WHERE deleted_at IS NULL ORDER BY name ASC");
+    return rows;
+  } catch (err) {
+    console.error("Neon fetchAllVendors error:", err);
+    return [];
+  }
+}
+
+export async function getVendorById(id: number): Promise<Vendor | null> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/vendors/${id}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return null;
+  }
+  try {
+    const { rows } = await neonQuery("SELECT * FROM vendors WHERE id = $1 AND deleted_at IS NULL LIMIT 1", [id]);
+    if (rows.length === 0) return null;
+    return rows[0];
+  } catch (err) {
+    console.error("Neon getVendorById error:", err);
+    return null;
+  }
+}
+
+export async function createVendor(data: Omit<Vendor, "id" | "created_at">): Promise<Vendor> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/vendors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to create vendor");
+    return await res.json();
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO vendors (name, contact_phone, contact_name, logo_url)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [data.name, data.contact_phone || "", data.contact_name || "", data.logo_url || ""]
+  );
+  return rows[0];
+}
+
+export async function updateVendor(id: number, updates: Partial<Vendor>): Promise<Vendor | null> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/vendors/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  }
+  const fields = Object.keys(updates).filter(k => k !== "id" && k !== "created_at");
+  if (fields.length === 0) return await getVendorById(id);
+  const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
+  const values = fields.map(f => (updates as any)[f]);
+  const { rows } = await neonQuery(
+    `UPDATE vendors SET ${setClause} WHERE id = $1 RETURNING *`,
+    [id, ...values]
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export async function deleteVendor(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/vendors/${id}`, { method: "DELETE" });
+    return res.ok;
+  }
+  try {
+    await neonQuery("UPDATE vendors SET deleted_at = NOW() WHERE id = $1", [id]);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+export async function fetchVendorsForEvent(eventId: number) {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/events/${eventId}/vendors`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  try {
+    const { rows } = await neonQuery(
+      `SELECT v.*, vea.id as assignment_id, vea.commission_rate, vea.flat_fee, vea.status, vea.total_sales, vea.commission_owed, vea.settled_amount
+       FROM vendors v
+       JOIN vendor_event_assignments vea ON v.id = vea.vendor_id
+       WHERE vea.event_id = $1 AND v.deleted_at IS NULL
+       ORDER BY v.name ASC`,
+      [eventId]
+    );
+    return rows;
+  } catch (err) {
+    return [];
+  }
+}
+
+// ==================== ASSIGNMENTS & SETTLEMENT ====================
+
+export async function assignVendorToEvent(vendorId: number, eventId: number, commissionRate: number = 0, flatFee: number = 0) {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/vendors/${vendorId}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, commissionRate, flatFee })
+    });
+    if (!res.ok) throw new Error("Failed to assign vendor");
+    return await res.json();
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO vendor_event_assignments (vendor_id, event_id, commission_rate, flat_fee)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (vendor_id, event_id) DO UPDATE SET
+       commission_rate = EXCLUDED.commission_rate,
+       flat_fee = EXCLUDED.flat_fee
+     RETURNING *`,
+    [vendorId, eventId, commissionRate, flatFee]
+  );
+  return rows[0];
+}
+
+export async function updateVendorEventAssignment(id: number, updates: Partial<VendorEventAssignment>) {
+  if (typeof window !== "undefined") return null; // Used mainly admin side
+  const fields = Object.keys(updates).filter(k => !["id", "vendor_id", "event_id", "created_at"].includes(k));
+  if (fields.length === 0) return null;
+  const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
+  const values = fields.map(f => (updates as any)[f]);
+  const { rows } = await neonQuery(
+    `UPDATE vendor_event_assignments SET ${setClause} WHERE id = $1 RETURNING *`,
+    [id, ...values]
+  );
+  return rows[0];
+}
+
+export async function getVendorSettlement(vendorId: number, eventId: number) {
+  if (typeof window !== "undefined") return null;
+  const { rows } = await neonQuery(
+    "SELECT * FROM vendor_event_assignments WHERE vendor_id = $1 AND event_id = $2 LIMIT 1",
+    [vendorId, eventId]
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export async function fetchSettlementsForEvent(eventId: number) {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/settlements?eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery(
+    `SELECT vea.*, v.name as vendor_name
+     FROM vendor_event_assignments vea
+     JOIN vendors v ON vea.vendor_id = v.id
+     WHERE vea.event_id = $1
+     ORDER BY v.name ASC`,
+    [eventId]
+  );
+  return rows;
+}
+
+export async function recordSettlement(assignmentId: number, amount: number) {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/settlements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignmentId, amount })
+    });
+    return res.ok;
+  }
+  await neonQuery(
+    `UPDATE vendor_event_assignments
+     SET settled_amount = settled_amount + $2,
+         status = CASE WHEN (commission_owed - (settled_amount + $2)) <= 0 THEN 'settled' ELSE 'active' END
+     WHERE id = $1`,
+    [assignmentId, amount]
+  );
+  return true;
+}
+
+export async function exportVendorReport(vendorId: number, eventId: number): Promise<string> {
+  if (typeof window !== "undefined") return ""; // typically a route handler returns CSV
+  const { rows } = await neonQuery(
+    `SELECT ps.id, ps.created_at, ps.total, ps.payment_status,
+            (SELECT string_agg(item_name || ' x' || quantity, ', ') FROM pos_sale_items WHERE sale_id = ps.id) as items
+     FROM pos_sales ps
+     WHERE ps.vendor_id = $1 AND ps.event_id = $2
+     ORDER BY ps.created_at DESC`,
+    [vendorId, eventId]
+  );
+  if (rows.length === 0) return "ID,Date,Total,Status,Items\n";
+  const header = "ID,Date,Total,Status,Items\n";
+  const body = rows.map((r: any) => `${r.id},${r.created_at},${r.total},${r.payment_status},"${r.items}"`).join("\n");
+  return header + body;
+}
+
+// ==================== OPERATORS & AUTHENTICATION ====================
+
+export async function fetchOperatorsForVendor(vendorId: number): Promise<VendorOperator[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/operators`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery("SELECT * FROM vendor_operators WHERE vendor_id = $1 AND is_active = TRUE", [vendorId]);
+  return rows;
+}
+
+export async function createOperator(data: Omit<VendorOperator, "id" | "is_active">): Promise<VendorOperator> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/vendors/${data.vendor_id}/operators`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to create operator");
+    return await res.json();
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO vendor_operators (vendor_id, name, pin, role) VALUES ($1, $2, $3, $4) RETURNING *`,
+    [data.vendor_id, data.name, data.pin, data.role || "cashier"]
+  );
+  return rows[0];
+}
+
+export async function updateOperator(id: number, updates: Partial<VendorOperator>): Promise<VendorOperator | null> {
+  if (typeof window !== "undefined") return null;
+  const fields = Object.keys(updates).filter(k => !["id", "vendor_id", "created_at"].includes(k));
+  if (fields.length === 0) return null;
+  const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
+  const values = fields.map(f => (updates as any)[f]);
+  const { rows } = await neonQuery(
+    `UPDATE vendor_operators SET ${setClause} WHERE id = $1 RETURNING *`,
+    [id, ...values]
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export async function deactivateOperator(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  await neonQuery("UPDATE vendor_operators SET is_active = FALSE WHERE id = $1", [id]);
+  return true;
+}
+
+export async function authenticateOperator(pin: string): Promise<{ operator: VendorOperator; vendor: Vendor } | null> {
+  if (typeof window !== "undefined") return null; // API only
+  const { rows } = await neonQuery(
+    `SELECT o.*, v.name as vendor_name, v.logo_url
+     FROM vendor_operators o
+     JOIN vendors v ON o.vendor_id = v.id
+     WHERE o.pin = $1 AND o.is_active = TRUE AND v.deleted_at IS NULL LIMIT 1`,
+    [pin]
+  );
+  if (rows.length === 0) return null;
+  const op = rows[0];
+  return {
+    operator: { id: op.id, vendor_id: op.vendor_id, name: op.name, pin: op.pin, role: op.role, is_active: op.is_active },
+    vendor: { id: op.vendor_id, name: op.vendor_name, logo_url: op.logo_url } as unknown as Vendor
+  };
+}
+
+// ==================== ITEMS & STOCK TRACKING ====================
+
+export async function fetchVendorItems(vendorId: number, eventId: number): Promise<VendorItem[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/items?vendorId=${vendorId}&eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery(
+    "SELECT * FROM vendor_items WHERE vendor_id = $1 AND event_id = $2 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC",
+    [vendorId, eventId]
+  );
+  return rows;
+}
+
+export async function createVendorItem(data: Omit<VendorItem, "id">): Promise<VendorItem> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/vendor/items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to create vendor item");
+    return await res.json();
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO vendor_items (vendor_id, event_id, name, category, price, stock_qty, low_stock_threshold, image_url, modifiers, is_available, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [data.vendor_id, data.event_id, data.name, data.category || "General", data.price, data.stock_qty, data.low_stock_threshold || 5, data.image_url || "", JSON.stringify(data.modifiers || []), data.is_available ?? true, data.sort_order || 0]
+  );
+  return rows[0];
+}
+
+export async function updateVendorItem(id: number, updates: Partial<VendorItem>): Promise<VendorItem | null> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/vendor/items/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  }
+  const fields = Object.keys(updates).filter(k => !["id", "vendor_id", "event_id", "created_at"].includes(k));
+  if (fields.length === 0) return null;
+  const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
+  const values = fields.map(f => {
+    const val = (updates as any)[f];
+    if (f === 'modifiers') return JSON.stringify(val);
+    return val;
+  });
+  const { rows } = await neonQuery(
+    `UPDATE vendor_items SET ${setClause} WHERE id = $1 RETURNING *`,
+    [id, ...values]
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+export async function deleteVendorItem(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/vendor/items/${id}`, { method: "DELETE" });
+    return res.ok;
+  }
+  await neonQuery("UPDATE vendor_items SET deleted_at = NOW() WHERE id = $1", [id]);
+  return true;
+}
+
+export async function adjustStock(itemId: number, quantityChange: number): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  const { rows } = await neonQuery(
+    "UPDATE vendor_items SET stock_qty = stock_qty + $2 WHERE id = $1 AND stock_qty IS NOT NULL RETURNING *",
+    [itemId, quantityChange]
+  );
+  return rows.length > 0;
+}
+
+// ==================== TRANSACTIONAL POS ENGINE ====================
+
+export async function createPosSale(
+  sale: Omit<PosSale, "created_at" | "payment_status" | "voided_by" | "void_reason">,
+  items: Omit<PosSaleItem, "id" | "sale_id" | "line_total">[],
+  payments: Omit<SplitPayment, "id" | "sale_id">[]
+): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/vendor/sell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sale, items, payments })
+    });
+    return res.ok;
+  }
+
+  // ATOMIC TRANSACTION LOGIC
+  const client = await neonConnect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Insert Sale
+    await client.query(
+      `INSERT INTO pos_sales (id, vendor_id, event_id, operator_id, subtotal, total, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [sale.id, sale.vendor_id, sale.event_id, sale.operator_id, sale.subtotal, sale.total, sale.notes || ""]
+    );
+
+    // 2. Insert Items & Decrement Stock
+    for (const item of items) {
+      const lineTotal = item.unit_price * item.quantity + (item.modifiers || []).reduce((sum, mod) => sum + mod.price_add, 0) * item.quantity;
+      await client.query(
+        `INSERT INTO pos_sale_items (sale_id, item_id, item_name, quantity, unit_price, modifiers, line_total)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [sale.id, item.item_id, item.item_name, item.quantity, item.unit_price, JSON.stringify(item.modifiers || []), lineTotal]
+      );
+      if (item.item_id) {
+        await client.query(
+          `UPDATE vendor_items SET stock_qty = stock_qty - $2 WHERE id = $1 AND stock_qty IS NOT NULL`,
+          [item.item_id, item.quantity]
+        );
+      }
+    }
+
+    // 3. Insert Split Payments & Update Tabs
+    let totalPaidViaTab = 0;
+    for (const p of payments) {
+      await client.query(
+        `INSERT INTO pos_split_payments (sale_id, method, amount, payer_name, payer_phone, mpesa_ref, tab_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [sale.id, p.method, p.amount, p.payer_name || "", p.payer_phone || "", p.mpesa_ref || "", p.tab_id || null]
+      );
+      if (p.method === 'tab' && p.tab_id) {
+        await client.query(
+          `UPDATE customer_tabs SET balance = balance + $2 WHERE id = $1`,
+          [p.tab_id, p.amount]
+        );
+        await client.query(
+          `INSERT INTO tab_transactions (tab_id, sale_id, type, amount, method, mpesa_ref, operator_id)
+           VALUES ($1, $2, 'charge', $3, 'tab', '', $4)`,
+          [p.tab_id, sale.id, p.amount, sale.operator_id]
+        );
+        totalPaidViaTab += p.amount;
+      }
+    }
+
+    // 4. Update Vendor Assignment Totals
+    const { rows: assignmentRows } = await client.query(
+      "SELECT commission_rate FROM vendor_event_assignments WHERE vendor_id = $1 AND event_id = $2",
+      [sale.vendor_id, sale.event_id]
+    );
+    const commRate = assignmentRows.length > 0 ? parseFloat(assignmentRows[0].commission_rate) : 0;
+    const commOwed = (sale.total * commRate) / 100;
+    
+    await client.query(
+      `UPDATE vendor_event_assignments
+       SET total_sales = total_sales + $3, commission_owed = commission_owed + $4
+       WHERE vendor_id = $1 AND event_id = $2`,
+      [sale.vendor_id, sale.event_id, sale.total, commOwed]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("ATOMIC POS TRANSACTION FAILED:", e);
+    return false;
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchSalesForVendor(vendorId: number, eventId: number, options?: any): Promise<PosSale[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/sales?vendorId=${vendorId}&eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery(
+    "SELECT * FROM pos_sales WHERE vendor_id = $1 AND event_id = $2 ORDER BY created_at DESC LIMIT 500",
+    [vendorId, eventId]
+  );
+  return rows;
+}
+
+export async function fetchSaleById(saleId: string): Promise<any> {
+  if (typeof window !== "undefined") return null;
+  const { rows: saleRows } = await neonQuery("SELECT * FROM pos_sales WHERE id = $1 LIMIT 1", [saleId]);
+  if (saleRows.length === 0) return null;
+  const sale = saleRows[0];
+  const { rows: itemRows } = await neonQuery("SELECT * FROM pos_sale_items WHERE sale_id = $1", [saleId]);
+  const { rows: paymentRows } = await neonQuery("SELECT * FROM pos_split_payments WHERE sale_id = $1", [saleId]);
+  return { ...sale, items: itemRows, payments: paymentRows };
+}
+
+export async function voidSale(saleId: string, voidedBy: number, reason: string): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/vendor/sales/${saleId}/void`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voidedBy, reason })
+    });
+    return res.ok;
+  }
+  
+  const client = await neonConnect();
+  try {
+    await client.query("BEGIN");
+    const { rows: saleRows } = await client.query("SELECT * FROM pos_sales WHERE id = $1 FOR UPDATE", [saleId]);
+    if (saleRows.length === 0 || saleRows[0].payment_status === 'voided') {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const sale = saleRows[0];
+
+    // Mark as voided
+    await client.query(
+      "UPDATE pos_sales SET payment_status = 'voided', voided_by = $2, void_reason = $3 WHERE id = $1",
+      [saleId, voidedBy, reason]
+    );
+
+    // Restock
+    const { rows: items } = await client.query("SELECT * FROM pos_sale_items WHERE sale_id = $1", [saleId]);
+    for (const item of items) {
+      if (item.item_id) {
+        await client.query(
+          "UPDATE vendor_items SET stock_qty = stock_qty + $2 WHERE id = $1 AND stock_qty IS NOT NULL",
+          [item.item_id, item.quantity]
+        );
+      }
+    }
+
+    // Reverse Tab Balances
+    const { rows: payments } = await client.query("SELECT * FROM pos_split_payments WHERE sale_id = $1 AND method = 'tab'", [saleId]);
+    for (const p of payments) {
+      if (p.tab_id) {
+        await client.query("UPDATE customer_tabs SET balance = balance - $2 WHERE id = $1", [p.tab_id, p.amount]);
+        // Insert void transaction in tab ledger
+        await client.query(
+          `INSERT INTO tab_transactions (tab_id, sale_id, type, amount, method, mpesa_ref, operator_id)
+           VALUES ($1, $2, 'payment', $3, 'void', '', $4)`,
+          [p.tab_id, saleId, p.amount, voidedBy]
+        );
+      }
+    }
+
+    // Reverse Commission
+    const { rows: assignmentRows } = await client.query(
+      "SELECT commission_rate FROM vendor_event_assignments WHERE vendor_id = $1 AND event_id = $2",
+      [sale.vendor_id, sale.event_id]
+    );
+    const commRate = assignmentRows.length > 0 ? parseFloat(assignmentRows[0].commission_rate) : 0;
+    const commReversed = (sale.total * commRate) / 100;
+    await client.query(
+      `UPDATE vendor_event_assignments
+       SET total_sales = total_sales - $3, commission_owed = commission_owed - $4
+       WHERE vendor_id = $1 AND event_id = $2`,
+      [sale.vendor_id, sale.event_id, sale.total, commReversed]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("ATOMIC VOID FAILED:", e);
+    return false;
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchVendorDashboardMetrics(vendorId: number, eventId: number) {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/metrics?vendorId=${vendorId}&eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return null;
+  }
+  const { rows } = await neonQuery(
+    "SELECT SUM(total) as gross_sales, COUNT(*) as order_count FROM pos_sales WHERE vendor_id = $1 AND event_id = $2 AND payment_status != 'voided'",
+    [vendorId, eventId]
+  );
+  return rows[0];
+}
+
+export async function fetchAllVendorMetrics(eventId: number) {
+  if (typeof window !== "undefined") return null;
+  const { rows } = await neonQuery(
+    `SELECT vendor_id, SUM(total) as gross_sales, COUNT(*) as order_count
+     FROM pos_sales
+     WHERE event_id = $1 AND payment_status != 'voided'
+     GROUP BY vendor_id`,
+    [eventId]
+  );
+  return rows;
+}
+
+// ==================== CUSTOMER TABS ====================
+
+export async function createTab(data: Omit<CustomerTab, "id" | "balance" | "status" | "created_at" | "settled_at">): Promise<CustomerTab> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/vendor/tabs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to create tab");
+    return await res.json();
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO customer_tabs (customer_name, customer_phone, vendor_id, event_id, credit_limit)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [data.customer_name, data.customer_phone || "", data.vendor_id, data.event_id, data.credit_limit || 5000]
+  );
+  return rows[0];
+}
+
+export async function fetchTabsForVendor(vendorId: number, eventId: number): Promise<CustomerTab[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/tabs?vendorId=${vendorId}&eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery(
+    "SELECT * FROM customer_tabs WHERE vendor_id = $1 AND event_id = $2 ORDER BY created_at DESC",
+    [vendorId, eventId]
+  );
+  return rows;
+}
+
+export async function payTab(tabId: number, amount: number, method: string, mpesaRef: string = "", operatorId: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/vendor/tabs/${tabId}/pay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount, method, mpesaRef, operatorId })
+    });
+    return res.ok;
+  }
+
+  const client = await neonConnect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "UPDATE customer_tabs SET balance = balance - $2 WHERE id = $1",
+      [tabId, amount]
+    );
+    await client.query(
+      `INSERT INTO tab_transactions (tab_id, type, amount, method, mpesa_ref, operator_id)
+       VALUES ($1, 'payment', $2, $3, $4, $5)`,
+      [tabId, amount, method, mpesaRef, operatorId]
+    );
+    await client.query("COMMIT");
+    return true;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("ATOMIC TAB PAY FAILED:", e);
+    return false;
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchTabWithTransactions(tabId: number): Promise<any> {
+  if (typeof window !== "undefined") return null;
+  const { rows: tabs } = await neonQuery("SELECT * FROM customer_tabs WHERE id = $1 LIMIT 1", [tabId]);
+  if (tabs.length === 0) return null;
+  const tab = tabs[0];
+  const { rows: txns } = await neonQuery("SELECT * FROM tab_transactions WHERE tab_id = $1 ORDER BY created_at ASC", [tabId]);
+  return { ...tab, transactions: txns };
+}
+
+export async function closeTab(tabId: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/vendor/tabs/${tabId}/close`, { method: "POST" });
+    return res.ok;
+  }
+  await neonQuery("UPDATE customer_tabs SET status = 'settled', settled_at = NOW() WHERE id = $1", [tabId]);
+  return true;
+}
+
+// ==================== CULTURAL HUB & LIFECYCLE ====================
+
+export async function updateEventLifecycle(eventId: number, status: 'scheduled' | 'live' | 'closed'): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  await neonQuery("UPDATE events SET status = $2 WHERE id = $1", [eventId, status]);
+  return true;
+}
+
+export async function joinEventWaitlist(eventId: number, phoneNumber: string): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/events/waitlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, phoneNumber })
+    });
+    return res.ok;
+  }
+  try {
+    await neonQuery("INSERT INTO event_waitlist (event_id, phone_number) VALUES ($1, $2) ON CONFLICT DO NOTHING", [eventId, phoneNumber]);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+export async function fetchEventGallery(eventId: number): Promise<EventGallery[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/gallery?eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery("SELECT * FROM event_gallery WHERE event_id = $1 ORDER BY created_at DESC", [eventId]);
+  return rows;
+}
+
+export async function fetchRadioSets(eventId?: number): Promise<RadioSet[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/radio${eventId ? '?eventId='+eventId : ''}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  const query = eventId ? "SELECT * FROM radio_sets WHERE event_id = $1 ORDER BY created_at DESC" : "SELECT * FROM radio_sets ORDER BY created_at DESC";
+  const params = eventId ? [eventId] : [];
+  const { rows } = await neonQuery(query, params);
+  return rows;
+}
+

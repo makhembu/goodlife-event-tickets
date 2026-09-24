@@ -23,7 +23,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const ticket = await updateTicket(id, body);
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });

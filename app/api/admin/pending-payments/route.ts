@@ -12,7 +12,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const { checkout_request_id, mpesa_receipt, amount_paid } = body;
 
     if (!checkout_request_id || !mpesa_receipt || !amount_paid) {

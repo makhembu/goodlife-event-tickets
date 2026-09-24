@@ -3,7 +3,7 @@ import { rejectPendingPayment } from "@/lib/supabase-db";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const { checkout_request_id } = body;
 
     if (!checkout_request_id) {

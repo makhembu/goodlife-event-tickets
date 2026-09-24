@@ -24,7 +24,8 @@ import {
   ChevronDown,
   Copy,
   Check,
-  Video
+  Video,
+  Store
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -556,6 +557,13 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
                 className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
               >
                 <ScannerIcon className="w-4 h-4" /> Gate Scanner
+              </Link>
+              <Link
+                href="/vendor/login"
+                onClick={() => setShowSecretMenu(false)}
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
+              >
+                <Store className="w-4 h-4" /> Vendor POS Terminal
               </Link>
             </motion.div>
           )}

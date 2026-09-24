@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { buyerName, ticketType, quantity, amountPaid, reference } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { buyerName, ticketType, quantity, amountPaid, reference } = body;
     const { notifyOperators } = await import("@/lib/whatsapp");
     await notifyOperators(buyerName, ticketType, quantity, amountPaid, reference);
     return NextResponse.json({ success: true });

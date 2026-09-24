@@ -4,7 +4,8 @@ import { getTicketById } from "@/lib/supabase-db";
 
 export async function POST(request: NextRequest) {
   try {
-    const { ticketId, phoneNumber } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { ticketId, phoneNumber } = body;
 
     if (!ticketId || !phoneNumber) {
       return NextResponse.json(

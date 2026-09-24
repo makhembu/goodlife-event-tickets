@@ -6,7 +6,8 @@ export async function POST(request: NextRequest) {
   if (!rl.allowed) return rl.response!;
 
   try {
-    const { email, password } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { email, password } = body;
 
     if (email === "admin@goodlife.com" && password === "GoodlifeAdmin2026!") {
       const response = NextResponse.json({ success: true, message: "Authenticated successfully" });

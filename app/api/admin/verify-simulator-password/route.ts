@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { password } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { password } = body;
     if (password === "GoodlifeSim2026!") {
       return NextResponse.json({ valid: true });
     }
