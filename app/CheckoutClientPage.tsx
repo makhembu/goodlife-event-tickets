@@ -1054,11 +1054,18 @@ export default function TicketCheckoutPage({
                     {/* Subtle top gradient */}
                     <div className="absolute top-0 left-0 w-full h-24 md:h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
 
-                    {/* Mobile lightbox affordance. Now that the full poster is
-                        visible this is a zoom hint rather than a hint that there
-                        is more of it hidden below. */}
-                    <div className="absolute bottom-2 right-2 z-20 md:hidden bg-brand-navy text-brand-accent border-2 border-brand-accent px-2 py-1 font-mono text-[10px] font-black uppercase flex items-center gap-1.5 shadow-(--shadow-brut-xs)">
-                      <Maximize2 className="w-3 h-3" /> FULL POSTER
+                    {/* Mobile zoom affordance. The poster itself is the button -
+                        this badge is decoration pointing at the whole thing, not a
+                        second control, so it stays a div (nesting a button inside
+                        the poster button would be invalid HTML) and stays
+                        aria-hidden because the button already announces itself.
+                        Icon-only now: the "FULL POSTER" words were a second,
+                        longer way of saying "tap me" about a 326px target. */}
+                    <div
+                      aria-hidden="true"
+                      className="absolute bottom-2 right-2 z-20 md:hidden w-9 h-9 bg-brand-navy text-brand-accent border-2 border-brand-accent flex items-center justify-center shadow-(--shadow-brut-xs)"
+                    >
+                      <Maximize2 className="w-4 h-4" />
                     </div>
 
                     {/* Marquee ticker on desktop */}
@@ -1070,15 +1077,6 @@ export default function TicketCheckoutPage({
                     </div>
                   </button>
                 </div>
-
-                {/* Mobile Hero Trigger: Brutalist [ENLARGE FULL POSTER] button */}
-                <button
-                  type="button"
-                  onClick={() => setIsFlyerExpanded(true)}
-                  className="w-full py-2.5 px-3 border-2 border-brand-navy bg-brand-off-white text-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-2 shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] hover:bg-brand-navy hover:text-brand-off-white transition-all md:hidden cursor-pointer"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" /> ENLARGE FULL POSTER
-                </button>
 
                 {/* Venue / Till details.
                     These used to be `truncate` in a 2-column grid, so on a phone
