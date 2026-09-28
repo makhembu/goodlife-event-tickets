@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment, fetchTicketTiers, fetchActiveEvent } from "@/lib/supabase-db";
+import { createPendingPayment, fetchTicketTiers, fetchActiveEvent, isEventSellable } from "@/lib/supabase-db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   isPayheroConfigured,
@@ -69,10 +69,7 @@ export async function POST(request: NextRequest) {
     // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
     // so it satisfied every date check and would have issued live STK pushes
     // against a finished event to anyone who knew its id.
-    const isSellable = (e: any) =>
-      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
-
-    if (!isSellable(targetEvent)) {
+    if (!isEventSellable(targetEvent)) {
       return NextResponse.json(
         { error: "Ticket sales are not open for this event." },
         { status: 400 }

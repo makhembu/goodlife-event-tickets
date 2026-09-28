@@ -52,6 +52,28 @@ export async function fetchAllEvents(): Promise<Event[]> {
   }
 }
 
+/**
+ * The single definition of "this event is allowed to take money".
+ *
+ * This exists because the same question was being answered in four places
+ * with four different answers, and the disagreement was user-visible: the
+ * homepage advertised a mini event as "IS LIVE NOW ... PASSES & FREE RSVP
+ * AVAILABLE" with a buy link, while the payment routes rejected that same
+ * event. A visitor followed the advert and hit a dead end at checkout.
+ *
+ * Rule: must be live (or scheduled) AND explicitly active. The sales date
+ * window is checked separately by each caller, because it depends on the
+ * current time.
+ *
+ * If a mini event should be sellable, set is_active = true. The banner and
+ * the payment routes then agree by construction, not by coincidence.
+ */
+export function isEventSellable(
+  e: Pick<Event, "status" | "is_active"> | null | undefined
+): boolean {
+  return !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
+}
+
 // Fetch active event
 export async function fetchActiveEvent(): Promise<Event | null> {
   if (typeof window !== "undefined") {

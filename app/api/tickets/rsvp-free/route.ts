@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTicket, fetchTicketTiers, getEventById, fetchActiveEvent } from "@/lib/supabase-db";
+import { createTicket, fetchTicketTiers, getEventById, fetchActiveEvent, isEventSellable } from "@/lib/supabase-db";
 import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -25,10 +25,7 @@ export async function POST(request: NextRequest) {
     // A closed event must not be able to take reservations. The date window
     // alone is not sufficient: GOODLIFE XP is status='closed' with no
     // sales_close_date, so it satisfied every date check.
-    const isSellable = (e: any) =>
-      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
-
-    if (!isSellable(targetEvent)) {
+    if (!isEventSellable(targetEvent)) {
       return NextResponse.json(
         { error: "Ticket sales are not open for this event." },
         { status: 400 }

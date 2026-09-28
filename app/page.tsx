@@ -1,4 +1,4 @@
-import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById } from "@/lib/supabase-db";
+import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
 
@@ -71,7 +71,11 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
 
   const isClosed = targetEvent.status === 'closed' || targetEvent.status === 'scheduled';
   const availableEvents = allEvents.filter(e => e.status === 'live' || e.status === 'scheduled' || e.is_active);
-  const liveMiniEvents = allEvents.filter(e => e.category === 'mini' && (e.status === 'live' || e.is_active));
+  // Must use the same predicate the payment routes use, or this banner
+  // advertises a "LIVE NOW ... FREE RSVP AVAILABLE" event that then refuses
+  // payment at checkout. It previously used `status === 'live' || is_active`,
+  // which qualified an event that was live but inactive: an unbuyable dead end.
+  const liveMiniEvents = allEvents.filter(e => e.category === 'mini' && isEventSellable(e));
 
   if (isClosed) {
     return (

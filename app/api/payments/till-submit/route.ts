@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment } from "@/lib/supabase-db";
+import { createPendingPayment, isEventSellable } from "@/lib/supabase-db";
 import { notifyOperators } from "@/lib/whatsapp";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -42,10 +42,7 @@ export async function POST(request: NextRequest) {
     // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
     // so it satisfied every date check. This also replaces a fallback that
     // defaulted resolvedEventId to 1, which failed OPEN onto a closed event.
-    const isSellable = (e: any) =>
-      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
-
-    if (!isSellable(targetEvent)) {
+    if (!isEventSellable(targetEvent)) {
       await pool.end();
       return NextResponse.json(
         { error: "Ticket sales are not open for this event." },
