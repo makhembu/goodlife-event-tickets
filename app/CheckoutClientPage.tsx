@@ -94,6 +94,9 @@ export default function TicketCheckoutPage({
 
   // House Rules accordion
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Editions picker. A closed trigger costs ~40px on a phone, where the old
+  // always-open row of event buttons competed with the poster for the fold.
+  const [editionsOpen, setEditionsOpen] = useState(false);
 
   // Copy states
   const [copiedTill, setCopiedTill] = useState(false);
@@ -115,6 +118,27 @@ export default function TicketCheckoutPage({
   const statusRef = useRef<HTMLDivElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const editionsRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss the editions panel on outside tap or Escape. Both listeners only
+  // setState from an event callback, never synchronously from the effect body.
+  useEffect(() => {
+    if (!editionsOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (editionsRef.current && !editionsRef.current.contains(e.target as Node)) {
+        setEditionsOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditionsOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editionsOpen]);
   const [headerBottom, setHeaderBottom] = useState(0);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
@@ -827,43 +851,78 @@ export default function TicketCheckoutPage({
           </div>
         </header>
 
-        {/* MULTI-EVENT SWITCHER (Rendered if > 1 live/scheduled events exist) */}
+        {/* MULTI-EVENT SWITCHER (Rendered if > 1 live/scheduled events exist)
+            Collapsed into a single trigger. The row of buttons it replaced was
+            already reduced to 32px by the earlier horizontal-scroller pass, but
+            it still spent that 32px permanently and split the buy path from the
+            poster. The count badge is the affordance: it is only ever >1 here, so
+            a number in the corner is itself the signal that another edition
+            exists. */}
         {eventsList.length > 1 && (
-          <div className="flex items-center gap-2 border-4 border-brand-navy bg-brand-navy px-2 py-1.5 shadow-(--shadow-brut-sm) mb-4 md:mb-6 md:p-2">
-            <div className="text-[10px] md:text-[11px] font-mono uppercase text-brand-accent flex items-center gap-1 px-1 font-bold shrink-0">
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">EDITIONS</span>
-              <span className="sm:hidden">ED.</span>
-            </div>
-            {/* Horizontal scroller on mobile, wraps from md up. Event titles are
-                long ("SUNDAY PARK & CHILL #12"), so letting these wrap gave the
-                bar three or four rows and pushed the poster, the venue and the
-                till details off the first screen. The editions stay reachable -
-                they just stop eating the viewport. */}
-            <div className="flex gap-1.5 flex-1 min-w-0 overflow-x-auto overscroll-x-contain snap-x snap-mandatory md:flex-wrap md:overflow-x-visible md:snap-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {eventsList.map(evt => {
-                const isCurrent = evt.id === eventDetails.id;
-                return (
-                  <button
-                    key={evt.id}
-                    type="button"
-                    onClick={() => handleSwitchEvent(evt)}
-                    className={`py-1 px-2.5 md:px-3 border-2 font-display text-xs md:text-sm uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shrink-0 snap-start ${
-                      isCurrent
-                        ? "border-brand-accent bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-xs)"
-                        : "border-brand-off-white/40 bg-brand-navy text-brand-off-white hover:border-brand-accent hover:text-brand-accent"
-                    }`}
-                  >
-                    <span className="truncate max-w-[150px] md:max-w-none">{evt.title}</span>
-                    {evt.category === 'mini' && (
-                      <span className="text-[9px] bg-brand-navy/60 text-brand-off-white px-1 py-0.2 border border-brand-off-white/30 font-mono">
-                        MINI
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+          <div ref={editionsRef} className="relative z-30 mb-4 md:mb-6">
+            <button
+              type="button"
+              onClick={() => setEditionsOpen(o => !o)}
+              aria-expanded={editionsOpen}
+              aria-haspopup="listbox"
+              className="w-full flex items-center gap-2 border-4 border-brand-navy bg-brand-navy text-brand-off-white pl-3 pr-2 py-2 shadow-(--shadow-brut-sm) hover:bg-brand-navy/90 active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+            >
+              <Layers className="w-4 h-4 text-brand-accent shrink-0" />
+              <span className="font-mono text-[11px] md:text-xs font-bold uppercase tracking-widest">
+                Editions
+              </span>
+              <span className="ml-auto font-mono text-[10px] font-black uppercase bg-brand-accent text-brand-navy px-1.5 py-0.5">
+                {eventsList.length}
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 text-brand-accent shrink-0 transition-transform duration-200 ${editionsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            <AnimatePresence>
+              {editionsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  role="listbox"
+                  aria-label="Event editions"
+                  className="absolute left-0 right-0 top-full mt-1.5 border-4 border-brand-navy bg-brand-navy shadow-(--shadow-brut-xl-accent) overflow-hidden"
+                >
+                  {eventsList.map(evt => {
+                    const isCurrent = evt.id === eventDetails.id;
+                    return (
+                      <button
+                        key={evt.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isCurrent}
+                        onClick={() => {
+                          setEditionsOpen(false);
+                          handleSwitchEvent(evt);
+                        }}
+                        className={`w-full text-left px-3 py-3 flex items-center gap-2 border-b border-brand-off-white/15 last:border-b-0 transition-colors cursor-pointer ${
+                          isCurrent
+                            ? "bg-brand-accent text-brand-navy"
+                            : "text-brand-off-white hover:bg-brand-off-white/10"
+                        }`}
+                      >
+                        <span className="font-display text-sm uppercase tracking-wider truncate">
+                          {evt.title}
+                        </span>
+                        {evt.category === 'mini' && (
+                          <span className="shrink-0 text-[9px] font-mono font-black uppercase px-1 py-0.5 border border-current">
+                            Mini
+                          </span>
+                        )}
+                        {isCurrent && <Check className="w-4 h-4 ml-auto shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -944,13 +1003,29 @@ export default function TicketCheckoutPage({
                 </div>
 
                 {/* EVENT FLYER CONTAINER
-                    Deliberately NOT sized against the viewport. It used to be
-                    md:h-[calc(100dvh-330px)], which made the poster eat almost
-                    the whole first screen on any large display and pushed the
-                    venue, the till number and the buy path below the fold. The
-                    poster is a preview; the full-size view is the lightbox
-                    behind "ENLARGE FULL POSTER", which is one tap away. */}
-                <div className="relative w-full max-md:h-[180px] max-md:max-h-[180px] md:aspect-auto md:h-[420px] md:max-h-[420px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
+                    The poster is 390x551 - a portrait A-series flyer - and it was
+                    being rendered into a fixed-height box with object-cover, so
+                    on a phone only the top 39% of the artwork was ever on screen.
+                    The earlier 180px cap did not shrink the poster, it amputated
+                    it. Two changes fix that:
+
+                    1. aspect-[390/551] makes the box the same shape as the
+                       artwork, so the whole poster fits instead of being sliced.
+                    2. object-contain guarantees the *entire* poster is visible
+                       whatever the ratio, because contain never crops. That is
+                       why the hard-coded ratio is safe: if another event has a
+                       wider or shorter flyer, the worst case is a little
+                       letterboxing, never a hidden headline.
+
+                    max-h-[52dvh] is the guard rail. The flyer needs 461px at a
+                    390px viewport, so without a cap this would become the exact
+                    problem the previous fix removed: a poster that eats the
+                    first screen. 52dvh keeps venue, till and house rules above
+                    the fold on both a 390x844 phone and a 360x740 one.
+
+                    Desktop is untouched: it was already object-contain at a fixed
+                    420px and nobody has complained about it. */}
+                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-auto md:h-[420px] md:max-h-[420px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
                   <button 
                     type="button"
                     onClick={() => setIsFlyerExpanded(true)}
@@ -964,7 +1039,7 @@ export default function TicketCheckoutPage({
                         muted 
                         loop 
                         playsInline 
-                        className="w-full h-full object-cover md:object-contain pointer-events-none"
+                        className="w-full h-full object-contain pointer-events-none"
                       />
                     ) : (
                       <Image
@@ -972,14 +1047,16 @@ export default function TicketCheckoutPage({
                         alt={`${eventDetails.title} Flyer`}
                         fill
                         priority
-                        className="object-cover object-top md:object-contain transition-all duration-700"
+                        className="object-contain transition-all duration-700"
                         referrerPolicy="no-referrer"
                       />
                     )}
                     {/* Subtle top gradient */}
                     <div className="absolute top-0 left-0 w-full h-24 md:h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
 
-                    {/* Mobile Quick Lightbox Tag inside the crop */}
+                    {/* Mobile lightbox affordance. Now that the full poster is
+                        visible this is a zoom hint rather than a hint that there
+                        is more of it hidden below. */}
                     <div className="absolute bottom-2 right-2 z-20 md:hidden bg-brand-navy text-brand-accent border-2 border-brand-accent px-2 py-1 font-mono text-[10px] font-black uppercase flex items-center gap-1.5 shadow-(--shadow-brut-xs)">
                       <Maximize2 className="w-3 h-3" /> FULL POSTER
                     </div>
