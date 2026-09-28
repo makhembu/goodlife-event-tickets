@@ -364,6 +364,15 @@ export default function TicketCheckoutPage({
           return true;
         }
 
+        // A tier whose own availability window has closed must never be offered,
+        // whatever the ladder below decides. The ladder only ever reasons about
+        // Early Bird, so an expired Advance pass was promoted into the list
+        // precisely because Early Bird had expired - and the server then refused
+        // the payment, leaving the customer to fill in the form only to be
+        // rejected. This check is what keeps the two in agreement.
+        if (tier.available_from && eatDate < new Date(tier.available_from)) return false;
+        if (tier.available_until && eatDate > new Date(tier.available_until)) return false;
+
         // Entry tiers: Strict Laddering
         // Check Early Bird status
         const earlyBird: any = rawTiers.find((t: any) => 
