@@ -82,16 +82,16 @@ export default function TierSalesBreakdown({
             const isCamping = String(t.tag).toUpperCase().includes("CAMP");
             const soldOut = t.cap !== undefined && t.sold >= t.cap;
 
-            // Capped tiers read as progress toward stock; uncapped tiers as share of sales.
-            const barPct = t.cap
-              ? Math.min(100, Math.round((t.sold / t.cap) * 100))
-              : totalTicketsSold > 0
+            // One scale for every bar: share of all tickets sold, so bar lengths
+            // compare directly across rows. Capacity lives in the label, not the bar.
+            const barPct =
+              totalTicketsSold > 0
                 ? Math.min(100, Math.round((t.sold / totalTicketsSold) * 100))
                 : 0;
 
             const title = t.cap
-              ? `${t.sold} of ${t.cap} sold (${barPct}% of cap)`
-              : `${t.sold} sold (${barPct}% of all tickets) — Ksh ${t.revenue.toLocaleString()}`;
+              ? `${t.sold} of ${t.cap} sold — ${barPct}% of all tickets — Ksh ${t.revenue.toLocaleString()}`
+              : `${t.sold} sold — ${barPct}% of all tickets — Ksh ${t.revenue.toLocaleString()}`;
 
             return (
               <li
@@ -131,8 +131,11 @@ export default function TierSalesBreakdown({
                   </div>
                 </div>
 
-                <span className="w-12 shrink-0 text-footnote font-black tabular-nums text-right text-[var(--brand-navy)]">
-                  {t.sold}
+                <span
+                  className="w-12 md:w-16 shrink-0 text-footnote font-black tabular-nums text-right text-[var(--brand-navy)]"
+                  title={t.cap ? `Capacity: ${t.cap}` : undefined}
+                >
+                  {t.cap ? `${t.sold}/${t.cap}` : t.sold}
                 </span>
 
                 <span className="w-28 shrink-0 text-caption font-bold tabular-nums text-right text-[var(--brand-navy-light)]">

@@ -31,8 +31,8 @@ Replaces the 96px card. ~30px per row.
 | Best seller | `★` inline before the name (was its own line, ~20px) |
 | Sold out | `SOLD OUT` inline after the name, `text-brand-danger` |
 | Category | 3px colored left rule — navy = TICKETS, `var(--brand-accent)` = CAMPING. Replaces the `[TAG]` chip at zero height cost. Detected from `tag` containing `CAMP` |
-| Bar | `h-2` (was `h-4`). Width = `sold/cap` when a cap exists, else `sold/totalTicketsSold`. Clamped to 100 |
-| Sold | `w-12`, right-aligned, `tabular-nums` |
+| Bar | `h-2` (was `h-4`). Width = `sold/totalTicketsSold` for every row — one scale, directly comparable. Clamped to 100. Fill turns `brand-danger` when sold out |
+| Sold | `w-12 md:w-16`, right-aligned, `tabular-nums`. Renders `42/200` when the tier has a cap |
 | Revenue | `w-28`, right-aligned, `tabular-nums` |
 | Shimmer | Retained on the best-seller row only — a shimmer on every row simultaneously is motion noise |
 
@@ -50,9 +50,11 @@ Header becomes a flex row with the aggregate pushed right (`412 SOLD · Ksh 1.28
 - **Scroll cap:** when more than 10 tiers are selling, the list is wrapped in `max-h-[320px] overflow-y-auto custom-scrollbar`. Height stops being a function of *configured* tier count and grows only ~30px per *selling* tier.
 - **Empty state:** `return null` when nothing has sold. `BoxOfficeMetrics` already reads 0, so a bare disclosure line would be noise.
 
-### Known tradeoff
+### Single bar scale
 
-Capped and uncapped tiers render bars on different scales (progress-to-cap vs. share-of-total-sold), so bar lengths are not strictly comparable across the two groups. This is deliberate: "90% of cap" is the actionable read, and per-row labels (`42/200` vs `184 · 45%`) plus a `title` tooltip disambiguate. Revisit if mixed-cap events become the norm.
+An earlier draft encoded capacity in the bar (progress-to-cap) for capped tiers and share-of-sales for uncapped ones. That made bar lengths incomparable across the two groups: a 50%-full bar could mean "half your cap" or "half your sales", so the eye could not conclude one tier outsells another.
+
+Resolved by giving the bar exactly one question — **share of all tickets sold** — so every row is directly comparable. Capacity moved out of the bar and into the sold column, which renders `42/200` when a cap exists. The `SOLD OUT` marker and red fill still fire at `sold >= cap`, so stock-out state remains the loudest thing on the row.
 
 ## Scope
 
