@@ -1,10 +1,25 @@
 import { NextResponse } from 'next/server';
-import { fetchAllVendors, createVendor, assignVendorToEvent, createOperator } from '@/lib/supabase-db';
+import { fetchAllVendors, createVendor, assignVendorToEvent, createOperator, fetchOperatorsForVendor } from '@/lib/supabase-db';
 
 export async function GET() {
   try {
     const vendors = await fetchAllVendors();
-    return NextResponse.json(vendors);
+    // Attach operators for each vendor so the admin UI can view and manage their credentials.
+    // PINs are masked in transit — the PIN reset endpoint returns the new PIN once at rotation time.
+    const vendorsWithOperators = await Promise.all(
+      vendors.map(async (v) => {
+        try {
+          const ops = await fetchOperatorsForVendor(v.id);
+          return {
+            ...v,
+            vendor_operators: ops.map((op) => ({ ...op, pin: "••••" })),
+          };
+        } catch {
+          return { ...v, vendor_operators: [] };
+        }
+      })
+    );
+    return NextResponse.json(vendorsWithOperators);
   } catch (err: any) {
     console.error('Error fetching vendors:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

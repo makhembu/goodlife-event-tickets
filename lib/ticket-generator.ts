@@ -135,8 +135,9 @@ export async function generateTicketPdf(
     });
   }
 
-  // Vertical "ADMIT ONE" label on the stub
-  const stubLabel = "ADMIT ONE";
+  // Vertical "ADMIT ONE" or "ADMIT N" label on the stub
+  const guestCount = (ticket as any).guest_count || 1;
+  const stubLabel = guestCount > 1 ? `ADMIT ${guestCount}` : "ADMIT ONE";
   const sSize = 12;
   const totalLH = stubLabel.length * (sSize + 4);
   let sy = (H + totalLH) / 2 - sSize;
@@ -227,6 +228,52 @@ export async function generateTicketPdf(
     end:   { x: STUB_X - 16, y: RULE_Y },
     thickness: 4, color: BRAND_BLACK
   });
+
+  // ── Accommodation Banner ──────────────────────────────────────────────────
+  const isSharedBed = (ticket.ticket_type && /shared|1px.*bed/i.test(ticket.ticket_type));
+  const isPrivateTent = (ticket.ticket_type && /tent|camping/i.test(ticket.ticket_type)) && !isSharedBed;
+
+  if (isSharedBed) {
+    page.drawRectangle({
+      x: PX + 2,
+      y: RULE_Y - 18,
+      width: STUB_X - 16 - (PX + 2),
+      height: 14,
+      color: hex("#FFE17D"),
+      borderColor: BRAND_BLACK,
+      borderWidth: 1.5
+    });
+    drawTracked(
+      page,
+      "ACCOMMODATION: 1PX BED SPACE (SHARED 6PX DORM TENT) - BED ASSIGNED AT GATE",
+      fBold,
+      6.8,
+      PX + 6,
+      RULE_Y - 14,
+      BRAND_BLACK,
+      0.3
+    );
+  } else if (isPrivateTent) {
+    page.drawRectangle({
+      x: PX + 2,
+      y: RULE_Y - 18,
+      width: STUB_X - 16 - (PX + 2),
+      height: 14,
+      color: hex("#C8F5B8"),
+      borderColor: BRAND_BLACK,
+      borderWidth: 1.5
+    });
+    drawTracked(
+      page,
+      "ACCOMMODATION: ALL-INCLUSIVE PRIVATE TENT - TENT KEY & WRISTBAND AT GATE",
+      fBold,
+      6.8,
+      PX + 6,
+      RULE_Y - 14,
+      BRAND_BLACK,
+      0.3
+    );
+  }
 
   // ── Fields 2×2 grid ───────────────────────────────────────────────────────
   const col1X = PX + 2;

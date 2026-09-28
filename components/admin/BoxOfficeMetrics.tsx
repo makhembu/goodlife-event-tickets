@@ -7,6 +7,9 @@ interface BoxOfficeMetricsProps {
   totalTicketsSold: number;
   recentSalesAmount: number;
   scanCount: number;
+  /** Crew/vendor/comp passes present in the event, excluded unless audience is "all". */
+  staffPasses?: number;
+  audience?: "customers" | "staff" | "all";
 }
 
 export default function BoxOfficeMetrics({
@@ -14,6 +17,8 @@ export default function BoxOfficeMetrics({
   totalTicketsSold,
   recentSalesAmount,
   scanCount,
+  staffPasses = 0,
+  audience = "customers",
 }: BoxOfficeMetricsProps) {
   const checkinPct = totalTicketsSold ? Math.round((scanCount / totalTicketsSold) * 100) : 0;
 
@@ -28,9 +33,15 @@ export default function BoxOfficeMetrics({
 
       <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">
         <Users className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">PASSES SOLD</span>
+        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">
+          {audience === "staff" ? "STAFF PASSES" : audience === "all" ? "PASSES ISSUED" : "PASSES SOLD"}
+        </span>
         <span className="text-2xl font-black block mt-2">{totalTicketsSold}</span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">Unique secure receipts</p>
+        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">
+          {audience === "customers"
+            ? `Customer sales · ${staffPasses} staff excluded`
+            : "Unique secure receipts"}
+        </p>
       </div>
 
       <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">

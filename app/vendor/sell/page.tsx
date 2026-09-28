@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users } from "lucide-react";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export default function VendorSellPage() {
@@ -16,15 +16,233 @@ export default function VendorSellPage() {
   const [tabAmount, setTabAmount] = useState("");
   const [tabId, setTabId] = useState("");
   const [tabs, setTabs] = useState<any[]>([]);
+  const [completedSale, setCompletedSale] = useState<any>(null);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  
+  // Custom new tab modal state
+  const [showNewTabModal, setShowNewTabModal] = useState(false);
+  const [newTabName, setNewTabName] = useState("");
+  const [newTabPhone, setNewTabPhone] = useState("");
+  const [newTabLimit, setNewTabLimit] = useState("5000");
+
+  // Track 2 additions: Intercept remainder modal & submit lock
+  const [submittingSale, setSubmittingSale] = useState(false);
+  const [showRemainderModal, setShowRemainderModal] = useState(false);
+  const [remainderTabId, setRemainderTabId] = useState("");
+
+  // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
+  const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState("");
+  const [mpesaRef, setMpesaRef] = useState("");
+  const [isMpesaVerified, setIsMpesaVerified] = useState(false);
+  const [showManualMpesa, setShowManualMpesa] = useState(false);
+  const [showStkModal, setShowStkModal] = useState(false);
+  const [stkReference, setStkReference] = useState("");
+  const [stkTimeLeft, setStkTimeLeft] = useState(45);
+  const [stkStatusMessage, setStkStatusMessage] = useState("Waiting for customer PIN entry...");
+  const [isTriggeringStk, setIsTriggeringStk] = useState(false);
+  const [isManualCheckingStatus, setIsManualCheckingStatus] = useState(false);
+
+  // Check STK status helper
+  const checkMpesaStatus = async (refToCheck: string, isManual = false) => {
+    if (!refToCheck) return;
+    if (isManual) setIsManualCheckingStatus(true);
+    try {
+      const res = await fetch(`/api/vendor/mpesa/status?reference=${encodeURIComponent(refToCheck)}`);
+      const data = await res.json();
+      if (data.success && data.status === "SUCCESS") {
+        HapticFeedback.trigger("success");
+        const verifiedCode = data.mpesa_code || refToCheck;
+        setMpesaRef(verifiedCode);
+        setIsMpesaVerified(true);
+        setShowStkModal(false);
+      } else if (data.status === "FAILED" || data.status === "CANCELLED" || data.status === "TIMEOUT") {
+        HapticFeedback.trigger("error");
+        setStkStatusMessage(data.message || `Payment ${data.status.toLowerCase()}.`);
+      } else {
+        if (data.message) {
+          setStkStatusMessage(data.message);
+        }
+      }
+    } catch (e: any) {
+      console.error("STK status poll error:", e);
+    } finally {
+      if (isManual) setIsManualCheckingStatus(false);
+    }
+  };
+
+  // STK Trigger function
+  const triggerStkPush = async () => {
+    const cleanPhone = mpesaCustomerPhone.trim();
+    if (!cleanPhone) {
+      alert("Please enter customer phone number for STK Push");
+      return;
+    }
+    const amountToCharge = Number(mpesaAmount);
+    if (!amountToCharge || amountToCharge <= 0) {
+      alert("Please enter a valid M-Pesa amount to charge");
+      return;
+    }
+
+    setIsTriggeringStk(true);
+    HapticFeedback.trigger("confirmation");
+    try {
+      const res = await fetch("/api/vendor/mpesa/stk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          amount: amountToCharge,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.reference) {
+        HapticFeedback.trigger("confirmation");
+        setStkReference(data.reference);
+        setStkTimeLeft(45);
+        setStkStatusMessage("Prompt sent! Waiting for customer PIN entry...");
+        setShowStkModal(true);
+      } else {
+        HapticFeedback.trigger("error");
+        alert(data.message || "Failed to trigger STK Push");
+      }
+    } catch (e: any) {
+      HapticFeedback.trigger("error");
+      alert("Network error triggering STK Push");
+    } finally {
+      setIsTriggeringStk(false);
+    }
+  };
+
+  // STK Countdown & Polling effect
+  useEffect(() => {
+    if (!showStkModal || !stkReference) return;
+
+    let isTerminal = false;
+
+    // 1-second countdown timer
+    const timerInterval = setInterval(() => {
+      setStkTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerInterval);
+          clearInterval(pollInterval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // 2.5-second polling interval (stops automatically on terminal status or timeout)
+    const pollInterval = setInterval(async () => {
+      if (isTerminal) {
+        clearInterval(pollInterval);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/vendor/mpesa/status?reference=${encodeURIComponent(stkReference)}`);
+        const data = await res.json();
+        if (data.success && data.status === "SUCCESS") {
+          isTerminal = true;
+          clearInterval(pollInterval);
+          clearInterval(timerInterval);
+          HapticFeedback.trigger("success");
+          const verifiedCode = data.mpesa_code || stkReference;
+          setMpesaRef(verifiedCode);
+          setIsMpesaVerified(true);
+          setShowStkModal(false);
+        } else if (data.status === "FAILED" || data.status === "CANCELLED" || data.status === "TIMEOUT") {
+          isTerminal = true;
+          clearInterval(pollInterval);
+          HapticFeedback.trigger("error");
+          setStkStatusMessage(data.message || `Payment ${data.status.toLowerCase()}.`);
+        } else if (data.message) {
+          setStkStatusMessage(data.message);
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 2500);
+
+    return () => {
+      clearInterval(timerInterval);
+      clearInterval(pollInterval);
+    };
+  }, [showStkModal, stkReference]);
+
+  const loadTabs = () => {
+    fetch("/api/vendor/tabs")
+      .then(res => res.json())
+      .then(data => {
+        const rawTabs = Array.isArray(data) ? data : (data?.tabs || []);
+        setTabs(rawTabs.filter((t: any) => t.status === 'open'));
+      })
+      .catch(err => {
+        console.error("Error loading vendor tabs:", err);
+      });
+  };
+
+  const handleCreateNewTab = async (remainderToFill?: number) => {
+    if (!newTabName.trim()) {
+      alert("Please enter a customer or staff name");
+      return;
+    }
+    try {
+      const limitToSet = Number(newTabLimit) || 5000;
+      const res = await fetch("/api/vendor/tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: newTabName.trim(),
+          customer_phone: newTabPhone.trim(),
+          credit_limit: limitToSet
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.tab) {
+        HapticFeedback.trigger("success");
+        setTabs(prev => [data.tab, ...prev]);
+        setTabId(data.tab.id.toString());
+        setShowNewTabModal(false);
+        setNewTabName("");
+        setNewTabPhone("");
+        setNewTabLimit("5000");
+
+        // If created from remainder modal or auto-fill requested
+        if (remainderToFill !== undefined && remainderToFill > 0) {
+          const avail = limitToSet;
+          const fillAmt = Math.max(0, Math.min(remainderToFill, avail));
+          setTabAmount(fillAmt.toString());
+          setShowRemainderModal(false);
+        }
+      } else {
+        alert(data.message || "Failed to create tab");
+      }
+    } catch {
+      alert("Error creating tab");
+    }
+  };
 
   useEffect(() => {
     fetch("/api/vendor/items")
       .then(res => res.json())
-      .then(data => { setItems(data.filter((i: any) => i.is_available)); setLoading(false); });
+      .then(data => {
+        const rawItems = Array.isArray(data) ? data : (data?.items || []);
+        setItems(rawItems.filter((i: any) => i.is_available));
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Error loading vendor items:", err);
+        setLoading(false);
+      });
     
     fetch("/api/vendor/tabs")
       .then(res => res.json())
-      .then(data => { setTabs(data.filter((t: any) => t.status === 'open')); });
+      .then(data => {
+        const rawTabs = Array.isArray(data) ? data : (data?.tabs || []);
+        setTabs(rawTabs.filter((t: any) => t.status === 'open'));
+      })
+      .catch(err => {
+        console.error("Error loading vendor tabs:", err);
+      });
   }, []);
 
   const addToCart = (item: any) => {
@@ -53,19 +271,77 @@ export default function VendorSellPage() {
 
   const total = cart.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
 
+  const numCash = Number(cashAmount) || 0;
+  const numMpesa = Number(mpesaAmount) || 0;
+  const numTab = Number(tabAmount) || 0;
+  const currentPaid = numCash + numMpesa + numTab;
+  const remainingDue = Math.max(0, total - currentPaid);
+  const changeDue = Math.max(0, currentPaid - total);
+
+  const fillRemaining = (type: 'cash' | 'mpesa' | 'tab') => {
+    HapticFeedback.trigger("confirmation");
+    const diff = Math.max(0, total - (currentPaid - (type === 'cash' ? numCash : type === 'mpesa' ? numMpesa : numTab)));
+    if (type === 'cash') setCashAmount(diff > 0 ? diff.toString() : "");
+    if (type === 'mpesa') setMpesaAmount(diff > 0 ? diff.toString() : "");
+    if (type === 'tab') setTabAmount(diff > 0 ? diff.toString() : "");
+  };
+
+  const handleTabSelect = (selectedId: string) => {
+    setTabId(selectedId);
+    if (!selectedId) {
+      setTabAmount("");
+      return;
+    }
+    const selectedTab = tabs.find(t => t.id === Number(selectedId));
+    if (selectedTab) {
+      // Calculate unpaid due without existing tabAmount
+      const unpaidDue = Math.max(0, total - (numCash + numMpesa));
+      const availableCredit = Number(selectedTab.credit_limit) - Number(selectedTab.balance);
+      const fillAmount = Math.max(0, Math.min(unpaidDue, availableCredit));
+      setTabAmount(fillAmount > 0 ? fillAmount.toString() : "");
+
+      // Auto-fill customer phone from selected tab if tab has phone and phone is empty
+      if (selectedTab.customer_phone && !mpesaCustomerPhone) {
+        setMpesaCustomerPhone(selectedTab.customer_phone);
+      }
+    }
+  };
+
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || submittingSale) return;
     const splitPayments = [];
     if (Number(cashAmount) > 0) splitPayments.push({ method: "cash", amount: Number(cashAmount) });
-    if (Number(mpesaAmount) > 0) splitPayments.push({ method: "mpesa", amount: Number(mpesaAmount) });
+    if (Number(mpesaAmount) > 0) {
+      splitPayments.push({
+        method: "mpesa",
+        amount: Number(mpesaAmount),
+        mpesa_ref: mpesaRef.trim() || undefined,
+        payer_phone: mpesaCustomerPhone.trim() || undefined,
+      });
+    }
     if (Number(tabAmount) > 0 && tabId) splitPayments.push({ method: "tab", amount: Number(tabAmount), tab_id: Number(tabId) });
 
     const totalPaid = splitPayments.reduce((s, p) => s + p.amount, 0);
     if (totalPaid < total) {
-      alert("Insufficient payment amounts!");
+      // Trigger Smart Unpaid Remainder Intercept Modal instead of hard blocking or alert
+      HapticFeedback.trigger("error");
+      setRemainderTabId(tabId || (tabs.length > 0 ? tabs[0].id.toString() : ""));
+      setShowRemainderModal(true);
       return;
     }
 
+    if (Number(tabAmount) > 0 && tabId) {
+      const selectedTab = tabs.find(t => t.id === Number(tabId));
+      if (selectedTab) {
+        const available = Number(selectedTab.credit_limit) - Number(selectedTab.balance);
+        if (Number(tabAmount) > available) {
+          alert(`Selected tab only has KES ${available.toLocaleString()} available credit remaining!`);
+          return;
+        }
+      }
+    }
+
+    setSubmittingSale(true);
     HapticFeedback.trigger("confirmation");
     try {
       const payload = {
@@ -79,17 +355,32 @@ export default function VendorSellPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         HapticFeedback.trigger("success");
+        loadTabs(); // Immediate refresh to avoid stale credit limits
+        setCompletedSale({
+          saleId: data.saleId,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          items: [...cart],
+          total,
+          totalPaid,
+          changeDue,
+          payments: splitPayments
+        });
         setCart([]);
         setShowCheckout(false);
         setCashAmount(""); setMpesaAmount(""); setTabAmount(""); setTabId("");
+        setMpesaRef(""); setIsMpesaVerified(false); setMpesaCustomerPhone(""); setShowManualMpesa(false);
       } else {
         HapticFeedback.trigger("error");
-        alert("Checkout failed");
+        alert(data.message || "Checkout failed");
       }
     } catch (e) {
       HapticFeedback.trigger("error");
+      alert("Checkout network error");
+    } finally {
+      setSubmittingSale(false);
     }
   };
 
@@ -101,27 +392,107 @@ export default function VendorSellPage() {
           <div className="animate-pulse font-bold uppercase text-brand-navy">Loading Menu...</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-32 md:pb-0">
-            {items.map(item => (
-              <button 
-                key={item.id}
-                onClick={() => addToCart(item)}
-                className="flex flex-col items-start p-4 border-4 border-brand-navy bg-white hover:bg-brand-accent/20 active:scale-[0.98] transition-all shadow-(--shadow-brut-sm) text-left h-32 justify-between"
-              >
-                <span className="font-display text-lg leading-tight uppercase line-clamp-2">{item.name}</span>
-                <span className="font-mono font-bold text-lg text-brand-accent bg-brand-navy px-2 py-1 shadow-(--shadow-brut-xs)">
-                  KES {Number(item.price).toLocaleString()}
-                </span>
-              </button>
-            ))}
+            {items.map(item => {
+              const hasCountedStock = item.stock_qty !== null && item.stock_qty !== undefined;
+              const isOutOfStock = hasCountedStock && Number(item.stock_qty) <= 0;
+              return (
+                <button 
+                  key={item.id}
+                  disabled={isOutOfStock}
+                  onClick={() => addToCart(item)}
+                  className={`flex flex-col items-start p-3 border-4 border-brand-navy text-left min-h-36 justify-between transition-all ${
+                    isOutOfStock 
+                      ? "bg-gray-100 opacity-60 cursor-not-allowed border-gray-400" 
+                      : "bg-white hover:bg-brand-accent/20 active:scale-[0.98] shadow-(--shadow-brut-sm)"
+                  }`}
+                >
+                  <div className="w-full flex gap-2 items-start mb-2">
+                    {item.image_url && (
+                      <div className="w-12 h-12 border-2 border-brand-navy shrink-0 overflow-hidden bg-brand-navy/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex-1 flex justify-between items-start gap-1">
+                      <span className="font-display text-base md:text-lg leading-tight uppercase line-clamp-2">{item.name}</span>
+                      {hasCountedStock && (
+                        <span className={`text-[9px] font-mono px-1 py-0.5 border font-bold uppercase whitespace-nowrap shrink-0 ${
+                          Number(item.stock_qty) <= 0 
+                            ? "bg-red-600 text-white border-red-700" 
+                            : Number(item.stock_qty) <= (item.low_stock_threshold || 5)
+                              ? "bg-amber-400 text-brand-navy border-brand-navy"
+                              : "bg-brand-navy text-brand-off-white border-brand-navy"
+                        }`}>
+                          {Number(item.stock_qty) <= 0 ? "0 LEFT" : `${item.stock_qty} LEFT`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-base md:text-lg text-brand-accent bg-brand-navy px-2 py-1 shadow-(--shadow-brut-xs)">
+                    KES {Number(item.price).toLocaleString()}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Cart Panel */}
-      <div className="w-full md:w-80 lg:w-96 bg-white border-l-4 border-brand-navy flex flex-col h-[50vh] md:h-full fixed md:relative bottom-16 md:bottom-0 z-40 border-t-4 md:border-t-0 shadow-(--shadow-brut-xl-strong) md:shadow-none">
+      {/* Mobile Floating Cart Summary Bar (When Drawer Closed) */}
+      <div className="md:hidden fixed bottom-16 left-0 right-0 z-40 bg-brand-navy border-t-4 border-brand-accent p-3 shadow-(--shadow-brut-xl-strong) flex items-center justify-between">
+        <button 
+          onClick={() => {
+            HapticFeedback.trigger("confirmation");
+            setMobileCartOpen(true);
+          }}
+          className="flex items-center gap-3 text-left"
+        >
+          <div className="relative bg-brand-accent text-brand-navy p-2 border-2 border-brand-navy">
+            <ShoppingCart className="w-5 h-5" />
+            {cart.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-white text-brand-navy font-mono text-[10px] font-bold px-1.5 py-0.2 border border-brand-navy rounded-full">
+                {cart.reduce((s, i) => s + i.quantity, 0)}
+              </span>
+            )}
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase text-brand-accent flex items-center gap-1">
+              Order Ticket <ChevronUp className="w-3 h-3" />
+            </div>
+            <div className="text-sm font-mono font-bold text-white">KES {total.toLocaleString()}</div>
+          </div>
+        </button>
+
+        <button 
+          disabled={cart.length === 0}
+          onClick={() => {
+            HapticFeedback.trigger("confirmation");
+            setShowCheckout(true);
+          }}
+          className="bg-brand-accent text-brand-navy font-display text-lg uppercase px-5 py-2.5 border-2 border-brand-navy shadow-(--shadow-brut-xs) active:scale-95 disabled:opacity-40 disabled:scale-100 transition-all"
+        >
+          Charge
+        </button>
+      </div>
+
+      {/* Cart Panel (Desktop Sidebar / Mobile Expandable Drawer) */}
+      <div className={`
+        w-full md:w-80 lg:w-96 bg-white border-l-4 border-brand-navy flex flex-col z-40
+        ${mobileCartOpen 
+          ? "fixed inset-x-0 bottom-0 top-16 md:relative md:inset-auto md:h-full z-50 shadow-(--shadow-brut-xl-strong)" 
+          : "hidden md:flex md:relative md:h-full md:shadow-none"
+        }
+      `}>
         <div className="p-4 border-b-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase flex justify-between items-center">
-          <span className="flex items-center gap-2"><ShoppingCart className="w-6 h-6"/> Ticket</span>
-          <span className="font-mono bg-white px-2 py-0.5 border-2 border-brand-navy">{cart.length}</span>
+          <span className="flex items-center gap-2"><ShoppingCart className="w-6 h-6"/> Ticket ({cart.length})</span>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setMobileCartOpen(false)}
+              className="md:hidden p-1.5 bg-brand-navy text-white border-2 border-brand-navy hover:bg-brand-navy/80"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[url('/noise.png')]">
@@ -153,7 +524,10 @@ export default function VendorSellPage() {
           </div>
           <button 
             disabled={cart.length === 0}
-            onClick={() => setShowCheckout(true)}
+            onClick={() => {
+              setMobileCartOpen(false);
+              setShowCheckout(true);
+            }}
             className="w-full bg-brand-accent text-brand-navy font-display text-2xl uppercase py-4 border-2 border-brand-navy shadow-(--shadow-brut-md) hover:bg-white active:translate-y-1 active:shadow-none transition-all disabled:opacity-50"
           >
             Charge
@@ -169,35 +543,627 @@ export default function VendorSellPage() {
               Split Payment <span className="font-mono text-brand-accent bg-brand-navy px-3 py-1">KES {total.toLocaleString()}</span>
             </h2>
             
-            <div className="space-y-6 flex-1">
+            <div className="space-y-4 flex-1">
+              {/* Payment Summary Live Bar */}
+              <div className="p-3 border-2 border-brand-navy bg-brand-navy text-brand-off-white flex justify-between items-center text-xs font-mono">
+                <div>
+                  <span className="opacity-70">TOTAL DUE:</span>{" "}
+                  <span className="font-bold text-brand-accent">KES {total.toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="opacity-70">ENTERED:</span>{" "}
+                  <span className="font-bold">KES {currentPaid.toLocaleString()}</span>
+                </div>
+                <div>
+                  {remainingDue > 0 ? (
+                    <span className="text-red-400 font-bold">DUE: KES {remainingDue.toLocaleString()}</span>
+                  ) : (
+                    <span className="text-green-400 font-bold">READY {changeDue > 0 ? `(CHANGE: KES ${changeDue})` : ''}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Cash Input */}
               <div className="border-4 border-brand-navy p-4 bg-white relative">
                 <Banknote className="absolute -top-4 -left-4 w-8 h-8 bg-brand-accent border-2 border-brand-navy p-1 text-brand-navy" />
-                <label className="block text-sm font-bold uppercase mb-2 ml-4">Cash Amount</label>
-                <input type="number" placeholder="0" value={cashAmount} onChange={e => setCashAmount(e.target.value)} className="w-full text-2xl font-mono p-3 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" />
+                <div className="flex justify-between items-center mb-1 ml-4">
+                  <label className="text-xs font-bold uppercase">1. Cash</label>
+                  {remainingDue > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => fillRemaining('cash')}
+                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy"
+                    >
+                      Fill Due (+{remainingDue})
+                    </button>
+                  )}
+                </div>
+                <input 
+                  type="number" 
+                  placeholder="0" 
+                  value={cashAmount} 
+                  onChange={e => setCashAmount(e.target.value)} 
+                  className="w-full text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
+                />
               </div>
 
+              {/* M-Pesa Input */}
               <div className="border-4 border-brand-navy p-4 bg-white relative">
                 <CreditCard className="absolute -top-4 -left-4 w-8 h-8 bg-[#25D366] border-2 border-brand-navy p-1 text-brand-navy" />
-                <label className="block text-sm font-bold uppercase mb-2 ml-4">M-Pesa Amount</label>
-                <input type="number" placeholder="0" value={mpesaAmount} onChange={e => setMpesaAmount(e.target.value)} className="w-full text-2xl font-mono p-3 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" />
+                <div className="flex justify-between items-center mb-1 ml-4">
+                  <label className="text-xs font-bold uppercase">2. M-Pesa</label>
+                  {remainingDue > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => fillRemaining('mpesa')}
+                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy"
+                    >
+                      Fill Due (+{remainingDue})
+                    </button>
+                  )}
+                </div>
+                <input 
+                  type="number" 
+                  placeholder="0" 
+                  value={mpesaAmount} 
+                  onChange={e => {
+                    setMpesaAmount(e.target.value);
+                    if (Number(e.target.value) <= 0) {
+                      setIsMpesaVerified(false);
+                      setMpesaRef("");
+                    }
+                  }} 
+                  className="w-full text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
+                />
+
+                {/* Sub-section when M-Pesa amount is entered */}
+                {numMpesa > 0 && (
+                  <div className="mt-3 pt-3 border-t-2 border-dashed border-brand-navy/30 space-y-3">
+                    {/* Verified Green Banner */}
+                    {isMpesaVerified && mpesaRef ? (
+                      <div className="p-2.5 bg-green-100 border-2 border-green-700 text-green-900 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0" />
+                          <div className="text-xs font-bold">
+                            <span>✓ M-Pesa Verified </span>
+                            <span className="font-mono bg-white px-1.5 py-0.5 border border-green-700 ml-1">
+                              {mpesaRef}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsMpesaVerified(false);
+                            setMpesaRef("");
+                          }}
+                          className="text-[10px] font-bold underline hover:text-red-700 uppercase"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {/* STK Push Area */}
+                        {!showManualMpesa ? (
+                          <div className="space-y-2 bg-brand-off-white p-2.5 border-2 border-brand-navy">
+                            <label className="block text-[11px] font-bold uppercase text-brand-navy">
+                              Customer Phone (for STK Push)
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="tel"
+                                placeholder="07XXXXXXXX or 254..."
+                                value={mpesaCustomerPhone}
+                                onChange={e => setMpesaCustomerPhone(e.target.value)}
+                                className="flex-1 p-2 text-sm font-mono border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none"
+                              />
+                              <button
+                                type="button"
+                                disabled={isTriggeringStk || !mpesaCustomerPhone.trim()}
+                                onClick={triggerStkPush}
+                                className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-3 py-2 font-display text-sm uppercase flex items-center gap-1 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs)"
+                              >
+                                <Zap className="w-4 h-4 fill-brand-navy" />
+                                {isTriggeringStk ? "Sending..." : "Prompt Phone"}
+                              </button>
+                            </div>
+                            <div className="pt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setShowManualMpesa(true)}
+                                className="text-[10px] font-bold uppercase underline text-brand-navy hover:text-brand-accent transition-colors"
+                              >
+                                Or Customer Paid Till Directly? Enter Code Manually
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Manual Till Fallback Area */
+                          <div className="space-y-2 bg-brand-off-white p-2.5 border-2 border-brand-navy">
+                            <div className="flex justify-between items-center">
+                              <label className="block text-[11px] font-bold uppercase text-brand-navy">
+                                M-Pesa Reference / Transaction Code
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setShowManualMpesa(false)}
+                                className="text-[10px] font-bold uppercase underline text-brand-navy hover:text-brand-accent transition-colors"
+                              >
+                                Switch to STK Push
+                              </button>
+                            </div>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="e.g. QKH71829..."
+                                value={mpesaRef}
+                                onChange={e => {
+                                  const val = e.target.value.toUpperCase();
+                                  setMpesaRef(val);
+                                  setIsMpesaVerified(val.trim().length >= 8);
+                                }}
+                                className="flex-1 p-2 text-sm font-mono uppercase border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none"
+                              />
+                              {mpesaRef.trim().length >= 8 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsMpesaVerified(true);
+                                    HapticFeedback.trigger("confirmation");
+                                  }}
+                                  className="bg-brand-navy text-brand-accent border-2 border-brand-navy px-3 py-2 font-bold text-xs uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors"
+                                >
+                                  Confirm
+                                </button>
+                              )}
+                            </div>
+                            {mpesaRef && mpesaRef.trim().length < 8 && (
+                              <p className="text-[10px] text-amber-700 font-bold uppercase">
+                                Format: Valid M-Pesa receipt code is typically 10 characters (e.g. QKH71829XX)
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
+              {/* Staff / Customer Tab Input */}
               <div className="border-4 border-brand-navy p-4 bg-white relative">
                 <Users className="absolute -top-4 -left-4 w-8 h-8 bg-brand-navy border-2 border-brand-navy p-1 text-brand-off-white" />
-                <label className="block text-sm font-bold uppercase mb-2 ml-4">Staff Tab Amount</label>
-                <div className="flex gap-2">
-                  <select value={tabId} onChange={e => setTabId(e.target.value)} className="flex-1 border-2 border-brand-navy p-3 bg-brand-off-white font-mono text-sm focus:ring-4 focus:ring-brand-accent outline-none">
-                    <option value="">Select Tab...</option>
-                    {tabs.map(t => <option key={t.id} value={t.id}>{t.customer_name} (KES {t.credit_limit - t.balance} left)</option>)}
+                <div className="flex justify-between items-center mb-1 ml-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold uppercase">3. Staff / VIP Tab</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewTabModal(true)}
+                      className="text-[10px] bg-brand-accent text-brand-navy px-1.5 py-0.5 border border-brand-navy font-bold uppercase hover:bg-brand-navy hover:text-brand-accent transition-colors"
+                    >
+                      + New Person
+                    </button>
+                  </div>
+                  {remainingDue > 0 && tabId && (
+                    <button
+                      type="button"
+                      onClick={() => fillRemaining('tab')}
+                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy"
+                    >
+                      Fill Due (+{remainingDue})
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select 
+                    value={tabId} 
+                    onChange={e => handleTabSelect(e.target.value)} 
+                    className="w-full flex-1 border-2 border-brand-navy p-2 bg-brand-off-white font-mono text-xs focus:ring-4 focus:ring-brand-accent outline-none"
+                  >
+                    <option value="">Select Staff / VIP Tab...</option>
+                    {tabs.map(t => {
+                      const avail = Number(t.credit_limit) - Number(t.balance);
+                      const phoneMask = t.customer_phone ? `...${t.customer_phone.slice(-4)}` : "No Phone";
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.customer_name} ({phoneMask}) — KES {avail.toLocaleString()} left
+                        </option>
+                      );
+                    })}
                   </select>
-                  <input type="number" placeholder="0" value={tabAmount} onChange={e => setTabAmount(e.target.value)} className="w-32 text-xl font-mono p-3 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" />
+                  <input 
+                    type="number" 
+                    placeholder="0" 
+                    value={tabAmount} 
+                    onChange={e => setTabAmount(e.target.value)} 
+                    className="w-full sm:w-28 text-xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
+                  />
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-4 mt-8">
-              <button onClick={() => setShowCheckout(false)} className="flex-1 bg-transparent border-4 border-brand-navy font-bold uppercase p-4 hover:bg-brand-navy/10 text-xl transition-colors">Cancel</button>
-              <button onClick={handleCheckout} className="flex-1 bg-brand-navy text-brand-accent border-4 border-brand-navy font-display uppercase p-4 hover:bg-brand-accent hover:text-brand-navy text-2xl transition-colors">Complete</button>
+            <div className="flex gap-4 mt-6">
+              <button 
+                onClick={() => setShowCheckout(false)} 
+                className="flex-1 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                disabled={submittingSale}
+                onClick={handleCheckout} 
+                className="flex-1 bg-brand-navy text-brand-accent border-4 border-brand-navy font-display uppercase p-3 hover:bg-brand-accent hover:text-brand-navy text-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {submittingSale ? "Processing Sale..." : "Confirm & Pay"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Smart Unpaid Remainder Intercept Modal */}
+      {showRemainderModal && (
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+            <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
+              <h3 className="font-display text-2xl uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-6 h-6 text-brand-navy" /> Unpaid Balance
+              </h3>
+              <button 
+                onClick={() => setShowRemainderModal(false)}
+                className="border-2 border-brand-navy p-1 hover:bg-brand-accent transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-brand-off-white border-2 border-brand-navy mb-4">
+              <p className="text-xs font-bold uppercase opacity-80">Remaining unpaid balance:</p>
+              <p className="font-mono text-2xl font-bold text-red-600">KES {remainingDue.toLocaleString()}</p>
+            </div>
+
+            <p className="text-xs font-bold uppercase opacity-75 mb-4">
+              Put remaining KES {remainingDue.toLocaleString()} on a customer or staff tab?
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Select Existing Tab</label>
+                <select 
+                  value={remainderTabId} 
+                  onChange={e => setRemainderTabId(e.target.value)} 
+                  className="w-full border-2 border-brand-navy p-2.5 bg-brand-off-white font-mono text-xs focus:ring-4 focus:ring-brand-accent outline-none"
+                >
+                  <option value="">Select Tab...</option>
+                  {tabs.map(t => {
+                    const avail = Number(t.credit_limit) - Number(t.balance);
+                    const phoneMask = t.customer_phone ? `...${t.customer_phone.slice(-4)}` : "No Phone";
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.customer_name} ({phoneMask}) — KES {avail.toLocaleString()} left
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRemainderModal(false);
+                    setShowNewTabModal(true);
+                  }}
+                  className="w-full py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-brand-navy hover:text-brand-accent transition-colors shadow-(--shadow-brut-xs)"
+                >
+                  <Plus className="w-4 h-4" /> + Open New Tab
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6 pt-4 border-t-2 border-brand-navy">
+              <button 
+                type="button"
+                onClick={() => setShowRemainderModal(false)}
+                className="flex-1 py-3 border-2 border-brand-navy font-bold uppercase text-xs hover:bg-brand-navy/10 transition-colors"
+              >
+                Back to Payment
+              </button>
+              <button 
+                type="button"
+                disabled={!remainderTabId}
+                onClick={() => {
+                  const selected = tabs.find(t => t.id === Number(remainderTabId));
+                  if (selected) {
+                    const avail = Number(selected.credit_limit) - Number(selected.balance);
+                    const fillAmt = Math.max(0, Math.min(remainingDue, avail));
+                    setTabId(remainderTabId);
+                    setTabAmount(fillAmt.toString());
+                    setShowRemainderModal(false);
+                    HapticFeedback.trigger("confirmation");
+                  }
+                }}
+                className="flex-1 py-3 bg-brand-navy text-brand-accent border-2 border-brand-navy font-display uppercase text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Put on Tab
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Person / Tab Modal */}
+      {showNewTabModal && (
+        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+            <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
+              <h3 className="font-display text-2xl uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-6 h-6" /> Open Customer Tab
+              </h3>
+              <button 
+                onClick={() => setShowNewTabModal(false)}
+                className="border-2 border-brand-navy p-1 hover:bg-brand-accent transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs font-bold uppercase opacity-75 mb-4">
+              Create a custom name & credit limit for anyone taking items on credit (VIP, staff, or trusted guest).
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Customer / Staff Name *</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. DJ Pierra, MC Dave, Brian"
+                  value={newTabName}
+                  onChange={e => setNewTabName(e.target.value)}
+                  className="w-full border-2 border-brand-navy p-2.5 font-bold uppercase text-sm bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Phone Number (Optional)</label>
+                <input 
+                  type="tel"
+                  placeholder="e.g. 0712345678"
+                  value={newTabPhone}
+                  onChange={e => setNewTabPhone(e.target.value)}
+                  className="w-full border-2 border-brand-navy p-2.5 font-mono text-sm bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Credit Limit (KES)</label>
+                <input 
+                  type="number"
+                  placeholder="5000"
+                  value={newTabLimit}
+                  onChange={e => setNewTabLimit(e.target.value)}
+                  className="w-full border-2 border-brand-navy p-2.5 font-mono text-sm bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none"
+                />
+                <div className="flex gap-2 mt-2">
+                  {[2000, 5000, 10000, 20000].map(amt => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setNewTabLimit(amt.toString())}
+                      className="text-[10px] font-mono font-bold border border-brand-navy px-2 py-0.5 bg-brand-off-white hover:bg-brand-accent transition-colors"
+                    >
+                      {amt.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6 pt-4 border-t-2 border-brand-navy">
+              <button 
+                type="button"
+                onClick={() => setShowNewTabModal(false)}
+                className="flex-1 py-3 border-2 border-brand-navy font-bold uppercase text-xs hover:bg-brand-navy/10 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => handleCreateNewTab(remainingDue > 0 ? remainingDue : undefined)}
+                className="flex-1 py-3 bg-brand-navy text-brand-accent border-2 border-brand-navy font-display uppercase text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors"
+              >
+                Save & Select Tab
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STK Waiting Modal */}
+      {showStkModal && (
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy text-center relative animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setShowStkModal(false)}
+              className="absolute top-4 right-4 border-2 border-brand-navy p-1 hover:bg-brand-accent transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Pulsing ring indicator */}
+            <div className="flex justify-center items-center my-6">
+              <div className="relative flex items-center justify-center">
+                <div className="w-24 h-24 rounded-full bg-[#25D366]/20 animate-ping absolute" />
+                <div className="w-20 h-20 rounded-full border-4 border-[#25D366] bg-[#25D366]/10 flex items-center justify-center relative">
+                  <Zap className="w-10 h-10 text-[#25D366] fill-[#25D366]" />
+                </div>
+              </div>
+            </div>
+
+            <h3 className="font-display text-2xl uppercase tracking-wider mb-1">
+              M-Pesa STK Prompt Sent
+            </h3>
+            <p className="text-xs uppercase font-bold text-gray-500 mb-4">
+              Ask customer to check phone & enter M-Pesa PIN
+            </p>
+
+            <div className="p-3 bg-brand-off-white border-2 border-brand-navy mb-4 text-left font-mono text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="opacity-70">PHONE NUMBER:</span>
+                <span className="font-bold">{mpesaCustomerPhone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="opacity-70">AMOUNT DUE:</span>
+                <span className="font-bold text-brand-navy text-sm">KES {numMpesa.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="opacity-70">REFERENCE:</span>
+                <span className="font-bold">{stkReference}</span>
+              </div>
+            </div>
+
+            {/* 45s countdown & status */}
+            <div className="mb-4">
+              <div className="flex items-center justify-center gap-2 mb-2 font-mono">
+                <span className="text-xs font-bold uppercase opacity-75">Auto-checking:</span>
+                <span className={`text-base font-bold px-2 py-0.5 border-2 border-brand-navy ${
+                  stkTimeLeft <= 10 ? "bg-red-500 text-white animate-pulse" : "bg-brand-accent text-brand-navy"
+                }`}>
+                  {stkTimeLeft}s remaining
+                </span>
+              </div>
+              <p className="text-xs font-bold uppercase text-brand-navy bg-brand-navy/5 py-1.5 px-3 border border-brand-navy/20">
+                {stkStatusMessage}
+              </p>
+            </div>
+
+            {/* Actions: Manual check again + Switch to manual till code */}
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                disabled={isManualCheckingStatus}
+                onClick={() => checkMpesaStatus(stkReference, true)}
+                className="w-full py-2.5 bg-brand-navy text-brand-accent border-2 border-brand-navy font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50"
+              >
+                <RotateCw className={`w-4 h-4 ${isManualCheckingStatus ? "animate-spin" : ""}`} />
+                {isManualCheckingStatus ? "Checking PayHero..." : "🔄 Check Status Again"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStkModal(false);
+                  setShowManualMpesa(true);
+                }}
+                className="w-full py-2.5 bg-brand-off-white text-brand-navy border-2 border-brand-navy font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-white transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                📝 Switch to Manual Till Code
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Digital Receipt Modal */}
+      {completedSale && (
+        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy font-mono relative">
+            <div className="text-center border-b-4 border-brand-navy pb-3 mb-4">
+              <h3 className="font-display text-2xl uppercase tracking-wider">GOODLIFE TICKET & POS</h3>
+              <p className="text-[11px] font-bold text-gray-500 uppercase">OFFICIAL ORDER RECEIPT</p>
+              <div className="text-xs font-mono font-bold mt-1 bg-brand-accent px-2 py-0.5 inline-block border border-brand-navy">
+                {completedSale.saleId}
+              </div>
+              <div className="text-[10px] text-gray-500 mt-1">{completedSale.time}</div>
+            </div>
+
+            {/* Line Items */}
+            <div className="space-y-2 border-b-2 border-dashed border-brand-navy/40 pb-3 mb-3 text-xs">
+              {completedSale.items.map((it: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center">
+                  <span>{it.quantity}x {it.name}</span>
+                  <span className="font-bold">KES {(it.price * it.quantity).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Totals */}
+            <div className="space-y-1 text-xs border-b-4 border-brand-navy pb-3 mb-3">
+              <div className="flex justify-between font-bold text-sm">
+                <span>TOTAL CHARGED</span>
+                <span className="font-mono text-base">KES {completedSale.total.toLocaleString()}</span>
+              </div>
+              <div className="pt-2 text-[11px] opacity-80 uppercase font-bold">Payment Methods Breakdown:</div>
+              {completedSale.payments.map((p: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-[11px] pl-2">
+                  <div className="flex flex-col">
+                    <span className="uppercase">• {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Staff Tab'}</span>
+                    {p.method === 'mpesa' && p.mpesa_ref && (
+                      <span className="text-[10px] font-mono text-green-700 pl-2">
+                        Ref: {p.mpesa_ref}
+                      </span>
+                    )}
+                  </div>
+                  <span>KES {Number(p.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              {completedSale.changeDue > 0 && (
+                <div className="flex justify-between text-xs font-bold text-green-700 pt-1">
+                  <span>CHANGE DUE:</span>
+                  <span>KES {completedSale.changeDue.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => {
+                  HapticFeedback.trigger("confirmation");
+                  const receiptText = `
+========================================
+         GOODLIFE FESTIVAL POS
+         OFFICIAL ORDER RECEIPT
+========================================
+Receipt ID: ${completedSale.saleId}
+Date/Time:  ${completedSale.time}
+----------------------------------------
+ITEMS PURCHASED:
+${completedSale.items.map((i: any) => `${i.quantity}x ${i.name.padEnd(20)} KES ${(i.price * i.quantity).toLocaleString()}`).join('\n')}
+----------------------------------------
+TOTAL CHARGED:      KES ${completedSale.total.toLocaleString()}
+${completedSale.changeDue > 0 ? `CHANGE DUE:         KES ${completedSale.changeDue.toLocaleString()}\n` : ''}
+PAYMENT BREAKDOWN:
+${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16)} KES ${Number(p.amount).toLocaleString()}${p.mpesa_ref ? ` (Ref: ${p.mpesa_ref})` : ''}`).join('\n')}
+========================================
+      Thank you for partying with us!
+          goodlife.smwhr.space
+========================================
+                  `.trim();
+
+                  const blob = new Blob([receiptText], { type: "text/plain" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `Receipt-${completedSale.saleId}.txt`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+                className="w-full bg-brand-accent text-brand-navy border-2 border-brand-navy py-2.5 font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-white transition-colors"
+              >
+                <Download className="w-4 h-4" /> Download Digital Receipt (.txt)
+              </button>
+              
+              <button 
+                onClick={() => setCompletedSale(null)}
+                className="w-full bg-brand-navy text-brand-accent border-2 border-brand-navy py-3 font-display uppercase text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors"
+              >
+                Done / Next Sale
+              </button>
             </div>
           </div>
         </div>

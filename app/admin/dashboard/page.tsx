@@ -21,7 +21,9 @@ import {
   permanentlyDeleteTicket,
   permanentlyDeleteTicketTier,
   emptyTrash,
-  TicketTier
+  TicketTier,
+  TicketAudience,
+  NormalizedTicket
 } from "@/lib/supabase-db";
 import {
   Sparkles,
@@ -41,7 +43,12 @@ import {
   Download,
   Eye,
   EyeOff,
-  ListChecks
+  ListChecks,
+  Flame,
+  Store,
+  Receipt,
+  Users,
+  ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
@@ -52,19 +59,41 @@ interface MetricsState {
   totalCashCollected: number;
   totalTicketsSold: number;
   scanCount: number;
-  campingTiers: Record<string, { sold: number; revenue: number; cap?: number }>;
+  campingTiers: Record<string, { sold: number; revenue: number; cap?: number; name?: string; tag?: string }>;
   recentSalesAmount: number;
-  tickets: Ticket[];
+  tickets: NormalizedTicket[];
+  staffPasses: number;
+  eventLabels: Record<string, string>;
 }
+
+const AUDIENCE_OPTIONS: { value: TicketAudience; label: string }[] = [
+  { value: "customers", label: "CUSTOMERS" },
+  { value: "staff", label: "STAFF" },
+  { value: "all", label: "ALL" }
+];
 
 export default function AdminDashboardPage() {
   const [metrics, setMetrics] = useState<MetricsState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(1); // null = all events, number = specific event (default 1: GOODLIFE XP)
-  const selectedEventIdRef = React.useRef<number | null>(1);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  // null = all events, number = specific event. Starts unresolved: the mount
+  // effect decides from ?event= first, and only then falls back to the active
+  // event. Never defaults to a hardcoded id.
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [eventResolved, setEventResolved] = useState(false);
+  const selectedEventIdRef = React.useRef<number | null>(null);
+  const [audience, setAudience] = useState<TicketAudience>("customers");
+  const audienceRef = React.useRef<TicketAudience>("customers");
   const [saving, setSaving] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"ledger" | "tiers" | "payment-requests" | "payments" | "trash">("ledger");
+  const [activeTab, setActiveTab] = useState<"ledger" | "tiers" | "payment-requests" | "payments" | "waitlist" | "trash">("ledger");
   const [ledgerTab, setLedgerTab] = useState<"all" | "active" | "scanned">("all");
+
+  // Early-bird waitlist states
+  const [waitlistEntries, setWaitlistEntries] = useState<any[]>([]);
+  const [waitlistLoading, setWaitlistLoading] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<any>(null);
 
   // Event details editing states
   const [eventDetails, setEventDetails] = useState<EventDetails | null>(null);
@@ -88,7 +117,7 @@ export default function AdminDashboardPage() {
   const [paymentLogs, setPaymentLogs] = useState<any[]>([]);
 
   // Tickets CSV export filter states
-  const [exportTicketTypeFilter, setExportTicketTypeFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [exportTicketStatusFilter, setExportTicketStatusFilter] = useState<"all" | "active" | "scanned">("all");
   const [exportDateFrom, setExportDateFrom] = useState("");
   const [exportDateTo, setExportDateTo] = useState("");
@@ -153,26 +182,48 @@ export default function AdminDashboardPage() {
     window.location.href = "/login";
   };
 
-  const loadDashboardMetrics = async (eventId?: number | null) => {
+  const loadDashboardMetrics = async (eventId?: number | null, nextAudience?: TicketAudience) => {
     setLoading(true);
     try {
       const targetId = eventId !== undefined ? eventId : selectedEventIdRef.current;
+      const targetAudience = nextAudience ?? audienceRef.current;
       // null = "All Events", mapped to -1 for the API
       const queryId = targetId === null ? -1 : targetId;
-      const data = await fetchDashboardMetrics(queryId);
+      const data = await fetchDashboardMetrics(queryId, targetAudience);
       setMetrics(data);
-    } catch (err) {
+      setMetricsError(null);
+    } catch (err: any) {
+      // Previously this was a bare console.error, which left the PREVIOUS
+      // event's rows on screen under the newly selected event's label.
       console.error("Failed to load metrics:", err);
+      setMetricsError(err?.message || "Could not load dashboard metrics.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Keep the address bar truthful about which event is being viewed.
+  const syncEventToUrl = (eventId: number | null) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (eventId === null) url.searchParams.set("event", "all");
+    else url.searchParams.set("event", String(eventId));
+    window.history.replaceState(null, "", url.toString());
+  };
+
   const handleEventSelect = (eventId: number | null) => {
     setSelectedEventId(eventId);
     selectedEventIdRef.current = eventId;
+    syncEventToUrl(eventId);
     loadDashboardMetrics(eventId);
     loadTicketTiers(eventId && eventId > 0 ? eventId : undefined);
+    loadWaitlist(eventId && eventId > 0 ? eventId : undefined);
+  };
+
+  const handleAudienceSelect = (next: TicketAudience) => {
+    setAudience(next);
+    audienceRef.current = next;
+    loadDashboardMetrics(undefined, next);
   };
 
   const loadEventDetails = async () => {
@@ -314,8 +365,11 @@ export default function AdminDashboardPage() {
     if (!data) return;
     let filtered = [...data.tickets];
 
-    if (exportTicketTypeFilter) {
-      filtered = filtered.filter(t => t.ticket_type === exportTicketTypeFilter);
+    if (typeFilter) {
+      // Match on the resolved label, not raw ticket_type. ticket_type is stored
+      // inconsistently (PayHero -> name, manual form -> id), so comparing it to
+      // a tier id silently dropped every PayHero ticket from the export.
+      filtered = filtered.filter(t => t.tier_label === typeFilter);
     }
     if (exportTicketStatusFilter === "active") {
       filtered = filtered.filter(t => !t.is_scanned);
@@ -336,13 +390,15 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    const headers = ["Ticket ID", "Receipt", "Buyer Name", "Phone", "Ticket Type", "Amount (KES)", "Purchase Date", "Status", "Scanned At", "Scanned By"];
+    const headers = ["Ticket ID", "Receipt", "Buyer Name", "Phone", "Event", "Tier", "Audience", "Amount (KES)", "Purchase Date", "Status", "Scanned At", "Scanned By"];
     const rows = filtered.map(t => [
       t.id,
       t.mpesa_receipt,
       `"${(t.buyer_name || "").replace(/"/g, '""')}"`,
       t.phone_number,
-      t.ticket_type,
+      t.event_id ? (data.eventLabels[String(t.event_id)] || `EVENT #${t.event_id}`) : "UNASSIGNED",
+      t.tier_label,
+      t.is_staff ? "STAFF" : "CUSTOMER",
       Number(t.amount_paid).toString(),
       fmtDate(t.purchase_time),
       t.is_scanned ? "SCANNED" : "ACTIVE",
@@ -350,12 +406,13 @@ export default function AdminDashboardPage() {
       t.scanned_by || ""
     ]);
 
+    const audienceSuffix = audience === "all" ? "" : `-${audience.toUpperCase()}`;
     const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `GOODLIFE-TICKETS-EXPORT-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `GOODLIFE-TICKETS-EXPORT${audienceSuffix}-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -484,23 +541,101 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const loadWaitlist = async (eventId?: number | null) => {
+    setWaitlistLoading(true);
+    try {
+      const url = eventId ? `/api/admin/waitlist?eventId=${eventId}` : "/api/admin/waitlist";
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setWaitlistEntries(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to load waitlist:", err);
+    } finally {
+      setWaitlistLoading(false);
+    }
+  };
+
+  const handleBroadcastDrop = async () => {
+    const targetEventId = selectedEventId;
+    // Broadcasting to "All Events" would message every waitlist in the database.
+    if (targetEventId === null || targetEventId <= 0) {
+      alert("Select a single event before broadcasting. 'All Events' is not a valid broadcast target.");
+      return;
+    }
+    const pendingCount = waitlistEntries.filter(w => !w.notified).length;
+    if (pendingCount === 0) {
+      alert("No pending subscribers to notify for this edition.");
+      return;
+    }
+    const confirmed = confirm(`Are you sure you want to broadcast WhatsApp early-bird notifications to ${pendingCount} pending subscriber(s) for Event #${targetEventId}?`);
+    if (!confirmed) return;
+
+    setBroadcasting(true);
+    setBroadcastResult(null);
+    try {
+      const res = await fetch("/api/admin/waitlist/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: targetEventId,
+          message: broadcastMessage.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      setBroadcastResult(data);
+      loadWaitlist(targetEventId);
+    } catch (err: any) {
+      setBroadcastResult({ success: false, error: err.message });
+    } finally {
+      setBroadcasting(false);
+    }
+  };
+
   // Load metrics initially
   const didLoad = React.useRef(false);
   useEffect(() => {
     if (didLoad.current) return;
     didLoad.current = true;
 
-    // Fetch active event first to sync selectedEventId if needed
-    fetchActiveEvent().then((active) => {
-      const activeId = active?.id ?? 1;
-      setSelectedEventId(activeId);
-      selectedEventIdRef.current = activeId;
-      loadDashboardMetrics(activeId);
-      loadTicketTiers(activeId);
-    }).catch(() => {
-      loadDashboardMetrics(1);
-      loadTicketTiers(1);
-    });
+    // Resolve which event to show, in priority order:
+    //   1. ?event=4  /  ?event=all   (explicit, survives refresh, shareable)
+    //   2. the active event
+    // Previously this unconditionally overwrote the selection with the active
+    // event on every page load, which is why picking an event never stuck.
+    const param = new URLSearchParams(window.location.search).get("event");
+    let resolvedFromParam: number | null = null;
+    let paramIsValid = false;
+    if (param === "all") {
+      resolvedFromParam = null;
+      paramIsValid = true;
+    } else if (param !== null && /^\d+$/.test(param)) {
+      resolvedFromParam = parseInt(param, 10);
+      paramIsValid = true;
+    }
+
+    const boot = (eventId: number | null) => {
+      setSelectedEventId(eventId);
+      selectedEventIdRef.current = eventId;
+      setEventResolved(true);
+      // Write the choice back so the address bar is never stale.
+      syncEventToUrl(eventId);
+      loadDashboardMetrics(eventId);
+      loadTicketTiers(eventId && eventId > 0 ? eventId : undefined);
+      loadWaitlist(eventId && eventId > 0 ? eventId : undefined);
+    };
+
+    if (paramIsValid) {
+      boot(resolvedFromParam);
+    } else {
+      // No usable ?event= - fall back to the active event. If that lookup fails
+      // we land on "All Events" rather than a hardcoded id, so we never show
+      // one arbitrary event's data under another event's label.
+      fetchActiveEvent()
+        .then((active) => boot(active?.id ?? null))
+        .catch(() => boot(null));
+    }
 
     loadEventDetails();
     loadPaymentLogs();
@@ -783,7 +918,7 @@ export default function AdminDashboardPage() {
     return () => clearInterval(t);
   }, [loading, metrics]);
 
-  if (loading && !metrics) {
+  if ((loading || !eventResolved) && !metrics) {
     return (
       <div className="min-h-screen bg-[var(--brand-off-white)] flex flex-col items-center justify-center text-[var(--brand-navy)]">
         <RefreshCw className="w-8 h-8 animate-spin" />
@@ -793,9 +928,24 @@ export default function AdminDashboardPage() {
   }
 
   const data = metrics!;
-  const filteredTickets = ledgerTab === "all" ? data.tickets
+  // The heading used to read event_details.title, which is the site-wide
+  // singleton - so it said "GOODLIFE XP ADMIN" while viewing another event's
+  // data. Derive it from the actually-selected event instead.
+  const selectedEventTitle = selectedEventId === null
+    ? "ALL EVENTS"
+    : data.eventLabels[String(selectedEventId)] || `EVENT #${selectedEventId}`;
+  // data.tickets is already scoped to the selected event and audience, so every
+  // count, table row and export below inherits both filters automatically.
+  const filteredTickets = (ledgerTab === "all" ? data.tickets
     : ledgerTab === "active" ? data.tickets.filter(t => !t.is_scanned)
-    : data.tickets.filter(t => t.is_scanned);
+    : data.tickets.filter(t => t.is_scanned))
+    .filter(t => !typeFilter || t.tier_label === typeFilter);
+
+  // Options come from the tickets actually on screen, so a tier with no sales
+  // in this event/audience can't be selected into an empty result.
+  const tierLabelOptions = Array.from(
+    data.tickets.reduce((m, t) => m.set(t.tier_label, (m.get(t.tier_label) || 0) + 1), new Map<string, number>())
+  ).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="min-h-screen bg-[var(--brand-off-white)] py-6 px-4 md:px-8 text-[var(--brand-navy)] font-sans selection:bg-[var(--brand-navy)] selection:text-white">
@@ -807,10 +957,35 @@ export default function AdminDashboardPage() {
             ADMIN CONSOLE
           </span>
           <h1 className="text-3xl font-sans font-black tracking-tighter uppercase mt-1 leading-none text-[var(--brand-navy)]">
-            {(eventDetails?.title || "GOODLIFE").toUpperCase()} ADMIN
+            {selectedEventTitle.toUpperCase()} ADMIN
           </h1>
           <div className="mt-2">
             <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
+          </div>
+          {/* Audience is a global scope, not a table-only filter: it also drives
+              the box office figures, the tier card and the CSV export, so the
+              numbers can never disagree with the rows underneath them. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-caption font-black uppercase text-[var(--brand-navy)]">Showing</span>
+            <div className="flex border-2 border-[var(--brand-navy)]">
+              {AUDIENCE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleAudienceSelect(opt.value)}
+                  aria-pressed={audience === opt.value}
+                  className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors duration-150 active:scale-95 ${
+                    audience === opt.value
+                      ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                      : "bg-[var(--brand-off-white)] text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-caption text-[var(--brand-navy-light)] font-bold uppercase">
+              {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"} in this event
+            </span>
           </div>
         </div>
 
@@ -838,16 +1013,28 @@ export default function AdminDashboardPage() {
             <Edit className="w-3.5 h-3.5" /> EDIT EVENT INFO
           </button>
           <Link 
-            href="/" 
-            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1"
+            href="/admin/vendors" 
+            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> CHECKOUT PORTAL
+            <Store className="w-3.5 h-3.5" /> STAFF & POS
+          </Link>
+          <Link 
+            href="/admin/settlements" 
+            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 bg-[var(--brand-off-white)] hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5"
+          >
+            <Receipt className="w-3.5 h-3.5" /> SETTLEMENTS
           </Link>
           <Link 
             href="/admin/scanner" 
             className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center gap-1.5"
           >
             <Activity className="w-3.5 h-3.5" /> GATE SCAN
+          </Link>
+          <Link 
+            href="/" 
+            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> CHECKOUT PORTAL
           </Link>
           <button 
             onClick={handleSignOut}
@@ -858,6 +1045,22 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Stale-data guard: a failed load used to be swallowed, leaving the
+          previous event's rows on screen under the new event's label. */}
+      {metricsError && (
+        <div className="max-w-4xl mx-auto mb-4 border-4 border-red-600 bg-red-50 p-3 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-black uppercase text-red-800 flex-1 min-w-[200px]">
+            Could not refresh this view: {metricsError} The figures below may be stale.
+          </span>
+          <button
+            onClick={() => loadDashboardMetrics()}
+            className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 border border-red-700"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto space-y-6">
 
         <BoxOfficeMetrics
@@ -865,13 +1068,52 @@ export default function AdminDashboardPage() {
           totalTicketsSold={data.totalTicketsSold}
           recentSalesAmount={data.recentSalesAmount}
           scanCount={data.scanCount}
+          staffPasses={data.staffPasses}
+          audience={audience}
         />
 
         <TierSalesBreakdown
           campingTiers={data.campingTiers}
           totalTicketsSold={data.totalTicketsSold}
           ticketTiers={ticketTiers}
+          audience={audience}
         />
+
+        {/* STAFF & VENDOR POS WAR ROOM CARD */}
+        <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 md:p-5 shadow-(--shadow-brut-md) flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Store className="w-5 h-5 text-[var(--brand-navy)]" />
+              <h3 className="font-display text-lg md:text-xl uppercase text-[var(--brand-navy)] font-black tracking-wide">
+                STAFF & VENDOR POS STALLS
+              </h3>
+            </div>
+            <p className="font-mono text-xs uppercase text-[var(--brand-navy)]/80">
+              Manage festival bar/food vendor stalls, assign operator staff PINs, review customer tabs & process payouts.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Link
+              href="/admin/vendors?add=true"
+              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-brand-accent text-[var(--brand-navy)] font-mono text-xs font-black uppercase hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+            >
+              <Plus className="w-3.5 h-3.5" /> ADD POS STALL
+            </Link>
+            <Link
+              href="/admin/vendors"
+              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-[var(--brand-off-white)] text-[var(--brand-navy)] font-mono text-xs font-black uppercase hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5"
+            >
+              <Users className="w-3.5 h-3.5" /> VIEW STAFF & TABS
+            </Link>
+            <Link
+              href="/vendor/sell"
+              target="_blank"
+              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-[var(--brand-navy)] text-[var(--brand-off-white)] font-mono text-xs font-black uppercase hover:bg-brand-accent hover:text-[var(--brand-navy)] transition-colors flex items-center gap-1.5"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> OPEN POS TERMINAL
+            </Link>
+          </div>
+        </div>
 
         {/* TABS SELECTION BAR */}
         <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-md) overflow-hidden">
@@ -916,6 +1158,16 @@ export default function AdminDashboardPage() {
             Payment Requests ({tillPayments.length})
           </button>
           <button
+            onClick={() => { setActiveTab("waitlist"); loadWaitlist(selectedEventId); }}
+            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+              activeTab === "waitlist"
+                ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
+            }`}
+          >
+            Waitlist & Drops ({waitlistEntries.length})
+          </button>
+          <button
             onClick={() => { setActiveTab("trash"); loadDeletedItems(); }}
             className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
               activeTab === "trash"
@@ -950,17 +1202,20 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* CSV Export Row with Filters */}
+            {/* Ledger filters + CSV export. The tier dropdown filters the table
+                as well as the export; it previously only fed the export, and
+                matched on tier id against a name-encoded column. */}
             <div className="flex flex-wrap items-center gap-2 p-2 bg-[var(--brand-off-white)] border-b-2 border-[var(--brand-navy)]">
-              <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] mr-1">EXPORT:</span>
+              <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] mr-1">FILTER:</span>
               <select
-                value={exportTicketTypeFilter}
-                onChange={(e) => setExportTicketTypeFilter(e.target.value)}
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                aria-label="Filter by tier"
                 className="text-[11px] border border-[var(--brand-navy)]/20 px-1.5 py-1 bg-[var(--brand-off-white)] font-mono"
               >
-                <option value="">All Types</option>
-                {ticketTiers.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                <option value="">All Tiers ({data.tickets.length})</option>
+                {tierLabelOptions.map(([label, count]) => (
+                  <option key={label} value={label}>{label} ({count})</option>
                 ))}
               </select>
               <select
@@ -1122,6 +1377,7 @@ export default function AdminDashboardPage() {
                       />
                     </th>
                     <th className="p-3">TICKET ID / RECEIPT</th>
+                    <th className="p-3">EVENT</th>
                     <th className="p-3">ATTENDEE</th>
                     <th className="p-3">TIER TYPE</th>
                     <th className="p-3">PHONE</th>
@@ -1134,7 +1390,7 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-[var(--brand-navy)]/15 font-medium text-[var(--brand-navy)]">
                   {filteredTickets.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-6 text-center text-[var(--brand-navy-light)] uppercase font-black tracking-widest">
+                      <td colSpan={10} className="p-6 text-center text-[var(--brand-navy-light)] uppercase font-black tracking-widest">
                         {data.tickets.length === 0 ? "Zero tickets cataloged. Purchase a ticket or create one manually above." : `No ${ledgerTab === "scanned" ? "used" : "active"} tickets in this batch.`}
                       </td>
                     </tr>
@@ -1159,14 +1415,17 @@ export default function AdminDashboardPage() {
                           <span className="font-mono font-black text-[var(--brand-navy)]">{t.id}</span>
                           <span className="text-[11px] font-mono text-[var(--brand-navy-light)]">M-Pesa: {t.mpesa_receipt}</span>
                         </td>
+                        <td className="p-3 text-[11px] uppercase text-[var(--brand-navy-light)] font-black">
+                          {t.event_id ? (data.eventLabels[String(t.event_id)] || `EVENT #${t.event_id}`) : "UNASSIGNED"}
+                        </td>
                         <td className="p-3 font-bold text-[var(--brand-navy)] uppercase">{t.buyer_name}</td>
                         <td className="p-3 uppercase">
-                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-2 py-0.5 border border-[var(--brand-navy)]/20 font-black">
-                            {t.ticket_type}
+                          <span className={`px-2 py-0.5 border font-black ${t.is_staff ? "bg-brand-accent/20 border-[var(--brand-navy)]/40" : "bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] border-[var(--brand-navy)]/20"}`}>
+                            {t.tier_label}
                           </span>
                         </td>
                         <td className="p-3 font-mono">{t.phone_number}</td>
-                        <td className="p-3 font-black text-[var(--brand-navy)]">{t.ticket_type?.startsWith("CREW/") ? "Crew Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</td>
+                        <td className="p-3 font-black text-[var(--brand-navy)]">{t.is_staff ? "Staff Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</td>
                         <td className="p-3 font-mono text-[11px] text-[var(--brand-navy)]/60">
                           {fmtDate(t.purchase_time)}
                         </td>
@@ -1256,9 +1515,15 @@ export default function AdminDashboardPage() {
                           <span className="font-bold text-[var(--brand-navy)] uppercase">{t.buyer_name}</span>
                         </div>
                         <div>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Event</span>
+                          <span className="font-black text-[var(--brand-navy)] uppercase text-[11px]">
+                            {t.event_id ? (data.eventLabels[String(t.event_id)] || `EVENT #${t.event_id}`) : "UNASSIGNED"}
+                          </span>
+                        </div>
+                        <div>
                           <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Tier Type</span>
-                          <span className="bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] px-1.5 py-0.5 border border-[var(--brand-navy)]/20 font-black uppercase text-[11px] inline-block">
-                            {t.ticket_type}
+                          <span className={`px-1.5 py-0.5 border font-black uppercase text-[11px] inline-block ${t.is_staff ? "bg-brand-accent/20 border-[var(--brand-navy)]/40" : "bg-[var(--brand-navy)]/5 text-[var(--brand-navy)] border-[var(--brand-navy)]/20"}`}>
+                            {t.tier_label}
                           </span>
                         </div>
                         <div>
@@ -1266,8 +1531,8 @@ export default function AdminDashboardPage() {
                           <span className="font-mono">{t.phone_number}</span>
                         </div>
                         <div>
-                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">{t.ticket_type?.startsWith("CREW/") ? "Pass Type" : "Amount Paid"}</span>
-                          <span className="font-black text-[var(--brand-navy)]">{t.ticket_type?.startsWith("CREW/") ? "Crew Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</span>
+                          <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">{t.is_staff ? "Pass Type" : "Amount Paid"}</span>
+                          <span className="font-black text-[var(--brand-navy)]">{t.is_staff ? "Staff Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</span>
                         </div>
                         <div className="col-span-2">
                           <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Date / Time</span>
@@ -1869,6 +2134,135 @@ export default function AdminDashboardPage() {
                 ))}
               </div>
             )}
+          </div>
+        ) : activeTab === "waitlist" ? (
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
+            {/* Header */}
+            <div className="flex justify-between items-center bg-[var(--brand-navy)] p-3 text-[var(--brand-off-white)]">
+              <span className="text-xs font-black tracking-widest uppercase flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-brand-accent" /> EARLY-BIRD DROP AUDIENCE & WAITLIST ({waitlistEntries.length})
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadWaitlist(selectedEventId)}
+                  className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10 cursor-pointer"
+                  title="Refresh waitlist"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics cards */}
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 border-b-2 border-brand-navy bg-brand-bg/50">
+              <div className="p-3 border-2 border-brand-navy bg-white">
+                <span className="text-[10px] font-mono font-bold uppercase text-brand-navy/60 block">SUBSCRIBERS</span>
+                <span className="font-display text-2xl text-brand-navy">{waitlistEntries.length}</span>
+              </div>
+              <div className="p-3 border-2 border-brand-navy bg-white">
+                <span className="text-[10px] font-mono font-bold uppercase text-green-700 block">NOTIFIED / DROPPED</span>
+                <span className="font-display text-2xl text-green-700">
+                  {waitlistEntries.filter(w => w.notified).length}
+                </span>
+              </div>
+              <div className="p-3 border-2 border-brand-navy bg-white">
+                <span className="text-[10px] font-mono font-bold uppercase text-yellow-700 block">PENDING DROPS</span>
+                <span className="font-display text-2xl text-yellow-700">
+                  {waitlistEntries.filter(w => !w.notified).length}
+                </span>
+              </div>
+            </div>
+
+            {/* Broadcast Action Box */}
+            <div className="p-4 border-b-2 border-brand-navy bg-brand-accent/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <Flame className="w-4 h-4 text-brand-navy" />
+                <h4 className="font-display text-base uppercase text-brand-navy">
+                  BROADCAST EARLY BIRD DROP VIA WHATSAPP
+                </h4>
+              </div>
+              <p className="text-[11px] font-mono text-brand-navy/80 uppercase leading-relaxed">
+                Sends automated WhatsApp announcement to all pending subscribers in rate-controlled batches (10 msgs / 2.5s) to prevent spam filtering.
+              </p>
+              
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase text-brand-navy block">
+                  DROP MESSAGE TEMPLATE (OPTIONAL CUSTOM TEXT):
+                </label>
+                <textarea
+                  rows={2}
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder={`🔥 ${eventDetails?.title || 'GOODLIFE'} Early Bird Passes are officially LIVE! Secure your ticket now before they sell out 👉 https://goodlife.smwhr.space`}
+                  className="w-full p-2 border-2 border-brand-navy bg-white font-mono text-xs focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={broadcasting || waitlistEntries.filter(w => !w.notified).length === 0}
+                  onClick={handleBroadcastDrop}
+                  className="py-2.5 px-4 bg-brand-navy text-brand-off-white font-display text-sm uppercase tracking-wider hover:bg-brand-accent hover:text-brand-navy transition-colors border-2 border-brand-navy disabled:opacity-50 cursor-pointer shadow-(--shadow-brut-xs)"
+                >
+                  {broadcasting ? "BROADCASTING IN CHUNKS..." : `📢 BROADCAST TO ${waitlistEntries.filter(w => !w.notified).length} SUBSCRIBERS`}
+                </button>
+
+                {broadcastResult && (
+                  <div className={`text-xs font-mono font-bold p-2 border ${
+                    broadcastResult.success ? "bg-green-100 border-green-500 text-green-950" : "bg-red-100 border-red-500 text-red-950"
+                  }`}>
+                    {broadcastResult.message || `Dispatched ${broadcastResult.sent} messages (${broadcastResult.failed} failed)`}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Subscribers Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs">
+                <thead className="bg-brand-navy/10 border-b-2 border-brand-navy text-[10px] font-black uppercase tracking-wider">
+                  <tr>
+                    <th className="p-3">#</th>
+                    <th className="p-3">PHONE NUMBER</th>
+                    <th className="p-3">SUBSCRIBED DATE</th>
+                    <th className="p-3">DROP STATUS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-navy/15">
+                  {waitlistLoading ? (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-brand-navy/60 uppercase">
+                        Loading subscribers...
+                      </td>
+                    </tr>
+                  ) : waitlistEntries.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-brand-navy/60 uppercase">
+                        No waitlist subscribers recorded for this edition yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    waitlistEntries.map((entry, idx) => (
+                      <tr key={entry.id || idx} className="hover:bg-brand-navy/5">
+                        <td className="p-3 font-bold">{idx + 1}</td>
+                        <td className="p-3 font-bold">{entry.phone_number}</td>
+                        <td className="p-3 text-brand-navy/70">{fmtDate(entry.created_at)}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold uppercase border ${
+                            entry.notified 
+                              ? "bg-green-100 text-green-950 border-green-500" 
+                              : "bg-yellow-100 text-yellow-950 border-yellow-500"
+                          }`}>
+                            {entry.notified ? "DROPPED / NOTIFIED" : "PENDING DROP"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
           <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-lg)">
@@ -3240,7 +3634,7 @@ export default function AdminDashboardPage() {
       )}
 
       <div className="max-w-4xl mx-auto text-center mt-12 mb-8 text-[11px] text-[var(--brand-navy-light)] font-bold tracking-widest uppercase">
-        © {new Date().getFullYear()} {(eventDetails?.title || "GOODLIFE").toUpperCase()} MASTER ADMIN · SECURED TRANSACTION CHANNELS
+        © {new Date().getFullYear()} {(eventDetails?.footer_title || eventDetails?.title || "GOODLIFE").toUpperCase()} · SECURED TRANSACTION CHANNELS
       </div>
 
     </div>

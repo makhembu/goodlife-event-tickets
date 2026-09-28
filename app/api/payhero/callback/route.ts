@@ -53,6 +53,40 @@ export async function POST(request: NextRequest) {
       const amountPaid = Number(payload?.amount) || 0;
       const providerReference = String(payload?.provider_reference || payload?.reference);
 
+      // Check if this is a Tab Remote Self-Pay payment
+      if (ourReference.startsWith("TABPAY_")) {
+        const parts = ourReference.split("_");
+        const tabId = parseInt(parts[1], 10);
+        if (!isNaN(tabId)) {
+          const { payTab, insertPaymentLog } = await import("@/lib/supabase-db");
+          const credited = await payTab(
+            tabId,
+            amountPaid,
+            "mpesa",
+            providerReference,
+            null
+          );
+
+          await insertPaymentLog({
+            checkout_request_id: ourReference,
+            mpesa_receipt: providerReference,
+            phone_number: payload?.phone_number || "",
+            amount: amountPaid,
+            status: "success",
+            result_desc: `PayHero callback tab payment credited: ${credited ? "success" : "failed"}`,
+            raw_payload: payload,
+          });
+
+          return NextResponse.json({
+            message: "Tab payment processed",
+            tabId,
+            credited,
+            providerReference,
+            amount: amountPaid,
+          });
+        }
+      }
+
       const result = await fulfillPayheroPayment({
         reference: ourReference,
         providerReference,

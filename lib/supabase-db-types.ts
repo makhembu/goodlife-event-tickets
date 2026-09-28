@@ -15,6 +15,13 @@ export interface Event {
   sales_close_date?: string | null;
   next_event_title?: string;
   recap_video_url?: string;
+  category?: 'flagship' | 'mini';
+  recurrence_pattern?: 'none' | 'weekly' | 'biweekly' | 'monthly';
+  recurrence_day?: string;
+  recurrence_time?: string;
+  custom_schedule_text?: string;
+  max_tent_inventory?: number;
+  max_shared_beds?: number;
   created_at: string;
   archived_at: string | null;
   is_active: boolean;
@@ -35,6 +42,33 @@ export interface Ticket {
   deleted_at?: string | null;
   whatsapp_number?: string | null;
   event_id?: number | null;
+  guest_count?: number;
+  admitted_count?: number;
+  is_camping?: boolean;
+  camping_type?: 'none' | 'private' | 'shared_bed';
+}
+
+/**
+ * Which slice of passes a report is describing.
+ * - customers: paid public sales only (the commercial default)
+ * - staff: crew / vendor / complimentary passes only
+ * - all: both
+ */
+export type TicketAudience = "customers" | "staff" | "all";
+
+/**
+ * A ticket enriched at read time by `fetchDashboardMetrics`.
+ *
+ * `tier_label` and `is_staff` are DERIVED, never stored. `tickets.ticket_type`
+ * is written three different ways depending on origin (PayHero stores the tier
+ * *name*, the manual ticket form stores the tier *id*, the crew form stores
+ * `CREW/<role>`), so consumers must not read `ticket_type` directly.
+ */
+export interface NormalizedTicket extends Ticket {
+  /** Canonical tier name resolved from either the id or name encoding. */
+  tier_label: string;
+  /** Crew / vendor / complimentary rather than a customer sale. */
+  is_staff: boolean;
 }
 
 export interface EventDetails {
@@ -50,10 +84,17 @@ export interface EventDetails {
   logo_url?: string | null;
   event_date?: string | null; // proper DATE field: "2026-09-05"
   status?: 'scheduled' | 'live' | 'closed' | 'archived';
+  category?: 'flagship' | 'mini';
+  recurrence_pattern?: 'none' | 'weekly' | 'biweekly' | 'monthly';
+  recurrence_day?: string;
+  recurrence_time?: string;
+  custom_schedule_text?: string;
   sales_open_date?: string | null;
   sales_close_date?: string | null;
   next_event_title?: string;
   recap_video_url?: string;
+  max_tent_inventory?: number;
+  max_shared_beds?: number;
   simulators_enabled?: boolean;
   operator_notifications_enabled?: boolean;
   footer_title?: string;
@@ -92,7 +133,22 @@ export interface TicketTier {
   hidden: boolean;
   deleted_at?: string | null;
   event_id?: number | null;
+  tier_category?: 'entry' | 'camping';
+  admits_quantity?: number;
+  is_camping_bundle?: boolean;
+  camping_type?: 'none' | 'private' | 'shared_bed';
+  badge_text?: string | null;
+  tour_media_urls?: string[];
   // Legacy fields kept for migration compat
   show_only_on_event_day?: boolean;
   hide_on_event_day?: boolean;
+}
+
+export interface EventWaitlistEntry {
+  id: number;
+  event_id: number;
+  phone_number: string;
+  notified: boolean;
+  notified_at: string | null;
+  created_at: string;
 }

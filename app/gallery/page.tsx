@@ -24,20 +24,20 @@ export default function GalleryPage() {
     fetch("/api/hub/gallery")
       .then(res => res.json())
       .then(data => {
-        setImages(data || []);
+        setImages(Array.isArray(data) ? data : (data?.images || []));
         setLoading(false);
       })
       .catch(err => {
-        console.error(err);
+        console.error("Gallery fetch error:", err);
+        setImages([]);
         setLoading(false);
       });
   }, []);
 
-  const tags = ["ALL", ...Array.from(new Set(images.map(img => img.tag).filter(Boolean)))];
-  
-  const filteredImages = selectedTag === "ALL" 
-    ? images 
-    : images.filter(img => img.tag === selectedTag);
+  // Filter out expired unsplash URLs that 404
+  const filteredImages = images.filter(
+    (img) => !img.image_url?.includes("photo-1540039155732") && !img.image_url?.includes("photo-1470229722913")
+  );
 
   return (
     <div className="min-h-screen bg-brand-bg py-8 px-4 md:px-12 text-brand-navy font-sans">
@@ -55,23 +55,6 @@ export default function GalleryPage() {
           <Flame className="w-6 h-6 text-brand-accent hidden md:block" strokeWidth={2.5} />
         </header>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {tags.map(tag => (
-            <button
-              key={tag}
-              onClick={() => setSelectedTag(tag)}
-              className={`px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest border-2 transition-all shadow-(--shadow-brut-xs) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none cursor-pointer ${
-                selectedTag === tag 
-                ? "border-brand-navy bg-brand-navy text-brand-accent" 
-                : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-accent"
-              }`}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-
         {loading ? (
           <div className="h-64 flex items-center justify-center font-mono uppercase tracking-widest animate-pulse">
             Loading Archives...
@@ -86,7 +69,7 @@ export default function GalleryPage() {
               >
                 <div className="relative w-full aspect-auto overflow-hidden bg-brand-navy/10">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.thumbnail_url || img.image_url} alt={img.caption || "Festival Photo"} className="w-full h-auto object-cover grayscale-[30%] group-hover:grayscale-0 transition-all duration-500" loading="lazy" />
+                  <img src={img.thumbnail_url || img.image_url} alt={img.caption || "Festival Photo"} className="w-full h-auto object-cover group-hover:scale-105 transition-all duration-300" />
                   <div className="absolute top-2 right-2 bg-brand-navy text-brand-off-white text-[10px] font-bold px-2 py-1 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
                     <Maximize2 className="w-3 h-3" />
                   </div>

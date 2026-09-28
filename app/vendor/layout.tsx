@@ -69,8 +69,8 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
       <main className="flex-1 w-full h-[calc(100dvh-4rem)] md:h-[100dvh] overflow-y-auto">
         <header className="sticky top-0 z-40 bg-brand-off-white border-b-4 border-brand-navy p-3 md:p-4 flex justify-between items-center shadow-(--shadow-brut-xs)">
           <div>
-            <h1 className="font-display text-xl md:text-2xl uppercase tracking-wider">{session.vendor_name || "Vendor POS"}</h1>
-            <p className="text-[10px] font-bold opacity-60 uppercase">Op: {session.operator_name}</p>
+            <h1 className="font-display text-xl md:text-2xl uppercase tracking-wider">{session.vendorName || "Vendor POS"}</h1>
+            <p className="text-[10px] font-bold opacity-60 uppercase">Op: {session.operatorName}</p>
           </div>
           {/* Mobile Logout */}
           <button onClick={handleLogout} className="md:hidden p-2 text-brand-navy hover:bg-red-500 hover:text-white border-2 border-brand-navy shadow-(--shadow-brut-xs) transition-colors">

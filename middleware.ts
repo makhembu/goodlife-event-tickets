@@ -55,13 +55,13 @@ export async function middleware(request: NextRequest) {
   // Protect vendor page routes
   if (pathname.startsWith("/vendor/") || pathname === "/vendor") {
     if (pathname === "/vendor/login") {
-      if (vendorSession === "true") {
+      if (vendorSession) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/sell";
         return NextResponse.redirect(url);
       }
     } else {
-      if (vendorSession !== "true") {
+      if (!vendorSession) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/login";
         return NextResponse.redirect(url);
@@ -71,8 +71,12 @@ export async function middleware(request: NextRequest) {
 
   // Protect vendor API routes
   if (pathname.startsWith("/api/vendor/") || pathname === "/api/vendor") {
-    const publicVendorRoutes = ["/api/vendor/auth", "/api/vendor/logout"];
-    if (!publicVendorRoutes.includes(pathname) && vendorSession !== "true") {
+    const isPublicRoute =
+      pathname === "/api/vendor/auth" ||
+      pathname === "/api/vendor/logout" ||
+      pathname === "/api/vendor/mpesa/status"; // read-only; TABPAY_ refs only (see route)
+
+    if (!isPublicRoute && !vendorSession) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }

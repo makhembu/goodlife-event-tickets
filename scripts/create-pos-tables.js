@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS customer_tabs (
   credit_limit NUMERIC DEFAULT 5000,
   balance NUMERIC DEFAULT 0,
   status TEXT DEFAULT 'open',              -- 'open', 'settled', 'written_off'
+  settlement_reason TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   settled_at TIMESTAMPTZ DEFAULT NULL
 );
@@ -146,6 +147,7 @@ CREATE TABLE IF NOT EXISTS tab_transactions (
   method TEXT DEFAULT '',                  -- 'cash', 'mpesa'
   mpesa_ref TEXT DEFAULT '',
   operator_id INTEGER REFERENCES vendor_operators(id),
+  ordered_by TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tab_txns_tab ON tab_transactions(tab_id);
@@ -156,6 +158,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS sales_open_date TIMESTAMPTZ DEFAULT 
 ALTER TABLE events ADD COLUMN IF NOT EXISTS sales_close_date TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS next_event_title TEXT DEFAULT '';
 ALTER TABLE events ADD COLUMN IF NOT EXISTS recap_video_url TEXT DEFAULT '';
+
+-- 10a. Column migrations for EXISTING deployments: CREATE TABLE IF NOT EXISTS
+-- does nothing when the table already exists, so these columns must be added
+-- idempotently for pre-tab-system databases.
+ALTER TABLE customer_tabs ADD COLUMN IF NOT EXISTS settlement_reason TEXT DEFAULT '';
+ALTER TABLE tab_transactions ADD COLUMN IF NOT EXISTS ordered_by TEXT DEFAULT '';
+
+-- 10b. Idempotent tab-payment ledger: prevents double-crediting a tab with the
+-- same M-Pesa receipt (webhook vs polling race protection).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tab_txns_mpesa_ref
+  ON tab_transactions (tab_id, mpesa_ref)
+  WHERE mpesa_ref IS NOT NULL AND mpesa_ref <> '';
 
 -- 11. Early-Bird WhatsApp Drop Waitlist
 CREATE TABLE IF NOT EXISTS event_waitlist (

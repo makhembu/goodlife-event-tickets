@@ -1,11 +1,11 @@
-import { Ticket, Event, EventDetails, PendingPayment, TicketTier } from "./supabase-db-types";
+import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket } from "./supabase-db-types";
 
 // Re-export interface types so all existing pages compile unchanged
-export type { Ticket, Event, EventDetails, PendingPayment, TicketTier };
+export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket };
 
 // Safe import for server-side pg pool to avoid breaking client bundle builds
-let neonQuery: any = null;
-let neonConnect: any = null;
+export let neonQuery: any = null;
+export let neonConnect: any = null;
 if (typeof window === "undefined") {
   try {
     // Directly require pg here so bundler keeps it server-only
@@ -121,13 +121,23 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
   }
 
   try {
-    // Archive current active event
-    await neonQuery("UPDATE events SET is_active = FALSE, archived_at = NOW() WHERE is_active = TRUE");
+    const isScheduleOnly = event.status === 'scheduled' || event.is_active === false;
+
+    // Archive current active event ONLY if this new event is immediately live
+    if (!isScheduleOnly) {
+      await neonQuery("UPDATE events SET is_active = FALSE, archived_at = NOW() WHERE is_active = TRUE");
+    }
 
     // Create new event
     const { rows } = await neonQuery(
-      `INSERT INTO events (title, subtitle, tag, venue, flyer_url, logo_url, regulations, ticker_text, till_number, event_date, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
+      `INSERT INTO events (
+        title, subtitle, tag, venue, flyer_url, logo_url, regulations, 
+        ticker_text, till_number, event_date, is_active, status, category,
+        sales_open_date, sales_close_date, next_event_title, recap_video_url,
+        max_tent_inventory, max_shared_beds, recurrence_pattern, recurrence_day,
+        recurrence_time, custom_schedule_text
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING *`,
       [
         event.title,
@@ -139,34 +149,75 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.regulations || '',
         event.ticker_text || '',
         event.till_number || '',
-        event.event_date || null
+        event.event_date || null,
+        !isScheduleOnly,
+        event.status || (isScheduleOnly ? 'scheduled' : 'live'),
+        event.category || 'flagship',
+        event.sales_open_date || null,
+        event.sales_close_date || null,
+        event.next_event_title || '',
+        event.recap_video_url || '',
+        event.max_tent_inventory || 30,
+        event.max_shared_beds || 12,
+        event.recurrence_pattern || 'none',
+        event.recurrence_day || 'sunday',
+        event.recurrence_time || '14:00',
+        event.custom_schedule_text || ''
       ]
     );
     const newEvent = rows[0];
 
-    // Copy tiers from previous active event to new event
+    // Seed tiers for the new event without overwriting previous events' tiers
     const { rows: prevTiers } = await neonQuery(
-      "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL"
+      "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL AND event_id = (SELECT id FROM events WHERE is_active = TRUE LIMIT 1)"
     );
-    for (const tier of prevTiers) {
+    const sourceTiers = prevTiers && prevTiers.length > 0 ? prevTiers : DEFAULT_POSTER_TIERS;
+    for (const tier of sourceTiers) {
       await neonQuery(
-        `INSERT INTO ticket_tiers (id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, available_from, available_until, max_quantity, event_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (id) DO UPDATE SET event_id = $11`,
-        [tier.id, tier.name, tier.price, tier.description, tier.tag, tier.show_only_on_event_day, tier.hide_on_event_day, tier.available_from, tier.available_until, tier.max_quantity, newEvent.id]
+        `INSERT INTO ticket_tiers (
+          id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, 
+          available_from, available_until, max_quantity, event_id, tier_category, 
+          admits_quantity, is_camping_bundle, camping_type, badge_text, tour_media_urls
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         ON CONFLICT (id, event_id) DO UPDATE SET
+           name = EXCLUDED.name,
+           price = EXCLUDED.price,
+           description = EXCLUDED.description`,
+        [
+          tier.id, 
+          tier.name, 
+          tier.price, 
+          tier.description, 
+          tier.tag || 'TICKETS', 
+          tier.show_only_on_event_day ?? false, 
+          tier.hide_on_event_day ?? false, 
+          tier.available_from || null, 
+          tier.available_until || null, 
+          tier.max_quantity || null, 
+          newEvent.id,
+          tier.tier_category || (tier.tag === 'CAMPING' ? 'camping' : 'entry'),
+          tier.admits_quantity || 1,
+          tier.is_camping_bundle ?? (tier.tag === 'CAMPING'),
+          tier.camping_type || (tier.id?.includes('shared') ? 'shared_bed' : tier.tag === 'CAMPING' ? 'private' : 'none'),
+          tier.badge_text || null,
+          JSON.stringify(tier.tour_media_urls || [])
+        ]
       );
     }
 
-    // Sync event_details table for backward compatibility
-    await neonQuery(
-      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (id) DO UPDATE SET
-         title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, tag = EXCLUDED.tag,
-         venue = EXCLUDED.venue, till_number = EXCLUDED.till_number, flyer_url = EXCLUDED.flyer_url,
-         regulations = EXCLUDED.regulations, ticker_text = EXCLUDED.ticker_text, logo_url = EXCLUDED.logo_url`,
-      [newEvent.title, newEvent.subtitle, newEvent.tag, newEvent.venue, newEvent.till_number, newEvent.flyer_url, newEvent.regulations, newEvent.ticker_text, newEvent.logo_url]
-    );
+    // Sync event_details table for backward compatibility if live
+    if (!isScheduleOnly) {
+      await neonQuery(
+        `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (id) DO UPDATE SET
+           title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, tag = EXCLUDED.tag,
+           venue = EXCLUDED.venue, till_number = EXCLUDED.till_number, flyer_url = EXCLUDED.flyer_url,
+           regulations = EXCLUDED.regulations, ticker_text = EXCLUDED.ticker_text, logo_url = EXCLUDED.logo_url`,
+        [newEvent.title, newEvent.subtitle, newEvent.tag, newEvent.venue, newEvent.till_number, newEvent.flyer_url, newEvent.regulations, newEvent.ticker_text, newEvent.logo_url]
+      );
+    }
 
     return {
       ...newEvent,
@@ -394,23 +445,82 @@ export async function fetchAllTicketsAll(): Promise<Ticket[]> {
 }
 
 // Dashboard metrics (optionally filtered by eventId)
-export async function fetchDashboardMetrics(eventId?: number) {
-  const tickets = await fetchAllTickets(eventId);
-  
-  const totalCashCollected = tickets.reduce((sum, t) => sum + Number(t.amount_paid), 0);
-  const totalTicketsSold = tickets.length;
-  const scanCount = tickets.filter(t => t.is_scanned).length;
-  
+/**
+ * Staff / crew / vendor / complimentary passes are namespaced `CREW/<role>` by
+ * the dashboard crew form (SECURITY, BAR, STAGE, MEDIA, VENDOR). A zero
+ * `amount_paid` is treated as staff too, which catches comps and giveaways that
+ * were never given a CREW prefix, and any tier explicitly tagged CREW.
+ */
+function classifyStaffTicket(rawType: string, amountPaid: number, tier: TicketTier | null): boolean {
+  const raw = (rawType || "").trim();
+  if (/^CREW(\/|$)/i.test(raw)) return true;
+  if (tier && String(tier.tag || "").toUpperCase() === "CREW") return true;
+  if (Number(amountPaid) !== 0) return false;
+  // Zero paid, but the matched tier is itself free - that's a genuinely free
+  // public tier, not a comp. Only treat zero-paid as staff when there is no
+  // free public tier behind it, so a KES 0 promo tier isn't silently reclassified.
+  if (tier && Number(tier.price) === 0) return false;
+  return true;
+}
+
+/** event_id -> title, memoized for the life of the server/client bundle. */
+let eventLabelCache: Record<string, string> | null = null;
+
+export async function fetchDashboardMetrics(eventId?: number, audience: TicketAudience = "customers") {
+  const allTickets = await fetchAllTickets(eventId);
+
   let configuredTiers: TicketTier[] = [];
   try {
     configuredTiers = await fetchTicketTiers(eventId && eventId > 0 ? eventId : undefined);
   } catch {}
 
+  // --- Read-time tier resolution -------------------------------------------
+  // ticket_type is written three different ways (PayHero -> tier NAME, manual
+  // form -> tier ID, crew form -> "CREW/<role>"). Build both lookup directions
+  // once so the ledger can show one canonical label for all of them.
+  const tierById = new Map<string, TicketTier>();
+  const tierByName = new Map<string, TicketTier>();
+  configuredTiers.forEach(t => {
+    tierById.set(String(t.id).trim().toLowerCase(), t);
+    tierByName.set(t.name.trim().toLowerCase(), t);
+  });
+  const resolveTier = (rawType: string): TicketTier | null => {
+    const key = (rawType || "").trim().toLowerCase();
+    if (!key) return null;
+    return tierById.get(key) ?? tierByName.get(key) ?? null;
+  };
+
+  const normalized: NormalizedTicket[] = allTickets.map(t => {
+    const rawType = (t.ticket_type || "").trim();
+    const tier = resolveTier(rawType);
+    return {
+      ...t,
+      tier_label: tier ? tier.name : (rawType || "General"),
+      is_staff: classifyStaffTicket(rawType, Number(t.amount_paid), tier)
+    };
+  });
+
+  // --- Audience split ------------------------------------------------------
+  const tickets = audience === "all"
+    ? normalized
+    : normalized.filter(t => (audience === "staff") === t.is_staff);
+
+  const totalCashCollected = tickets.reduce((sum, t) => sum + Number(t.amount_paid), 0);
+  const totalTicketsSold = tickets.length;
+  const scanCount = tickets.filter(t => t.is_scanned).length;
+  const staffPasses = normalized.filter(t => t.is_staff).length;
+
+  // --- Tier breakdown over the audience-filtered set only ------------------
   const campingTiers: Record<string, { sold: number; revenue: number; cap?: number; name?: string; tag?: string }> = {};
 
   // 1. Seed with event's configured tiers (deduplicating by normalized name)
   configuredTiers.forEach(tier => {
-    const existingKey = Object.keys(campingTiers).find(k => 
+    const isCrewTier = String(tier.tag || "").toUpperCase() === "CREW";
+    // Seeding every configured tier would add zero-sale rows for tiers outside
+    // the current audience (e.g. crew tiers when viewing customers). Skip them
+    // so the card cannot contradict the audience filter.
+    if (audience === "customers" && isCrewTier) return;
+    const existingKey = Object.keys(campingTiers).find(k =>
       campingTiers[k].name?.trim().toLowerCase() === tier.name.trim().toLowerCase()
     );
     if (!existingKey) {
@@ -427,7 +537,10 @@ export async function fetchDashboardMetrics(eventId?: number) {
   // 2. Aggregate sales from tickets
   tickets.forEach(t => {
     const rawType = (t.ticket_type || "General").trim();
-    const matchedKey = Object.keys(campingTiers).find(k => 
+    const tier = resolveTier(rawType);
+    // Prefer the resolved tier's id as the bucket so name/id encodings converge.
+    const preferredKey = tier?.id ? String(tier.id) : rawType;
+    const matchedKey = Object.keys(campingTiers).find(k =>
       k.toLowerCase() === rawType.toLowerCase() ||
       campingTiers[k].name?.toLowerCase() === rawType.toLowerCase() ||
       k.toLowerCase().startsWith(rawType.toLowerCase()) ||
@@ -438,16 +551,16 @@ export async function fetchDashboardMetrics(eventId?: number) {
       campingTiers[matchedKey].sold += 1;
       campingTiers[matchedKey].revenue += Number(t.amount_paid);
     } else {
-      if (!campingTiers[rawType]) {
-        campingTiers[rawType] = {
+      if (!campingTiers[preferredKey]) {
+        campingTiers[preferredKey] = {
           sold: 0,
           revenue: 0,
-          name: rawType,
-          tag: rawType.toUpperCase().startsWith("CREW") ? "CREW" : "TICKETS"
+          name: tier ? tier.name : rawType,
+          tag: tier?.tag || (t.is_staff ? "CREW" : "TICKETS")
         };
       }
-      campingTiers[rawType].sold += 1;
-      campingTiers[rawType].revenue += Number(t.amount_paid);
+      campingTiers[preferredKey].sold += 1;
+      campingTiers[preferredKey].revenue += Number(t.amount_paid);
     }
   });
 
@@ -456,13 +569,33 @@ export async function fetchDashboardMetrics(eventId?: number) {
     .filter(t => new Date(t.purchase_time).getTime() > oneDayAgo)
     .reduce((sum, t) => sum + Number(t.amount_paid), 0);
 
+  // --- Event labels so the ledger can show which event each row belongs to --
+  // Cached: this runs on the dashboard's 30s auto-refresh, and the events table
+  // changes only when an admin creates one.
+  let eventLabels: Record<string, string> = {};
+  try {
+    if (!eventLabelCache) {
+      const events = await fetchAllEvents();
+      // Never cache an empty result: a single transient failure would otherwise
+      // blank the EVENT column for the rest of the session.
+      if (events.length > 0) {
+        const next: Record<string, string> = {};
+        events.forEach(e => { next[String(e.id)] = e.title; });
+        eventLabelCache = next;
+      }
+    }
+    eventLabels = eventLabelCache || {};
+  } catch {}
+
   return {
     totalCashCollected,
     totalTicketsSold,
     scanCount,
     campingTiers,
     recentSalesAmount,
-    tickets
+    tickets,
+    staffPasses,
+    eventLabels
   };
 }
 
@@ -525,7 +658,11 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
     purchase_time: new Date().toISOString(),
     is_scanned: false,
     scanned_at: null,
-    scanned_by: null
+    scanned_by: null,
+    guest_count: ticket.guest_count || 1,
+    admitted_count: ticket.admitted_count || 0,
+    is_camping: ticket.is_camping || false,
+    camping_type: ticket.camping_type || "none"
   };
 
   if (typeof window !== "undefined") {
@@ -554,6 +691,10 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
       return {
         ...r,
         amount_paid: Number(r.amount_paid),
+        guest_count: r.guest_count != null ? Number(r.guest_count) : 1,
+        admitted_count: r.admitted_count != null ? Number(r.admitted_count) : 0,
+        is_camping: Boolean(r.is_camping),
+        camping_type: r.camping_type || "none",
         purchase_time: r.purchase_time ? new Date(r.purchase_time).toISOString() : new Date().toISOString(),
         scanned_at: r.scanned_at ? new Date(r.scanned_at).toISOString() : null
       };
@@ -563,9 +704,32 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
       const active = await fetchActiveEvent();
       resolvedEventId = active?.id || 1;
     }
+
+    // Auto-resolve camping and group details from tier if missing
+    let guestCount = newTicket.guest_count || 1;
+    let isCamping = newTicket.is_camping || false;
+    let campingType = newTicket.camping_type || "none";
+
+    try {
+      const { rows: matchedTiers } = await neonQuery(
+        "SELECT admits_quantity, is_camping_bundle, camping_type FROM ticket_tiers WHERE event_id = $1 AND (id = $2 OR LOWER(TRIM(name)) = LOWER(TRIM($2))) LIMIT 1",
+        [resolvedEventId, newTicket.ticket_type]
+      );
+      if (matchedTiers.length > 0) {
+        const mt = matchedTiers[0];
+        if (!newTicket.guest_count && mt.admits_quantity) guestCount = Number(mt.admits_quantity);
+        if (newTicket.is_camping === undefined && mt.is_camping_bundle != null) isCamping = Boolean(mt.is_camping_bundle);
+        if ((!newTicket.camping_type || newTicket.camping_type === "none") && mt.camping_type) campingType = mt.camping_type;
+      }
+    } catch {}
+
     await neonQuery(
-      `INSERT INTO tickets (id, mpesa_receipt, phone_number, ticket_type, amount_paid, purchase_time, is_scanned, scanned_at, scanned_by, buyer_name, whatsapp_number, event_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO tickets (
+        id, mpesa_receipt, phone_number, ticket_type, amount_paid, 
+        purchase_time, is_scanned, scanned_at, scanned_by, buyer_name, 
+        whatsapp_number, event_id, guest_count, admitted_count, is_camping, camping_type
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         newTicket.id,
         newTicket.mpesa_receipt,
@@ -578,18 +742,43 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
         newTicket.scanned_by,
         newTicket.buyer_name,
         newTicket.whatsapp_number || "",
-        resolvedEventId
+        resolvedEventId,
+        guestCount,
+        0,
+        isCamping,
+        campingType
       ]
     );
-    return { ...newTicket, event_id: resolvedEventId };
+    return {
+      ...newTicket,
+      event_id: resolvedEventId,
+      guest_count: guestCount,
+      admitted_count: 0,
+      is_camping: isCamping,
+      camping_type: campingType
+    };
   } catch (err) {
     console.error("Neon createTicket error:", err);
     throw err;
   }
 }
 
-// Process scanned ticket
-export async function processTicketScan(id: string, scannerName: string = "Admin Guard"): Promise<{ success: boolean; message: string; scannedAt?: string; alreadyScanned?: boolean; ticket?: Ticket }> {
+// Process scanned ticket with multi-event checking, incremental entry, and camping instructions
+export async function processTicketScan(
+  id: string, 
+  scannerName: string = "Admin Guard",
+  gateEventId?: number,
+  admitCount: number = 1
+): Promise<{ 
+  success: boolean; 
+  message: string; 
+  scannedAt?: string; 
+  alreadyScanned?: boolean; 
+  ticket?: Ticket;
+  camping_instruction?: string;
+  admitted_count?: number;
+  guest_count?: number;
+}> {
   const ticket = await getTicketById(id);
   
   if (!ticket) {
@@ -599,21 +788,49 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
     };
   }
 
-  if (ticket.is_scanned) {
+  // Cross-Event Gate Scan Defense (Scenario S1)
+  if (gateEventId && ticket.event_id && Number(ticket.event_id) !== Number(gateEventId)) {
+    return {
+      success: false,
+      alreadyScanned: false,
+      ticket,
+      message: `INVALID EVENT! Ticket is for Event #${ticket.event_id}, not the current Gate Event #${gateEventId}. ENTRY REJECTED.`
+    };
+  }
+
+  const totalGuests = Number(ticket.guest_count) || 1;
+  const currentAdmitted = Number(ticket.admitted_count) || 0;
+
+  if (ticket.is_scanned || currentAdmitted >= totalGuests) {
     return {
       success: false,
       alreadyScanned: true,
       scannedAt: ticket.scanned_at || ticket.purchase_time,
       ticket,
-      message: `TICKET ALREADY SCANNED! First validated on ${new Date(ticket.scanned_at || "").toLocaleTimeString()} by ${ticket.scanned_by || "Unknown"}. ENTRY REJECTED.`
+      message: `TICKET ALREADY FULLY SCANNED! All ${totalGuests} guest(s) were admitted on ${new Date(ticket.scanned_at || "").toLocaleTimeString()} by ${ticket.scanned_by || "Unknown"}. ENTRY REJECTED.`
     };
+  }
+
+  const countToAdmit = Math.max(1, Math.min(Number(admitCount) || 1, totalGuests - currentAdmitted));
+  const newAdmitted = currentAdmitted + countToAdmit;
+  const isFullyAdmitted = newAdmitted >= totalGuests;
+  const scannedAt = new Date().toISOString();
+
+  // Camping instruction resolution
+  let campingInstruction = "";
+  if (ticket.camping_type === 'shared_bed' || ticket.ticket_type?.toLowerCase().includes("shared") || ticket.ticket_type?.toLowerCase().includes("bed")) {
+    campingInstruction = "🛌 SHARED DORM TENT — ISSUE DORMITORY WRISTBAND & BED NUMBER";
+  } else if (ticket.is_camping || ticket.camping_type === 'private' || ticket.ticket_type?.toLowerCase().includes("tent")) {
+    campingInstruction = "⛺ PRIVATE TENT — ISSUE TENT KEY & CAMPING WRISTBAND";
   }
 
   const updatedTicket: Ticket = {
     ...ticket,
-    is_scanned: true,
-    scanned_at: new Date().toISOString(),
-    scanned_by: scannerName
+    is_scanned: isFullyAdmitted,
+    scanned_at: scannedAt,
+    scanned_by: scannerName,
+    admitted_count: newAdmitted,
+    guest_count: totalGuests
   };
 
   if (typeof window !== "undefined") {
@@ -621,7 +838,7 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
       const res = await fetch(`/api/admin/scan/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scanned_by: scannerName })
+        body: JSON.stringify({ scanned_by: scannerName, event_id: gateEventId, admit_count: countToAdmit })
       });
       if (res.ok) return await res.json();
     } catch (e) {
@@ -633,15 +850,23 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
     return {
       success: true,
       ticket: updatedTicket,
-      message: `SUCCESS! Ticket ${id} [${ticket.ticket_type}] has been validated locally. Welcome to GOODLIFE!`
+      message: `SUCCESS! Admitted ${countToAdmit} guest(s) (${newAdmitted}/${totalGuests}) [${ticket.ticket_type}].`,
+      camping_instruction: campingInstruction,
+      admitted_count: newAdmitted,
+      guest_count: totalGuests
     };
   }
 
   // Server side - Neon SQL
   try {
     await neonQuery(
-      "UPDATE tickets SET is_scanned = TRUE, scanned_at = $1, scanned_by = $2 WHERE id = $3 AND deleted_at IS NULL",
-      [updatedTicket.scanned_at, updatedTicket.scanned_by, id]
+      `UPDATE tickets 
+       SET is_scanned = $1, 
+           scanned_at = $2, 
+           scanned_by = $3, 
+           admitted_count = $4 
+       WHERE id = $5 AND deleted_at IS NULL`,
+      [isFullyAdmitted, scannedAt, scannerName, newAdmitted, id]
     );
 
     // Send scan notification via WhatsApp
@@ -658,17 +883,28 @@ export async function processTicketScan(id: string, scannerName: string = "Admin
       console.error("Failed to import/dispatch scan notification:", err);
     }
 
+    const countStatus = totalGuests > 1 
+      ? `ADMITTED ${countToAdmit} GUESTS (${newAdmitted}/${totalGuests})`
+      : `VALID TICKET`;
+
+    const fullMsg = campingInstruction
+      ? `SUCCESS! ${countStatus} [${ticket.ticket_type}]. ${campingInstruction}`
+      : `SUCCESS! ${countStatus} [${ticket.ticket_type}]. Welcome to GOODLIFE!`;
+
     return {
       success: true,
       ticket: updatedTicket,
-      message: `SUCCESS! Ticket ${id} [${ticket.ticket_type}] has been validated successfully. Welcome to GOODLIFE!`
+      message: fullMsg,
+      camping_instruction: campingInstruction,
+      admitted_count: newAdmitted,
+      guest_count: totalGuests
     };
   } catch (err) {
     console.error("Neon processTicketScan error:", err);
     return {
       success: true,
       ticket: updatedTicket,
-      message: `SUCCESS! Ticket ${id} [${ticket.ticket_type}] has been scanned, but database sync pending.`
+      message: `SUCCESS! Ticket ${id} scanned, but database sync pending.`
     };
   }
 }
@@ -1235,15 +1471,64 @@ export async function rejectPendingPayment(checkoutRequestId: string): Promise<b
 }
 
 export const DEFAULT_POSTER_TIERS: TicketTier[] = [
-  { id: "die-hard-400", name: "DIE HARD", price: 400, description: "Limited early access pass", tag: "TICKETS", hidden: false },
-  { id: "early-bird-550", name: "EARLY BIRD", price: 550, description: "Discounted advance entry pass", tag: "TICKETS", hidden: false },
-  { id: "advance-750", name: "ADVANCE", price: 750, description: "Standard advance entry pass", tag: "TICKETS", hidden: false },
-  { id: "regular-gate-1000", name: "REGULAR / GATE", price: 1000, description: "On-day gate admission pass", tag: "TICKETS", hidden: false },
-  { id: "2px-tent-mattress-2500", name: "2PX TENT X MATTRESS", price: 2500, description: "2-person tent with mattress setup", tag: "CAMPING", hidden: false },
-  { id: "2px-tent-sleepingbag-2400", name: "2PX TENT X SLEEPING BAG", price: 2400, description: "2-person tent with sleeping bag", tag: "CAMPING", hidden: false },
-  { id: "4px-tent-sleepingbag-2400", name: "4PX TENT X SLEEPING BAG", price: 2400, description: "4-person tent with sleeping bag", tag: "CAMPING", hidden: false },
-  { id: "6px-tent-sleepingbag-3000", name: "6PX TENT X SLEEPING BAG", price: 3000, description: "6-person group camp setup", tag: "CAMPING", hidden: false }
+  { id: "early-bird-500", name: "EARLY BIRD", price: 500, description: "Limited early access festival entry pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false, badge_text: "SELLING FAST" },
+  { id: "advance-800", name: "ADVANCE PASS", price: 800, description: "Standard advance admission pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false },
+  { id: "vip-gate-1000", name: "VIP FAST-TRACK", price: 1000, description: "VIP lounge access + express queue jump", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false },
+  { id: "shared-bed-6px-1200", name: "1PX BED IN SHARED 6PX TENT", price: 1200, description: "Festival Entry + 1 Bed in shared 6-Person dorm tent. Assigned on arrival at gate.", tag: "CAMPING", tier_category: "camping", admits_quantity: 1, is_camping_bundle: true, camping_type: "shared_bed", hidden: false, badge_text: "SOLO FAVORITE" },
+  { id: "2px-private-tent-2500", name: "2PX PRIVATE DOME TENT", price: 2500, description: "Festival Entry for 2 Guests + Private Dome Tent + 2 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private", hidden: false },
+  { id: "4px-group-tent-4000", name: "4PX PRIVATE GROUP TENT", price: 4000, description: "Festival Entry for 4 Guests + Large 4-Person Dome Tent + 4 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 4, is_camping_bundle: true, camping_type: "private", hidden: false, badge_text: "BEST VALUE" },
+  { id: "6px-glamping-tent-6000", name: "6PX PRIVATE GLAMPING TENT", price: 6000, description: "Festival Entry for 6 Guests + Full Spacious Glamping Dome Tent", tag: "CAMPING", tier_category: "camping", admits_quantity: 6, is_camping_bundle: true, camping_type: "private", hidden: false },
+  { id: "pitch-own-tent-1500", name: "PITCH YOUR OWN TENT", price: 1500, description: "Festival Entry for 2 Guests + Reserved Tent Pitch Ground Space", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private", hidden: false }
 ];
+
+// Helper to format tier rows and apply automated laddering
+function formatTierRows(rows: any[]): TicketTier[] {
+  const now = new Date();
+  let earlyBirdSoldOutOrExpired = false;
+
+  const mapped = rows.map((r: any) => {
+    const price = Number(r.price);
+    const maxQty = r.max_quantity != null ? Number(r.max_quantity) : null;
+    const sold = r.sold_count != null ? Number(r.sold_count) : 0;
+    
+    const isSoldOut = maxQty != null && sold >= maxQty;
+    const isPastUntil = r.available_until ? now > new Date(r.available_until) : false;
+
+    if ((r.name?.toLowerCase().includes("early bird") || r.id?.toLowerCase().includes("early-bird")) && (isSoldOut || isPastUntil)) {
+      earlyBirdSoldOutOrExpired = true;
+    }
+
+    const cleanBadge = r.badge_text ? r.badge_text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim() : null;
+
+    return {
+      ...r,
+      price,
+      max_quantity: maxQty,
+      sold_count: sold,
+      admits_quantity: r.admits_quantity != null ? Number(r.admits_quantity) : 1,
+      is_camping_bundle: Boolean(r.is_camping_bundle),
+      camping_type: r.camping_type || "none",
+      badge_text: cleanBadge || null,
+      tour_media_urls: Array.isArray(r.tour_media_urls) ? r.tour_media_urls : [],
+      show_only_on_event_day: Boolean(r.show_only_on_event_day),
+      hide_on_event_day: Boolean(r.hide_on_event_day),
+      hidden: Boolean(r.hidden)
+    };
+  });
+
+  // Automated Tier Laddering
+  if (earlyBirdSoldOutOrExpired) {
+    mapped.forEach(t => {
+      if (t.name?.toLowerCase().includes("advance") || t.id?.toLowerCase().includes("advance")) {
+        if (!t.badge_text) {
+          t.badge_text = "ADVANCE PASSES LIVE";
+        }
+      }
+    });
+  }
+
+  return mapped;
+}
 
 // Fetch all ticket tiers (optionally filtered by eventId)
 export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> {
@@ -1263,56 +1548,65 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
 
   // Server side - Neon SQL
   try {
-    let query = "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL";
-    const params: any[] = [];
-
-    if (eventId) {
-      query += " AND event_id = $1";
-      params.push(eventId);
-    } else {
-      // Default: active event's tiers
+    let resolvedEventId = eventId;
+    if (!resolvedEventId) {
       const active = await fetchActiveEvent();
-      if (active) {
-        query += " AND event_id = $1";
-        params.push(active.id);
-      }
+      resolvedEventId = active?.id || 1;
     }
 
-    query += " ORDER BY price ASC";
-    const { rows } = await neonQuery(query, params);
+    const query = `
+      SELECT 
+        tt.*,
+        COALESCE((
+          SELECT COUNT(*)::int 
+          FROM tickets t 
+          WHERE t.event_id = tt.event_id 
+            AND (t.ticket_type = tt.id OR LOWER(TRIM(t.ticket_type)) = LOWER(TRIM(tt.name)))
+            AND t.deleted_at IS NULL
+        ), 0) AS sold_count
+      FROM ticket_tiers tt
+      WHERE tt.deleted_at IS NULL
+        AND tt.event_id = $1
+      ORDER BY tt.price ASC
+    `;
+
+    const { rows } = await neonQuery(query, [resolvedEventId]);
     if (!rows || rows.length === 0) {
-      // If no tiers for this event, seed defaults for active event
-      const active = await fetchActiveEvent();
-      if (active) {
-        for (const tier of DEFAULT_POSTER_TIERS) {
-          try {
-            await neonQuery(
-              `INSERT INTO ticket_tiers (id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, event_id)
-               VALUES ($1, $2, $3, $4, $5, false, false, $6)
-               ON CONFLICT (id) DO UPDATE SET event_id = $6`,
-              [tier.id, tier.name, tier.price, tier.description, tier.tag || "TICKETS", active.id]
-            );
-          } catch {}
-        }
-        // Re-fetch with event_id
-        const { rows: seeded } = await neonQuery("SELECT * FROM ticket_tiers WHERE deleted_at IS NULL AND event_id = $1 ORDER BY price ASC", [active.id]);
-        return seeded.map((r: any) => ({
-          ...r,
-          price: Number(r.price),
-          show_only_on_event_day: Boolean(r.show_only_on_event_day),
-          hide_on_event_day: Boolean(r.hide_on_event_day),
-          hidden: Boolean(r.hidden)
-        }));
+      // Seed default tiers for this event if none exist
+      for (const tier of DEFAULT_POSTER_TIERS) {
+        try {
+          await neonQuery(
+            `INSERT INTO ticket_tiers (
+              id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, 
+              available_from, available_until, max_quantity, event_id, tier_category, 
+              admits_quantity, is_camping_bundle, camping_type, badge_text, tour_media_urls
+             )
+             VALUES ($1, $2, $3, $4, $5, false, false, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             ON CONFLICT (id, event_id) DO NOTHING`,
+            [
+              tier.id,
+              tier.name,
+              tier.price,
+              tier.description,
+              tier.tag || "TICKETS",
+              tier.available_from || null,
+              tier.available_until || null,
+              tier.max_quantity || null,
+              resolvedEventId,
+              tier.tier_category || (tier.tag === "CAMPING" ? "camping" : "entry"),
+              tier.admits_quantity || 1,
+              tier.is_camping_bundle ?? (tier.tag === "CAMPING"),
+              tier.camping_type || (tier.id.includes("shared") ? "shared_bed" : tier.tag === "CAMPING" ? "private" : "none"),
+              tier.badge_text || null,
+              JSON.stringify(tier.tour_media_urls || [])
+            ]
+          );
+        } catch {}
       }
-      return DEFAULT_POSTER_TIERS;
+      const { rows: seeded } = await neonQuery(query, [resolvedEventId]);
+      return formatTierRows(seeded);
     }
-    return rows.map((r: any) => ({
-      ...r,
-      price: Number(r.price),
-      show_only_on_event_day: Boolean(r.show_only_on_event_day),
-      hide_on_event_day: Boolean(r.hide_on_event_day),
-      hidden: Boolean(r.hidden)
-    }));
+    return formatTierRows(rows);
   } catch (err) {
     console.error("Neon fetchTicketTiers error:", err);
     return DEFAULT_POSTER_TIERS;
@@ -1339,13 +1633,17 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
     let eventId = tier.event_id;
     if (!eventId) {
       const active = await fetchActiveEvent();
-      eventId = active?.id;
+      eventId = active?.id || 1;
     }
 
     await neonQuery(
-      `INSERT INTO ticket_tiers (id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, available_from, available_until, max_quantity, event_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT (id) DO UPDATE SET
+      `INSERT INTO ticket_tiers (
+        id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, 
+        available_from, available_until, max_quantity, event_id, tier_category, 
+        admits_quantity, is_camping_bundle, camping_type, badge_text, tour_media_urls
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       ON CONFLICT (id, event_id) DO UPDATE SET
          name = EXCLUDED.name,
          price = EXCLUDED.price,
          description = EXCLUDED.description,
@@ -1355,7 +1653,12 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
          available_from = EXCLUDED.available_from,
          available_until = EXCLUDED.available_until,
          max_quantity = EXCLUDED.max_quantity,
-         event_id = EXCLUDED.event_id,
+         tier_category = EXCLUDED.tier_category,
+         admits_quantity = EXCLUDED.admits_quantity,
+         is_camping_bundle = EXCLUDED.is_camping_bundle,
+         camping_type = EXCLUDED.camping_type,
+         badge_text = EXCLUDED.badge_text,
+         tour_media_urls = EXCLUDED.tour_media_urls,
          deleted_at = NULL`,
       [
         tier.id,
@@ -1368,7 +1671,13 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
         tier.available_from || null,
         tier.available_until || null,
         tier.max_quantity ?? null,
-        eventId || null
+        eventId,
+        tier.tier_category || (tier.tag === "CAMPING" ? "camping" : "entry"),
+        tier.admits_quantity || 1,
+        tier.is_camping_bundle ?? (tier.tag === "CAMPING"),
+        tier.camping_type || (tier.id.includes("shared") ? "shared_bed" : tier.tag === "CAMPING" ? "private" : "none"),
+        tier.badge_text || null,
+        JSON.stringify(tier.tour_media_urls || [])
       ]
     );
     return { ...tier, event_id: eventId };
@@ -1614,6 +1923,7 @@ export interface CustomerTab {
   credit_limit: number;
   balance: number;
   status: 'open' | 'settled' | 'written_off';
+  settlement_reason?: string;
   created_at: string;
   settled_at: string | null;
 }
@@ -1627,6 +1937,7 @@ export interface TabTransaction {
   method: string;
   mpesa_ref: string;
   operator_id: number | null;
+  ordered_by?: string;
   created_at: string;
 }
 
@@ -2071,14 +2382,27 @@ export async function createPosSale(
         [sale.id, p.method, p.amount, p.payer_name || "", p.payer_phone || "", p.mpesa_ref || "", p.tab_id || null]
       );
       if (p.method === 'tab' && p.tab_id) {
+        const { rows: tabRows } = await client.query(
+          'SELECT balance, credit_limit FROM customer_tabs WHERE id = $1 FOR UPDATE',
+          [p.tab_id]
+        );
+        if (tabRows.length === 0) {
+          throw new Error(`Customer tab #${p.tab_id} not found`);
+        }
+        const currentBalance = Number(tabRows[0].balance);
+        const creditLimit = Number(tabRows[0].credit_limit);
+        if (currentBalance + p.amount > creditLimit) {
+          throw new Error(`Tab credit limit exceeded (Available: KES ${(creditLimit - currentBalance)})`);
+        }
+
         await client.query(
           `UPDATE customer_tabs SET balance = balance + $2 WHERE id = $1`,
           [p.tab_id, p.amount]
         );
         await client.query(
-          `INSERT INTO tab_transactions (tab_id, sale_id, type, amount, method, mpesa_ref, operator_id)
-           VALUES ($1, $2, 'charge', $3, 'tab', '', $4)`,
-          [p.tab_id, sale.id, p.amount, sale.operator_id]
+          `INSERT INTO tab_transactions (tab_id, sale_id, type, amount, method, mpesa_ref, operator_id, ordered_by)
+           VALUES ($1, $2, 'charge', $3, 'tab', '', $4, $5)`,
+          [p.tab_id, sale.id, p.amount, sale.operator_id, p.payer_name || ""]
         );
         totalPaidViaTab += p.amount;
       }
@@ -2089,7 +2413,8 @@ export async function createPosSale(
       "SELECT commission_rate FROM vendor_event_assignments WHERE vendor_id = $1 AND event_id = $2",
       [sale.vendor_id, sale.event_id]
     );
-    const commRate = assignmentRows.length > 0 ? parseFloat(assignmentRows[0].commission_rate) : 0;
+    const rawCommRate = assignmentRows.length > 0 ? Number(assignmentRows[0].commission_rate) : 0;
+    const commRate = isNaN(rawCommRate) ? 0 : rawCommRate;
     const commOwed = (sale.total * commRate) / 100;
     
     await client.query(
@@ -2102,7 +2427,7 @@ export async function createPosSale(
     await client.query("COMMIT");
     return true;
   } catch (e) {
-    await client.query("ROLLBACK");
+    try { await client.query("ROLLBACK"); } catch {}
     console.error("ATOMIC POS TRANSACTION FAILED:", e);
     return false;
   } finally {
@@ -2273,7 +2598,7 @@ export async function fetchTabsForVendor(vendorId: number, eventId: number): Pro
   return rows;
 }
 
-export async function payTab(tabId: number, amount: number, method: string, mpesaRef: string = "", operatorId: number): Promise<boolean> {
+export async function payTab(tabId: number, amount: number, method: string, mpesaRef: string = "", operatorId?: number | null): Promise<boolean> {
   if (typeof window !== "undefined") {
     const res = await fetch(`/api/vendor/tabs/${tabId}/pay`, {
       method: "POST",
@@ -2283,22 +2608,65 @@ export async function payTab(tabId: number, amount: number, method: string, mpes
     return res.ok;
   }
 
+  const numAmount = Number(amount);
+  if (isNaN(numAmount) || numAmount <= 0) {
+    return false;
+  }
+
   const client = await neonConnect();
   try {
     await client.query("BEGIN");
-    await client.query(
-      "UPDATE customer_tabs SET balance = balance - $2 WHERE id = $1",
-      [tabId, amount]
-    );
+    const { rows: tabRows } = await client.query('SELECT balance FROM customer_tabs WHERE id = $1 FOR UPDATE', [tabId]);
+    if (tabRows.length === 0) {
+      try { await client.query("ROLLBACK"); } catch {}
+      return false;
+    }
+
+    const currentBalance = Number(tabRows[0].balance);
+    const actualDeduction = Math.min(numAmount, currentBalance);
+
+    // Idempotency check: if mpesa_ref is provided, check if it was already recorded for this tab
+    if (mpesaRef && mpesaRef.trim()) {
+      const { rows: existingRef } = await client.query(
+        "SELECT id FROM tab_transactions WHERE tab_id = $1 AND mpesa_ref = $2 LIMIT 1",
+        [tabId, mpesaRef.trim()]
+      );
+      if (existingRef.length > 0) {
+        await client.query("COMMIT");
+        return true;
+      }
+    }
+
+    const newBalance = currentBalance - actualDeduction;
+    if (newBalance <= 0) {
+      await client.query(
+        "UPDATE customer_tabs SET balance = 0, status = 'settled', settled_at = NOW() WHERE id = $1",
+        [tabId]
+      );
+    } else {
+      await client.query(
+        "UPDATE customer_tabs SET balance = balance - $2 WHERE id = $1",
+        [tabId, actualDeduction]
+      );
+    }
+
     await client.query(
       `INSERT INTO tab_transactions (tab_id, type, amount, method, mpesa_ref, operator_id)
        VALUES ($1, 'payment', $2, $3, $4, $5)`,
-      [tabId, amount, method, mpesaRef, operatorId]
+      [tabId, actualDeduction, method, mpesaRef, operatorId || null]
     );
     await client.query("COMMIT");
     return true;
-  } catch (e) {
-    await client.query("ROLLBACK");
+  } catch (e: any) {
+    // Unique-index safety net: if the same (tab_id, mpesa_ref) was already
+    // recorded by a concurrent writer (webhook), treat as already-credited
+    // instead of failing (code 23505 = unique_violation).
+    if (e?.code === "23505" && mpesaRef && mpesaRef.trim()) {
+      try { await client.query("ROLLBACK"); } catch {}
+      console.warn(`Duplicate tab payment suppressed for ref ${mpesaRef} (tab ${tabId})`);
+      return true;
+    }
+    try { await client.query("ROLLBACK"); } catch {}
     console.error("ATOMIC TAB PAY FAILED:", e);
     return false;
   } finally {
@@ -2315,13 +2683,64 @@ export async function fetchTabWithTransactions(tabId: number): Promise<any> {
   return { ...tab, transactions: txns };
 }
 
-export async function closeTab(tabId: number): Promise<boolean> {
+export async function closeTab(tabId: number, settlementReason: string = ""): Promise<boolean> {
   if (typeof window !== "undefined") {
-    const res = await fetch(`/api/vendor/tabs/${tabId}/close`, { method: "POST" });
+    const res = await fetch(`/api/vendor/tabs/${tabId}/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settlementReason })
+    });
     return res.ok;
   }
-  await neonQuery("UPDATE customer_tabs SET status = 'settled', settled_at = NOW() WHERE id = $1", [tabId]);
+  await neonQuery("UPDATE customer_tabs SET status = 'settled', settled_at = NOW(), settlement_reason = $2 WHERE id = $1", [tabId, settlementReason]);
   return true;
+}
+
+export async function updateTabCreditLimit(tabId: number, newLimit: number): Promise<{ success: boolean; message?: string }> {
+  const numLimit = Number(newLimit);
+  if (isNaN(numLimit) || numLimit < 0) {
+    return { success: false, message: "Invalid credit limit amount" };
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/tabs/${tabId}/limit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newLimit: numLimit })
+      });
+      const data = await res.json();
+      return data;
+    } catch (e: any) {
+      return { success: false, message: e?.message || "Failed to update credit limit" };
+    }
+  }
+
+  const client = await neonConnect();
+  try {
+    await client.query("BEGIN");
+    const { rows: tabRows } = await client.query('SELECT balance FROM customer_tabs WHERE id = $1 FOR UPDATE', [tabId]);
+    if (tabRows.length === 0) {
+      try { await client.query("ROLLBACK"); } catch {}
+      return { success: false, message: "Tab not found" };
+    }
+
+    const currentBalance = Number(tabRows[0].balance);
+    if (numLimit < currentBalance) {
+      try { await client.query("ROLLBACK"); } catch {}
+      return { success: false, message: "New limit cannot be lower than current balance owed" };
+    }
+
+    await client.query("UPDATE customer_tabs SET credit_limit = $2 WHERE id = $1", [tabId, numLimit]);
+    await client.query("COMMIT");
+    return { success: true };
+  } catch (e: any) {
+    try { await client.query("ROLLBACK"); } catch {}
+    console.error("UPDATE TAB CREDIT LIMIT FAILED:", e);
+    return { success: false, message: e?.message || "Internal server error" };
+  } finally {
+    client.release();
+  }
 }
 
 // ==================== CULTURAL HUB & LIFECYCLE ====================
@@ -2333,31 +2752,81 @@ export async function updateEventLifecycle(eventId: number, status: 'scheduled' 
 }
 
 export async function joinEventWaitlist(eventId: number, phoneNumber: string): Promise<boolean> {
+  let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
+  if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
+  if (formattedPhone.length === 9) formattedPhone = "254" + formattedPhone;
+
   if (typeof window !== "undefined") {
-    const res = await fetch("/api/events/waitlist", {
+    const res = await fetch("/api/hub/waitlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId, phoneNumber })
+      body: JSON.stringify({ eventId, phoneNumber: formattedPhone })
     });
     return res.ok;
   }
   try {
-    await neonQuery("INSERT INTO event_waitlist (event_id, phone_number) VALUES ($1, $2) ON CONFLICT DO NOTHING", [eventId, phoneNumber]);
+    await neonQuery(
+      `INSERT INTO event_waitlist (event_id, phone_number) 
+       VALUES ($1, $2) 
+       ON CONFLICT (event_id, phone_number) DO UPDATE SET created_at = NOW()`,
+      [eventId, formattedPhone]
+    );
     return true;
   } catch (err) {
+    console.error("joinEventWaitlist error:", err);
     return false;
   }
 }
 
-export async function fetchEventGallery(eventId: number): Promise<EventGallery[]> {
+export async function fetchEventWaitlist(eventId: number): Promise<any[]> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/gallery?eventId=${eventId}`);
+      const res = await fetch(`/api/admin/waitlist?eventId=${eventId}`);
       if (res.ok) return await res.json();
     } catch {}
     return [];
   }
-  const { rows } = await neonQuery("SELECT * FROM event_gallery WHERE event_id = $1 ORDER BY created_at DESC", [eventId]);
+  try {
+    const { rows } = await neonQuery(
+      "SELECT * FROM event_waitlist WHERE event_id = $1 ORDER BY created_at DESC",
+      [eventId]
+    );
+    return rows;
+  } catch (err) {
+    console.error("fetchEventWaitlist error:", err);
+    return [];
+  }
+}
+
+export async function markWaitlistNotified(eventId: number, phoneNumbers: string[]): Promise<boolean> {
+  if (typeof window !== "undefined") return false;
+  try {
+    await neonQuery(
+      "UPDATE event_waitlist SET notified = TRUE, notified_at = NOW() WHERE event_id = $1 AND phone_number = ANY($2::text[])",
+      [eventId, phoneNumbers]
+    );
+    return true;
+  } catch (err) {
+    console.error("markWaitlistNotified error:", err);
+    return false;
+  }
+}
+
+export async function fetchEventGallery(eventId?: number): Promise<EventGallery[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/hub/gallery${eventId ? '?eventId='+eventId : ''}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+  let query = "SELECT * FROM event_gallery ORDER BY created_at DESC";
+  let params: any[] = [];
+  if (eventId) {
+    query = "SELECT * FROM event_gallery WHERE event_id = $1 ORDER BY created_at DESC";
+    params = [eventId];
+  }
+  const { rows } = await neonQuery(query, params);
   return rows;
 }
 

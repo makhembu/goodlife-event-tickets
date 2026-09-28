@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   if (!rl.allowed) return rl.response!;
 
   try {
-    const { phone_number, ticket_type, buyer_name, quantity = 1, whatsapp_number = "" } =
+    const { phone_number, ticket_type, buyer_name, quantity = 1, whatsapp_number = "", event_id } =
       await request.json();
 
     if (!phone_number || !ticket_type || !buyer_name) {
@@ -56,13 +56,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const activeEvent = await fetchActiveEvent();
-    const eventId = activeEvent?.id || 1;
+    let targetEvent: any = null;
+    if (event_id) {
+      const { getEventById } = await import("@/lib/supabase-db");
+      targetEvent = await getEventById(Number(event_id));
+    }
+    if (!targetEvent) {
+      targetEvent = await fetchActiveEvent();
+    }
+    const eventId = targetEvent?.id || 1;
+
+    // Check sales open/close dates (Scenario S11)
+    const now = new Date();
+    if (targetEvent?.sales_open_date && now < new Date(targetEvent.sales_open_date)) {
+      return NextResponse.json(
+        { error: "Ticket sales have not opened yet for this event." },
+        { status: 400 }
+      );
+    }
+    if (targetEvent?.sales_close_date && now > new Date(targetEvent.sales_close_date)) {
+      return NextResponse.json(
+        { error: "Online ticket sales have closed. Gate tickets available at entrance." },
+        { status: 400 }
+      );
+    }
 
     const allTiers = await fetchTicketTiers(eventId);
-    const matchedTier = allTiers.find((t) => t.id === ticket_type);
+    const matchedTier = allTiers.find((t) => t.id === ticket_type || t.name.toLowerCase() === ticket_type.toLowerCase());
     if (!matchedTier) {
       return NextResponse.json({ error: "Invalid ticket type selected." }, { status: 400 });
+    }
+
+    // Time window / capacity guard
+    if (matchedTier.available_from && now < new Date(matchedTier.available_from)) {
+      return NextResponse.json({ error: "This ticket tier is not yet available for purchase." }, { status: 400 });
+    }
+    if (matchedTier.available_until && now > new Date(matchedTier.available_until)) {
+      return NextResponse.json({ error: "This ticket tier sale window has closed." }, { status: 400 });
+    }
+    if (matchedTier.max_quantity != null && (matchedTier.sold_count || 0) >= matchedTier.max_quantity) {
+      return NextResponse.json({ error: "This ticket tier is sold out." }, { status: 400 });
     }
     const cost = matchedTier.price * Number(quantity);
     // PayHero expects whole KES shillings

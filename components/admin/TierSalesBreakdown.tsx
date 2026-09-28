@@ -20,6 +20,8 @@ interface TierSalesBreakdownProps {
   campingTiers: Record<string, TierStats>;
   totalTicketsSold: number;
   ticketTiers: TierDef[];
+  /** Mirrors the dashboard's global audience filter, shown so the rows are explicable. */
+  audience?: "customers" | "staff" | "all";
 }
 
 /** Beyond this, the list scrolls instead of pushing the dashboard fold down. */
@@ -35,6 +37,7 @@ export default function TierSalesBreakdown({
   campingTiers,
   totalTicketsSold,
   ticketTiers,
+  audience = "customers",
 }: TierSalesBreakdownProps) {
   const allTiers = Object.entries(campingTiers || {}).map(([type, stats]) => {
     const tierDef = ticketTiers.find(
@@ -69,6 +72,11 @@ export default function TierSalesBreakdown({
       <div className="flex items-center justify-between gap-3 mb-3 pb-2 border-b-2 border-[var(--brand-navy)]">
         <span className="flex items-center gap-2 text-xs font-black tracking-widest uppercase text-[var(--brand-navy)]">
           <Tent className="w-4 h-4 fill-[var(--brand-navy)]" /> TICKET TIER SALES
+          {audience !== "all" && (
+            <span className="text-caption text-[var(--brand-navy-light)] font-black tracking-normal normal-case">
+              &mdash; {audience === "staff" ? "staff passes" : "customer sales only"}
+            </span>
+          )}
         </span>
         <span className="text-caption font-black uppercase tabular-nums text-[var(--brand-navy-light)] shrink-0">
           {totalSold} sold &middot; Ksh {totalRevenue.toLocaleString()}

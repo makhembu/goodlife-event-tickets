@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Invalid JSON payload" }, { status: 400 });
     }
     
-    let { event_id, subtotal, total, notes, items, payments } = body || {};
+    let { event_id, subtotal, total, notes, items, payments, splitPayments } = body || {};
+    payments = payments || splitPayments;
 
     if (!event_id) {
       const activeEvent = await fetchActiveEvent();
@@ -58,7 +59,16 @@ export async function POST(request: NextRequest) {
       notes: notes || ""
     };
 
-    const success = await createPosSale(sale, items, payments);
+    const formattedPayments = payments.map((p: any) => ({
+      method: p.method,
+      amount: Number(p.amount),
+      payer_name: p.payer_name || "",
+      payer_phone: p.payer_phone || "",
+      mpesa_ref: p.mpesa_ref || "",
+      tab_id: p.tab_id ? Number(p.tab_id) : null,
+    }));
+
+    const success = await createPosSale(sale, items, formattedPayments);
 
     if (success) {
       return NextResponse.json({

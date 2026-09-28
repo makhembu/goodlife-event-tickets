@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Ticket as TicketIcon, 
@@ -9,39 +9,67 @@ import {
   Sparkles, 
   ShieldCheck, 
   Activity, 
-  QrCode, 
-  QrCode as ScannerIcon, 
   ArrowRight, 
   Download, 
-  CheckCircle2, 
-  HelpCircle, 
   AlertTriangle,
   Flame,
   Tent,
-  AlertCircle,
   Settings,
   ChevronUp,
   ChevronDown,
   Copy,
   Check,
   Video,
-  Store
+  Store,
+  Camera,
+  Radio,
+  Clock,
+  Maximize2,
+  X,
+  Compass,
+  BedSingle,
+  Users
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier } from "@/lib/supabase-db";
-import TicketStamp from "@/components/TicketStamp";
+import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier, Event } from "@/lib/supabase-db";
 import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
-
-
 
 interface CheckoutClientPageProps {
   initialEventDetails?: EventDetails;
   initialTicketTiers?: TicketTier[];
+  availableEvents?: Event[];
+  initialTierParam?: string;
 }
 
-export default function TicketCheckoutPage({ initialEventDetails, initialTicketTiers }: CheckoutClientPageProps) {
+export default function TicketCheckoutPage({ 
+  initialEventDetails, 
+  initialTicketTiers,
+  availableEvents = [],
+  initialTierParam
+}: CheckoutClientPageProps) {
+  // Available Events list
+  const [eventsList, setEventsList] = useState<Event[]>(availableEvents);
+
+  // Dynamic Event Details from Database
+  const [eventDetails, setEventDetails] = useState<EventDetails>(initialEventDetails || {
+    id: 1,
+    title: "GOODLIFE",
+    subtitle: "237-THIKA | JULY 11",
+    tag: "SMWHR INC / MARARA CAMP",
+    venue: "MARARA CAMP, THIKA",
+    till_number: "5761205",
+    flyer_url: "/flyer.png",
+    regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification."
+  });
+
+  // Dynamic Ticket Tiers from Database
+  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers || []);
+
+  // Package Switcher: "entry" vs "camping"
+  const [activePackageTab, setActivePackageTab] = useState<"entry" | "camping">("entry");
+
   // Booking Form States
   const [phoneNumber, setPhoneNumber] = useState("");
   const [selectedTier, setSelectedTier] = useState("");
@@ -60,6 +88,10 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
   
   // Flyer Lightbox State
   const [isFlyerExpanded, setIsFlyerExpanded] = useState(false);
+  
+  // Camping Grounds & Tent Walkthrough Tour Lightbox State
+  const [showCampTourModal, setShowCampTourModal] = useState(false);
+
   // House Rules accordion
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -71,7 +103,6 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [paymentProvider, setPaymentProvider] = useState<"payhero" | "paystack">("payhero");
-  // Paystack is off by default. Set NEXT_PUBLIC_ENABLE_PAYSTACK=true to show the provider selector.
   const paystackEnabled = process.env.NEXT_PUBLIC_ENABLE_PAYSTACK === "true";
   const [stxReference, setStxReference] = useState<string | null>(null);
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
@@ -79,18 +110,19 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
   // Secret admin access (5x logo tap fallback when not logged in)
   const [logoTapCount, setLogoTapCount] = useState(0);
   const [showSecretMenu, setShowSecretMenu] = useState(false);
-  const logoTapTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const headerRef = React.useRef<HTMLElement>(null);
-  const statusRef = React.useRef<HTMLDivElement>(null);
+  const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [headerBottom, setHeaderBottom] = useState(0);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
-  // Measure real header bottom (including page top padding) on mount + resize
+  // Measure real header bottom on mount + resize
   useEffect(() => {
     const update = () => {
       setIsSmallScreen(window.innerWidth < 1024);
       if (headerRef.current) {
-        // getBoundingClientRect gives position relative to viewport
         setHeaderBottom(Math.round(headerRef.current.getBoundingClientRect().bottom));
       }
     };
@@ -102,7 +134,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
   }, []);
 
   function handleLogoTap() {
-    if (isAdmin) return; // already have nav, no need for secret tap
+    if (isAdmin) return;
     const next = logoTapCount + 1;
     setLogoTapCount(next);
     if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
@@ -121,12 +153,27 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
       .then(data => { if (data.isAdmin) setIsAdmin(true); })
       .catch(() => {});
   }, []);
-  // Haptic micro-feedback — mirrors confetti/visual signals on mobile (HIG: physical dimension)
-  const triggerHaptic = React.useCallback((pattern: "success" | "confirmation" | "error") => {
+
+  // Fetch events list if empty
+  useEffect(() => {
+    if (eventsList.length === 0) {
+      fetch("/api/events")
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setEventsList(data.filter((e: Event) => e.status === 'live' || e.status === 'scheduled' || e.is_active));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [eventsList.length]);
+
+  // Haptic micro-feedback
+  const triggerHaptic = useCallback((pattern: "success" | "confirmation" | "error") => {
     HapticFeedback.trigger(pattern);
   }, []);
 
-  // Fire confetti + animate vault header when a new ticket arrives
+  // Fire confetti when a new ticket arrives
   const [celebrationId, setCelebrationId] = useState<string | null>(null);
   useEffect(() => {
     if (generatedTicketId && !celebrationId) {
@@ -155,7 +202,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
         }, 200);
       }, 300);
     }
-  }, [generatedTicketId, celebrationId]);
+  }, [generatedTicketId, celebrationId, triggerHaptic]);
 
   // Initialize myTickets from local storage
   useEffect(() => {
@@ -180,7 +227,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
     }
   }, [generatedTicketId, myTickets]);
 
-  // Fetch metadata for stored tickets — batch with Promise.all, prune 404s
+  // Fetch metadata for stored tickets
   useEffect(() => {
     if (myTickets.length === 0) return;
     const needed = myTickets.filter(id => !ticketDetailsMap[id]);
@@ -213,119 +260,234 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
       setTicketDetailsMap(prev => Object.keys(fresh).length ? { ...prev, ...fresh } : prev);
     });
     return () => { cancelled = true; };
-  }, [myTickets]);
+  }, [myTickets, ticketDetailsMap]);
 
-  // Dynamic Event Details from Database
-  const [eventDetails, setEventDetails] = useState<EventDetails>(initialEventDetails || {
-    id: 1,
-    title: "GOODLIFE",
-    subtitle: "237-THIKA | JULY 11",
-    tag: "SMWHR INC / MARARA CAMP",
-    venue: "MARARA CAMP, THIKA",
-    till_number: "5761205",
-    flyer_url: "/flyer.png",
-    regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification."
-  });
-
-  // Dynamic Ticket Tiers from Database
-  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers || []);
-
-  useEffect(() => {
-    fetchEventDetails().then(setEventDetails).catch(console.error);
-    fetchTicketTiers().then(setTicketTiers).catch(console.error);
-  }, []);
-
-  // Parse event date dynamically to conditionally display Gate pricing
-  const isEventDay = React.useMemo(() => {
+  // Handle Event Switching
+  const handleSwitchEvent = async (targetEvent: Event) => {
+    if (targetEvent.id === eventDetails.id) return;
+    setLoading(true);
+    setStatusMessage("");
     try {
-      if (!eventDetails.subtitle) return false;
-      // Extract date string from format "237-THIKA | JULY 11" -> "JULY 11"
-      const datePart = eventDetails.subtitle.split("|")[1]?.trim();
-      if (!datePart) return false;
-
-      const today = new Date();
-      // Format current day into "MONTH DD" pattern (e.g. "JULY 11")
-      const currentMonth = today.toLocaleString("en-US", { month: "long" }).toUpperCase();
-      const currentDay = today.getDate();
-      const todayFormatted = `${currentMonth} ${currentDay}`;
-
-      return datePart.toUpperCase() === todayFormatted;
-    } catch {
-      return false;
+      const tiers = await fetchTicketTiers(targetEvent.id);
+      setEventDetails({
+        id: targetEvent.id,
+        title: targetEvent.title,
+        subtitle: targetEvent.subtitle,
+        tag: targetEvent.tag,
+        venue: targetEvent.venue,
+        till_number: targetEvent.till_number,
+        flyer_url: targetEvent.flyer_url || "/flyer.png",
+        regulations: targetEvent.regulations || "",
+        ticker_text: targetEvent.ticker_text || "",
+        logo_url: targetEvent.logo_url,
+        event_date: targetEvent.event_date,
+        status: targetEvent.status,
+        category: targetEvent.category,
+        sales_open_date: targetEvent.sales_open_date,
+        sales_close_date: targetEvent.sales_close_date,
+        next_event_title: targetEvent.next_event_title,
+        recap_video_url: targetEvent.recap_video_url,
+        max_tent_inventory: targetEvent.max_tent_inventory,
+        max_shared_beds: targetEvent.max_shared_beds,
+        recurrence_pattern: targetEvent.recurrence_pattern,
+        recurrence_day: targetEvent.recurrence_day,
+        recurrence_time: targetEvent.recurrence_time,
+        custom_schedule_text: targetEvent.custom_schedule_text
+      });
+      setTicketTiers(tiers);
+      
+      const hasCamping = tiers.some(t => t.tier_category === 'camping' || t.is_camping_bundle || t.camping_type === 'shared_bed' || t.camping_type === 'private');
+      if (!hasCamping) {
+        setActivePackageTab("entry");
+      }
+      if (tiers.length > 0) {
+        setSelectedTier(tiers[0].id);
+      }
+    } catch (e) {
+      console.error("Failed to switch event:", e);
+    } finally {
+      setLoading(false);
     }
-  }, [eventDetails.subtitle]);
+  };
 
   const isVideoFlyer = eventDetails.flyer_url ? /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.flyer_url) || eventDetails.flyer_url.includes("video") : false;
 
-  // Ticket Tiers config
-  const TICKET_TIERS = React.useMemo(() => {
-    if (ticketTiers.length === 0) {
-      return [
-        { id: "ADV 500", name: "ADV 500", price: 500, desc: "Advance entry pass", tag: "ADVANCE" },
-        { id: "2PX CAMPING", name: "2PX CAMPING", price: 2500, desc: "Includes shared tent + mattress setup", tag: "2 PEOPLE" },
-        { id: "4PX CAMPING", name: "4PX CAMPING", price: 2400, desc: "Includes tent + sleeping mats", tag: "4 PEOPLE" },
-        { id: "6PX 3000", name: "6PX 3000", price: 3000, desc: "Group camp setup", tag: "6 PEOPLE" }
-      ];
-    }
-    return ticketTiers
-      .filter(tier => {
+  // Processed Tiers config with strict time/edition gating
+  const TICKET_TIERS = useMemo(() => {
+    // Current time in Kenya EAT (UTC+3)
+    const now = new Date();
+    const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const eatDate = new Date(utcMs + (3 * 3600000));
+    const eatDayOfWeek = eatDate.getDay(); // 0 = Sun, 6 = Sat, 1..5 = Mon..Fri
+    const isWeekend = eatDayOfWeek === 0 || eatDayOfWeek === 6;
+
+    // Check if today is the event date in EAT
+    const isEventDay = eventDetails.event_date
+      ? eatDate.toISOString().slice(0, 10) === new Date(eventDetails.event_date).toISOString().slice(0, 10)
+      : false;
+
+    const rawTiers: any[] = ticketTiers.length > 0 ? ticketTiers : [
+      { id: "early-bird-500", name: "Early Bird Pass", price: 450, description: "Limited early access festival entry pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, badge_text: "SELLING FAST" },
+      { id: "advance-800", name: "ADVANCE PASS", price: 800, description: "Standard advance admission pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1 },
+      { id: "vip-gate-1000", name: "gate VIP Fast‑Track Pass", price: 1000, description: "VIP lounge access + express queue jump", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, show_only_on_event_day: true },
+      { id: "shared-bed-6px-1200", name: "1PX BED IN SHARED 6PX TENT", price: 1200, description: "Festival Entry + 1 Bed in shared 6-Person dorm tent. Assigned on arrival at gate.", tag: "CAMPING", tier_category: "camping", admits_quantity: 1, is_camping_bundle: true, camping_type: "shared_bed", badge_text: "SOLO FAVORITE" },
+      { id: "pitch-own-tent-1500", name: "PITCH YOUR OWN TENT", price: 1500, description: "Festival Entry for 2 Guests + Reserved Tent Pitch Ground Space", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private" },
+      { id: "2px-private-tent-2500", name: "2PX PRIVATE DOME TENT", price: 2500, description: "Festival Entry for 2 Guests + Private Dome Tent + 2 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private" },
+      { id: "4px-group-tent-4000", name: "4PX PRIVATE GROUP TENT", price: 4000, description: "Festival Entry for 4 Guests + Large 4-Person Dome Tent + 4 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 4, is_camping_bundle: true, camping_type: "private", badge_text: "BEST VALUE" },
+      { id: "6px-glamping-tent-6000", name: "6PX PRIVATE GLAMPING TENT", price: 6000, description: "Festival Entry for 6 Guests + Full Spacious Glamping Dome Tent", tag: "CAMPING", tier_category: "camping", admits_quantity: 6, is_camping_bundle: true, camping_type: "private" }
+    ];
+
+    const isMiniEvent = eventDetails.category === 'mini' || eventDetails.title?.toLowerCase().includes("sunday park");
+
+    return rawTiers
+      .filter((tier: any) => {
         if (tier.hidden) return false;
-        if (isEventDay) {
-          return !tier.hide_on_event_day;
-        } else {
-          return !tier.show_only_on_event_day;
+
+        const isCamping = tier.tier_category === 'camping' || tier.is_camping_bundle || tier.tag === 'CAMPING';
+
+        // 1. MINI EVENT (e.g. Sunday Park & Chill #12)
+        // Rule: Mon-Fri: ONLY Free RSVP pass. Sat-Sun (weekend): 300 & 1000 passes show, Free RSVP is hidden.
+        if (isMiniEvent) {
+          const isRsvp = tier.price === 0 || tier.tag?.includes('RSVP') || tier.id?.includes('rsvp') || tier.name?.toLowerCase().includes('rsvp');
+          if (isWeekend) {
+            // Weekend: Hide RSVP, show paid passes
+            return !isRsvp;
+          } else {
+            // Weekday: ONLY show RSVP, hide paid passes
+            return isRsvp;
+          }
         }
+
+        // 2. FLAGSHIP EVENT (e.g. GOODLIFE 4)
+        // Camping tiers are always available in Camping tab while supplies last
+        if (isCamping) {
+          return true;
+        }
+
+        // Entry tiers: Strict Laddering
+        // Check Early Bird status
+        const earlyBird: any = rawTiers.find((t: any) => 
+          (t.id?.toLowerCase().includes("early-bird") || t.name?.toLowerCase().includes("early bird")) &&
+          !(t.tier_category === 'camping' || t.is_camping_bundle)
+        );
+        const isEarlyBirdActive = earlyBird ? (
+          (!earlyBird.available_until || new Date(earlyBird.available_until) > eatDate) &&
+          (earlyBird.max_quantity == null || (earlyBird.sold_count || 0) < earlyBird.max_quantity) &&
+          !isEventDay
+        ) : false;
+
+        const isThisEarlyBird = tier.id?.toLowerCase().includes("early-bird") || tier.name?.toLowerCase().includes("early bird");
+        const isThisAdvance = tier.id?.toLowerCase().includes("advance") || tier.name?.toLowerCase().includes("advance");
+        const isThisGateVip = tier.id?.toLowerCase().includes("vip") || tier.name?.toLowerCase().includes("vip") || tier.show_only_on_event_day;
+
+        // If today is Event Day: ONLY Gate / Event Day passes show. Early Bird and Advance are hidden.
+        if (isEventDay) {
+          if (tier.hide_on_event_day) return false;
+          return Boolean(tier.show_only_on_event_day || isThisGateVip);
+        }
+
+        // Before Event Day:
+        // Gate VIP only shows on event day!
+        if (tier.show_only_on_event_day || isThisGateVip) {
+          return false;
+        }
+
+        // If Early Bird is currently active: ONLY Early Bird shows under entry!
+        if (isEarlyBirdActive) {
+          return isThisEarlyBird;
+        }
+
+        // If Early Bird is expired or sold out (and not event day yet): Advance pass activates!
+        if (!isEarlyBirdActive && isThisAdvance) {
+          return true;
+        }
+
+        return false;
       })
-      .map(tier => ({
+      .map((tier: any) => ({
         id: tier.id,
         name: tier.name,
-        price: tier.price,
+        price: Number(tier.price),
         desc: tier.description,
-        tag: tier.tag
+        tag: tier.tag,
+        tier_category: tier.tier_category || (tier.tag === "CAMPING" ? "camping" : "entry"),
+        admits_quantity: tier.admits_quantity || 1,
+        is_camping_bundle: tier.is_camping_bundle ?? (tier.tag === "CAMPING"),
+        camping_type: tier.camping_type || (tier.id.includes("shared") ? "shared_bed" : tier.tag === "CAMPING" ? "private" : "none"),
+        badge_text: tier.badge_text ? tier.badge_text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim() : null,
+        tour_media_urls: tier.tour_media_urls || []
       }));
-  }, [ticketTiers, isEventDay]);
+  }, [ticketTiers, eventDetails]);
 
-  // Derive safe tier that always matches available options
-  const safeSelectedTier = React.useMemo(() => {
-    const available = TICKET_TIERS.map(t => t.id);
-    return available.includes(selectedTier) ? selectedTier : available[0];
-  }, [TICKET_TIERS, selectedTier]);
+  // Separate Entry vs Camping passes
+  const entryTiers = useMemo(() => {
+    return TICKET_TIERS.filter(t => t.tier_category === 'entry' || (!t.is_camping_bundle && t.camping_type !== 'private' && t.camping_type !== 'shared_bed'));
+  }, [TICKET_TIERS]);
 
-  const totalPrice = React.useMemo(() => {
-    const selectedPrice = TICKET_TIERS.find(t => t.id === safeSelectedTier)?.price || 500;
-    return selectedPrice * quantity;
-  }, [TICKET_TIERS, safeSelectedTier, quantity]);
+  const campingTiers = useMemo(() => {
+    return TICKET_TIERS.filter(t => t.tier_category === 'camping' || t.is_camping_bundle || t.camping_type === 'private' || t.camping_type === 'shared_bed');
+  }, [TICKET_TIERS]);
 
-  // Automatically select the first available tier if the current selection becomes invalid
+  // Filtered tiers for active tab
+  const displayedTiers = useMemo(() => {
+    if (activePackageTab === "camping" && campingTiers.length > 0) {
+      return campingTiers;
+    }
+    return entryTiers;
+  }, [activePackageTab, campingTiers, entryTiers]);
+
+  // Safe selected tier
+  const safeSelectedTier = useMemo(() => {
+    const available = displayedTiers.map(t => t.id);
+    if (available.includes(selectedTier)) return selectedTier;
+    if (available.length > 0) return available[0];
+    const allAvailable = TICKET_TIERS.map(t => t.id);
+    return allAvailable.includes(selectedTier) ? selectedTier : (allAvailable[0] || "");
+  }, [displayedTiers, TICKET_TIERS, selectedTier]);
+
+  const selectedTierObj = useMemo(() => {
+    return TICKET_TIERS.find(t => t.id === safeSelectedTier) || displayedTiers[0] || null;
+  }, [TICKET_TIERS, safeSelectedTier, displayedTiers]);
+
+  const totalPrice = useMemo(() => {
+    const price = selectedTierObj?.price ?? 500;
+    return price * quantity;
+  }, [selectedTierObj, quantity]);
+
+  // Deep-linking handler for ?tier=
   useEffect(() => {
-    if (TICKET_TIERS.length > 0) {
-      const available = TICKET_TIERS.map(t => t.id);
+    const param = initialTierParam || (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tier") : null);
+    if (param && TICKET_TIERS.length > 0) {
+      const normalizedParam = param.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const matched = TICKET_TIERS.find(t => 
+        t.id.toLowerCase() === param.trim().toLowerCase() ||
+        t.name.toLowerCase() === param.trim().toLowerCase() ||
+        t.id.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedParam ||
+        t.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedParam
+      );
+      if (matched) {
+        setSelectedTier(matched.id);
+        const isCamping = matched.tier_category === 'camping' || matched.is_camping_bundle || matched.camping_type === 'private' || matched.camping_type === 'shared_bed';
+        if (isCamping) {
+          setActivePackageTab("camping");
+        } else {
+          setActivePackageTab("entry");
+        }
+      }
+    }
+  }, [initialTierParam, TICKET_TIERS]);
+
+  // Automatically ensure safe tier selection on tab change
+  useEffect(() => {
+    if (displayedTiers.length > 0) {
+      const available = displayedTiers.map(t => t.id);
       if (!available.includes(selectedTier)) {
         setSelectedTier(available[0]);
       }
     }
-  }, [TICKET_TIERS, selectedTier]);
+  }, [displayedTiers, selectedTier]);
 
-  // State to track scroll for sticky bottom CTA on mobile
-  const [showStickyBtn, setShowStickyBtn] = useState(false);
-
-  useEffect(() => {
-    const bookingEl = document.getElementById("booking-container");
-    if (!bookingEl) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // Show sticky CTA when booking container is not visible in viewport
-        setShowStickyBtn(!entry.isIntersecting);
-      },
-      { threshold: 0 }
-    );
-
-    observer.observe(bookingEl);
-    return () => observer.disconnect();
-  }, []);
-
-  // Trigger payment (PayHero by default; Paystack if enabled via NEXT_PUBLIC_ENABLE_PAYSTACK)
+  // Checkout submission (PayHero STK push or KES 0 Free RSVP)
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setStxReference(null);
@@ -334,13 +496,57 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
 
     if (!phoneNumber) {
       triggerHaptic("error");
-      setStatusMessage("Please enter your M-Pesa phone number.");
+      setStatusMessage("Please enter your phone number.");
+      phoneInputRef.current?.focus();
       return;
     }
 
     setLoading(true);
-    setStatusMessage("Sending the M-Pesa prompt to your phone...");
 
+    // KES 0 FREE RSVP PIPELINE (Instant Server-Side Issuance without STK Push)
+    if (totalPrice === 0 || selectedTierObj?.price === 0) {
+      setStatusMessage("Registering your free pass...");
+      try {
+        const res = await fetch("/api/tickets/rsvp-free", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_id: eventDetails.id,
+            ticket_type: safeSelectedTier,
+            buyer_name: buyerName || "Guest",
+            phone_number: phoneNumber,
+            whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : ""
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Free registration failed. Capacity may be reached.");
+        }
+
+        const ids = data.ticket_ids || [data.ticket_id];
+        setGeneratedTicketId(ids[0]);
+        setMyTickets(prev => {
+          const merged = Array.from(new Set([...ids, ...prev]));
+          if (typeof window !== "undefined") {
+            localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
+          }
+          return merged;
+        });
+
+        triggerHaptic("success");
+        setStatusMessage("RSVP Confirmed! Your free entry pass is ready and has been dispatched to WhatsApp.");
+      } catch (err: any) {
+        triggerHaptic("error");
+        setStatusMessage(err.message || "An error occurred issuing your free pass.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // STANDARD PAID CHECKOUT (PayHero STK Push)
+    setStatusMessage("Sending the M-Pesa prompt to your phone...");
     const autoEmail = phoneNumber.replace(/[^0-9]/g, "") + "@example.goodlife.com";
 
     try {
@@ -352,14 +558,14 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
           email: autoEmail,
           phone_number: phoneNumber,
           ticket_type: safeSelectedTier,
-          buyer_name: buyerName,
+          buyer_name: buyerName || "Attendee",
           quantity: Number(quantity),
-          whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : ""
+          whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : "",
+          event_id: eventDetails.id
         })
       });
 
       const data = await res.json();
-      
       if (!res.ok) {
         throw new Error(data.error || "Payment initialization failed.");
       }
@@ -371,6 +577,16 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
       triggerHaptic("error");
       setStatusMessage(err.message || "An error occurred processing your request.");
       setLoading(false);
+    }
+  };
+
+  // Sticky action bar click handler
+  const handleStickyActionClick = () => {
+    if (!phoneNumber.trim()) {
+      phoneInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      phoneInputRef.current?.focus();
+    } else {
+      formRef.current?.requestSubmit();
     }
   };
 
@@ -416,16 +632,16 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [stxReference, generatedTicketId, paymentProvider]);
+  }, [stxReference, generatedTicketId, paymentProvider, triggerHaptic]);
 
-  // Auto-scroll to payment status when it changes
+  // Auto-scroll to payment status
   useEffect(() => {
     if (statusMessage && statusRef.current) {
       statusRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [statusMessage]);
 
-  // Polling timeout — show manual retry after 15 seconds
+  // Polling timeout
   useEffect(() => {
     if (!stxReference || generatedTicketId) {
       setPollingTimedOut(false);
@@ -433,7 +649,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
     }
     const timer = setTimeout(() => setPollingTimedOut(true), 15000);
     return () => clearTimeout(timer);
-  }, [stxReference, generatedTicketId, paymentProvider]);
+  }, [stxReference, generatedTicketId]);
 
   const handleManualStatusCheck = async () => {
     if (!stxReference) return;
@@ -478,15 +694,16 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
   };
 
   return (
-    <div className="min-h-screen bg-brand-bg py-8 px-4 md:px-12 text-brand-navy font-sans selection:bg-brand-accent selection:text-brand-off-white relative overflow-x-clip">
+    <div className="min-h-screen bg-brand-bg py-6 md:py-8 px-4 md:px-12 text-brand-navy font-sans selection:bg-brand-accent selection:text-brand-off-white relative overflow-x-clip pb-28 lg:pb-12">
       
       {/* Decorative Grid Background */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-20"
            style={{ backgroundImage: 'radial-gradient(rgba(20,43,76,0.18) 1px, transparent 1px), radial-gradient(rgba(199,154,86,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
 
       <div className="relative z-10 max-w-6xl mx-auto">
+        
         {/* HEADER NAVBAR */}
-        <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-3 mb-4 md:pb-6 md:mb-8 gap-2 md:gap-4">
+        <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-3 mb-4 md:pb-6 md:mb-6 gap-3 md:gap-6">
           <button
             type="button"
             className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
@@ -497,11 +714,37 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
               {eventDetails.logo_url ? (
                 <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
               ) : (
-                <Flame className="w-5 h-5 md:w-6 md:h-6 text-brand-navy" strokeWidth={2.5} />
+                <span className="font-display font-black text-xs md:text-sm tracking-tighter text-brand-navy">GL</span>
               )}
             </div>
             <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">{eventDetails.title}</span>
           </button>
+
+          {/* PUBLIC NAV — Gallery, Radio, Staff & POS */}
+          <nav className="hidden md:flex items-center gap-4 shrink-0">
+            <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
+              <Camera className="w-3.5 h-3.5" /> Gallery
+            </Link>
+            <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
+              <Radio className="w-3.5 h-3.5" /> Radio
+            </Link>
+            <Link href="/vendor/login" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-navy transition-colors flex items-center gap-1 border-2 border-brand-navy px-2.5 py-1 bg-brand-accent/20 hover:bg-brand-accent shadow-(--shadow-brut-2xs)">
+              <Store className="w-3.5 h-3.5" /> Staff & POS
+            </Link>
+          </nav>
+          {/* Mobile: icon-only */}
+          <nav className="flex md:hidden items-center gap-1.5 shrink-0">
+            <Link href="/gallery" aria-label="Gallery" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
+              <Camera className="w-4 h-4 text-brand-navy" />
+            </Link>
+            <Link href="/radio" aria-label="Radio" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
+              <Radio className="w-4 h-4 text-brand-navy" />
+            </Link>
+            <Link href="/vendor/login" aria-label="Staff & POS Login" className="p-1.5 border-2 border-brand-navy bg-brand-accent text-brand-navy hover:bg-brand-navy hover:text-brand-off-white transition-colors shadow-(--shadow-brut-xs)">
+              <Store className="w-4 h-4" />
+            </Link>
+          </nav>
+
           <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
             {myTickets.length > 0 && (
               <button 
@@ -521,17 +764,56 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
                   <Settings className="w-3 h-3 md:w-4 md:h-4" /> Admin
                 </Link>
                 <Link
-                  href="/admin/scanner"
-                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
+                  href="/admin/vendors"
+                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-3 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap hidden sm:inline-flex items-center gap-1"
                 >
-                  <ScannerIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
+                  <Store className="w-3 h-3 md:w-4 md:h-4" /> Vendors & Staff
+                </Link>
+                <Link
+                  href="/admin/scanner"
+                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
+                >
+                  <TicketIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
                 </Link>
               </>
             )}
           </div>
         </header>
 
-        {/* SECRET ADMIN MENU – only visible after 5x logo tap */}
+        {/* MULTI-EVENT SWITCHER (Rendered if > 1 live/scheduled events exist) */}
+        {eventsList.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 border-4 border-brand-navy bg-brand-navy p-2 shadow-(--shadow-brut-sm) mb-6">
+            <div className="text-[11px] font-mono uppercase text-brand-accent flex items-center gap-1.5 px-2 font-bold shrink-0">
+              <Layers className="w-3.5 h-3.5" /> EDITIONS:
+            </div>
+            <div className="flex flex-wrap gap-1.5 flex-1">
+              {eventsList.map(evt => {
+                const isCurrent = evt.id === eventDetails.id;
+                return (
+                  <button
+                    key={evt.id}
+                    type="button"
+                    onClick={() => handleSwitchEvent(evt)}
+                    className={`py-1 px-3 border-2 font-display text-xs md:text-sm uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isCurrent
+                        ? "border-brand-accent bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-xs)"
+                        : "border-brand-off-white/40 bg-brand-navy text-brand-off-white hover:border-brand-accent hover:text-brand-accent"
+                    }`}
+                  >
+                    <span className="truncate max-w-[180px] sm:max-w-none">{evt.title}</span>
+                    {evt.category === 'mini' && (
+                      <span className="text-[9px] bg-brand-navy/60 text-brand-off-white px-1 py-0.2 border border-brand-off-white/30 font-mono">
+                        MINI
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SECRET ADMIN MENU */}
         <AnimatePresence>
           {showSecretMenu && (
             <motion.div
@@ -556,7 +838,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
                 onClick={() => setShowSecretMenu(false)}
                 className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
               >
-                <ScannerIcon className="w-4 h-4" /> Gate Scanner
+                <TicketIcon className="w-4 h-4" /> Gate Scanner
               </Link>
               <Link
                 href="/vendor/login"
@@ -569,7 +851,7 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
           )}
         </AnimatePresence>
 
-        <main className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start mb-12">
+        <main className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start mb-8">
 
           {/* LEFT COLUMN: HERO FLYER & ADVISORIES (5 cols on lg) */}
           <section className="lg:col-span-5 space-y-4 md:space-y-6">
@@ -577,9 +859,9 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
             {/* HERO FLYER MOTIF CARD */}
             <div className="border-4 border-brand-navy bg-brand-off-white p-3 md:p-6 relative shadow-(--shadow-brut-sm-strong) md:shadow-(--shadow-brut-xl-soft)">
               
-              {/* Top Right Label badge */}
+              {/* Category / Status badge */}
               <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 bg-brand-accent text-brand-navy border-2 border-brand-navy px-2 py-0.5 md:px-4 md:py-1 text-[11px] md:text-xs font-black tracking-widest uppercase shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) rotate-3">
-                LIVE EVENT
+                {eventDetails.category === 'mini' ? 'MINI EVENT' : 'LIVE EVENT'}
               </div>
 
               <div className="relative flex flex-col md:space-y-4">
@@ -594,59 +876,88 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
                     <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
                     <span className="truncate">{eventDetails.subtitle}</span>
                   </p>
+                  {eventDetails.custom_schedule_text ? (
+                    <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
+                      <span>{eventDetails.custom_schedule_text}</span>
+                    </div>
+                  ) : eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none' ? (
+                    <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
+                      <span>EVERY {eventDetails.recurrence_day?.toUpperCase()} | {eventDetails.recurrence_time}</span>
+                    </div>
+                  ) : null}
                 </div>
 
-                {/* EVENT FLYER DISPLAY CONTAINER */}
-                <button 
+                {/* EVENT FLYER CONTAINER: Clean 16:9 / 220px crop on mobile, full preview on desktop */}
+                <div className="relative w-full max-md:h-[220px] max-md:max-h-[220px] md:aspect-auto md:h-[calc(100dvh-330px)] md:min-h-[420px] md:max-h-[640px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-4">
+                  <button 
+                    type="button"
+                    onClick={() => setIsFlyerExpanded(true)}
+                    className="w-full h-full block relative text-left focus:outline-none focus:ring-4 focus:ring-brand-accent cursor-pointer"
+                    aria-label="Enlarge full poster"
+                  >
+                    {isVideoFlyer ? (
+                      <video 
+                        src={eventDetails.flyer_url} 
+                        autoPlay 
+                        muted 
+                        loop 
+                        playsInline 
+                        className="w-full h-full object-cover md:object-contain pointer-events-none"
+                      />
+                    ) : (
+                      <Image
+                        src={eventDetails.flyer_url}
+                        alt={`${eventDetails.title} Flyer`}
+                        fill
+                        priority
+                        className="object-cover object-top md:object-contain transition-all duration-700"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    {/* Subtle top gradient */}
+                    <div className="absolute top-0 left-0 w-full h-24 md:h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
+
+                    {/* Mobile Quick Lightbox Tag inside the crop */}
+                    <div className="absolute bottom-2 right-2 z-20 md:hidden bg-brand-navy text-brand-accent border-2 border-brand-accent px-2 py-1 font-mono text-[10px] font-black uppercase flex items-center gap-1.5 shadow-(--shadow-brut-xs)">
+                      <Maximize2 className="w-3 h-3" /> FULL POSTER
+                    </div>
+
+                    {/* Marquee ticker on desktop */}
+                    <div className="absolute bottom-0 left-0 w-full h-6 bg-brand-accent border-t-2 border-brand-navy overflow-hidden flex items-center max-md:hidden">
+                      <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-1">
+                        <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
+                        <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Mobile Hero Trigger: Brutalist [ENLARGE FULL POSTER] button */}
+                <button
                   type="button"
                   onClick={() => setIsFlyerExpanded(true)}
-                  className="block relative w-full max-md:aspect-[3/4] md:aspect-auto md:h-[calc(100dvh-330px)] md:min-h-[420px] md:max-h-[640px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group cursor-pointer hover:shadow-(--shadow-brut-xs-strong) transition-all duration-300 hover:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-brand-accent mt-0 md:my-4"
+                  className="w-full py-2.5 px-3 border-2 border-brand-navy bg-brand-off-white text-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-2 shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] hover:bg-brand-navy hover:text-brand-off-white transition-all md:hidden cursor-pointer"
                 >
-                  {isVideoFlyer ? (
-                    <video 
-                      src={eventDetails.flyer_url} 
-                      autoPlay 
-                      muted 
-                      loop 
-                      playsInline 
-                      className="w-full h-full object-contain pointer-events-none"
-                    />
-                  ) : (
-                    <Image
-                      src={eventDetails.flyer_url}
-                      alt={`${eventDetails.title} Flyer`}
-                      fill
-                      priority
-                      className="object-contain transition-all duration-700"
-                      referrerPolicy="no-referrer"
-                    />
-                  )}
-                  {/* Subtle top gradient to hide the printed title under the absolute box */}
-                  <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
-                  {/* Warning Bar bottom with seamless marquee */}
-                  <div className="absolute bottom-0 left-0 w-full h-6 bg-brand-accent border-t-2 border-brand-navy overflow-hidden flex items-center">
-                    <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-1">
-                      <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
-                      <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
-                    </div>
-                  </div>
+                  <Maximize2 className="w-3.5 h-3.5" /> ENLARGE FULL POSTER
                 </button>
 
                 {/* Venue / Till details */}
-                <div className="grid grid-cols-2 gap-4 text-xs font-black uppercase pt-2">
-                  <div className="bg-brand-off-white p-4 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
-                    <span className="block text-[11px] text-brand-navy border-b border-brand-navy pb-1 mb-1">LOCATION</span>
-                    <span className="text-brand-navy truncate block">{eventDetails.venue}</span>
+                <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase pt-1">
+                  <div className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
+                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">LOCATION</span>
+                    <span className="text-brand-navy truncate block text-xs">{eventDetails.venue}</span>
                   </div>
-                  <div className="bg-brand-accent p-4 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
-                    <span className="block text-[11px] text-brand-navy border-b border-brand-navy pb-1 mb-1">PAYMENT TILL</span>
-                    <span className="text-brand-navy truncate block text-sm">#{eventDetails.till_number}</span>
+                  <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
+                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">PAYMENT TILL</span>
+                    <span className="text-brand-navy truncate block text-sm font-display">#{eventDetails.till_number}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* SYSTEM REGULATORY ADVISORIES — collapsible accordion */}
+            {/* SYSTEM REGULATORY ADVISORIES */}
             <div className="border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl-accent)">
               <button
                 type="button"
@@ -670,14 +981,14 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
             </div>
           </section>
 
-          {/* RIGHT COLUMN: BOOKING AND CHECKOUT GATEWAY (7 cols on lg) — sticky on desktop */}
-          <section className="lg:col-span-7 lg:sticky lg:top-8 lg:self-start pt-8">
+          {/* RIGHT COLUMN: BOOKING AND CHECKOUT GATEWAY (7 cols on lg) */}
+          <section className="lg:col-span-7 lg:sticky lg:top-8 lg:self-start pt-4 lg:pt-8">
             <div className="relative">
               {/* Folder Tab */}
-              <div className="absolute -top-8 left-4 bg-brand-accent text-brand-navy border-4 border-b-0 border-brand-navy px-6 py-1 font-display text-lg tracking-widest uppercase font-bold z-20">
+              <div className="absolute -top-7 left-4 bg-brand-accent text-brand-navy border-4 border-b-0 border-brand-navy px-6 py-0.5 font-display text-base md:text-lg tracking-widest uppercase font-bold z-20">
                 BOOKING
               </div>
-              {/* Booking container: constrain to remaining viewport height below header */}
+              
               <div
                 id="booking-container"
                 className="border-4 border-brand-navy bg-brand-off-white p-4 md:p-6 relative shadow-(--shadow-brut-2xl) overflow-y-auto"
@@ -685,618 +996,790 @@ export default function TicketCheckoutPage({ initialEventDetails, initialTicketT
                   ? { maxHeight: `calc(100dvh - ${headerBottom + 48}px)` }
                   : undefined}
               >
-                <h2 className="text-2xl md:text-4xl font-display uppercase border-b-4 border-brand-navy pb-1.5 mb-2.5 md:pb-3 md:mb-3 flex items-center gap-2 md:gap-3 text-brand-navy">
+                <h2 className="text-2xl md:text-4xl font-display uppercase border-b-4 border-brand-navy pb-1.5 mb-3 md:pb-3 md:mb-3 flex items-center gap-2 md:gap-3 text-brand-navy">
                   <div className="bg-brand-navy text-brand-off-white p-1">
                     <TicketIcon className="w-5 h-5 md:w-8 md:h-8" />
                   </div>
-                  GET YOUR TICKETS
+                  GET YOUR PASSES
                 </h2>
 
-              <form onSubmit={handleCheckout} className="space-y-3 md:space-y-3.5">
-                
-                {/* TICKET TIER SELECTION GRID */}
-                <div className="space-y-1.5 md:space-y-3">
-                  <div className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[11px] md:text-xs uppercase tracking-widest">
-                    01. CHOOSE PACKAGE
+                {/* 2-TAB PACKAGE SWITCHER: ENTRY PASSES vs ALL-INCLUSIVE CAMPING */}
+                {campingTiers.length > 0 && (
+                  <div className="flex border-4 border-brand-navy bg-brand-off-white p-1 gap-1 mb-4 shadow-(--shadow-brut-xs)">
+                    <button
+                      type="button"
+                      onClick={() => setActivePackageTab("entry")}
+                      className={`flex-1 py-2 px-2 sm:px-3 font-display text-xs sm:text-sm md:text-base uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        activePackageTab === "entry"
+                          ? "bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xs)"
+                          : "bg-transparent text-brand-navy/60 hover:text-brand-navy hover:bg-brand-bg"
+                      }`}
+                    >
+                      <TicketIcon className="w-4 h-4" /> ENTRY PASSES ({entryTiers.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePackageTab("camping")}
+                      className={`flex-1 py-2 px-2 sm:px-3 font-display text-xs sm:text-sm md:text-base uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        activePackageTab === "camping"
+                          ? "bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-xs)"
+                          : "bg-transparent text-brand-navy/60 hover:text-brand-navy hover:bg-brand-bg"
+                      }`}
+                    >
+                      <Tent className="w-4 h-4" /> ALL-INCLUSIVE CAMPING ({campingTiers.length})
+                    </button>
                   </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3" role="radiogroup">
-                    {TICKET_TIERS.map((tier) => {
-                      const isSelected = safeSelectedTier === tier.id;
-                      return (
-                        <button
-                          key={tier.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={isSelected}
-                          onClick={() => setSelectedTier(tier.id)}
-                          className={`text-left p-2 md:p-3.5 border-4 transition-all duration-75 relative flex flex-col justify-between gap-1 md:gap-2.5 ${
-                            isSelected 
-                              ? "border-brand-navy bg-brand-accent text-brand-navy shadow-(--shadow-brut-lg) translate-x-1 -translate-y-1 font-bold" 
-                              : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-bg shadow-(--shadow-brut-md) active:translate-x-1 active:-translate-y-1"
-                          }`}
-                        >
-                          <div className="space-y-0.5">
-                            <div className="flex items-start justify-between gap-1.5">
-                              <span className="font-display text-base sm:text-lg md:text-xl uppercase leading-none pt-0.5 text-brand-navy">
-                                {tier.name}
-                              </span>
-                              <span className="font-display text-base sm:text-lg md:text-xl leading-none text-brand-navy font-bold shrink-0 whitespace-nowrap">
-                                KES {tier.price.toLocaleString()}
-                              </span>
-                            </div>
-                            <p className="text-[11px] md:text-[11px] font-mono uppercase leading-tight text-brand-navy/70 line-clamp-1">
-                              {tier.desc}
-                            </p>
-                            {/* SCARCITY + TAG — single row */}
-                            <div className="flex items-center justify-between gap-1 mt-0.5">
-                              <span className="flex items-center gap-1">
-                                <span className="w-1 h-1 rounded-full animate-pulse bg-brand-navy"></span>
-                                <span className="text-[11px] font-bold tracking-widest uppercase text-brand-navy">
-                                  SELLING FAST
-                                </span>
-                              </span>
-                              <span className="text-[11px] px-1 py-0.2 font-bold uppercase border-2 border-brand-navy bg-brand-navy text-brand-off-white whitespace-nowrap">
-                                {tier.tag}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-5">
-                  {/* LEFT COLUMN: Details & Passes */}
-                  <div className="space-y-2.5 md:space-y-3 flex flex-col">
-                    {/* STEP 2: BUYER FULL NAME */}
-                    <div className="space-y-1 md:space-y-2">
-                      <label htmlFor="buyer-name" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[11px] md:text-xs uppercase tracking-widest">
-                        02. YOUR DETAILS
-                      </label>
-                      <input
-                        id="buyer-name"
-                        name="buyerName"
-                        type="text"
-                        autoComplete="name"
-                        required
-                        placeholder="E.g. Amani Mwangi"
-                        value={buyerName}
-                        onChange={(e) => setBuyerName(e.target.value)}
-                        className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
-                      />
-                    </div>
-
-                    {/* STEP 3: TICKET QUANTITY */}
-                    <div className="space-y-1 md:space-y-2">
-                      <div id="quantity-label" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[11px] md:text-xs uppercase tracking-widest">
-                        03. HOW MANY PASSES?
-                      </div>
-                      <div className="flex border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) w-fit" role="group" aria-labelledby="quantity-label">
-                        <button
-                          type="button"
-                          aria-label="Decrease ticket quantity"
-                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-12 h-12 border-r-4 border-brand-navy font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center"
-                        >
-                          -
-                        </button>
-                        <span
-                          className="w-12 md:w-16 h-12 flex items-center justify-center font-display text-xl md:text-3xl bg-brand-bg"
-                          aria-live="polite"
-                          aria-atomic="true"
-                        >
-                          {quantity}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label="Increase ticket quantity"
-                          onClick={() => setQuantity(Math.min(10, quantity + 1))}
-                          className="w-12 h-12 border-l-4 border-brand-navy font-display text-xl md:text-2xl hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* RIGHT COLUMN: Phone Number & Total */}
-                  <div className="space-y-2.5 md:space-y-3 flex flex-col">
-                    {/* STEP 4: M-PESA NUMBER */}
-                    <div className="space-y-1 md:space-y-2">
-                      <label htmlFor="mpesa-number" className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[11px] md:text-xs uppercase tracking-widest">
-                        04. M-PESA NUMBER
-                      </label>
-                      <div className="relative flex items-stretch">
-                        <div className="flex items-center justify-center px-3 md:px-5 border-4 border-r-0 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
-                          <Phone className="h-4 w-4 md:h-5 md:w-5" />
-                        </div>
-                        <input
-                           id="mpesa-number"
-                          name="phoneNumber"
-                          type="text"
-                          inputMode="tel"
-                          autoComplete="tel"
-                          required
-                          aria-describedby="mpesa-hint"
-                          placeholder="0712 345 678"
-                          value={phoneNumber}
-                          onChange={(e) => setPhoneNumber(e.target.value)}
-                          className="block w-full px-3 py-2 md:px-4 md:py-3 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
-                        />
-                      </div>
-                      {!showWhatsAppField && (
-                        <p id="mpesa-hint" className="text-[11px] text-brand-navy/75 font-mono uppercase bg-brand-navy/5 px-3 py-1.5 border-l-4 border-brand-accent">
-                        <span className="text-brand-accent font-bold">ENTER PIN</span> on your phone. Ticket sent via WhatsApp.
+                {/* CAMPING DISCOVERY ZONE (Exclusively in Camping Tab) */}
+                {activePackageTab === "camping" && campingTiers.length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    {/* All-Inclusive Clarity Callout */}
+                    <div className="bg-brand-navy text-brand-off-white border-2 border-brand-accent p-2.5 shadow-(--shadow-brut-xs) flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
+                      <p className="text-[11px] font-mono uppercase leading-tight">
+                        <span className="text-brand-accent font-bold">ALL-INCLUSIVE:</span> ALL TENT & BED PACKAGES INCLUDE FULL FESTIVAL ENTRY FOR ALL GUESTS. NO SEPARATE ENTRY TICKET NEEDED!
                       </p>
-                      )}
-
-                      {!showWhatsAppField ? (
-                        <button
-                          type="button"
-                          onClick={() => setShowWhatsAppField(true)}
-                          className="w-full flex items-center gap-2 border-2 border-dashed border-brand-navy/40 bg-brand-off-white/50 px-3 py-2 hover:border-brand-navy hover:bg-brand-accent/10 transition-colors group cursor-pointer"
-                        >
-                          <svg aria-hidden="true" className="w-4 h-4 shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
-                          <span className="text-[11px] font-black uppercase tracking-wider text-brand-navy/60 group-hover:text-brand-navy transition-colors">
-                            Send ticket to a different WhatsApp number
-                          </span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-auto shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" />
-                        </button>
-                      ) : (
-                        <div className="border-2 border-brand-navy bg-brand-off-white">
-                          <div className="flex items-stretch">
-                            <div className="flex items-center justify-center px-3 border-r-2 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
-                              <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
-                            </div>
-                            <input
-                              id="whatsapp-number"
-                              name="whatsappNumber"
-                              type="text"
-                              inputMode="tel"
-                              autoComplete="tel"
-                              aria-label="Different number for WhatsApp delivery"
-                              placeholder="WhatsApp number"
-                              value={whatsappNumber}
-                              onChange={(e) => setWhatsappNumber(e.target.value)}
-                              className="flex-1 min-w-0 px-3 py-2 font-mono text-[11px] uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/5 text-brand-navy border-0"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => { setShowWhatsAppField(false); setWhatsappNumber(""); }}
-                              aria-label="Remove WhatsApp number"
-                              className="px-3 border-l-2 border-brand-navy bg-brand-off-white text-brand-navy/30 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors font-mono text-sm font-bold"
-                            >
-                              X
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
 
-                    {/* TOTAL RECEIPT BLOCK */}
-                    <div className="mt-auto px-2.5 py-1.5 md:px-3 md:py-2 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xs-accent) md:shadow-(--shadow-brut-sm-accent) flex items-center justify-between">
-                      <span className="text-[11px] font-mono uppercase opacity-70">TOTAL DUE</span>
-                      <span className="font-display text-xl md:text-3xl leading-none block text-brand-accent">
-                        KES {totalPrice.toLocaleString()}
+                    {/* Live Marara Camp Availability Ticker */}
+                    <div className="border-2 border-brand-navy bg-brand-accent/20 p-2.5 flex items-center justify-between shadow-(--shadow-brut-2xs)">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shrink-0" />
+                        <span className="font-mono text-[11px] font-black uppercase text-brand-navy tracking-wide">
+                          CAMP GROUNDS STATUS: 82% BOOKED
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold uppercase bg-brand-navy text-brand-accent px-1.5 py-0.5 whitespace-nowrap">
+                        ONLY 4 TENTS & 3 BEDS LEFT
                       </span>
                     </div>
-                  </div>
-                </div>
 
-                {paystackEnabled && (
-                  <div className="grid grid-cols-2 gap-2 mb-2" role="radiogroup" aria-label="Payment method">
+                    {/* Camp & Tent Walkthrough Tour Trigger */}
                     <button
                       type="button"
-                      role="radio"
-                      aria-checked={paymentProvider === "payhero"}
-                      onClick={() => setPaymentProvider("payhero")}
-                      className={`py-2 px-2 border-2 border-brand-navy font-mono text-[11px] font-bold uppercase tracking-wider transition-all ${
-                        paymentProvider === "payhero"
-                          ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs-accent)"
-                          : "bg-brand-off-white text-brand-navy/60 hover:text-brand-navy hover:bg-brand-accent/10"
-                      }`}
+                      onClick={() => setShowCampTourModal(true)}
+                      className="w-full p-2.5 border-2 border-dashed border-brand-navy bg-brand-off-white hover:bg-brand-accent/20 transition-all flex items-center justify-between text-left group cursor-pointer shadow-(--shadow-brut-2xs)"
                     >
-                      PAY WITH M-PESA
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={paymentProvider === "paystack"}
-                      onClick={() => setPaymentProvider("paystack")}
-                      className={`py-2 px-2 border-2 border-brand-navy font-mono text-[11px] font-bold uppercase tracking-wider transition-all ${
-                        paymentProvider === "paystack"
-                          ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs-accent)"
-                          : "bg-brand-off-white text-brand-navy/60 hover:text-brand-navy hover:bg-brand-accent/10"
-                      }`}
-                    >
-                      PAYSTACK
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 border border-brand-navy bg-brand-navy text-brand-off-white group-hover:bg-brand-accent group-hover:text-brand-navy transition-colors shrink-0">
+                          <Video className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="font-display text-xs sm:text-sm uppercase text-brand-navy">
+                            CAMP GROUNDS & TENT WALKTHROUGH
+                          </div>
+                          <div className="text-[10px] font-mono text-brand-navy/70 uppercase">
+                            Drone tour, private dome tents, shared dorms & amenities
+                          </div>
+                        </div>
+                      </div>
+                      <span className="font-mono text-[10px] font-bold text-brand-navy underline uppercase shrink-0 ml-1">
+                        VIEW TOUR &rarr;
+                      </span>
                     </button>
                   </div>
                 )}
 
-                {/* PAY BUTTON */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className={`w-full py-2.5 sm:py-3.5 md:py-4 border-4 border-brand-navy font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-1 md:mt-2 ${
-                    loading 
-                      ? "bg-brand-bg text-brand-navy/30 cursor-not-allowed shadow-none" 
-                      : "bg-brand-accent text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft) active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
-                  }`}
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin border-4 border-brand-navy border-t-transparent w-5 h-5 md:w-6 md:h-6" />
-                      PROCESSING...
-                    </>
-                  ) : (
-                    <>
-                      <Image 
-                        src="/mpesa.svg" 
-                        alt="M-Pesa" 
-                        width={64} 
-                        height={34} 
-                        className="h-5 sm:h-6 w-auto object-contain brightness-0" 
-                      />
-                      PAY WITH M-PESA
-                    </>
-                  )}
-                </button>
-
-                {/* Gateway Reassurance */}
-                <p className="text-[11px] text-center font-mono uppercase text-brand-navy/60 mt-2 flex items-center justify-center gap-1.5 select-none">
-                  <ShieldCheck className="w-3.5 h-3.5 text-brand-navy/60 shrink-0" strokeWidth={2.5} />
-                  <span>AN INSTANT M-PESA PIN PROMPT WILL BE SENT.</span>
-                </p>
-                {eventDetails?.payment_contact && (
-                  <div className="mt-2.5 p-3 border-4 border-brand-navy bg-brand-accent/5 shadow-(--shadow-brut-sm) flex flex-col gap-2 lg:grid lg:grid-cols-[max-content_1fr] lg:items-center lg:gap-x-4 lg:gap-y-1.5">
-                    <p className="text-[11px] font-black uppercase text-brand-navy tracking-wider text-center lg:text-left lg:max-w-[180px] select-none">
-                      Prefer to pay manually via M-Pesa Till?
-                    </p>
+                <form ref={formRef} onSubmit={handleCheckout} className="space-y-3 md:space-y-3.5">
+                  
+                  {/* TIER SELECTION GRID */}
+                  <div className="space-y-1.5 md:space-y-2">
+                    <div className="bg-brand-navy text-brand-off-white inline-block px-2.5 py-0.5 font-bold text-[11px] md:text-xs uppercase tracking-widest">
+                      01. SELECT {activePackageTab === "camping" ? "CAMPING PACKAGE" : "PASS TYPE"}
+                    </div>
                     
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* Till Number Box */}
-                      <div className="p-2 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between items-center text-center">
-                        <span className="text-[11px] font-mono font-bold uppercase text-brand-navy/60 select-none">TILL NUMBER</span>
-                        <span className="text-lg font-display text-brand-navy font-bold leading-none my-1 select-all">
-                          {eventDetails.till_number}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(eventDetails.till_number);
-                            setCopiedTill(true);
-                            setTimeout(() => setCopiedTill(false), 2000);
-                          }}
-                          className="mt-1 w-full py-2.5 min-h-[44px] border border-brand-navy bg-brand-accent text-brand-navy font-mono text-footnote font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-all flex items-center justify-center gap-1.5 leading-none shadow-(--shadow-brut-2xs) active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
-                        >
-                          {copiedTill ? (
-                            <>
-                              <Check className="w-2.5 h-2.5" /> COPIED!
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-2.5 h-2.5" /> COPY TILL
-                            </>
-                          )}
-                        </button>
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" role="radiogroup">
+                      {displayedTiers.map((tier) => {
+                        const isSelected = safeSelectedTier === tier.id;
+                        const isSharedBed = tier.camping_type === 'shared_bed';
+                        const isFree = tier.price === 0;
 
-                      {/* Amount Box */}
-                      <div className="p-2 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between items-center text-center">
-                        <span className="text-[11px] font-mono font-bold uppercase text-brand-navy/60 select-none">AMOUNT TO PAY</span>
-                        <span className="text-lg font-display text-brand-navy font-bold leading-none my-1 select-all">
-                          KES {totalPrice}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(totalPrice.toString());
-                            setCopiedAmount(true);
-                            setTimeout(() => setCopiedAmount(false), 2000);
-                          }}
-                          className="mt-1 w-full py-2.5 min-h-[44px] border border-brand-navy bg-brand-accent text-brand-navy font-mono text-footnote font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-all flex items-center justify-center gap-1.5 leading-none shadow-(--shadow-brut-2xs) active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
-                        >
-                          {copiedAmount ? (
-                            <>
-                              <Check className="w-2.5 h-2.5" /> COPIED!
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-2.5 h-2.5" /> COPY AMOUNT
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                        return (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setSelectedTier(tier.id)}
+                            className={`text-left p-2.5 md:p-3.5 border-4 transition-all duration-75 relative flex flex-col justify-between gap-1.5 cursor-pointer ${
+                              isSelected 
+                                ? "border-brand-navy bg-brand-accent text-brand-navy shadow-(--shadow-brut-lg) translate-x-1 -translate-y-1 font-bold" 
+                                : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-bg shadow-(--shadow-brut-md) active:translate-x-1 active:-translate-y-1"
+                            }`}
+                          >
+                            <div className="space-y-1">
+                              {/* Urgency / Badge Text */}
+                              {tier.badge_text && (
+                                <div className="text-[10px] font-mono font-black uppercase text-brand-navy bg-brand-navy/10 px-1.5 py-0.5 border border-brand-navy/20 w-fit">
+                                  {tier.badge_text}
+                                </div>
+                              )}
 
-                    <div className="text-[11px] font-mono uppercase text-brand-navy/70 text-center lg:col-span-2 lg:mt-0.5 lg:pt-1.5 lg:border-t lg:border-brand-navy/10 leading-normal select-none">
-                      Once paid, send confirmation to WhatsApp <strong className="text-brand-navy font-bold">{eventDetails.payment_contact}</strong> to receive your ticket
+                              <div className="flex items-start justify-between gap-1.5">
+                                <span className="font-display text-base sm:text-lg uppercase leading-none pt-0.5 text-brand-navy">
+                                  {tier.name}
+                                </span>
+                                <span className="font-display text-base sm:text-lg leading-none text-brand-navy font-bold shrink-0 whitespace-nowrap">
+                                  {isFree ? "FREE RSVP" : `KES ${tier.price.toLocaleString()}`}
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] font-mono uppercase leading-tight text-brand-navy/80 line-clamp-2">
+                                {tier.desc}
+                              </p>
+
+                              {/* Capacity & Option B Details */}
+                              <div className="flex flex-wrap items-center justify-between gap-1 mt-1 pt-1 border-t border-brand-navy/20">
+                                <div className="flex items-center gap-1 text-[10px] font-mono font-bold uppercase text-brand-navy">
+                                  {isSharedBed ? (
+                                    <>
+                                      <BedSingle className="w-3 h-3 text-brand-navy shrink-0" />
+                                      <span>1 BED (GATE ASSIGNED)</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Users className="w-3 h-3 text-brand-navy shrink-0" />
+                                      <span>ADMITS {tier.admits_quantity} GUEST{tier.admits_quantity > 1 ? 'S' : ''}</span>
+                                    </>
+                                  )}
+                                </div>
+                                <span className="text-[10px] px-1 py-0.2 font-bold uppercase border border-brand-navy bg-brand-navy text-brand-off-white whitespace-nowrap">
+                                  {tier.tag}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
-              </form>
 
-              {/* PAYMENT STATUS DISPLAY */}
-              {statusMessage && (
-                <div ref={statusRef} role="status" aria-live="polite" className="mt-8 p-5 border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-sm-strong)">
-                  <span className="text-brand-accent font-display text-xl uppercase block mb-2">PAYMENT UPDATE</span>
-                  <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
-
-                  {pollingTimedOut && stxReference && !generatedTicketId && (
-                    <div className="mt-4 pt-4 border-t-2 border-brand-navy/20 space-y-3">
-                      <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-accent" : "text-brand-navy-light"}`}>
-                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                        <p className="text-[11px] font-mono uppercase leading-relaxed">
-                          {statusMessage.toLowerCase().includes("failed")
-                            ? "Transaction was declined. Try again with sufficient M-Pesa balance."
-                            : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
-                        </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-4">
+                    {/* LEFT COLUMN: Details & Passes */}
+                    <div className="space-y-2 md:space-y-3 flex flex-col">
+                      {/* STEP 2: BUYER FULL NAME */}
+                      <div className="space-y-1">
+                        <label htmlFor="buyer-name" className="bg-brand-navy text-brand-off-white inline-block px-2 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                          02. YOUR NAME
+                        </label>
+                        <input
+                          id="buyer-name"
+                          name="buyerName"
+                          type="text"
+                          autoComplete="name"
+                          required
+                          placeholder="E.g. Amani Mwangi"
+                          value={buyerName}
+                          onChange={(e) => setBuyerName(e.target.value)}
+                          className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
+                        />
                       </div>
-                      <button
-                        onClick={handleManualStatusCheck}
-                        disabled={loading}
-                        className="w-full py-3 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        {loading ? (
-                          <>CHECKING...</>
-                        ) : (
-                          <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
+
+                      {/* STEP 3: TICKET QUANTITY */}
+                      <div className="space-y-1">
+                        <div id="quantity-label" className="bg-brand-navy text-brand-off-white inline-block px-2 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                          03. HOW MANY PACKAGES?
+                        </div>
+                        <div className="flex border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-xs) w-fit" role="group" aria-labelledby="quantity-label">
+                          <button
+                            type="button"
+                            aria-label="Decrease quantity"
+                            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                            className="w-10 h-10 border-r-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span
+                            className="w-12 h-10 flex items-center justify-center font-display text-xl bg-brand-bg text-brand-navy"
+                            aria-live="polite"
+                            aria-atomic="true"
+                          >
+                            {quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Increase quantity"
+                            onClick={() => setQuantity(Math.min(10, quantity + 1))}
+                            className="w-10 h-10 border-l-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: Phone Number & Total */}
+                    <div className="space-y-2 md:space-y-3 flex flex-col">
+                      {/* STEP 4: M-PESA NUMBER */}
+                      <div className="space-y-1">
+                        <label htmlFor="mpesa-number" className="bg-brand-navy text-brand-off-white inline-block px-2 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
+                          04. M-PESA NUMBER
+                        </label>
+                        <div className="relative flex items-stretch">
+                          <div className="flex items-center justify-center px-3 border-4 border-r-0 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
+                            <Phone className="h-4 w-4" />
+                          </div>
+                          <input
+                            ref={phoneInputRef}
+                            id="mpesa-number"
+                            name="phoneNumber"
+                            type="text"
+                            inputMode="tel"
+                            autoComplete="tel"
+                            required
+                            aria-describedby="mpesa-hint"
+                            placeholder="0712 345 678"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
+                          />
+                        </div>
+                        {!showWhatsAppField && (
+                          <p id="mpesa-hint" className="text-[10px] text-brand-navy/80 font-mono uppercase bg-brand-navy/5 px-2.5 py-1 border-l-4 border-brand-accent">
+                            {totalPrice === 0 ? "Ticket PDF dispatched to WhatsApp." : "Enter PIN on phone. Ticket sent via WhatsApp."}
+                          </p>
                         )}
+
+                        {!showWhatsAppField ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowWhatsAppField(true)}
+                            className="w-full flex items-center gap-1.5 border-2 border-dashed border-brand-navy/40 bg-brand-off-white/50 px-2.5 py-1.5 hover:border-brand-navy hover:bg-brand-accent/10 transition-colors group cursor-pointer"
+                          >
+                            <svg aria-hidden="true" className="w-3.5 h-3.5 shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-brand-navy/60 group-hover:text-brand-navy transition-colors">
+                              Different WhatsApp number?
+                            </span>
+                            <ArrowRight className="w-3 h-3 ml-auto shrink-0 text-brand-navy/40 group-hover:text-brand-navy transition-colors" />
+                          </button>
+                        ) : (
+                          <div className="border-2 border-brand-navy bg-brand-off-white">
+                            <div className="flex items-stretch">
+                              <div className="flex items-center justify-center px-2.5 border-r-2 border-brand-navy bg-brand-navy text-brand-off-white pointer-events-none">
+                                <svg aria-hidden="true" className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
+                              </div>
+                              <input
+                                id="whatsapp-number"
+                                name="whatsappNumber"
+                                type="text"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                aria-label="Different number for WhatsApp delivery"
+                                placeholder="WhatsApp number"
+                                value={whatsappNumber}
+                                onChange={(e) => setWhatsappNumber(e.target.value)}
+                                className="flex-1 min-w-0 px-2.5 py-1.5 font-mono text-[11px] uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/5 text-brand-navy border-0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => { setShowWhatsAppField(false); setWhatsappNumber(""); }}
+                                aria-label="Remove WhatsApp number"
+                                className="px-2.5 border-l-2 border-brand-navy bg-brand-off-white text-brand-navy/30 hover:text-brand-accent hover:bg-brand-accent/5 transition-colors font-mono text-xs font-bold"
+                              >
+                                X
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* TOTAL RECEIPT BLOCK */}
+                      <div className="mt-auto px-2.5 py-1.5 md:px-3 md:py-2 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xs-accent) md:shadow-(--shadow-brut-sm-accent) flex items-center justify-between">
+                        <span className="text-[10px] font-mono uppercase opacity-70">TOTAL DUE</span>
+                        <span className="font-display text-lg md:text-2xl leading-none block text-brand-accent">
+                          {totalPrice === 0 ? "KES 0 (FREE)" : `KES ${totalPrice.toLocaleString()}`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {paystackEnabled && totalPrice > 0 && (
+                    <div className="grid grid-cols-2 gap-2 my-2" role="radiogroup" aria-label="Payment method">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={paymentProvider === "payhero"}
+                        onClick={() => setPaymentProvider("payhero")}
+                        className={`py-2 px-2 border-2 border-brand-navy font-mono text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                          paymentProvider === "payhero"
+                            ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs-accent)"
+                            : "bg-brand-off-white text-brand-navy/60 hover:text-brand-navy hover:bg-brand-accent/10"
+                        }`}
+                      >
+                        PAY WITH M-PESA
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={paymentProvider === "paystack"}
+                        onClick={() => setPaymentProvider("paystack")}
+                        className={`py-2 px-2 border-2 border-brand-navy font-mono text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                          paymentProvider === "paystack"
+                            ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs-accent)"
+                            : "bg-brand-off-white text-brand-navy/60 hover:text-brand-navy hover:bg-brand-accent/10"
+                        }`}
+                      >
+                        PAYSTACK
                       </button>
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* TICKET RETRIEVAL DOWNLOAD AREA */}
-              <AnimatePresence>
-                {myTickets.length > 0 && (
-                  <motion.div 
-                    id="my-tickets-section"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    className="mt-8 p-6 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl-accent)"
+                  {/* ACTION SUBMIT BUTTON */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className={`w-full py-3 sm:py-3.5 md:py-4 border-4 border-brand-navy font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-2 cursor-pointer ${
+                      loading 
+                        ? "bg-brand-bg text-brand-navy/30 cursor-not-allowed shadow-none" 
+                        : "bg-brand-accent text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft) active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
+                    }`}
                   >
-                    <button 
-                      onClick={() => setIsVaultOpen(!isVaultOpen)}
-                      className="w-full flex items-center justify-between border-b-2 border-brand-off-white/20 pb-3 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
-                    >
-                      <div className="flex items-center gap-3">
-                        <motion.span
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ delay: 0.4, duration: 0.35, ease: [0.25, 1, 0.5, 1] }}
-                          className="font-display text-3xl uppercase pt-1"
-                        >
-                          YOU ARE IN!
-                        </motion.span>
-                      </div>
-                      <div className="text-brand-accent">
-                        {isVaultOpen ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
-                      </div>
-                    </button>
-                    
-                    <AnimatePresence>
-                      {isVaultOpen && (
-                        <motion.div 
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="space-y-5 pb-2">
-                            <p className="text-xs font-mono uppercase leading-relaxed opacity-90">
-                              YOUR TICKET(S) ARE READY. DOWNLOAD BELOW OR CHECK YOUR WHATSAPP.
-                            </p>
+                    {loading ? (
+                      <>
+                        <div className="animate-spin border-4 border-brand-navy border-t-transparent w-5 h-5" />
+                        PROCESSING...
+                      </>
+                    ) : totalPrice === 0 ? (
+                      <>
+                        <TicketIcon className="w-6 h-6" />
+                        RSVP FREE ENTRY PASS
+                      </>
+                    ) : (
+                      <>
+                        <Image 
+                          src="/mpesa.svg" 
+                          alt="M-Pesa" 
+                          width={64} 
+                          height={34} 
+                          className="h-5 sm:h-6 w-auto object-contain brightness-0" 
+                        />
+                        PAY WITH M-PESA
+                      </>
+                    )}
+                  </button>
 
-                            <div className="space-y-4 pt-2">
-                      {myTickets.map(ticketId => {
-                        const details = ticketDetailsMap[ticketId];
-                        const tierName = details?.ticket_type || ticketTiers.find(t => t.id === safeSelectedTier)?.name || "Ticket";
-                        const evTitle = eventDetails.title || "GOODLIFE XP";
-                        const evVenue = eventDetails.venue || "MARARA CAMP, THIKA";
-                        const shareUrl = typeof window !== "undefined" ? window.location.origin : "https://goodlife.smwhr.space";
-                        const dynamicShareMsg = `🔥 Just secured my ${tierName} pass to ${evTitle} at ${evVenue}! 🎟️ Grab yours before tickets sell out 👉 ${shareUrl}`;
+                  {/* Gateway Reassurance */}
+                  <p className="text-[10px] text-center font-mono uppercase text-brand-navy/60 mt-1 flex items-center justify-center gap-1.5 select-none">
+                    <ShieldCheck className="w-3.5 h-3.5 text-brand-navy/60 shrink-0" strokeWidth={2.5} />
+                    <span>{totalPrice === 0 ? "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP." : "AN INSTANT M-PESA PIN PROMPT WILL BE SENT."}</span>
+                  </p>
 
-                        return (
-                        <div key={ticketId} className="border-2 border-brand-off-white/20 p-4 space-y-3 bg-brand-navy/50">
-                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 border-b-2 border-brand-off-white/10 pb-3 mb-3">
-                            <div>
-                              <p className="text-[11px] font-mono uppercase text-brand-accent mb-1">
-                                TICKET ID: <span className="font-bold text-brand-off-white ml-1">{ticketId}</span>
-                              </p>
-                              {details && (
-                                <p className="text-xl font-display uppercase text-brand-off-white leading-none mt-2">
-                                  {details.ticket_type}
-                                </p>
-                              )}
-                            </div>
-                            {details && (
-                              <div className="text-left md:text-right mt-2 md:mt-0">
-                                <p className="text-[11px] font-mono uppercase text-brand-off-white/70 mb-1">
-                                  ATTENDEE
-                                </p>
-                                <p className="text-sm font-bold text-brand-off-white uppercase">
-                                  {details.buyer_name} <span className="text-brand-accent ml-2">KES {details.amount_paid}</span>
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <a
-                              href={`/api/tickets/${ticketId}/download`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="w-full py-4 border-4 border-brand-accent bg-brand-accent text-brand-navy font-display text-2xl uppercase hover:bg-brand-off-white transition-colors flex items-center justify-center gap-2 shadow-sm"
-                            >
-                              <Download className="w-6 h-6" strokeWidth={2.5} /> DOWNLOAD PDF
-                            </a>
-                            <a
-                              href={`https://api.whatsapp.com/send?text=${encodeURIComponent(dynamicShareMsg)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="w-full py-4 border-4 border-[#128C7E] bg-[#25D366] text-white font-display text-2xl uppercase hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-sm"
-                            >
-                              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
-                              SHARE TO STATUS
-                            </a>
-                          </div>
-
-                          {/* VIRAL STORY TOOLKIT */}
-                          <div className="bg-brand-navy/60 border-2 border-brand-accent/40 p-3.5 mt-2 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-brand-accent flex items-center gap-1.5">
-                                <Sparkles className="w-3.5 h-3.5 text-brand-accent" /> POST VIDEO REEL TO YOUR STORY
-                              </span>
-                              <span className="text-[11px] font-mono bg-brand-accent text-brand-navy px-1.5 py-0.5 font-bold uppercase">
-                                9:16 REEL
-                              </span>
-                            </div>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <a
-                                href="/promo.mp4"
-                                download="goodlife-story-reel.mp4"
-                                className="flex-1 py-2.5 px-3 border border-brand-off-white/30 bg-brand-off-white/10 hover:bg-brand-accent hover:text-brand-navy hover:border-brand-accent text-brand-off-white font-mono text-xs uppercase transition-all flex items-center justify-center gap-2 active:scale-95 text-center font-bold"
-                              >
-                                <Video className="w-4 h-4 text-brand-accent" /> DOWNLOAD STORY REEL (MP4)
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const url = typeof window !== 'undefined' ? window.location.origin : 'https://goodlife.smwhr.space';
-                                  navigator.clipboard.writeText(url);
-                                  alert("Link copied! You can now paste it as a Link Sticker on your WhatsApp/Instagram Story!");
-                                }}
-                                className="py-2.5 px-3 border border-brand-off-white/30 bg-brand-off-white/10 hover:bg-brand-off-white hover:text-brand-navy text-brand-off-white font-mono text-xs uppercase transition-all flex items-center justify-center gap-2 active:scale-95 font-bold"
-                              >
-                                <Copy className="w-4 h-4" /> COPY STORY LINK
-                              </button>
-                            </div>
-                            <p className="text-[11px] font-mono text-brand-off-white/60 text-center">
-                              Tip: Download the Reel video → Post to your Status → Slap the link sticker on top!
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-[11px] font-mono uppercase opacity-70 mb-1">PERMANENT TICKET URL:</p>
-                            <input 
-                              type="text" 
-                              readOnly 
-                              value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/tickets/${ticketId}/download`}
-                              className="w-full bg-transparent border-2 border-brand-off-white/50 text-brand-off-white text-[11px] font-mono p-2 outline-none focus:border-brand-accent"
-                              onClick={(e) => {
-                                (e.target as HTMLInputElement).select();
-                                navigator.clipboard.writeText((e.target as HTMLInputElement).value);
-                              }}
-                            />
-                          </div>
+                  {/* Manual Till Payment Alternative */}
+                  {totalPrice > 0 && eventDetails?.till_number && (
+                    <div className="mt-2.5 p-3 border-4 border-brand-navy bg-brand-accent/5 shadow-(--shadow-brut-sm) flex flex-col gap-2">
+                      <p className="text-[10px] font-black uppercase text-brand-navy tracking-wider text-center select-none">
+                        Prefer manual M-Pesa Till payment?
+                      </p>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Till Box */}
+                        <div className="p-2 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between items-center text-center">
+                          <span className="text-[10px] font-mono font-bold uppercase text-brand-navy/60 select-none">TILL NUMBER</span>
+                          <span className="text-base font-display text-brand-navy font-bold leading-none my-1 select-all">
+                            {eventDetails.till_number}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(eventDetails.till_number);
+                              setCopiedTill(true);
+                              setTimeout(() => setCopiedTill(false), 2000);
+                            }}
+                            className="mt-1 w-full py-2 border border-brand-navy bg-brand-accent text-brand-navy font-mono text-[10px] font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            {copiedTill ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            {copiedTill ? "COPIED!" : "COPY TILL"}
+                          </button>
                         </div>
-                      )})}
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
+
+                        {/* Amount Box */}
+                        <div className="p-2 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between items-center text-center">
+                          <span className="text-[10px] font-mono font-bold uppercase text-brand-navy/60 select-none">AMOUNT</span>
+                          <span className="text-base font-display text-brand-navy font-bold leading-none my-1 select-all">
+                            KES {totalPrice}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(totalPrice.toString());
+                              setCopiedAmount(true);
+                              setTimeout(() => setCopiedAmount(false), 2000);
+                            }}
+                            className="mt-1 w-full py-2 border border-brand-navy bg-brand-accent text-brand-navy font-mono text-[10px] font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            {copiedAmount ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            {copiedAmount ? "COPIED!" : "COPY AMOUNT"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </form>
+
+                {/* PAYMENT STATUS DISPLAY */}
+                {statusMessage && (
+                  <div ref={statusRef} role="status" aria-live="polite" className="mt-6 p-4 border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-sm-strong)">
+                    <span className="text-brand-accent font-display text-lg uppercase block mb-1">STATUS UPDATE</span>
+                    <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
+
+                    {pollingTimedOut && stxReference && !generatedTicketId && (
+                      <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
+                        <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-accent" : "text-brand-navy-light"}`}>
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <p className="text-[10px] font-mono uppercase leading-relaxed">
+                            {statusMessage.toLowerCase().includes("failed")
+                              ? "Transaction was declined. Try again with sufficient M-Pesa balance."
+                              : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleManualStatusCheck}
+                          disabled={loading}
+                          className="w-full py-2.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          {loading ? (
+                            <>CHECKING...</>
+                          ) : (
+                            <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
-              </AnimatePresence>
+
+                {/* TICKET RETRIEVAL DOWNLOAD AREA */}
+                <AnimatePresence>
+                  {myTickets.length > 0 && (
+                    <motion.div 
+                      id="my-tickets-section"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 20 }}
+                      className="mt-6 p-4 md:p-6 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl-accent)"
+                    >
+                      <button 
+                        onClick={() => setIsVaultOpen(!isVaultOpen)}
+                        className="w-full flex items-center justify-between border-b-2 border-brand-off-white/20 pb-3 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-display text-2xl md:text-3xl uppercase pt-1 text-brand-accent">
+                            YOU ARE IN!
+                          </span>
+                        </div>
+                        <div className="text-brand-accent">
+                          {isVaultOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </div>
+                      </button>
+                      
+                      <AnimatePresence>
+                        {isVaultOpen && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="space-y-4 pb-2">
+                              <p className="text-xs font-mono uppercase leading-relaxed opacity-90">
+                                YOUR TICKET(S) ARE READY. DOWNLOAD BELOW OR CHECK YOUR WHATSAPP.
+                              </p>
+
+                              <div className="space-y-3 pt-1">
+                                {myTickets.map(ticketId => {
+                                  const details = ticketDetailsMap[ticketId];
+                                  const tierName = details?.ticket_type || selectedTierObj?.name || "Ticket";
+                                  const evTitle = eventDetails.title || "GOODLIFE";
+                                  const evVenue = eventDetails.venue || "MARARA CAMP, THIKA";
+                                  const shareUrl = typeof window !== "undefined" ? window.location.origin : "https://goodlife.smwhr.space";
+                                  const dynamicShareMsg = `Just secured my ${tierName} pass to ${evTitle} at ${evVenue}! Grab yours before tickets sell out: ${shareUrl}`;
+
+                                  return (
+                                    <div key={ticketId} className="border-2 border-brand-off-white/20 p-3 space-y-2 bg-brand-navy/50">
+                                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 border-b-2 border-brand-off-white/10 pb-2 mb-2">
+                                        <div>
+                                          <p className="text-[10px] font-mono uppercase text-brand-accent mb-0.5">
+                                            PASS ID: <span className="font-bold text-brand-off-white ml-1">{ticketId}</span>
+                                          </p>
+                                          {details && (
+                                            <p className="text-lg font-display uppercase text-brand-off-white leading-none mt-1">
+                                              {details.ticket_type}
+                                            </p>
+                                          )}
+                                        </div>
+                                        {details && (
+                                          <div className="text-left sm:text-right mt-1 sm:mt-0">
+                                            <p className="text-[10px] font-mono uppercase text-brand-off-white/70">
+                                              ATTENDEE
+                                            </p>
+                                            <p className="text-xs font-bold text-brand-off-white uppercase">
+                                              {details.buyer_name} <span className="text-brand-accent ml-1">KES {details.amount_paid}</span>
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <a
+                                          href={`/api/tickets/${ticketId}/download`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="w-full py-3 border-2 border-brand-accent bg-brand-accent text-brand-navy font-display text-xl uppercase hover:bg-brand-off-white transition-colors flex items-center justify-center gap-2 shadow-(--shadow-brut-xs)"
+                                        >
+                                          <Download className="w-5 h-5" strokeWidth={2.5} /> DOWNLOAD PDF
+                                        </a>
+                                        <a
+                                          href={`https://api.whatsapp.com/send?text=${encodeURIComponent(dynamicShareMsg)}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="w-full py-3 border-2 border-[#128C7E] bg-[#25D366] text-white font-display text-xl uppercase hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-(--shadow-brut-xs)"
+                                        >
+                                          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0zm3.847 17.338c-.161.455-.935.882-1.32.936-.364.051-.834.128-2.69-.64-2.242-.927-3.666-3.21-3.774-3.354-.108-.144-.898-1.196-.898-2.28s.57-1.616.772-1.834c.202-.218.441-.272.585-.272.144 0 .288.001.411.006.132.006.311-.052.478.35.176.425.594 1.45.646 1.554.052.104.088.227.016.371-.072.144-.108.234-.216.353-.108.119-.228.257-.323.337-.104.088-.213.185-.094.39.119.205.529.873 1.134 1.412.782.697 1.442.915 1.647 1.019.205.104.323.088.446-.052.119-.14.515-.596.653-.802.138-.206.275-.171.464-.104.189.067 1.194.563 1.399.667.205.104.341.155.394.243.053.088.053.513-.108.968z"/></svg>
+                                          SHARE TO STATUS
+                                        </a>
+                                      </div>
+
+                                      {/* Permanent URL input */}
+                                      <div>
+                                        <p className="text-[10px] font-mono uppercase opacity-70 mb-0.5">PERMANENT LINK:</p>
+                                        <input 
+                                          type="text" 
+                                          readOnly 
+                                          value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/tickets/${ticketId}/download`}
+                                          className="w-full bg-transparent border border-brand-off-white/40 text-brand-off-white text-[10px] font-mono p-1.5 outline-none focus:border-brand-accent"
+                                          onClick={(e) => {
+                                            (e.target as HTMLInputElement).select();
+                                            navigator.clipboard.writeText((e.target as HTMLInputElement).value);
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
-          </div>
-
-
           </section>
 
         </main>
 
-        <footer className="w-full text-center pb-6 pt-6 border-t-4 border-brand-navy mt-8">
+        <footer className="w-full text-center pb-6 pt-6 border-t-4 border-brand-navy mt-4">
           <p className="font-display text-xl uppercase tracking-widest text-brand-navy">
-            © 2026 {eventDetails.footer_title || `${eventDetails.title} TICKETING`}
+            © 2026 {eventDetails.title} TICKETING
           </p>
-          <p className="font-mono text-[11px] uppercase mt-2 text-brand-navy/60">
-            {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
+          <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
+            {eventDetails.venue} · STRICTLY 18+ NO OUTSIDE DRINKS
           </p>
+          <div className="mt-3 flex items-center justify-center gap-4 text-xs font-mono font-bold uppercase tracking-wider">
+            <Link href="/vendor/login" className="hover:underline flex items-center gap-1 text-brand-navy">
+              <Store className="w-3.5 h-3.5" /> Staff & POS Login
+            </Link>
+            <span className="text-brand-navy/40">·</span>
+            <Link href="/login" className="hover:underline text-brand-navy/70">
+              Admin Portal
+            </Link>
+          </div>
         </footer>
       </div>
 
-      {/* STICKY MOBILE CTA BUTTON */}
-      <AnimatePresence>
-        {showStickyBtn && (
-          <motion.div 
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 lg:hidden"
-          >
-            <button
-              onClick={() => {
-                document.getElementById("booking-container")?.scrollIntoView({ behavior: "smooth" });
-              }}
-              className="px-6 py-3 border-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase tracking-widest shadow-(--shadow-brut-lg-soft) active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 whitespace-nowrap"
-            >
-              <TicketIcon className="w-5 h-5" />
-              SECURE TICKETS
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* HIGH-CONVERTING MOBILE STICKY ACTION BAR (Thumb Zone) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-brand-off-white border-t-4 border-brand-navy p-3 shadow-(--shadow-brut-xl-strong) lg:hidden flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0 pr-1">
+          <div className="text-[10px] font-mono uppercase text-brand-navy/70 truncate font-bold">
+            {selectedTierObj?.name} {quantity > 1 ? `(${quantity}x)` : ""}
+          </div>
+          <div className="font-display text-xl text-brand-navy leading-none">
+            {totalPrice === 0 ? "FREE ENTRY (KES 0)" : `KES ${totalPrice.toLocaleString()}`}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleStickyActionClick}
+          disabled={loading}
+          className="py-2.5 px-4 border-2 border-brand-navy bg-brand-accent text-brand-navy font-display text-base uppercase tracking-wider shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 shrink-0 font-bold cursor-pointer"
+        >
+          {loading ? (
+            "PROCESSING..."
+          ) : totalPrice === 0 ? (
+            "RSVP FREE PASS"
+          ) : (
+            <>
+              <Image src="/mpesa.svg" alt="M-Pesa" width={38} height={20} className="h-4 w-auto object-contain brightness-0" />
+              PAY M-PESA
+            </>
+          )}
+        </button>
+      </div>
 
-      {/* FLYER LIGHTBOX / EXPANDED VIEW */}
+      {/* FLYER FULL-SIZE LIGHTBOX */}
       <AnimatePresence>
         {isFlyerExpanded && (
           <motion.div 
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-navy/90 p-4 md:p-12 cursor-pointer backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-navy/95 p-3 md:p-12 cursor-pointer backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
-            aria-label={`${eventDetails.title} flyer preview`}
+            aria-label={`${eventDetails.title} full flyer`}
             onClick={() => setIsFlyerExpanded(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.2 }}
           >
             <motion.div 
-              className="relative w-full h-full max-w-5xl max-h-[90vh] border-8 border-brand-navy shadow-(--shadow-brut-3xl-accent) bg-brand-off-white overflow-hidden cursor-default"
-              initial={{ scale: 0.92, opacity: 0 }}
+              className="relative w-full h-full max-w-4xl max-h-[92vh] border-4 md:border-8 border-brand-navy shadow-(--shadow-brut-3xl-accent) bg-brand-off-white overflow-hidden cursor-default flex flex-col"
+              initial={{ scale: 0.94, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              transition={{ duration: 0.25, ease: "easeOut" }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
             >
-              {isVideoFlyer ? (
-                <video 
-                  src={eventDetails.flyer_url} 
-                  autoPlay 
-                  controls 
-                  loop 
-                  playsInline 
-                  className="w-full h-full object-contain bg-brand-navy"
+              {/* Header Bar */}
+              <div className="flex items-center justify-between border-b-2 border-brand-navy bg-brand-accent p-2 md:p-3 shrink-0">
+                <span className="font-display text-sm md:text-lg uppercase text-brand-navy">
+                  {eventDetails.title} — OFFICIAL EVENT POSTER
+                </span>
+                <button
+                  type="button"
+                  aria-label="Close poster"
+                  className="bg-brand-navy text-brand-off-white p-1 hover:bg-brand-off-white hover:text-brand-navy transition-colors border border-brand-navy"
+                  onClick={() => setIsFlyerExpanded(false)}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Poster Content */}
+              <div className="relative flex-1 w-full bg-brand-navy overflow-auto">
+                {isVideoFlyer ? (
+                  <video 
+                    src={eventDetails.flyer_url} 
+                    autoPlay 
+                    controls 
+                    loop 
+                    playsInline 
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <Image 
+                    src={eventDetails.flyer_url} 
+                    alt={`${eventDetails.title} Flyer Full`} 
+                    fill
+                    priority
+                    sizes="(max-width: 1024px) 100vw, 80vw"
+                    className="object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CAMPING GROUNDS & TENT WALKTHROUGH TOUR LIGHTBOX */}
+      <AnimatePresence>
+        {showCampTourModal && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-navy/95 p-3 md:p-10 cursor-pointer backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Camping Tour & Grounds Walkthrough"
+            onClick={() => setShowCampTourModal(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="relative w-full max-w-3xl max-h-[90vh] border-4 md:border-8 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-3xl-accent) overflow-y-auto cursor-default"
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Tour Header */}
+              <div className="flex items-center justify-between border-b-4 border-brand-navy bg-brand-accent p-3 md:p-4">
+                <div className="flex items-center gap-2">
+                  <Tent className="w-5 h-5 text-brand-navy" />
+                  <span className="font-display text-lg md:text-2xl uppercase text-brand-navy">
+                    MARARA CAMP GROUNDS & TENT TOUR
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close tour"
+                  className="bg-brand-navy text-brand-off-white p-1 hover:bg-brand-off-white hover:text-brand-navy transition-colors border-2 border-brand-navy cursor-pointer"
+                  onClick={() => setShowCampTourModal(false)}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Video Walkthrough Player */}
+              <div className="relative aspect-video w-full bg-black border-b-4 border-brand-navy">
+                <video
+                  src={eventDetails.recap_video_url || "/promo.mp4"}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
                 />
-              ) : (
-                <Image 
-                  src={eventDetails.flyer_url} 
-                  alt={`${eventDetails.title} Flyer Full`} 
-                  fill
-                  priority
-                  sizes="(max-width: 1024px) 100vw, 80vw"
-                  className="object-contain"
-                  referrerPolicy="no-referrer"
-                />
-              )}
-              <button 
-                type="button"
-                aria-label="Close flyer preview"
-                className="absolute top-4 right-4 md:top-8 md:right-8 bg-brand-accent border-2 md:border-4 border-brand-navy px-2.5 py-1 md:px-4 md:py-2 text-sm md:text-2xl font-black uppercase text-brand-navy shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) hover:bg-brand-off-white hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] md:hover:translate-x-1 md:hover:translate-y-1 transition-all z-[110] flex items-center justify-center leading-none"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsFlyerExpanded(false);
-                }}
-              >
-                X
-              </button>
+              </div>
+
+              {/* Camp Specs & Option B Explanation */}
+              <div className="p-4 md:p-6 space-y-4">
+                <div className="bg-brand-navy text-brand-off-white p-3 border-2 border-brand-accent">
+                  <h4 className="font-display text-base md:text-lg uppercase text-brand-accent mb-1">
+                    ALL-INCLUSIVE ACCOMMODATION RULES
+                  </h4>
+                  <p className="font-mono text-xs uppercase leading-relaxed opacity-90">
+                    ✦ Every camping package includes full festival entry passes for all guests.<br />
+                    ✦ <strong>Private Tents (2PX / 4PX / 6PX)</strong>: Exclusive dome tent with mattresses for your group. Key handed to lead guest at gate.<br />
+                    ✦ <strong>Shared 6PX Dorm Beds (1PX)</strong>: Communal dome tent setup with individual mattress. Bed numbers allocated on arrival at gate (Option B first-come, first-served).
+                  </p>
+                </div>
+
+                {/* Amenity checklist */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> Heavy Canvas Tents
+                  </div>
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> Foam Mattresses
+                  </div>
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> Hot Showers
+                  </div>
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> Flush Toilets
+                  </div>
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> 24/7 Gate Guard
+                  </div>
+                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
+                    <span className="font-bold text-brand-navy">✦</span> Bonfire Lounge
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCampTourModal(false);
+                    setActivePackageTab("camping");
+                    document.getElementById("booking-container")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="w-full py-3 border-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase hover:bg-brand-navy hover:text-brand-off-white transition-colors text-center shadow-(--shadow-brut-xs) cursor-pointer"
+                >
+                  CHOOSE A CAMPING PACKAGE &rarr;
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

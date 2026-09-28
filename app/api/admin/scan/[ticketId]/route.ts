@@ -7,7 +7,7 @@ export async function POST(
 ) {
   try {
     const { ticketId } = await params;
-    const { scanned_by = "Admin Guard" } = await request.json().catch(() => ({}));
+    const { scanned_by = "Admin Guard", event_id, admit_count = 1 } = await request.json().catch(() => ({}));
 
     if (!ticketId) {
       return NextResponse.json(
@@ -16,13 +16,21 @@ export async function POST(
       );
     }
 
-    const result = await processTicketScan(ticketId, scanned_by);
+    const result = await processTicketScan(
+      ticketId, 
+      scanned_by, 
+      event_id ? Number(event_id) : undefined,
+      admit_count ? Number(admit_count) : 1
+    );
 
     if (result.success) {
       return NextResponse.json({
         success: true,
         message: result.message,
-        ticket: result.ticket
+        ticket: result.ticket,
+        camping_instruction: result.camping_instruction,
+        admitted_count: result.admitted_count,
+        guest_count: result.guest_count
       }, { status: 200 });
     } else {
       return NextResponse.json({

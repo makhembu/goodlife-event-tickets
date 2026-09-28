@@ -3,26 +3,39 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Bell, Camera, Play, Radio, ArrowRight, Video } from "lucide-react";
-import { EventDetails } from "@/lib/supabase-db";
+import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers, Store } from "lucide-react";
+import { EventDetails, Event } from "@/lib/supabase-db";
 
-export default function ClosedEventClientPage({ eventDetails }: { eventDetails: EventDetails }) {
+interface ClosedEventClientPageProps {
+  eventDetails: EventDetails;
+  availableEvents?: Event[];
+  liveMiniEvents?: Event[];
+}
+
+export default function ClosedEventClientPage({ 
+  eventDetails, 
+  availableEvents = [], 
+  liveMiniEvents = [] 
+}: ClosedEventClientPageProps) {
   const [waNumber, setWaNumber] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
   useEffect(() => {
-    // Assuming next event is 30 days from now for demo if not set
-    const openDate = eventDetails.sales_open_date 
-      ? new Date(eventDetails.sales_open_date).getTime() 
-      : new Date().getTime() + 30 * 24 * 60 * 60 * 1000;
+    // If no sales open date is specified, show 00:00:00:00
+    if (!eventDetails.sales_open_date) {
+      setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+      return;
+    }
 
-    const timer = setInterval(() => {
+    const openDate = new Date(eventDetails.sales_open_date).getTime();
+
+    const updateTimer = () => {
       const now = new Date().getTime();
       const distance = openDate - now;
 
-      if (distance < 0) {
-        clearInterval(timer);
+      if (distance <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
       } else {
         setTimeLeft({
           days: Math.floor(distance / (1000 * 60 * 60 * 24)),
@@ -31,15 +44,31 @@ export default function ClosedEventClientPage({ eventDetails }: { eventDetails: 
           seconds: Math.floor((distance % (1000 * 60)) / 1000)
         });
       }
-    }, 1000);
+    };
+
+    updateTimer();
+    const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
   }, [eventDetails.sales_open_date]);
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!waNumber) return;
-    setSubscribed(true);
-    // In reality, we would POST to /api/waitlist here
+    if (!waNumber.trim()) return;
+    try {
+      const res = await fetch("/api/hub/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: eventDetails.id || 1,
+          phoneNumber: waNumber.trim()
+        })
+      });
+      if (res.ok) {
+        setSubscribed(true);
+      }
+    } catch (err) {
+      console.error("Waitlist error:", err);
+    }
   };
 
   const isVideo = eventDetails.recap_video_url && /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.recap_video_url);
@@ -58,7 +87,7 @@ export default function ClosedEventClientPage({ eventDetails }: { eventDetails: 
               {eventDetails.logo_url ? (
                 <img src={eventDetails.logo_url} alt="Logo" className="w-6 h-6 object-contain" />
               ) : (
-                <Flame className="w-6 h-6 text-brand-navy" strokeWidth={2.5} />
+                <span className="font-display font-bold text-sm tracking-widest text-brand-navy">GL</span>
               )}
             </div>
             <span className="font-display text-2xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">GOODLIFE</span>
@@ -67,8 +96,80 @@ export default function ClosedEventClientPage({ eventDetails }: { eventDetails: 
             <Link href="/" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Events</Link>
             <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Gallery</Link>
             <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Radio</Link>
+            <Link href="/vendor/login" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1 border-2 border-brand-navy px-2.5 py-0.5 bg-brand-accent/20 hover:bg-brand-accent shadow-(--shadow-brut-2xs)">
+              <Store className="w-3.5 h-3.5" /> Staff & POS
+            </Link>
           </nav>
         </header>
+
+        {/* EDITIONS SWITCHER (if multiple events exist) */}
+        {availableEvents.length > 1 && (
+          <section className="border-4 border-brand-navy bg-brand-navy p-3 md:p-4 text-brand-off-white shadow-(--shadow-brut-md)">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-brand-accent" />
+                <span className="font-mono text-xs font-bold uppercase tracking-wider text-brand-accent">
+                  EDITIONS:
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {availableEvents.map((evt) => {
+                  const isCurrent = evt.id === eventDetails.id;
+                  return (
+                    <Link
+                      key={evt.id}
+                      href={`/?event=${evt.id}`}
+                      className={`py-1.5 px-3 border-2 font-display text-xs md:text-sm uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isCurrent
+                          ? "border-brand-accent bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-sm)"
+                          : "border-brand-off-white/40 bg-brand-navy/60 text-brand-off-white hover:border-brand-accent hover:text-brand-accent"
+                      }`}
+                    >
+                      <span>{evt.title}</span>
+                      {evt.status === 'live' ? (
+                        <span className="text-[9px] font-mono font-bold bg-green-500/20 text-green-400 px-1 py-0.2 border border-green-500/40">
+                          LIVE
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono opacity-70 px-1 py-0.2 border border-white/20">
+                          CLOSED
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* LIVE MINI-EVENT ANNOUNCEMENT CALLOUT */}
+        {liveMiniEvents.length > 0 && (
+          <section className="border-4 border-brand-navy bg-brand-accent p-5 md:p-6 shadow-(--shadow-brut-xl) flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in duration-300">
+            <div className="space-y-1.5 text-center md:text-left">
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                <span className="px-2.5 py-0.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white text-[10px] font-mono font-bold uppercase tracking-wider">
+                  HAPPENING THIS WEEK
+                </span>
+                <span className="px-2 py-0.5 border border-brand-navy/60 bg-brand-off-white text-brand-navy text-[10px] font-mono font-bold uppercase">
+                  {liveMiniEvents[0].custom_schedule_text || (liveMiniEvents[0].recurrence_pattern && liveMiniEvents[0].recurrence_pattern !== 'none' ? `EVERY ${liveMiniEvents[0].recurrence_day?.toUpperCase()} | ${liveMiniEvents[0].recurrence_time}` : 'GOODLIFE MINI SESSIONS')}
+                </span>
+              </div>
+              <h3 className="font-display text-2xl md:text-4xl uppercase tracking-wider text-brand-navy">
+                {liveMiniEvents[0].title} IS LIVE NOW
+              </h3>
+              <p className="font-mono text-xs md:text-sm uppercase text-brand-navy/80 font-bold">
+                {liveMiniEvents[0].venue} • PASSES & FREE RSVP AVAILABLE
+              </p>
+            </div>
+            <Link
+              href={`/?event=${liveMiniEvents[0].id}`}
+              className="w-full md:w-auto text-center border-4 border-brand-navy bg-brand-navy text-brand-accent px-6 py-3.5 font-display text-lg md:text-xl uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-sm) active:translate-x-[2px] active:translate-y-[2px] whitespace-nowrap"
+            >
+              GET PASSES & RSVP →
+            </Link>
+          </section>
+        )}
 
         {/* HERO RECAP */}
         <section className="border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-2xl) overflow-hidden relative group">
@@ -98,12 +199,12 @@ export default function ClosedEventClientPage({ eventDetails }: { eventDetails: 
 
         {/* NEXT EDITION COUNTDOWN */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-          <div className="border-4 border-brand-navy bg-brand-accent p-6 md:p-8 shadow-(--shadow-brut-xl-strong) flex flex-col justify-center">
+          <div className="border-4 border-brand-navy bg-brand-accent p-6 md:p-8 shadow-(--shadow-brut-xl) flex flex-col justify-center">
             <h2 className="font-display text-3xl md:text-5xl uppercase tracking-wider text-brand-navy mb-2">
-              🚨 NEXT EDITION: {eventDetails.next_event_title || "GOODLIFE 4"}
+              NEXT EDITION: {eventDetails.next_event_title || "GOODLIFE 4"}
             </h2>
             <p className="font-mono text-sm font-bold tracking-widest uppercase text-brand-navy mb-6">
-              🗓️ TICKETS DROP IN:
+              TICKETS DROP IN:
             </p>
             <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6">
               {[
@@ -159,7 +260,6 @@ export default function ClosedEventClientPage({ eventDetails }: { eventDetails: 
           <Link href="/gallery" className="group block border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-xl-soft) hover:shadow-(--shadow-brut-sm) hover:translate-x-1 hover:translate-y-1 transition-all overflow-hidden relative">
             <div className="aspect-video w-full bg-brand-navy/10 relative flex items-center justify-center">
               <Camera className="w-16 h-16 text-brand-navy opacity-20 group-hover:scale-110 transition-transform" />
-              {/* If we had a preview image, we'd put it here */}
             </div>
             <div className="p-4 md:p-6 border-t-4 border-brand-navy bg-brand-accent group-hover:bg-brand-navy group-hover:text-brand-off-white transition-colors flex justify-between items-center">
               <div>

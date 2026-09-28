@@ -2,21 +2,32 @@ import { Pool } from "pg";
 
 const connectionString = process.env.DATABASE_URL;
 
-let pool: Pool | null = null;
+let pool: Pool;
 
 export function getDbPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      connectionString,
-      ssl: {
-        rejectUnauthorized: false
-      },
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000
-    });
+  if (process.env.NODE_ENV === "production") {
+    if (!pool) {
+      pool = new Pool({
+        connectionString,
+        ssl: { rejectUnauthorized: false },
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000
+      });
+    }
+    return pool;
+  } else {
+    if (!(global as any)._neonPool) {
+      (global as any)._neonPool = new Pool({
+        connectionString,
+        ssl: { rejectUnauthorized: false },
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000
+      });
+    }
+    return (global as any)._neonPool;
   }
-  return pool;
 }
 
 export async function query(text: string, params?: any[]) {

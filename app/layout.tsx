@@ -1,6 +1,14 @@
-import type {Metadata} from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Space_Grotesk, Bebas_Neue } from 'next/font/google';
 import './globals.css'; // Global styles
+
+export const viewport: Viewport = {
+  themeColor: '#142B4C',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],

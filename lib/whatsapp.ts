@@ -455,3 +455,165 @@ export async function sendScanNotification(
     return false;
   }
 }
+
+/**
+ * Dispatch a generic text message via the configured WhatsApp gateway
+ * (OpenWA, WAHA, Evolution API, Whapi) with Kenyan phone sanitization (254...).
+ */
+export async function sendTextMessage(
+  phoneNumber: string,
+  messageText: string
+): Promise<boolean> {
+  const url = process.env.WHATSAPP_GATEWAY_URL;
+  const apiKey = process.env.WHATSAPP_API_KEY;
+  const sessionId = process.env.WHATSAPP_SESSION_ID || "goodlife-tickets";
+
+  if (!url) {
+    console.warn("WhatsApp gateway URL not configured. Skipping text message dispatcher.");
+    return false;
+  }
+
+  let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
+  if (formattedPhone.startsWith("0")) {
+    formattedPhone = "254" + formattedPhone.slice(1);
+  } else if (formattedPhone.startsWith("254")) {
+    // International prefix already present
+  } else if (formattedPhone.length === 9) {
+    formattedPhone = "254" + formattedPhone;
+  }
+
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha =
+    !isWhapi &&
+    !isOpenWA &&
+    (process.env.WHATSAPP_GATEWAY_TYPE === "waha" ||
+      url.includes("waha") ||
+      url.includes("compassionate-optimism"));
+
+  try {
+    if (isOpenWA) {
+      const baseUrl = url.replace(/\/+$/, "");
+      const sid = sessionId || "goodlife-tickets";
+      const targetUrl = `${baseUrl}/api/sessions/${sid}/messages/send-text`;
+      const headers = {
+        "x-api-key": apiKey || "",
+        "Content-Type": "application/json",
+      };
+      const bodyData = {
+        chatId: `${formattedPhone}@c.us`,
+        text: messageText,
+      };
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyData),
+      });
+
+      return response.ok;
+    } else if (isWhapi) {
+      const baseUrl = url.split("/messages")[0].replace(/\/+$/, "");
+      const targetUrl = `${baseUrl}/messages/text`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      const bodyData = {
+        to: formattedPhone,
+        body: messageText,
+      };
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyData),
+      });
+
+      return response.ok;
+    } else if (isWaha) {
+      const baseUrl = url.replace(/\/+$/, "");
+      const targetUrl = `${baseUrl}/api/sendText`;
+      const headers = {
+        "X-Api-Key": apiKey || "",
+        "Content-Type": "application/json",
+      };
+      const bodyData = {
+        chatId: `${formattedPhone}@c.us`,
+        text: messageText,
+        session: sessionId || "default",
+      };
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyData),
+      });
+
+      return response.ok;
+    } else {
+      // Evolution API Configuration Fallback
+      const baseUrl = url.replace(/\/+$/, "");
+      const instanceName = sessionId || "goodlife-tickets";
+      const targetUrl = `${baseUrl}/message/sendText/${instanceName}`;
+      const headers = {
+        apikey: apiKey || "",
+        "Content-Type": "application/json",
+      };
+      const bodyData = {
+        number: formattedPhone,
+        text: messageText,
+      };
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyData),
+      });
+
+      return response.ok;
+    }
+  } catch (error: any) {
+    console.warn("Exception sending WhatsApp text:", error?.message || error);
+    return false;
+  }
+}
+
+/**
+ * Backwards compatibility alias for sendTextMessage
+ */
+export const sendGenericWhatsAppText = sendTextMessage;
+
+export interface TabReminderInfo {
+  customer_name: string;
+  customer_phone: string;
+  balance: number;
+  credit_limit: number;
+}
+
+/**
+ * Send an itemized festival tab reminder to the customer with remote self-pay URL.
+ * Formatted cleanly with emojis/caps per Festival Statement specs.
+ */
+export async function sendTabReminderWhatsApp(
+  tab: TabReminderInfo,
+  vendorName: string,
+  eventTitle: string,
+  payUrl: string
+): Promise<boolean> {
+  const message = `*GOODLIFE FESTIVAL - TAB STATEMENT*
+Vendor: ${vendorName}
+Event: ${eventTitle}
+Attendee: ${tab.customer_name}
+Outstanding Balance: KES ${Number(tab.balance).toLocaleString()} (Limit: KES ${Number(tab.credit_limit).toLocaleString()})
+
+Clear your tab online via M-Pesa STK push:
+${payUrl}
+
+Or visit the stall to settle via cash or till. Thank you!`;
+
+  return await sendTextMessage(tab.customer_phone, message);
+}
+
