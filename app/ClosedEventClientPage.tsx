@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers, Store } from "lucide-react";
+import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers } from "lucide-react";
 import { EventDetails, Event } from "@/lib/supabase-db";
 
 interface ClosedEventClientPageProps {
@@ -96,9 +96,6 @@ export default function ClosedEventClientPage({
             <Link href="/" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Events</Link>
             <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Gallery</Link>
             <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Radio</Link>
-            <Link href="/vendor/login" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1 border-2 border-brand-navy px-2.5 py-0.5 bg-brand-accent/20 hover:bg-brand-accent shadow-(--shadow-brut-2xs)">
-              <Store className="w-3.5 h-3.5" /> Staff & POS
-            </Link>
           </nav>
         </header>
 

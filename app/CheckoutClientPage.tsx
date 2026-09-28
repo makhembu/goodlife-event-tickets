@@ -729,16 +729,18 @@ export default function TicketCheckoutPage({
             <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">{eventDetails.title}</span>
           </button>
 
-          {/* PUBLIC NAV — Gallery, Radio, Staff & POS */}
+          {/* PUBLIC NAV — Gallery, Radio only.
+              Staff surfaces (Admin Console, Gate Scanner, Vendor POS) are reached
+              by tapping the logo 5 times, which opens the secret staff menu
+              further down. They must not be advertised here: middleware already
+              blocks the routes, but publishing the links pointed every visitor
+              straight at the back doors. */}
           <nav className="hidden md:flex items-center gap-4 shrink-0">
             <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
               <Camera className="w-3.5 h-3.5" /> Gallery
             </Link>
             <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
               <Radio className="w-3.5 h-3.5" /> Radio
-            </Link>
-            <Link href="/vendor/login" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-navy transition-colors flex items-center gap-1 border-2 border-brand-navy px-2.5 py-1 bg-brand-accent/20 hover:bg-brand-accent shadow-(--shadow-brut-2xs)">
-              <Store className="w-3.5 h-3.5" /> Staff & POS
             </Link>
           </nav>
           {/* Mobile: icon-only */}
@@ -748,9 +750,6 @@ export default function TicketCheckoutPage({
             </Link>
             <Link href="/radio" aria-label="Radio" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
               <Radio className="w-4 h-4 text-brand-navy" />
-            </Link>
-            <Link href="/vendor/login" aria-label="Staff & POS Login" className="p-1.5 border-2 border-brand-navy bg-brand-accent text-brand-navy hover:bg-brand-navy hover:text-brand-off-white transition-colors shadow-(--shadow-brut-xs)">
-              <Store className="w-4 h-4" />
             </Link>
           </nav>
 
@@ -1587,15 +1586,11 @@ export default function TicketCheckoutPage({
           <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
             {eventDetails.venue} · STRICTLY 18+ NO OUTSIDE DRINKS
           </p>
-          <div className="mt-3 flex items-center justify-center gap-4 text-xs font-mono font-bold uppercase tracking-wider">
-            <Link href="/vendor/login" className="hover:underline flex items-center gap-1 text-brand-navy">
-              <Store className="w-3.5 h-3.5" /> Staff & POS Login
-            </Link>
-            <span className="text-brand-navy/40">·</span>
-            <Link href="/login" className="hover:underline text-brand-navy/70">
-              Admin Portal
-            </Link>
-          </div>
+          {/* No staff links in the footer. It advertised "Staff & POS Login"
+              and "Admin Portal" to every customer on every checkout page, which
+              is a worse leak than the header: a footer link reads as routine
+              and gets clicked without a second thought. Staff reach both from
+              the secret menu, or by going straight to /login. */}
         </footer>
       </div>
 
