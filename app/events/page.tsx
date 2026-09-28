@@ -3,6 +3,11 @@ import Link from 'next/link';
 import { Calendar, ArrowRight } from 'lucide-react';
 import { getDbPool } from '@/lib/neon-client';
 
+// Render on demand. Without this the archive is prerendered at build time, which
+// both makes `next build` depend on Neon being reachable AND freezes the event
+// list until the next deploy - so a newly created event would not appear.
+export const dynamic = "force-dynamic";
+
 async function fetchAllEvents() {
   const db = getDbPool();
   const { rows } = await db.query(`SELECT id, title, status, event_date, venue FROM events ORDER BY event_date DESC`);
@@ -10,7 +15,17 @@ async function fetchAllEvents() {
 }
 
 export default async function EventsArchivePage() {
-  const events = await fetchAllEvents();
+  // Now rendered per request, so a database outage would surface here as a 500
+  // rather than as a failed build. Degrade to a message instead: the archive is
+  // a public page and "temporarily unavailable" beats a stack trace.
+  let events: Array<{ id: number; title: string; status: string; event_date: string | null; venue: string }> = [];
+  let unavailable = false;
+  try {
+    events = await fetchAllEvents();
+  } catch (err) {
+    console.error("Events archive: database unavailable", err);
+    unavailable = true;
+  }
 
   return (
     <div className="min-h-screen bg-brand-off-white font-mono text-brand-navy p-6 md:p-12">
@@ -50,7 +65,9 @@ export default async function EventsArchivePage() {
           ))}
           {events.length === 0 && (
             <div className="p-12 text-center border-4 border-brand-navy bg-white font-bold uppercase text-xl">
-              No events found in the archive.
+              {unavailable
+                ? 'The archive is temporarily unavailable. Please try again shortly.'
+                : 'No events found in the archive.'}
             </div>
           )}
         </div>

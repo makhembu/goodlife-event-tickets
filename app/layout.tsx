@@ -26,10 +26,16 @@ const bebasNeue = Bebas_Neue({
 import { fetchEventDetails } from '@/lib/supabase-db';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const event = await fetchEventDetails();
+  // Must never throw. generateMetadata runs for every prerendered route, so an
+  // unreachable database would fail the whole `next build` - and a failed deploy
+  // is a far worse outcome than a stale page title. Degrade to static defaults
+  // instead. This is what made one Neon connection timeout break a build.
+  const event = await fetchEventDetails().catch(() => null);
   const title = event?.title || 'GOODLIFE';
-  const subtitle = event?.subtitle || '237-THIKA | JULY 11';
+  // Deliberately not a hardcoded date: that fallback is exactly how a stale
+  // "JULY 11" ended up contradicting the live event.
   const venue = event?.venue || 'MARARA CAMP, THIKA';
+  const subtitle = event?.subtitle || venue;
   const flyerUrl = event?.flyer_url || '/flyer.png';
   const description = `Get your official tickets for ${title} (${subtitle}) at ${venue}. Instant M-Pesa checkout & instant WhatsApp PDF ticket delivery.`;
 
