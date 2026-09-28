@@ -790,11 +790,18 @@ export default function TicketCheckoutPage({
 
         {/* MULTI-EVENT SWITCHER (Rendered if > 1 live/scheduled events exist) */}
         {eventsList.length > 1 && (
-          <div className="flex flex-wrap items-center gap-2 border-4 border-brand-navy bg-brand-navy p-2 shadow-(--shadow-brut-sm) mb-6">
-            <div className="text-[11px] font-mono uppercase text-brand-accent flex items-center gap-1.5 px-2 font-bold shrink-0">
-              <Layers className="w-3.5 h-3.5" /> EDITIONS:
+          <div className="flex items-center gap-2 border-4 border-brand-navy bg-brand-navy px-2 py-1.5 shadow-(--shadow-brut-sm) mb-4 md:mb-6 md:p-2">
+            <div className="text-[10px] md:text-[11px] font-mono uppercase text-brand-accent flex items-center gap-1 px-1 font-bold shrink-0">
+              <Layers className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">EDITIONS</span>
+              <span className="sm:hidden">ED.</span>
             </div>
-            <div className="flex flex-wrap gap-1.5 flex-1">
+            {/* Horizontal scroller on mobile, wraps from md up. Event titles are
+                long ("SUNDAY PARK & CHILL #12"), so letting these wrap gave the
+                bar three or four rows and pushed the poster, the venue and the
+                till details off the first screen. The editions stay reachable -
+                they just stop eating the viewport. */}
+            <div className="flex gap-1.5 flex-1 min-w-0 overflow-x-auto overscroll-x-contain snap-x snap-mandatory md:flex-wrap md:overflow-x-visible md:snap-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {eventsList.map(evt => {
                 const isCurrent = evt.id === eventDetails.id;
                 return (
@@ -802,13 +809,13 @@ export default function TicketCheckoutPage({
                     key={evt.id}
                     type="button"
                     onClick={() => handleSwitchEvent(evt)}
-                    className={`py-1 px-3 border-2 font-display text-xs md:text-sm uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    className={`py-1 px-2.5 md:px-3 border-2 font-display text-xs md:text-sm uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shrink-0 snap-start ${
                       isCurrent
                         ? "border-brand-accent bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-xs)"
                         : "border-brand-off-white/40 bg-brand-navy text-brand-off-white hover:border-brand-accent hover:text-brand-accent"
                     }`}
                   >
-                    <span className="truncate max-w-[180px] sm:max-w-none">{evt.title}</span>
+                    <span className="truncate max-w-[150px] md:max-w-none">{evt.title}</span>
                     {evt.category === 'mini' && (
                       <span className="text-[9px] bg-brand-navy/60 text-brand-off-white px-1 py-0.2 border border-brand-off-white/30 font-mono">
                         MINI
@@ -897,8 +904,14 @@ export default function TicketCheckoutPage({
                   ) : null}
                 </div>
 
-                {/* EVENT FLYER CONTAINER: Clean 16:9 / 220px crop on mobile, full preview on desktop */}
-                <div className="relative w-full max-md:h-[220px] max-md:max-h-[220px] md:aspect-auto md:h-[calc(100dvh-330px)] md:min-h-[420px] md:max-h-[640px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-4">
+                {/* EVENT FLYER CONTAINER
+                    Deliberately NOT sized against the viewport. It used to be
+                    md:h-[calc(100dvh-330px)], which made the poster eat almost
+                    the whole first screen on any large display and pushed the
+                    venue, the till number and the buy path below the fold. The
+                    poster is a preview; the full-size view is the lightbox
+                    behind "ENLARGE FULL POSTER", which is one tap away. */}
+                <div className="relative w-full max-md:h-[180px] max-md:max-h-[180px] md:aspect-auto md:h-[420px] md:max-h-[420px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
                   <button 
                     type="button"
                     onClick={() => setIsFlyerExpanded(true)}
@@ -951,15 +964,19 @@ export default function TicketCheckoutPage({
                   <Maximize2 className="w-3.5 h-3.5" /> ENLARGE FULL POSTER
                 </button>
 
-                {/* Venue / Till details */}
+                {/* Venue / Till details.
+                    These used to be `truncate` in a 2-column grid, so on a phone
+                    "MARARA CAMP, THIKA" was cut to "MARARA CAM..." - the two
+                    facts a buyer most wants to check before paying. Wrapping
+                    keeps the 2-up layout and makes the text legible. */}
                 <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase pt-1">
-                  <div className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
+                  <div className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0">
                     <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">LOCATION</span>
-                    <span className="text-brand-navy truncate block text-xs">{eventDetails.venue}</span>
+                    <span className="text-brand-navy block text-[11px] md:text-xs leading-tight break-words">{eventDetails.venue}</span>
                   </div>
-                  <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong)">
+                  <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0">
                     <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">PAYMENT TILL</span>
-                    <span className="text-brand-navy truncate block text-sm font-display">#{eventDetails.till_number}</span>
+                    <span className="text-brand-navy block text-sm md:text-base font-display break-all">#{eventDetails.till_number}</span>
                   </div>
                 </div>
               </div>

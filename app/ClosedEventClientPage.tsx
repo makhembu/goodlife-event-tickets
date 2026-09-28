@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers, Store, Settings, Ticket as TicketIcon } from "lucide-react";
 import { EventDetails, Event } from "@/lib/supabase-db";
 
 interface ClosedEventClientPageProps {
@@ -20,6 +21,22 @@ export default function ClosedEventClientPage({
   const [waNumber, setWaNumber] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  // Secret staff menu: 5 taps on the logo, same gesture as the checkout page.
+  const [showSecretMenu, setShowSecretMenu] = useState(false);
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleLogoTap() {
+    const next = logoTapCount + 1;
+    setLogoTapCount(next);
+    if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
+    if (next >= 5) {
+      setShowSecretMenu(true);
+      setLogoTapCount(0);
+    } else {
+      logoTapTimerRef.current = setTimeout(() => setLogoTapCount(0), 2000);
+    }
+  }
 
   useEffect(() => {
     // If no sales open date is specified, show 00:00:00:00
@@ -83,13 +100,21 @@ export default function ClosedEventClientPage({
         {/* HEADER */}
         <header className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-4 md:pb-6">
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            <div className="p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-sm-strong) flex items-center justify-center">
+            {/* Tap 5x for the staff menu. This page used to be a dead end for
+                staff once the public "Staff & POS" link was removed: the only
+                checkout page had the 5-tap gesture, and this one did not. */}
+            <button
+              type="button"
+              onClick={handleLogoTap}
+              aria-label="Goodlife logo"
+              className="p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-sm-strong) flex items-center justify-center cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+            >
               {eventDetails.logo_url ? (
                 <img src={eventDetails.logo_url} alt="Logo" className="w-6 h-6 object-contain" />
               ) : (
                 <span className="font-display font-bold text-sm tracking-widest text-brand-navy">GL</span>
               )}
-            </div>
+            </button>
             <span className="font-display text-2xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">GOODLIFE</span>
           </div>
           <nav className="hidden md:flex items-center gap-4">
@@ -98,6 +123,44 @@ export default function ClosedEventClientPage({
             <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors">Radio</Link>
           </nav>
         </header>
+
+        {/* SECRET STAFF MENU — 5 taps on the logo, matching the checkout page */}
+        <AnimatePresence>
+          {showSecretMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: -16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="fixed top-4 right-4 z-50 border-4 border-brand-navy bg-brand-navy text-brand-off-white p-4 shadow-(--shadow-brut-xl-accent) flex flex-col gap-3 w-[90vw] max-w-[280px]"
+            >
+              <div className="flex items-center justify-between border-b-2 border-brand-off-white/20 pb-2 mb-1">
+                <span className="font-display text-lg uppercase tracking-widest text-brand-accent">Staff Only</span>
+                <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-brand-off-white text-xl leading-none">&times;</button>
+              </div>
+              <Link
+                href="/admin/dashboard"
+                onClick={() => setShowSecretMenu(false)}
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-off-white/30 px-4 py-3 hover:bg-brand-off-white hover:text-brand-navy transition-colors flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" /> Admin Console
+              </Link>
+              <Link
+                href="/admin/scanner"
+                onClick={() => setShowSecretMenu(false)}
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
+              >
+                <TicketIcon className="w-4 h-4" /> Gate Scanner
+              </Link>
+              <Link
+                href="/vendor/login"
+                onClick={() => setShowSecretMenu(false)}
+                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
+              >
+                <Store className="w-4 h-4" /> Vendor POS Terminal
+              </Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* EDITIONS SWITCHER (if multiple events exist) */}
         {availableEvents.length > 1 && (
