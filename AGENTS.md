@@ -1,70 +1,82 @@
 # GOODLIFE Event Tickets
 
-Next.js 15 App Router + TypeScript + Tailwind v4 + Supabase/Neon dual DB.
+Next.js 15 App Router + TypeScript + Tailwind v4. Single **Neon Postgres** database. Live M-Pesa payments via **PayHero STK push**. `CLAUDE.md`, `DESIGN.md`, and `PRODUCT.md` also exist — they drift; this file is the verified one.
 
 ## Commands
 
 ```sh
-npm run dev       # Next.js dev server
-npm run build     # production build (eslint errors ignored — see next.config.ts)
-npm run start     # start production server
-npm run lint      # ESLint (flat config, eslint-config-next)
-npm run clean     # next clean
+npm run dev     # next dev
+npm run build   # next build  (this is the ONLY typecheck)
+npm run start   # next start
+npm run lint    # eslint .
+npm run clean   # removes .next/ and tsconfig.tsbuildinfo
 ```
 
-## Deploy (Vercel)
+- `next.config.ts` sets `typescript.ignoreBuildErrors: false` + `eslint.ignoreDuringBuilds: true` — so **`npm run build` is the typechecker** (a red build = a TS error, not a lint error) and `npm run lint` must be run by hand.
+- **A stale `.next/` crashes the build** with `TypeError: Cannot read properties of undefined (reading 'length')` and no stack trace, partway through "Creating an optimized production build". It is not a code error — bisect with `git stash` before debugging. `npm run clean` then `npm run build` fixes it.
+- `tsconfig.json` sets `incremental: true`, and `tsconfig.tsbuildinfo` was **tracked in git while also being gitignored** (gitignore does not apply to tracked files). It is now untracked — don't re-add it, a stale committed copy reintroduces the crash above.
+- There is no `typecheck` script; use `npx tsc --noEmit` for a fast check that skips the Next build.
+- HMR is only disabled when `DISABLE_HMR=true` is present in the environment (checked in `next.config.ts` `webpack()`). It is **not** in `.env.local`; export it yourself (`$env:DISABLE_HMR="true"; npm run dev`).
+- No test framework, no CI. Verification is manual plus ad-hoc `scripts/*.js` that hit the **live** database.
+- `npm run lint` is currently **red on `main`-adjacent WIP**: ~12 pre-existing `react-hooks/set-state-in-effect` and `react/no-unescaped-entities` errors in `CheckoutClientPage`, `ClosedEventClientPage`, `admin/scanner`, `vendor/login`, `pay/tab/[id]`. Not caused by the current change; fix before trusting lint as a signal. `eslint.config.mjs` ignores `.netlify/**`, `replace.js` and `check.js` (all non-source), and the ignores **must** live in their own config object to act globally in flat config.
 
-```sh
-npm run build              # production build (eslint errors ignored)
-vercel --prod --token=$env:VERCEL_TOKEN  # deploy to production
-```
+## Environment gotchas
 
-`VERCEL_TOKEN` stored as User env var (`vcp_5tLF...`). Deploy alias: `goodlife-event-tickets.vercel.app`. Domain `goodlife.smwhr.space` points to Vercel DNS.
+- **`.env.local` has no `PAYHERO_*` keys** — local "Pay with M-Pesa" fails with "PayHero not configured" until you add them. Production values live only in the Vercel dashboard, never in a file.
+- `.env.local` still carries legacy `DARAJA_*`; `/api/mpesa/*` is dead Daraja code (superseded by PayHero, and `README.md`/`CLAUDE.md` still describe it). Don't wire new work to it.
+- `TAB_SELF_PAY_SECRET` silently falls back to `PAYHERO_CALLBACK_TOKEN`, then `DATABASE_URL` (`lib/self-pay-token.ts`) — links keep working, but set it explicitly.
+- ~12 files in `scripts/` hardcode the production Neon URL **including the password**, and `.gitignore` doesn't exclude `scripts/`. Assume the prod DB credential is already leaked; don't add more, and treat DB-touching scripts as dangerous.
+- `scripts/test-e2e-suite.js` is not a unit test: it connects to the live DB, INSERTs/UPDATEs tickets + waitlist rows for hardcoded event `2`, then deletes them. Don't run it casually.
 
-Vercel project env vars managed via dashboard (not `.env`): `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `APP_URL`, `DATABASE_URL`, `SUPABASE_*`, `GEMINI_API_KEY`, `DARAJA_*`, `WHATSAPP_*`.
+## Data model (the thing most likely to be got wrong)
 
-## Architecture
+Two overlapping "event" models — mixing them breaks checkout, tiers, and gate scans:
 
-- **Dual database**: Supabase (`@supabase/ssr` via `utils/supabase/`) and Neon PostgreSQL (raw `pg` pool via `lib/neon-client.ts`). Main data layer is `lib/supabase-db.ts` — isomorphic file with server-side `pg` queries and client-side `localStorage`/`fetch` fallbacks guarded by `typeof window === "undefined"`.
-- **Payments — PayHero (primary, live)**: M-Pesa STK push via `lib/payhero.ts`; checkout exposes only "Pay with M-Pesa". Paystack is **disabled by default** — hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true` (all routes/code kept, requires redeploy to re-enable since `NEXT_PUBLIC_*` is baked at build time).
-- **PayHero fee float (critical)**: transaction fees are deducted from the PayHero **service wallet**, NOT from the incoming payment (till settles separately). If the wallet hits 0, new collections **fail**. The initialize route has a low-balance guard (`lib/payhero-alerts.ts`, cooldown-throttled) that WhatsApp-alerts operators; hard-blocks STK at zero balance. Threshold: `PAYHERO_MIN_BALANCE` (default 50).
-- **Admin auth**: hardcoded credentials `admin@goodlife.com` / `GoodlifeAdmin2026!` (`app/api/admin/login/route.ts`). Session stored in cookie `goodlife_admin_session=true` (1 day TTL, httpOnly). No Supabase Auth used for admin.
-- **Middleware** (`middleware.ts`) protects `/admin/*` and redirects `/login` if already authed.
-- **Path alias**: `@/*` maps to project root.
+| Source | Scope |
+|---|---|
+| `events` (many rows, `event_id` everywhere) | Real events: checkout, ticket tiers, tickets, vendors, gallery, radio, waitlist, gate scans |
+| `event_details` (singleton `id = 1`) | Site-wide settings only: WhatsApp templates, `simulators_enabled`, `operator_notifications_enabled`, footer, `payment_contact`. Also the source for `app/layout.tsx` `generateMetadata` (page title/OG image) |
 
-## Key source files
+- `lib/supabase-db.ts` (~2700 lines) *is* the data layer. Every function branches on `typeof window === "undefined"`: server → Neon SQL, client → `fetch` to its own `/api/*` route. Adding a field means editing `lib/supabase-db-types.ts`, the function's server branch, and its client fallback.
+- `lib/supabase-db.ts` module-loads a single `pg.Pool`. `lib/payhero-fulfill.ts` and several API routes build a **new `Pool` per call** and `pool.end()` it — that's the existing pattern. `lib/neon-client.ts` (`getDbPool`) is the cached singleton but is imported by only 2 files.
+- **Supabase is vestigial.** `utils/` is empty and nothing in `app/`, `lib/`, or `components/` imports `@supabase/*`, despite `README.md`/`CLAUDE.md` describing a Supabase+Neon split and the deps still being installed. It's Neon-only.
+- **No migration runner.** `schema-neon.sql` / `schema.sql` cover only 4 tables and are stale (no `events`, POS, or hub tables). Schema changes are one-off `scripts/*.js` that hand-parse `DATABASE_URL` from `.env.local` (there is no `dotenv` dependency). Check `scripts/` before assuming a column exists; add a new script rather than editing the old ones.
 
-| File | Purpose |
-|------|---------|
-| `lib/supabase-db.ts` | Main data access layer (Neon SQL + localStorage fallbacks) |
-| `lib/neon-client.ts` | `pg.Pool` singleton for Neon |
-| `lib/ticket-generator.ts` | PDF ticket generation via `pdf-lib` + QR codes (needs `public/BebasNeue.ttf`) |
-| `lib/whatsapp.ts` | WhatsApp delivery via configurable gateway |
-| `app/page.tsx` | Checkout page with dev simulation panel |
-| `app/admin/dashboard/page.tsx` | Admin CRUD + metrics |
-| `app/admin/scanner/page.tsx` | QR + manual ticket verification |
-| `lib/payhero.ts` | Typed PayHero client: STK push, status lookup, wallet balance |
-| `lib/payhero-fulfill.ts` | Shared fulfillment: log → tickets → WhatsApp → operator notify (idempotent) |
-| `lib/payhero-alerts.ts` | Cooldown-throttled operator WhatsApp alerts (low fee float) |
-| `app/api/payhero/initialize/route.ts` | Tier lookup → pending payment → STK push, with fee-float guard |
-| `app/api/payhero/callback/route.ts` | PayHero webhook: token-guarded, `external_reference` match → tickets |
-| `app/api/payhero/verify/route.ts` | Payment status polling (DB-first, PayHero API fallback) |
-| `app/api/paystack/*` | Legacy Paystack flow — disabled unless `NEXT_PUBLIC_ENABLE_PAYSTACK=true` |
-| `components/ui/haptic-feedback.ts` | Vibration patterns (success/confirmation/error), progressive enhancement |
-| `scripts/` | DB schema migration and seeding scripts |
+## Payments
 
-## Env vars (see `.env.example`)
+1. **PayHero STK push (live, primary)** — `POST /api/payhero/initialize` → customer enters PIN → checkout polls `GET /api/payhero/verify` → ticket issued. The webhook `POST /api/payhero/callback` performs the same fulfillment, so both paths must stay idempotent through `lib/payhero-fulfill.ts`, keyed on `pending_payments.checkout_request_id` (our `GL-XXXX` external reference, not PayHero's own reference).
+   - **Fee float (critical):** PayHero deducts collection fees from its *service wallet*, not from the incoming payment (the till settles separately). At zero balance, collections fail. `initialize` hard-blocks at 0 (503) and WhatsApp-alerts operators below `PAYHERO_MIN_BALANCE` (default 50). Monitoring failures must never block sales — that fail-open branch is deliberate.
+2. **Manual till** — `POST /api/payments/till-submit` writes a `till_pending` row; an admin approves it in the dashboard (`/api/admin/pending-payments/approve`) before any ticket exists. The endpoint currently has **no UI caller**.
+3. **Vendor tab self-pay** — public `/pay/tab/[id]?t=<hmac>`; the token is HMAC-SHA256 verified with `timingSafeEqual`. Never add an unauthenticated tab route (tab IDs are enumerable).
+4. **Paystack** — code fully kept, hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true`. `NEXT_PUBLIC_*` is baked at build time, so toggling requires a redeploy.
+5. `/api/mpesa/*` (Daraja) is legacy and unused by the UI.
 
-`GEMINI_API_KEY`, `APP_URL`, `DATABASE_URL`, Supabase (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY`), **PayHero** (`PAYHERO_USERNAME`, `PAYHERO_PASSWORD`, `PAYHERO_CHANNEL_ID` = till channel, `PAYHERO_CALLBACK_TOKEN`, `PAYHERO_MIN_BALANCE`), Paystack (`PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, toggle `NEXT_PUBLIC_ENABLE_PAYSTACK`), Daraja M-Pesa (`DARAJA_*`), WhatsApp gateway (`WHATSAPP_*`, `OPERATOR_WHATSAPP_NUMBERS`).
+## Auth & middleware
 
-## Quirks & conventions
+- Admin: hardcoded `admin@goodlife.com` / `GoodlifeAdmin2026!` → cookie `goodlife_admin_session=true` (1 day, httpOnly). No Supabase Auth. The same password is re-typed client-side to confirm permanent deletes in the dashboard trash.
+- Simulator/dev-panel toggle has its own password, `GoodlifeSim2026!` (`/api/admin/verify-simulator-password`), stored per event as `simulators_enabled`.
+- Vendor operator: 4-digit PIN → `goodlife_vendor_session` = base64 JSON (`vendorId`, `operatorId`, `role`, …), 12h. Decoded, not signed — treat every `vendorId` in a request body as untrusted.
+- `middleware.ts` protects `/admin/*`, `/login`, `/vendor/*`, `/api/admin/*`, non-GET `/api/ticket-tiers`, `/api/event-details` PUT, and `/api/events/*` except public `GET /api/events/active`. **The `config.matcher` is an explicit allowlist**: a brand-new `/api/*` route is public until you add it there, and handlers should still call `requireAdmin()` (`lib/admin-auth.ts`) or re-check the cookie. `/api/hub/*` (gallery/radio writes) is currently unauthenticated.
+- `lib/rate-limit.ts` is per-instance in-memory: it resets on cold start and is useless across replicas. It is already wired onto the login, vendor-auth, and payment-init POSTs — follow that pattern for new sensitive routes.
 
-- **Tailwind v4** uses `@import "tailwindcss"` in `app/globals.css` — no `tailwind.config.js`.
-- **`motion`** library must be transpiled — already set in `next.config.ts` `transpilePackages`.
-- **Build output**: `output: 'standalone'` in `next.config.ts`.
-- **HMR** disabled via `DISABLE_HMR=true` env var (for AI Studio agent compatibility).
-- **PDF tickets** require `public/BebasNeue.ttf` at runtime.
-- **Design tokens** (Tailwind v4 `@theme` in `globals.css`): typography via `text-caption` / `text-footnote` / `text-body` (11/12/14px, HIG-aligned floors) — never `text-[Npx]`; brutalist shadows via `shadow-(--shadow-brut-*)` tokens — never inline `shadow-[...]`. Haptic feedback on payment success/confirm/error via `HapticFeedback.trigger()`.
-- No automated tests, no CI/CD. Originally an AI Studio applet (`metadata.json`).
-- Installed skills: supabase, supabase-postgres-best-practices (see `skills-lock.json`).
-- Page `<title>` in `app/layout.tsx` is still the AI Studio default — update for production.
+## Tickets & gate scanning
+
+- Ticket id **is** the merchant reference: `GL-XXXX`, and for multi-ticket orders `GL-XXXX-1`, `-2`, … (see `lib/payhero-fulfill.ts`). The PDF QR encodes `${APP_URL}/admin/scanner?ticket=<id>`; the scanner also accepts a raw id and `/admin/scan/<id>`.
+- Scans are **partial admission**: `tickets.guest_count` vs `admitted_count`, with `is_scanned` flipping only once everyone is in. `processTicketScan` rejects a scan when the scanner passes an `event_id` that doesn't match the ticket's (cross-event gate defense). Multi-ticket amounts are `amountPaid / quantity` per ticket.
+- PDF generation reads `public/BebasNeue.ttf` from `process.cwd()` at runtime — the file must exist or every WhatsApp ticket send fails.
+
+## Route map (non-obvious parts only)
+
+- Public: `/` (checkout; `closed` **and** `scheduled` events render `ClosedEventClientPage`), `/events`, `/events/[id]`, `/gallery`, `/radio`, `/pay/tab/[id]`, `/login`, `/vendor/*`.
+- Admin: `/admin/dashboard` (a ~180 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/scanner`, `/admin/vendors`, `/admin/gallery`, `/admin/settlements`.
+- Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell`, `/vendor/tabs` — per-event vendor assignments with commission, split payments, and customer tabs.
+- `components/EventSelector.tsx` is how users switch events (`/?event=<id>`); the root page always anchors to the flagship event without that param.
+
+## Conventions
+
+- Tailwind v4, **no `tailwind.config.js`** — tokens live in `@theme` in `app/globals.css`. Type: `text-caption` / `text-footnote` / `text-body` (never `text-[Npx]`). Shadows: `shadow-(--shadow-brut-*)` (never inline `shadow-[...]`). Haptics via `HapticFeedback.trigger()` in `components/ui/haptic-feedback.ts`. No daisyUI or shadcn.
+- `tsconfig` alias is `@/*` → **project root**, not `src/` (`@/lib/…`, `@/components/…`).
+- `motion` is in `transpilePackages`; `next.config.ts` also sets global security headers and allows only `picsum.photos` / `i.ibb.co` as remote image hosts.
+- `.eslintrc.json` is dead — ESLint 9 uses the flat `eslint.config.mjs`.
+- `.netlify/`, `deno.lock`, `metadata.json`, and `schema*.sql` are Google AI Studio / Netlify CLI leftovers, not source of truth.
+- Deploy: Vercel project `goodlife-event-tickets` (`.vercel/project.json`) via `vercel --prod --token=$env:VERCEL_TOKEN`. `.netlify/netlify.toml` is an AI Studio export with a hardcoded absolute Windows `publish` path — not a real deploy config.

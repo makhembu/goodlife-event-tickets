@@ -11,8 +11,24 @@ coverage/
 # Local Netlify folder
 .netlify
 
+# Ad-hoc DB scripts. These hardcode the PRODUCTION Neon connection string
+# including the owner password. Never commit them - see AGENTS.md.
+scripts/
+
 # Playwright screenshots
 checkout-whatsapp-open.png
 .playwright-mcp/
 
+
 .vercel
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Local tooling scripts (screenshots/seeding helpers)
+/take-screenshots.js
+/take-events.js
+/replace.js
+/seed-for-screenshots.js
+/final_verification_report.md
+
