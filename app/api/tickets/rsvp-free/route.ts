@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTicket, fetchTicketTiers, getEventById, fetchActiveEvent, isEventSellable } from "@/lib/supabase-db";
+import { createTicket, fetchTicketTiers, getEventById, fetchActiveEvent } from "@/lib/supabase-db";
+import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
 import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -22,23 +23,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Active event not found." }, { status: 404 });
     }
 
-    // A closed event must not be able to take reservations. The date window
-    // alone is not sufficient: GOODLIFE XP is status='closed' with no
-    // sales_close_date, so it satisfied every date check.
-    if (!isEventSellable(targetEvent)) {
+    // A closed event must not be able to take reservations. The rule lives in
+    // lib/event-availability.ts; this route only picks the wording. This route
+    // has always said "reservations" where the paid routes say "ticket sales",
+    // so those two messages are overridden below rather than flattened.
+    const availability = getEventAvailability(targetEvent);
+    if (!availability.sellable) {
       return NextResponse.json(
-        { error: "Ticket sales are not open for this event." },
+        {
+          error: unavailabilityMessage(availability.reason!, {
+            not_open_yet: "Ticket sales have not opened yet.",
+            sales_closed: "Online ticket reservations have closed.",
+          }),
+        },
         { status: 400 }
       );
-    }
-
-    // Verify sales open/close dates
-    const now = new Date();
-    if (targetEvent.sales_open_date && now < new Date(targetEvent.sales_open_date)) {
-      return NextResponse.json({ error: "Ticket sales have not opened yet." }, { status: 400 });
-    }
-    if (targetEvent.sales_close_date && now > new Date(targetEvent.sales_close_date)) {
-      return NextResponse.json({ error: "Online ticket reservations have closed." }, { status: 400 });
     }
 
     const tiers = await fetchTicketTiers(targetEvent.id);

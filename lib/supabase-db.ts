@@ -1,4 +1,5 @@
 import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket } from "./supabase-db-types";
+import { getEventAvailability } from "./event-availability";
 
 // Re-export interface types so all existing pages compile unchanged
 export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket };
@@ -61,17 +62,25 @@ export async function fetchAllEvents(): Promise<Event[]> {
  * AVAILABLE" with a buy link, while the payment routes rejected that same
  * event. A visitor followed the advert and hit a dead end at checkout.
  *
- * Rule: must be live (or scheduled) AND explicitly active. The sales date
- * window is checked separately by each caller, because it depends on the
- * current time.
+ * The actual rule now lives in `lib/event-availability.ts`, together with the
+ * sales-window check that used to be copy-pasted into each route. The three
+ * payment routes now call `getEventAvailability` directly so they can render
+ * the right wording per endpoint; this boolean wrapper remains for the one
+ * caller that only needs a yes/no, the mini-events banner in `app/page.tsx`.
  *
- * If a mini event should be sellable, set is_active = true. The banner and
- * the payment routes then agree by construction, not by coincidence.
+ * IMPORTANT BEHAVIOUR CHANGE: `is_active` is no longer part of the answer.
+ * It used to be, which meant a recurring mini-festival could not be sellable
+ * without also contending for the single "homepage event" slot that
+ * `fetchActiveEvent` reads with `LIMIT 1` - so making Park & Chill sellable
+ * would have risked displacing the GOODLIFE 4 flagship. Sellability is now
+ * status + sales window + recurrence; `is_active` means "homepage event" only.
  */
 export function isEventSellable(
-  e: Pick<Event, "status" | "is_active"> | null | undefined
+  e: Pick<Event, "status"> &
+    Partial<Pick<Event, "sales_open_date" | "sales_close_date" | "recurrence_pattern" | "recurrence_day" | "recurrence_time">> | null | undefined,
+  now?: Date
 ): boolean {
-  return !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
+  return getEventAvailability(e, now).sellable;
 }
 
 // Fetch active event
@@ -87,7 +96,15 @@ export async function fetchActiveEvent(): Promise<Event | null> {
   }
 
   try {
-    const { rows } = await neonQuery("SELECT * FROM events WHERE is_active = TRUE LIMIT 1");
+    // `is_active` means "this is the homepage event" and nothing else - see
+    // lib/event-availability.ts. It is still a single-row slot, so the ORDER BY
+    // is a deliberate tiebreak rather than cosmetics: without it, two active
+    // rows meant Postgres could return either one and the homepage would
+    // non-deterministically show a mini-festival instead of the flagship.
+    // Mini events sort last on purpose, then newest wins.
+    const { rows } = await neonQuery(
+      "SELECT * FROM events WHERE is_active = TRUE ORDER BY (COALESCE(category, '') = 'mini') ASC, created_at DESC, id DESC LIMIT 1"
+    );
     if (rows.length === 0) return null;
     const r = rows[0];
     return {

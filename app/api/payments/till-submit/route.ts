@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment, isEventSellable } from "@/lib/supabase-db";
+import { createPendingPayment } from "@/lib/supabase-db";
+import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
 import { notifyOperators } from "@/lib/whatsapp";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -31,33 +32,31 @@ export async function POST(request: NextRequest) {
       if (rows.length > 0) targetEvent = rows[0];
     }
     if (!targetEvent) {
-      const { rows } = await pool.query("SELECT * FROM events WHERE is_active = TRUE LIMIT 1");
+      // Same tiebreak as fetchActiveEvent(): is_active is the homepage slot,
+      // and mini-festival rows must never win it. Kept in sync deliberately -
+      // this is the one place that resolves the active event with a raw query
+      // instead of going through fetchActiveEvent().
+      const { rows } = await pool.query(
+        "SELECT * FROM events WHERE is_active = TRUE ORDER BY (COALESCE(category, '') = 'mini') ASC, created_at DESC, id DESC LIMIT 1"
+      );
       if (rows.length > 0) {
         targetEvent = rows[0];
         resolvedEventId = targetEvent.id;
       }
     }
 
-    // A closed event must not be able to take money. The date window alone is
-    // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
-    // so it satisfied every date check. This also replaces a fallback that
-    // defaulted resolvedEventId to 1, which failed OPEN onto a closed event.
-    if (!isEventSellable(targetEvent)) {
+    // A closed event must not be able to take money. The rule lives in
+    // lib/event-availability.ts; this route only picks the wording. The
+    // previous copy-pasted date checks here were a third copy of the same
+    // condition. This also replaces a fallback that defaulted resolvedEventId
+    // to 1, which failed OPEN onto a closed event.
+    const availability = getEventAvailability(targetEvent);
+    if (!availability.sellable) {
       await pool.end();
       return NextResponse.json(
-        { error: "Ticket sales are not open for this event." },
+        { error: unavailabilityMessage(availability.reason!) },
         { status: 400 }
       );
-    }
-
-    const now = new Date();
-    if (targetEvent?.sales_open_date && now < new Date(targetEvent.sales_open_date)) {
-      await pool.end();
-      return NextResponse.json({ error: "Ticket sales have not opened yet for this event." }, { status: 400 });
-    }
-    if (targetEvent?.sales_close_date && now > new Date(targetEvent.sales_close_date)) {
-      await pool.end();
-      return NextResponse.json({ error: "Online ticket sales have closed. Gate tickets available at entrance." }, { status: 400 });
     }
 
     // Look up the tier price and name

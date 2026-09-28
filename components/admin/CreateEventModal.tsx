@@ -306,9 +306,19 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                     }}
                     className="w-full p-1.5 border border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
                   >
+                    {/*
+                      Only the patterns that lib/event-availability.ts can
+                      actually schedule are offered. BI-WEEKLY and MONTHLY used
+                      to be selectable here, but nothing implemented them: they
+                      were stored and then ignored, so the schedule shown to
+                      customers ("EVERY 2 WEEKS", "MONTHLY") would not match
+                      when sales actually opened or closed. They need an
+                      anchor week and an ordinal respectively, neither of which
+                      is recorded in the schema. Rather than leave options that
+                      silently lie, they are gone from the picker - use WEEKLY,
+                      or one row per session.
+                    */}
                     <option value="weekly">WEEKLY (EVERY WEEK)</option>
-                    <option value="biweekly">BI-WEEKLY (EVERY 2 WEEKS)</option>
-                    <option value="monthly">MONTHLY (ONCE A MONTH)</option>
                     <option value="none">ONE-OFF / CUSTOM DATE ONLY</option>
                   </select>
                 </div>

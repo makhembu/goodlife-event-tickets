@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment, fetchTicketTiers, fetchActiveEvent, isEventSellable } from "@/lib/supabase-db";
+import { createPendingPayment, fetchTicketTiers, fetchActiveEvent } from "@/lib/supabase-db";
+import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
 import { checkRateLimit } from "@/lib/rate-limit";
 import {
   isPayheroConfigured,
@@ -65,34 +66,25 @@ export async function POST(request: NextRequest) {
       targetEvent = await fetchActiveEvent();
     }
 
-    // A closed event must not be able to take money. The date window alone is
-    // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
-    // so it satisfied every date check and would have issued live STK pushes
-    // against a finished event to anyone who knew its id.
-    if (!isEventSellable(targetEvent)) {
+    // One instant, reused for both the event-level availability check below and
+    // the per-tier availability window further down, so a request cannot be
+    // judged "open" by one and "closed" by the other a millisecond apart.
+    const now = new Date();
+
+    // A closed event must not be able to take money, and neither must one
+    // whose sales window has not opened or has shut, nor a recurring session
+    // that is on today. The rule itself lives in lib/event-availability.ts;
+    // this route only decides the wording.
+    const availability = getEventAvailability(targetEvent, now);
+    if (!availability.sellable) {
       return NextResponse.json(
-        { error: "Ticket sales are not open for this event." },
+        { error: unavailabilityMessage(availability.reason!) },
         { status: 400 }
       );
     }
     // Fail closed: never fall back to a hardcoded event id, which would sell
     // tickets for whatever happens to live at id 1.
     const eventId = targetEvent.id;
-
-    // Check sales open/close dates (Scenario S11)
-    const now = new Date();
-    if (targetEvent?.sales_open_date && now < new Date(targetEvent.sales_open_date)) {
-      return NextResponse.json(
-        { error: "Ticket sales have not opened yet for this event." },
-        { status: 400 }
-      );
-    }
-    if (targetEvent?.sales_close_date && now > new Date(targetEvent.sales_close_date)) {
-      return NextResponse.json(
-        { error: "Online ticket sales have closed. Gate tickets available at entrance." },
-        { status: 400 }
-      );
-    }
 
     const allTiers = await fetchTicketTiers(eventId);
     const matchedTier = allTiers.find((t) => t.id === ticket_type || t.name.toLowerCase() === ticket_type.toLowerCase());
