@@ -35,9 +35,22 @@ export async function POST(request: NextRequest) {
       if (rows.length > 0) {
         targetEvent = rows[0];
         resolvedEventId = targetEvent.id;
-      } else {
-        resolvedEventId = 1;
       }
+    }
+
+    // A closed event must not be able to take money. The date window alone is
+    // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
+    // so it satisfied every date check. This also replaces a fallback that
+    // defaulted resolvedEventId to 1, which failed OPEN onto a closed event.
+    const isSellable = (e: any) =>
+      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
+
+    if (!isSellable(targetEvent)) {
+      await pool.end();
+      return NextResponse.json(
+        { error: "Ticket sales are not open for this event." },
+        { status: 400 }
+      );
     }
 
     const now = new Date();

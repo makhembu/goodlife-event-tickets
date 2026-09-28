@@ -64,7 +64,23 @@ export async function POST(request: NextRequest) {
     if (!targetEvent) {
       targetEvent = await fetchActiveEvent();
     }
-    const eventId = targetEvent?.id || 1;
+
+    // A closed event must not be able to take money. The date window alone is
+    // not sufficient: GOODLIFE XP is status='closed' with no sales_close_date,
+    // so it satisfied every date check and would have issued live STK pushes
+    // against a finished event to anyone who knew its id.
+    const isSellable = (e: any) =>
+      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
+
+    if (!isSellable(targetEvent)) {
+      return NextResponse.json(
+        { error: "Ticket sales are not open for this event." },
+        { status: 400 }
+      );
+    }
+    // Fail closed: never fall back to a hardcoded event id, which would sell
+    // tickets for whatever happens to live at id 1.
+    const eventId = targetEvent.id;
 
     // Check sales open/close dates (Scenario S11)
     const now = new Date();

@@ -22,6 +22,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Active event not found." }, { status: 404 });
     }
 
+    // A closed event must not be able to take reservations. The date window
+    // alone is not sufficient: GOODLIFE XP is status='closed' with no
+    // sales_close_date, so it satisfied every date check.
+    const isSellable = (e: any) =>
+      !!e && (e.status === "live" || e.status === "scheduled") && e.is_active === true;
+
+    if (!isSellable(targetEvent)) {
+      return NextResponse.json(
+        { error: "Ticket sales are not open for this event." },
+        { status: 400 }
+      );
+    }
+
     // Verify sales open/close dates
     const now = new Date();
     if (targetEvent.sales_open_date && now < new Date(targetEvent.sales_open_date)) {
