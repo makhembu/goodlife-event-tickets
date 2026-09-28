@@ -10,7 +10,12 @@ export const dynamic = "force-dynamic";
 
 async function fetchAllEvents() {
   const db = getDbPool();
-  const { rows } = await db.query(`SELECT id, title, status, event_date, venue FROM events ORDER BY event_date DESC`);
+  // NULLS LAST is required, not cosmetic. Postgres sorts NULLs FIRST under DESC,
+  // which put closed undated entries above the live event on a page titled
+  // "Past & Future Goodlife Editions".
+  const { rows } = await db.query(
+    `SELECT id, title, status, event_date, venue FROM events ORDER BY event_date DESC NULLS LAST`
+  );
   return rows;
 }
 
