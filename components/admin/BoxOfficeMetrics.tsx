@@ -28,7 +28,16 @@ export default function BoxOfficeMetrics({
         <Coins className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
         <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">REVENUE</span>
         <span className="text-2xl font-black block mt-2">KES {totalCashCollected.toLocaleString()}</span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">Confirmed M-Pesa Revenue</p>
+        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">
+          {/* "Confirmed M-Pesa Revenue" is only true when nothing is filtered
+              out. A paid ticket on a crew tier is still real cash, so claiming
+              the filtered figure is the total is a lie of omission. */}
+          {audience === "customers"
+            ? `Paid customer sales${staffPasses > 0 ? " · staff excluded" : ""}`
+            : audience === "staff"
+              ? "Paid on staff tiers"
+              : "Confirmed M-Pesa Revenue"}
+        </p>
       </div>
 
       <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">

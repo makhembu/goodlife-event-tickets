@@ -8,6 +8,9 @@ interface TierStats {
   cap?: number;
   name?: string;
   tag?: string;
+  /** Lowest / highest amount actually paid in this tier. */
+  minPaid?: number;
+  maxPaid?: number;
 }
 
 interface TierDef {
@@ -51,8 +54,23 @@ export default function TierSalesBreakdown({
       cap: rawCap > 0 ? rawCap : undefined,
       name: stats?.name || tierDef?.name || type,
       tag: stats?.tag || tierDef?.tag || "",
+      minPaid: typeof stats?.minPaid === "number" ? stats.minPaid : undefined,
+      maxPaid: typeof stats?.maxPaid === "number" ? stats.maxPaid : undefined,
     };
   });
+
+  /**
+   * Tiers ladder: once a tier passes a threshold the price steps up, so the
+   * amount paid is not constant. A tier literally named "ADV 500" that ended up
+   * charging 700 has a misleading name, and the gate staff reading it will
+   * argue with customers. When the range is non-zero, show what was actually
+   * charged rather than trusting the name.
+   */
+  const priceRange = (t: { minPaid?: number; maxPaid?: number }): string | null => {
+    if (t.minPaid === undefined || t.maxPaid === undefined) return null;
+    if (t.minPaid === t.maxPaid) return null;
+    return `KES ${t.minPaid.toLocaleString()}\u2013${t.maxPaid.toLocaleString()}`;
+  };
 
   // Selling tiers first (volume, then revenue). Unsold tiers are counted, never rendered.
   const selling = allTiers
@@ -89,6 +107,7 @@ export default function TierSalesBreakdown({
             const isBest = t.type === best.type;
             const isCamping = String(t.tag).toUpperCase().includes("CAMP");
             const soldOut = t.cap !== undefined && t.sold >= t.cap;
+            const laddered = priceRange(t);
 
             // One scale for every bar: share of all tickets sold, so bar lengths
             // compare directly across rows. Capacity lives in the label, not the bar.
@@ -118,6 +137,14 @@ export default function TierSalesBreakdown({
                   {soldOut && (
                     <span className="ml-1.5 text-caption font-black uppercase text-brand-danger">
                       Sold out
+                    </span>
+                  )}
+                  {laddered && (
+                    <span
+                      className="ml-1.5 text-caption font-black uppercase text-brand-warning normal-case tracking-normal"
+                      title={`The price of "${t.name}" laddered during the sale, so its name no longer states the price charged. Lowest paid: KES ${Number(t.minPaid).toLocaleString()}, highest paid: KES ${Number(t.maxPaid).toLocaleString()}.`}
+                    >
+                      &mdash; {laddered} charged
                     </span>
                   )}
                 </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion } from "motion/react";
 import { fmtDate, fmtTime } from "@/lib/utils";
 import {
@@ -55,15 +55,41 @@ import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 import EventSelector from "@/components/EventSelector";
 
+/**
+ * Two sales of the same tier on the same phone further apart than this are
+ * treated as two real purchases. Tuned against the actual ledger: the genuine
+ * doubles were 4 and 13 minutes apart; the same-phone-but-separate-purchase
+ * case was 2 hours.
+ */
+const DUPLICATE_WINDOW_MIN = 60;
+
+/** Kenyan numbers are stored inconsistently (with/without +, leading 0, spaces). */
+function normalizePhone(raw: string): string {
+  const digits = (raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+  // 0712345678 and 254712345678 are the same subscriber.
+  return digits.startsWith("0") ? `254${digits.slice(1)}` : digits;
+}
+
 interface MetricsState {
   totalCashCollected: number;
   totalTicketsSold: number;
   scanCount: number;
-  campingTiers: Record<string, { sold: number; revenue: number; cap?: number; name?: string; tag?: string }>;
+  campingTiers: Record<string, {
+    sold: number;
+    revenue: number;
+    cap?: number;
+    name?: string;
+    tag?: string;
+    minPaid?: number;
+    maxPaid?: number;
+  }>;
   recentSalesAmount: number;
   tickets: NormalizedTicket[];
   staffPasses: number;
   eventLabels: Record<string, string>;
+  /** event_id -> "YYYY-MM-DD", or null when the event has no date set. */
+  eventDates: Record<string, string | null>;
 }
 
 const AUDIENCE_OPTIONS: { value: TicketAudience; label: string }[] = [
@@ -906,6 +932,11 @@ export default function AdminDashboardPage() {
 
   // Rotating loading messages
   const [loadingMsg, setLoadingMsg] = useState(0);
+  // Lazy initializer so the clock is read exactly once, and outside render, to
+  // satisfy react-hooks/purity. The 30s refresh deliberately does not advance
+  // it: a data-integrity check does not need a second-by-second clock, and
+  // moving it would re-run the mismatch scan on every poll.
+  const [now] = useState(() => Date.now());
   const loadingMessages = [
     "LOADING ADMIN DASHBOARD...",
     "FETCHING TICKET LEDGER...",
@@ -917,6 +948,111 @@ export default function AdminDashboardPage() {
     const t = setInterval(() => setLoadingMsg(i => (i + 1) % loadingMessages.length), 2500);
     return () => clearInterval(t);
   }, [loading, metrics]);
+
+  /**
+   * Flag likely double-payments: the same phone buying the same tier twice in a
+   * short window. In practice this is a double-tapped pay button or a retry
+   * after a STK push timeout, and it silently doubles the revenue tile.
+   *
+   * Deliberately narrow, because the alternative is a wall of false positives:
+   *  - same phone AND same tier, so a family buying two different tiers is
+   *    never questioned
+   *  - within DUPLICATE_WINDOW_MIN, so a genuine second purchase hours later
+   *    is left alone (the 4-minute and 13-minute real cases are caught; a
+   *    2-hour gap is not)
+   *  - both must have a phone, since the manual ticket form permits a blank
+   *
+   * This is advisory only - it writes nothing and blocks nothing.
+   */
+  const duplicateGroups = useMemo(() => {
+    const groups = new Map<string, NormalizedTicket[]>();
+    (metrics?.tickets || []).forEach(t => {
+      const phone = normalizePhone(t.phone_number);
+      if (!phone) return;
+      const key = `${phone}|${t.tier_label}`;
+      const list = groups.get(key);
+      if (list) list.push(t);
+      else groups.set(key, [t]);
+    });
+
+    const flagged = new Map<string, number>();
+    groups.forEach(list => {
+      if (list.length < 2) return;
+      const sorted = [...list].sort(
+        (a, b) => new Date(a.purchase_time).getTime() - new Date(b.purchase_time).getTime()
+      );
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = new Date(sorted[i].purchase_time).getTime()
+          - new Date(sorted[i - 1].purchase_time).getTime();
+        if (gap <= DUPLICATE_WINDOW_MIN * 60_000) {
+          // Mark both halves: a refund/refund decision needs the pair.
+          flagged.set(sorted[i - 1].id, (flagged.get(sorted[i - 1].id) || 0) + 1);
+          flagged.set(sorted[i].id, (flagged.get(sorted[i].id) || 0) + 1);
+        }
+      }
+    });
+    return flagged;
+  }, [metrics]);
+
+  /**
+   * Data-integrity check, not decoration.
+   *
+   * GOODLIFE 4's `event_date` read 2026-09-27 while every one of its 39 gate
+   * scans happened on 2026-07-11. The row had been re-dated for an upcoming
+   * edition while the previous edition's tickets stayed attached to it, which
+   * is why the ledger showed a full season of real sales for an event that had
+   * not happened yet.
+   *
+   * Two independent signals, either sufficient to warrant a look:
+   *   1. sales recorded against an event still dated in the future
+   *   2. peak gate activity nowhere near the recorded event_date
+   *
+   * An event with no date set is never flagged: absence of data is not evidence
+   * of a fault.
+   */
+  const dateMismatches = useMemo(() => {
+    const byEvent = new Map<number, { date: string | null; scanned: string[]; sold: number }>();
+    (metrics?.tickets || []).forEach(t => {
+      if (!t.event_id) return;
+      const entry = byEvent.get(t.event_id) || {
+        date: metrics?.eventDates[String(t.event_id)] || null,
+        scanned: [] as string[],
+        sold: 0,
+      };
+      entry.sold += 1;
+      if (t.scanned_at) entry.scanned.push(t.scanned_at.slice(0, 10));
+      byEvent.set(t.event_id, entry);
+    });
+
+    const out: Array<{ eventId: number; reason: string }> = [];
+    byEvent.forEach((entry, eventId) => {
+      if (!entry.date) return;
+      const eventDay = new Date(entry.date).getTime();
+
+      if (eventDay > now) {
+        out.push({
+          eventId,
+          reason: `is dated ${entry.date.slice(0, 10)}, still in the future, but already has ${entry.sold} ticket${entry.sold === 1 ? "" : "s"} sold`,
+        });
+        return;
+      }
+
+      if (entry.scanned.length === 0) return;
+      // Compare against the busiest scanning day, not the first, so a single
+      // early door-opening scan cannot make a correct event look wrong.
+      const tally = new Map<string, number>();
+      entry.scanned.forEach(d => tally.set(d, (tally.get(d) || 0) + 1));
+      const peak = Array.from(tally.entries()).sort((a, b) => b[1] - a[1])[0][0];
+      const drift = Math.round((new Date(peak).getTime() - eventDay) / 86400000);
+      if (Math.abs(drift) > 3) {
+        out.push({
+          eventId,
+          reason: `is dated ${entry.date.slice(0, 10)}, but its gate was scanned on ${peak} - ${Math.abs(drift)} days ${drift > 0 ? "earlier" : "later"}. The event record and the tickets under it describe different occasions`,
+        });
+      }
+    });
+    return out;
+  }, [metrics, now]);
 
   if ((loading || !eventResolved) && !metrics) {
     return (
@@ -934,6 +1070,7 @@ export default function AdminDashboardPage() {
   const selectedEventTitle = selectedEventId === null
     ? "ALL EVENTS"
     : data.eventLabels[String(selectedEventId)] || `EVENT #${selectedEventId}`;
+
   // data.tickets is already scoped to the selected event and audience, so every
   // count, table row and export below inherits both filters automatically.
   const filteredTickets = (ledgerTab === "all" ? data.tickets
@@ -946,6 +1083,10 @@ export default function AdminDashboardPage() {
   const tierLabelOptions = Array.from(
     data.tickets.reduce((m, t) => m.set(t.tier_label, (m.get(t.tier_label) || 0) + 1), new Map<string, number>())
   ).sort((a, b) => b[1] - a[1]);
+
+  // Counted against what is on screen, not the whole event, so the warning
+  // never cites rows the operator cannot actually see.
+  const duplicateCount = filteredTickets.filter(t => duplicateGroups.has(t.id)).length;
 
   return (
     <div className="min-h-screen bg-[var(--brand-off-white)] py-6 px-4 md:px-8 text-[var(--brand-navy)] font-sans selection:bg-[var(--brand-navy)] selection:text-white">
@@ -986,6 +1127,25 @@ export default function AdminDashboardPage() {
             <span className="text-caption text-[var(--brand-navy-light)] font-bold uppercase">
               {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"} in this event
             </span>
+            {dateMismatches.map(m => (
+              <span
+                key={m.eventId}
+                className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+                title={`${data.eventLabels[String(m.eventId)] || `Event #${m.eventId}`} ${m.reason}. Either the event date is wrong, or these tickets were sold under the wrong event_id. Check EDIT EVENT INFO and the EVENT column on each row before trusting these numbers.`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {data.eventLabels[String(m.eventId)] || `EVENT #${m.eventId}`} &mdash; {m.reason}
+              </span>
+            ))}
+            {duplicateCount > 0 && (
+              <span
+                className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+                title={`Same phone, same tier, bought twice within ${DUPLICATE_WINDOW_MIN} minutes. Usually a double-tapped pay button or a retry after a STK timeout - each one inflates revenue. Review and delete the extra.`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {duplicateCount} possible duplicate payment{duplicateCount === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1424,7 +1584,17 @@ export default function AdminDashboardPage() {
                             {t.tier_label}
                           </span>
                         </td>
-                        <td className="p-3 font-mono">{t.phone_number}</td>
+                        <td className="p-3 font-mono">
+                          {t.phone_number}
+                          {duplicateGroups.has(t.id) && (
+                            <span
+                              className="block mt-1 bg-brand-warning/15 border border-brand-warning text-brand-danger font-black px-1.5 py-0.5 uppercase text-[10px] w-max"
+                              title={`Another sale of ${t.tier_label} went to this same phone within ${DUPLICATE_WINDOW_MIN} minutes. Check whether this is a double payment before counting it as revenue.`}
+                            >
+                              Possible duplicate
+                            </span>
+                          )}
+                        </td>
                         <td className="p-3 font-black text-[var(--brand-navy)]">{t.is_staff ? "Staff Pass" : `KES ${Number(t.amount_paid).toLocaleString()}`}</td>
                         <td className="p-3 font-mono text-[11px] text-[var(--brand-navy)]/60">
                           {fmtDate(t.purchase_time)}
@@ -1529,6 +1699,14 @@ export default function AdminDashboardPage() {
                         <div>
                           <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">Phone</span>
                           <span className="font-mono">{t.phone_number}</span>
+                          {duplicateGroups.has(t.id) && (
+                            <span
+                              className="block mt-1 bg-brand-warning/15 border border-brand-warning text-brand-danger font-black px-1.5 py-0.5 uppercase text-[10px] w-max"
+                              title={`Another sale of ${t.tier_label} went to this same phone within ${DUPLICATE_WINDOW_MIN} minutes. Check whether this is a double payment before counting it as revenue.`}
+                            >
+                              Possible duplicate
+                            </span>
+                          )}
                         </div>
                         <div>
                           <span className="text-[11px] text-[var(--brand-navy-light)] uppercase font-bold block">{t.is_staff ? "Pass Type" : "Amount Paid"}</span>

@@ -466,6 +466,13 @@ function classifyStaffTicket(rawType: string, amountPaid: number, tier: TicketTi
 /** event_id -> title, memoized for the life of the server/client bundle. */
 let eventLabelCache: Record<string, string> | null = null;
 
+/**
+ * event_id -> ISO event_date, same memoization. Kept separate from the label
+ * cache because the dashboard needs the date to sanity-check sales: an event
+ * that has not happened yet should not already have a ledger.
+ */
+let eventDateCache: Record<string, string | null> | null = null;
+
 export async function fetchDashboardMetrics(eventId?: number, audience: TicketAudience = "customers") {
   const allTickets = await fetchAllTickets(eventId);
 
@@ -511,7 +518,30 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
   const staffPasses = normalized.filter(t => t.is_staff).length;
 
   // --- Tier breakdown over the audience-filtered set only ------------------
-  const campingTiers: Record<string, { sold: number; revenue: number; cap?: number; name?: string; tag?: string }> = {};
+  const campingTiers: Record<string, {
+    sold: number;
+    revenue: number;
+    cap?: number;
+    name?: string;
+    tag?: string;
+    /** Lowest / highest amount actually paid in this bucket. */
+    minPaid?: number;
+    maxPaid?: number;
+  }> = {};
+
+  /**
+   * Tiers ladder: once a tier sells past a threshold its price steps up, so
+   * the amount paid is NOT constant even though the tier name is. Tracking the
+   * real range is what lets the UI say "KES 500-700" instead of trusting a name
+   * like "ADV 500" that stopped being true partway through the sale.
+   */
+  const addSale = (key: string, amount: number) => {
+    const bucket = campingTiers[key];
+    bucket.sold += 1;
+    bucket.revenue += amount;
+    bucket.minPaid = bucket.minPaid === undefined ? amount : Math.min(bucket.minPaid, amount);
+    bucket.maxPaid = bucket.maxPaid === undefined ? amount : Math.max(bucket.maxPaid, amount);
+  };
 
   // 1. Seed with event's configured tiers (deduplicating by normalized name)
   configuredTiers.forEach(tier => {
@@ -548,8 +578,7 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
     );
 
     if (matchedKey) {
-      campingTiers[matchedKey].sold += 1;
-      campingTiers[matchedKey].revenue += Number(t.amount_paid);
+      addSale(matchedKey, Number(t.amount_paid));
     } else {
       if (!campingTiers[preferredKey]) {
         campingTiers[preferredKey] = {
@@ -559,8 +588,7 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
           tag: tier?.tag || (t.is_staff ? "CREW" : "TICKETS")
         };
       }
-      campingTiers[preferredKey].sold += 1;
-      campingTiers[preferredKey].revenue += Number(t.amount_paid);
+      addSale(preferredKey, Number(t.amount_paid));
     }
   });
 
@@ -573,6 +601,7 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
   // Cached: this runs on the dashboard's 30s auto-refresh, and the events table
   // changes only when an admin creates one.
   let eventLabels: Record<string, string> = {};
+  let eventDates: Record<string, string | null> = {};
   try {
     if (!eventLabelCache) {
       const events = await fetchAllEvents();
@@ -580,11 +609,17 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
       // blank the EVENT column for the rest of the session.
       if (events.length > 0) {
         const next: Record<string, string> = {};
-        events.forEach(e => { next[String(e.id)] = e.title; });
+        const dates: Record<string, string | null> = {};
+        events.forEach(e => {
+          next[String(e.id)] = e.title;
+          dates[String(e.id)] = e.event_date || null;
+        });
         eventLabelCache = next;
+        eventDateCache = dates;
       }
     }
     eventLabels = eventLabelCache || {};
+    eventDates = eventDateCache || {};
   } catch {}
 
   return {
@@ -595,7 +630,8 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
     recentSalesAmount,
     tickets,
     staffPasses,
-    eventLabels
+    eventLabels,
+    eventDates
   };
 }
 
