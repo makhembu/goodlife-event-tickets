@@ -173,11 +173,14 @@ export default function TicketCheckoutPage({
     HapticFeedback.trigger(pattern);
   }, []);
 
-  // Fire confetti when a new ticket arrives
-  const [celebrationId, setCelebrationId] = useState<string | null>(null);
+  // Fire confetti when a new ticket arrives.
+  // A ref, not state: this is read only as "have we already celebrated this
+  // ticket?" inside the effect below. Nothing renders from it, so state cost an
+  // extra render pass on every purchase for no benefit.
+  const celebratedTicketRef = useRef<string | null>(null);
   useEffect(() => {
-    if (generatedTicketId && !celebrationId) {
-      setCelebrationId(generatedTicketId);
+    if (generatedTicketId && celebratedTicketRef.current !== generatedTicketId) {
+      celebratedTicketRef.current = generatedTicketId;
       setTimeout(() => {
         triggerHaptic("success");
         confetti({
@@ -202,24 +205,38 @@ export default function TicketCheckoutPage({
         }, 200);
       }, 300);
     }
-  }, [generatedTicketId, celebrationId, triggerHaptic]);
+  }, [generatedTicketId, triggerHaptic]);
 
-  // Initialize myTickets from local storage
+  // Initialize myTickets from local storage.
+  //
+  // Deliberately an effect, not a useState lazy initialiser. The initialiser
+  // would run during the hydration render, so the client would render "My
+  // Tickets (3)" where the server rendered nothing - a real hydration
+  // mismatch. Reading an external store after mount is the case effects exist
+  // for, so the rule is suppressed here rather than worked around at the cost
+  // of a broken first paint.
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem("my_goodlife_purchases");
         if (stored) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setMyTickets(JSON.parse(stored));
         }
       } catch (e) {}
     }
   }, []);
 
-  // Update myTickets when a new ticket is generated
+  // Update myTickets when a new ticket is generated.
+  //
+  // Also left as an effect on purpose. The three call sites that set
+  // generatedTicketId already sit on the payment-success path, and moving this
+  // append into them to satisfy the linter risks double-adding a ticket or
+  // dropping it - a real-money regression for a lint-level gain.
   useEffect(() => {
     if (generatedTicketId && !myTickets.includes(generatedTicketId)) {
       const updated = [generatedTicketId, ...myTickets];
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMyTickets(updated);
       if (typeof window !== "undefined") {
         localStorage.setItem("my_goodlife_purchases", JSON.stringify(updated));
@@ -464,37 +481,53 @@ export default function TicketCheckoutPage({
   }, [selectedTierObj, quantity]);
 
   // Deep-linking handler for ?tier=
-  useEffect(() => {
-    const param = initialTierParam || (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tier") : null);
-    if (param && TICKET_TIERS.length > 0) {
-      const normalizedParam = param.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      const matched = TICKET_TIERS.find(t => 
-        t.id.toLowerCase() === param.trim().toLowerCase() ||
-        t.name.toLowerCase() === param.trim().toLowerCase() ||
-        t.id.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedParam ||
-        t.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedParam
-      );
-      if (matched) {
-        setSelectedTier(matched.id);
-        const isCamping = matched.tier_category === 'camping' || matched.is_camping_bundle || matched.camping_type === 'private' || matched.camping_type === 'shared_bed';
-        if (isCamping) {
-          setActivePackageTab("camping");
-        } else {
-          setActivePackageTab("entry");
-        }
-      }
-    }
-  }, [initialTierParam, TICKET_TIERS]);
+  //
+  // Applied during render, not in an effect. The server derives
+  // `initialTierParam` from searchParams, and when it is absent the
+  // window.location fallback provably returns the same value on the server and
+  // the client (if the URL had ?tier=, the server would have received it), so
+  // this stays hydration-safe. The old effect also meant the tier flashed as
+  // unselected for one frame after the tiers finished loading.
+  const deepLinkParam = initialTierParam
+    ?? (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tier") : null);
+  const deepLinkMatch = useMemo(() => {
+    if (!deepLinkParam || TICKET_TIERS.length === 0) return null;
+    const trimmed = deepLinkParam.trim().toLowerCase();
+    const normalized = trimmed.replace(/[^a-z0-9]/g, "");
+    return TICKET_TIERS.find(t =>
+      t.id.toLowerCase() === trimmed ||
+      t.name.toLowerCase() === trimmed ||
+      t.id.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized ||
+      t.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized
+    ) || null;
+  }, [deepLinkParam, TICKET_TIERS]);
 
-  // Automatically ensure safe tier selection on tab change
-  useEffect(() => {
-    if (displayedTiers.length > 0) {
-      const available = displayedTiers.map(t => t.id);
-      if (!available.includes(selectedTier)) {
-        setSelectedTier(available[0]);
-      }
+  // Keyed on the tier set as well as the id, so a deep link re-applies after the
+  // tiers load and after an event switch, matching the effect's original
+  // [initialTierParam, TICKET_TIERS] deps. A signature of the ids is used rather
+  // than the array identity: TICKET_TIERS is a .map() result with its own
+  // structural type, not TicketTier[], so it cannot be stored in typed state.
+  const tierSetKey = TICKET_TIERS.map(t => t.id).join("|");
+  const [appliedDeepLink, setAppliedDeepLink] = useState<{ key: string; id: string } | null>(null);
+  if (deepLinkMatch && (appliedDeepLink?.key !== tierSetKey || appliedDeepLink.id !== deepLinkMatch.id)) {
+    setAppliedDeepLink({ key: tierSetKey, id: deepLinkMatch.id });
+    setSelectedTier(deepLinkMatch.id);
+    const isCamping = deepLinkMatch.tier_category === 'camping' || deepLinkMatch.is_camping_bundle || deepLinkMatch.camping_type === 'private' || deepLinkMatch.camping_type === 'shared_bed';
+    setActivePackageTab(isCamping ? "camping" : "entry");
+  }
+
+  // Keep the selected tier inside the displayed set. Also during render: as an
+  // effect this cost an extra pass, so after a tab switch the tier cards could
+  // paint once with nothing highlighted while `safeSelectedTier` had already
+  // moved on to a valid tier.
+  const [displayedTiersSeen, setDisplayedTiersSeen] = useState(displayedTiers);
+  if (displayedTiersSeen !== displayedTiers) {
+    setDisplayedTiersSeen(displayedTiers);
+    const available = displayedTiers.map(t => t.id);
+    if (available.length > 0 && !available.includes(selectedTier)) {
+      setSelectedTier(available[0]);
     }
-  }, [displayedTiers, selectedTier]);
+  }
 
   // Checkout submission (PayHero STK push or KES 0 Free RSVP)
   const handleCheckout = async (e: React.FormEvent) => {
@@ -650,12 +683,18 @@ export default function TicketCheckoutPage({
     }
   }, [statusMessage]);
 
-  // Polling timeout
+  // Polling timeout.
+  // The "are we still waiting?" reset happens during render, so a finished or
+  // abandoned payment can never leave the timeout banner stuck on screen. The
+  // effect now only owns the timer, which is genuinely a side effect.
+  const [pollingKey, setPollingKey] = useState({ stxReference, generatedTicketId });
+  if (pollingKey.stxReference !== stxReference || pollingKey.generatedTicketId !== generatedTicketId) {
+    setPollingKey({ stxReference, generatedTicketId });
+    setPollingTimedOut(false);
+  }
+
   useEffect(() => {
-    if (!stxReference || generatedTicketId) {
-      setPollingTimedOut(false);
-      return;
-    }
+    if (!stxReference || generatedTicketId) return;
     const timer = setTimeout(() => setPollingTimedOut(true), 15000);
     return () => clearTimeout(timer);
   }, [stxReference, generatedTicketId]);

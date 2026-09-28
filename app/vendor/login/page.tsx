@@ -53,6 +53,12 @@ export default function VendorLoginPage() {
 
   React.useEffect(() => {
     if (pin.length === 4) {
+      // Auto-submit on the fourth digit. handleSubmit sets its loading flag
+      // before the first await, which the rule reads as a synchronous setState.
+      // That flag is what disables the pad while the PIN is verified, so it
+      // stays; deferring the call would only satisfy the linter by adding
+      // latency to the vendor's login.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       handleSubmit();
     }
   }, [pin]);

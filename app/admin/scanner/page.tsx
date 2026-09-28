@@ -121,6 +121,11 @@ export default function ScannerControlPage() {
   };
 
   useEffect(() => {
+    // Reload the ticket list after every scan result. loadDbTickets only sets
+    // state after its fetch resolves; the rule reads the call as a synchronous
+    // setState. Wrapping it in a timeout would hide that from the linter while
+    // adding a frame of delay to the gate queue, so it is suppressed on purpose.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDbTickets();
   }, [lastScanResult]);
 

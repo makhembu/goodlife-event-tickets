@@ -38,12 +38,23 @@ export default function ClosedEventClientPage({
     }
   }
 
+  // Countdown to the sales-open date.
+  //
+  // Switching an event that has an open date to one that has none must clear
+  // the timer, and that reset happens during render so it cannot fire a second
+  // render pass. The effect then only owns the interval, which is genuinely a
+  // side effect. The first tick is deferred by a task rather than run inline,
+  // which is what previously tripped set-state-in-effect.
+  const hasOpenDate = !!eventDetails.sales_open_date;
+  const [countdownKey, setCountdownKey] = useState(hasOpenDate);
+  if (countdownKey !== hasOpenDate) {
+    setCountdownKey(hasOpenDate);
+    if (!hasOpenDate) setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  }
+
   useEffect(() => {
     // If no sales open date is specified, show 00:00:00:00
-    if (!eventDetails.sales_open_date) {
-      setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-      return;
-    }
+    if (!eventDetails.sales_open_date) return;
 
     const openDate = new Date(eventDetails.sales_open_date).getTime();
 
@@ -63,9 +74,9 @@ export default function ClosedEventClientPage({
       }
     };
 
-    updateTimer();
+    const first = setTimeout(updateTimer, 0);
     const timer = setInterval(updateTimer, 1000);
-    return () => clearInterval(timer);
+    return () => { clearTimeout(first); clearInterval(timer); };
   }, [eventDetails.sales_open_date]);
 
   const handleSubscribe = async (e: React.FormEvent) => {
@@ -291,7 +302,7 @@ export default function ClosedEventClientPage({
             </p>
             {subscribed ? (
               <div className="bg-brand-success-bg border-2 border-brand-success text-brand-success p-4 font-bold flex items-center gap-2">
-                <Bell className="w-5 h-5" /> You're on the list! We'll ping you.
+                <Bell className="w-5 h-5" /> You&apos;re on the list! We&apos;ll ping you.
               </div>
             ) : (
               <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3">

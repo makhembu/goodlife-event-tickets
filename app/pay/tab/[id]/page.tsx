@@ -107,6 +107,12 @@ export default function TabSelfPayPage() {
   };
 
   useEffect(() => {
+    // Load the tab whenever the id changes. fetchTabData sets its loading flag
+    // before the first await, which the rule reads as a synchronous setState;
+    // that flag is what keeps the pay button disabled while the request is in
+    // flight, so it stays. Deferring the call behind a timeout would satisfy the
+    // linter only by adding latency to the payment page.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTabData();
   }, [tabId]);
 
