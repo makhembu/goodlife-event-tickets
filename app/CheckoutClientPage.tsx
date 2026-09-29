@@ -6,7 +6,6 @@ import {
   Ticket as TicketIcon, 
   Phone, 
   Layers, 
-  Sparkles, 
   ShieldCheck, 
   Activity, 
   ArrowRight, 
@@ -19,7 +18,6 @@ import {
   ChevronDown,
   Copy,
   Check,
-  Video,
   Store,
   Camera,
   Radio,
@@ -89,8 +87,11 @@ export default function TicketCheckoutPage({
   // Flyer Lightbox State
   const [isFlyerExpanded, setIsFlyerExpanded] = useState(false);
   
-  // Camping Grounds & Tent Walkthrough Tour Lightbox State
-  const [showCampTourModal, setShowCampTourModal] = useState(false);
+  // Manual M-Pesa till accordion. Collapsed by default: the till number is
+  // already on the first screen in the venue/till strip, so this is the
+  // copy-the-till-and-amount convenience, not the only route to the number.
+  // Leaving it open pushed the buy button and total down the page.
+  const [tillOpen, setTillOpen] = useState(false);
 
   // House Rules accordion
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -978,24 +979,56 @@ export default function TicketCheckoutPage({
               </div>
 
               <div className="relative flex flex-col md:space-y-4">
-                <div className="absolute top-2 left-2 z-10 w-fit max-w-[90%] bg-brand-off-white/95 backdrop-blur-sm border-2 border-brand-navy p-2 md:p-2.5 shadow-(--shadow-brut-sm) pointer-events-none md:pointer-events-auto">
-                  <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-1.5 py-0.5 md:px-2 md:py-0.5 mb-1 md:mb-1">
-                    {eventDetails.tag}
-                  </span>
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl font-display uppercase text-brand-navy leading-none mt-1">
-                    {eventDetails.title}
-                  </h1>
-                  <p className="text-[11px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1 flex items-center gap-1.5 md:gap-2">
-                    <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
-                    <span className="truncate">{eventDetails.subtitle}</span>
-                  </p>
+                {/*
+                  IDENTITY BAR - the title card used to sit ON TOP of the poster
+                  as an absolutely positioned overlay, and the marquee ticker was
+                  pinned across the bottom 24px of the artwork, so a 420px-tall
+                  poster was covered top and bottom. A cream gradient was also
+                  veiling the top third. The poster is the reason anyone is on
+                  this page, so it now runs edge to edge with nothing on it, and
+                  these facts sit above it where they get their own space
+                  instead of stealing the image's.
+
+                  The LIVE EVENT / MINI EVENT badge is deliberately NOT counted
+                  here: it is positioned against this card's corner, outside the
+                  poster box, so it never covered the artwork.
+
+                  The title is kept (not dropped) because it is the h1, it comes
+                  from the database rather than the artwork, and the poster text
+                  is not selectable or translatable. It is simply no longer
+                  fighting the image for the same pixels.
+
+                  MOBILE KEEPS THE OLD OVERLAY, and that is deliberate. Stacking
+                  this bar above the poster on a phone cost 79px of height and
+                  pushed the first price from y=1039 to y=1118, because on mobile
+                  the poster is already capped at 52dvh and every pixel the
+                  title stops covering is a pixel of buy button pushed down.
+                  Desktop is where the poster was too small and too busy;
+                  mobile was accepted as-is, so max-md: puts this back on top of
+                  the artwork exactly as it was.
+                */}
+                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:pointer-events-auto">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-2 py-0.5 mb-1.5">
+                        {eventDetails.tag}
+                      </span>
+                      <h1 className="text-3xl sm:text-4xl md:text-5xl font-display uppercase text-brand-navy leading-none">
+                        {eventDetails.title}
+                      </h1>
+                      <p className="text-[11px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1.5 flex items-center gap-1.5 md:gap-2">
+                        <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
+                        <span className="truncate">{eventDetails.subtitle}</span>
+                      </p>
+                    </div>
+                  </div>
                   {eventDetails.custom_schedule_text ? (
-                    <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
                       <Clock className="w-3 h-3 text-brand-accent shrink-0" />
                       <span>{eventDetails.custom_schedule_text}</span>
                     </div>
                   ) : eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none' ? (
-                    <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
                       <Clock className="w-3 h-3 text-brand-accent shrink-0" />
                       <span>EVERY {eventDetails.recurrence_day?.toUpperCase()} | {eventDetails.recurrence_time}</span>
                     </div>
@@ -1003,29 +1036,35 @@ export default function TicketCheckoutPage({
                 </div>
 
                 {/* EVENT FLYER CONTAINER
-                    The poster is 390x551 - a portrait A-series flyer - and it was
-                    being rendered into a fixed-height box with object-cover, so
-                    on a phone only the top 39% of the artwork was ever on screen.
-                    The earlier 180px cap did not shrink the poster, it amputated
-                    it. Two changes fix that:
+                    The flyer is A-series portrait: measured at 1131x1600 on
+                    every current event, i.e. a ratio of exactly 0.707. Two
+                    separate bugs came from the box not matching that.
 
-                    1. aspect-[390/551] makes the box the same shape as the
-                       artwork, so the whole poster fits instead of being sliced.
-                    2. object-contain guarantees the *entire* poster is visible
-                       whatever the ratio, because contain never crops. That is
-                       why the hard-coded ratio is safe: if another event has a
-                       wider or shorter flyer, the worst case is a little
-                       letterboxing, never a hidden headline.
+                    1. DESKTOP WAS THROWING 107px AWAY PER SIDE. The old
+                       `md:h-[420px]` in a 405px-wide box is a LANDSCAPE box
+                       holding a PORTRAIT image, so object-contain fits to
+                       height and centres the rest: the poster painted at only
+                       294px wide inside a 405px box. It looked "narrow" because
+                       it was - a third of the available width was empty gutter
+                       that no amount of widening the column would recover.
+                       `md:aspect-[707/1000]` makes the box the same shape as the
+                       artwork, so the poster now fills the full column width.
 
-                    max-h-[52dvh] is the guard rail. The flyer needs 461px at a
-                    390px viewport, so without a cap this would become the exact
-                    problem the previous fix removed: a poster that eats the
-                    first screen. 52dvh keeps venue, till and house rules above
-                    the fold on both a 390x844 phone and a 360x740 one.
+                    2. object-contain is kept as the guarantee. contain NEVER
+                       crops, so if a future flyer is a different shape the worst
+                       case is a little letterboxing - never a hidden headline or
+                       a cut-off price. The hard-coded ratio is an optimisation,
+                       not a safety mechanism; the safety is contain.
 
-                    Desktop is untouched: it was already object-contain at a fixed
-                    420px and nobody has complained about it. */}
-                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-auto md:h-[420px] md:max-h-[420px] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
+                    The height cap is now a VIEWPORT cap rather than a fixed
+                    pixel one, because a portrait poster gets bigger only by
+                    getting taller: at 0.707, a 500px-wide poster is 707px tall,
+                    which is most of a 900px laptop screen. `68dvh` fills the
+                    space available on a big display and still shrinks on a
+                    short one. The page scrolls a little on desktop, which is
+                    the correct trade - the alternative was a small poster with
+                    empty space either side of it. */}
+                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] md:max-h-[68dvh] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
                   <button 
                     type="button"
                     onClick={() => setIsFlyerExpanded(true)}
@@ -1051,8 +1090,13 @@ export default function TicketCheckoutPage({
                         referrerPolicy="no-referrer"
                       />
                     )}
-                    {/* Subtle top gradient */}
-                    <div className="absolute top-0 left-0 w-full h-24 md:h-32 bg-gradient-to-b from-brand-off-white via-brand-off-white/80 to-transparent pointer-events-none" />
+                    {/* REMOVED: the top gradient (absolute, h-24 md:h-32, from
+                        brand-off-white to transparent). It existed to fade the
+                        title card into the top of the artwork. With the card
+                        moved up into the identity bar it had nothing left to
+                        blend with, and was just a 128px cream veil over the
+                        top 30% of the poster - which is where the date and the
+                        top ticket name live. */}
 
                     {/* Mobile zoom affordance. The poster itself is the button -
                         this badge is decoration pointing at the whole thing, not a
@@ -1068,14 +1112,23 @@ export default function TicketCheckoutPage({
                       <Maximize2 className="w-4 h-4" />
                     </div>
 
-                    {/* Marquee ticker on desktop */}
-                    <div className="absolute bottom-0 left-0 w-full h-6 bg-brand-accent border-t-2 border-brand-navy overflow-hidden flex items-center max-md:hidden">
-                      <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-1">
-                        <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
-                        <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
-                      </div>
-                    </div>
                   </button>
+                </div>
+
+                {/* Ticker, moved off the artwork.
+                    It was absolutely positioned across the bottom 24px of the
+                    poster, so the bottom sixth of the flyer - where the cheap
+                    tier names and the M-Pesa callout sit - was permanently
+                    covered. It is now a strip in normal flow under the poster,
+                    which also stops it being clipped by the poster's own
+                    object-contain letterboxing. Still desktop-only: on a phone
+                    the poster is height-constrained by 52dvh, and 24px there is
+                    taken straight out of the above-the-fold budget. */}
+                <div className="w-full h-6 bg-brand-accent border-2 border-brand-navy overflow-hidden flex items-center max-md:hidden">
+                  <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-0.5">
+                    <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
+                    <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
+                  </div>
                 </div>
 
                 {/* Venue / Till details.
@@ -1170,55 +1223,19 @@ export default function TicketCheckoutPage({
                   </div>
                 )}
 
-                {/* CAMPING DISCOVERY ZONE (Exclusively in Camping Tab) */}
-                {activePackageTab === "camping" && campingTiers.length > 0 && (
-                  <div className="space-y-3 mb-4">
-                    {/* All-Inclusive Clarity Callout */}
-                    <div className="bg-brand-navy text-brand-off-white border-2 border-brand-accent p-2.5 shadow-(--shadow-brut-xs) flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
-                      <p className="text-[11px] font-mono uppercase leading-tight">
-                        <span className="text-brand-accent font-bold">ALL-INCLUSIVE:</span> ALL TENT & BED PACKAGES INCLUDE FULL FESTIVAL ENTRY FOR ALL GUESTS. NO SEPARATE ENTRY TICKET NEEDED!
-                      </p>
-                    </div>
+                {/*
+                  REMOVED: the camping discovery zone that used to sit here - the
+                  "ALL-INCLUSIVE" entry callout, the "CAMP GROUNDS STATUS: 82%
+                  BOOKED / ONLY 4 TENTS & 3 BEDS LEFT" ticker, and the walkthrough
+                  trigger.
 
-                    {/* Live Marara Camp Availability Ticker */}
-                    <div className="border-2 border-brand-navy bg-brand-accent/20 p-2.5 flex items-center justify-between shadow-(--shadow-brut-2xs)">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shrink-0" />
-                        <span className="font-mono text-[11px] font-black uppercase text-brand-navy tracking-wide">
-                          CAMP GROUNDS STATUS: 82% BOOKED
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold uppercase bg-brand-navy text-brand-accent px-1.5 py-0.5 whitespace-nowrap">
-                        ONLY 4 TENTS & 3 BEDS LEFT
-                      </span>
-                    </div>
-
-                    {/* Camp & Tent Walkthrough Tour Trigger */}
-                    <button
-                      type="button"
-                      onClick={() => setShowCampTourModal(true)}
-                      className="w-full p-2.5 border-2 border-dashed border-brand-navy bg-brand-off-white hover:bg-brand-accent/20 transition-all flex items-center justify-between text-left group cursor-pointer shadow-(--shadow-brut-2xs)"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 border border-brand-navy bg-brand-navy text-brand-off-white group-hover:bg-brand-accent group-hover:text-brand-navy transition-colors shrink-0">
-                          <Video className="w-3.5 h-3.5" />
-                        </div>
-                        <div>
-                          <div className="font-display text-xs sm:text-sm uppercase text-brand-navy">
-                            CAMP GROUNDS & TENT WALKTHROUGH
-                          </div>
-                          <div className="text-[10px] font-mono text-brand-navy/70 uppercase">
-                            Drone tour, private dome tents, shared dorms & amenities
-                          </div>
-                        </div>
-                      </div>
-                      <span className="font-mono text-[10px] font-bold text-brand-navy underline uppercase shrink-0 ml-1">
-                        VIEW TOUR &rarr;
-                      </span>
-                    </button>
-                  </div>
-                )}
+                  The occupancy numbers were hardcoded strings, not derived from
+                  anything: they claimed 82% booked with 4 tents and 3 beds left
+                  regardless of actual sales, so they were a claim the site could
+                  not stand behind. Removing them rather than wiring them to real
+                  inventory was the request; nothing replaces them, and the
+                  camping tiers themselves are untouched below.
+                */}
 
                 <form ref={formRef} onSubmit={handleCheckout} className="space-y-3 md:space-y-3.5">
                   
@@ -1504,14 +1521,32 @@ export default function TicketCheckoutPage({
                     <span>{totalPrice === 0 ? "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP." : "AN INSTANT M-PESA PIN PROMPT WILL BE SENT."}</span>
                   </p>
 
-                  {/* Manual Till Payment Alternative */}
+                  {/* Manual Till Payment Alternative - collapsed accordion.
+                      The till number itself is already shown in the venue/till
+                      strip near the top, so nothing is hidden by closing this. */}
                   {totalPrice > 0 && eventDetails?.till_number && (
-                    <div className="mt-2.5 p-3 border-4 border-brand-navy bg-brand-accent/5 shadow-(--shadow-brut-sm) flex flex-col gap-2">
-                      <p className="text-[10px] font-black uppercase text-brand-navy tracking-wider text-center select-none">
-                        Prefer manual M-Pesa Till payment?
-                      </p>
-                      
-                      <div className="grid grid-cols-2 gap-2">
+                    <div className="mt-2.5 border-4 border-brand-navy bg-brand-accent/5 shadow-(--shadow-brut-sm)">
+                      <button
+                        type="button"
+                        onClick={() => setTillOpen((v) => !v)}
+                        aria-expanded={tillOpen}
+                        aria-controls="till-payment-panel"
+                        className="w-full p-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-brand-accent/15 transition-colors"
+                      >
+                        <span className="text-[10px] font-black uppercase text-brand-navy tracking-wider text-left select-none">
+                          Prefer manual M-Pesa Till payment?
+                        </span>
+                        <span
+                          className={`shrink-0 transition-transform duration-200 ${tillOpen ? "rotate-180" : ""}`}
+                          aria-hidden="true"
+                        >
+                          <ChevronDown className="w-4 h-4 text-brand-navy" />
+                        </span>
+                      </button>
+
+                      {tillOpen && (
+                        <div id="till-payment-panel" className="p-3 pt-0 flex flex-col gap-2">
+                          <div className="grid grid-cols-2 gap-2">
                         {/* Till Box */}
                         <div className="p-2 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between items-center text-center">
                           <span className="text-[10px] font-mono font-bold uppercase text-brand-navy/60 select-none">TILL NUMBER</span>
@@ -1550,8 +1585,10 @@ export default function TicketCheckoutPage({
                             {copiedAmount ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             {copiedAmount ? "COPIED!" : "COPY AMOUNT"}
                           </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
                 </form>
@@ -1819,106 +1856,16 @@ export default function TicketCheckoutPage({
         )}
       </AnimatePresence>
 
-      {/* CAMPING GROUNDS & TENT WALKTHROUGH TOUR LIGHTBOX */}
-      <AnimatePresence>
-        {showCampTourModal && (
-          <motion.div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-brand-navy/95 p-3 md:p-10 cursor-pointer backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Camping Tour & Grounds Walkthrough"
-            onClick={() => setShowCampTourModal(false)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="relative w-full max-w-3xl max-h-[90vh] border-4 md:border-8 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-3xl-accent) overflow-y-auto cursor-default"
-              initial={{ scale: 0.94, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.94, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Tour Header */}
-              <div className="flex items-center justify-between border-b-4 border-brand-navy bg-brand-accent p-3 md:p-4">
-                <div className="flex items-center gap-2">
-                  <Tent className="w-5 h-5 text-brand-navy" />
-                  <span className="font-display text-lg md:text-2xl uppercase text-brand-navy">
-                    MARARA CAMP GROUNDS & TENT TOUR
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Close tour"
-                  className="bg-brand-navy text-brand-off-white p-1 hover:bg-brand-off-white hover:text-brand-navy transition-colors border-2 border-brand-navy cursor-pointer"
-                  onClick={() => setShowCampTourModal(false)}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      {/*
+        REMOVED: the "CAMP GROUNDS & TENT WALKTHROUGH" lightbox that used to
+        live here - a video player plus a hardcoded camp-amenities panel.
 
-              {/* Video Walkthrough Player */}
-              <div className="relative aspect-video w-full bg-black border-b-4 border-brand-navy">
-                <video
-                  src={eventDetails.recap_video_url || "/promo.mp4"}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
-              {/* Camp Specs & Option B Explanation */}
-              <div className="p-4 md:p-6 space-y-4">
-                <div className="bg-brand-navy text-brand-off-white p-3 border-2 border-brand-accent">
-                  <h4 className="font-display text-base md:text-lg uppercase text-brand-accent mb-1">
-                    ALL-INCLUSIVE ACCOMMODATION RULES
-                  </h4>
-                  <p className="font-mono text-xs uppercase leading-relaxed opacity-90">
-                    ✦ Every camping package includes full festival entry passes for all guests.<br />
-                    ✦ <strong>Private Tents (2PX / 4PX / 6PX)</strong>: Exclusive dome tent with mattresses for your group. Key handed to lead guest at gate.<br />
-                    ✦ <strong>Shared 6PX Dorm Beds (1PX)</strong>: Communal dome tent setup with individual mattress. Bed numbers allocated on arrival at gate (Option B first-come, first-served).
-                  </p>
-                </div>
-
-                {/* Amenity checklist */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> Heavy Canvas Tents
-                  </div>
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> Foam Mattresses
-                  </div>
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> Hot Showers
-                  </div>
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> Flush Toilets
-                  </div>
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> 24/7 Gate Guard
-                  </div>
-                  <div className="p-2.5 border-2 border-brand-navy bg-brand-bg font-mono text-[11px] font-bold uppercase flex items-center gap-2">
-                    <span className="font-bold text-brand-navy">✦</span> Bonfire Lounge
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCampTourModal(false);
-                    setActivePackageTab("camping");
-                    document.getElementById("booking-container")?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                  className="w-full py-3 border-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase hover:bg-brand-navy hover:text-brand-off-white transition-colors text-center shadow-(--shadow-brut-xs) cursor-pointer"
-                >
-                  CHOOSE A CAMPING PACKAGE &rarr;
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        It was unreachable. Its only trigger was the walkthrough button in the
+        camping discovery zone, removed when that zone (the ALL-INCLUSIVE
+        callout and the "82% BOOKED" ticker) was cut, leaving
+        `showCampTourModal` permanently false. Unreachable UI is worse than no
+        UI: untested, unmaintained code that still has to typecheck.
+      */}
     </div>
   );
 }

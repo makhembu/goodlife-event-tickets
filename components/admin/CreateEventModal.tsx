@@ -5,6 +5,33 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Sparkles, Calendar, Layers, Tent, MapPin, Tag } from "lucide-react";
 import { Event } from "@/lib/supabase-db-types";
 
+/** Must stay in sync with the patterns lib/event-availability.ts schedules. */
+type RecurrencePattern = "none" | "daily" | "weekly" | "biweekly";
+
+/**
+ * The default customer-facing schedule label for a recurrence triple.
+ *
+ * This is derived in ONE place on purpose. It used to be built by three
+ * separate onChange handlers, and they disagreed: the day-of-week handler only
+ * knew about `weekly`, so choosing BI-WEEKLY and then changing the day left the
+ * label reading "EVERY 2 WEEKS (SUNDAY)" while the stored `recurrence_day` was
+ * saturday - a label that lied about when sales would actually close. The time
+ * handler was worse, firing for any non-`none` pattern and so writing
+ * "EVERY SUNDAY | ..." onto a `daily` event.
+ *
+ * The label is only ever a *default*: the field stays freely editable, so an
+ * admin can still write their own wording.
+ */
+function deriveScheduleText(pattern: RecurrencePattern, day: string, time: string): string {
+  const d = day.toUpperCase();
+  switch (pattern) {
+    case "daily": return `EVERY DAY | ${time} TILL LATE`;
+    case "weekly": return `EVERY ${d} | ${time} TILL LATE`;
+    case "biweekly": return `EVERY 2 WEEKS (${d}) | ${time}`;
+    default: return "";
+  }
+}
+
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,7 +53,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   const [recapVideoUrl, setRecapVideoUrl] = useState("");
   const [maxTentInventory, setMaxTentInventory] = useState(30);
   const [maxSharedBeds, setMaxSharedBeds] = useState(12);
-  const [recurrencePattern, setRecurrencePattern] = useState<"none" | "weekly" | "biweekly" | "monthly">("none");
+  const [recurrencePattern, setRecurrencePattern] = useState<RecurrencePattern>("none");
   const [recurrenceDay, setRecurrenceDay] = useState("sunday");
   const [recurrenceTime, setRecurrenceTime] = useState("14:00");
   const [customScheduleText, setCustomScheduleText] = useState("");
@@ -97,7 +124,15 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
         recap_video_url: recapVideoUrl,
         max_tent_inventory: Number(maxTentInventory),
         max_shared_beds: Number(maxSharedBeds),
-        is_active: status === "live"
+        // INTENT ONLY - "a flagship that should be live", not "make this the
+        // homepage event". Whether the single `is_active` slot is actually free
+        // is a data-integrity question, so it is enforced in `createEvent`
+        // against the database rather than trusted from the client, which
+        // anyone can POST to /api/events directly.
+        //
+        // This used to be `status === "live"`, which made a MINI festival
+        // silently hijack the homepage slot from the GOODLIFE flagship.
+        is_active: status === "live" && category === "flagship"
       };
 
       const res = await fetch("/api/events", {
@@ -292,34 +327,34 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                   <select
                     value={recurrencePattern}
                     onChange={(e) => {
-                      const pat = e.target.value as any;
+                      const pat = e.target.value as RecurrencePattern;
                       setRecurrencePattern(pat);
-                      if (pat === "weekly") {
-                        setCustomScheduleText(`EVERY ${recurrenceDay.toUpperCase()} | ${recurrenceTime} TILL LATE`);
-                      } else if (pat === "biweekly") {
-                        setCustomScheduleText(`EVERY 2 WEEKS (${recurrenceDay.toUpperCase()}) | ${recurrenceTime}`);
-                      } else if (pat === "monthly") {
-                        setCustomScheduleText(`MONTHLY (${recurrenceDay.toUpperCase()}) | ${recurrenceTime}`);
-                      } else {
-                        setCustomScheduleText("");
-                      }
+                      setCustomScheduleText(deriveScheduleText(pat, recurrenceDay, recurrenceTime));
                     }}
                     className="w-full p-1.5 border border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
                   >
                     {/*
-                      Only the patterns that lib/event-availability.ts can
-                      actually schedule are offered. BI-WEEKLY and MONTHLY used
-                      to be selectable here, but nothing implemented them: they
-                      were stored and then ignored, so the schedule shown to
-                      customers ("EVERY 2 WEEKS", "MONTHLY") would not match
-                      when sales actually opened or closed. They need an
-                      anchor week and an ordinal respectively, neither of which
-                      is recorded in the schema. Rather than leave options that
-                      silently lie, they are gone from the picker - use WEEKLY,
-                      or one row per session.
+                      Only patterns that lib/event-availability.ts can actually
+                      schedule are offered, so the schedule shown to customers
+                      always matches when sales really open and close.
+
+                      DAILY is a deliberate special case in that module: every
+                      day is an occurrence day, so the usual "shut on session
+                      day" rule would close a daily festival forever. A daily
+                      festival therefore stays open, subject to status and any
+                      explicit sales window.
+
+                      BI-WEEKLY anchors to event_date - the week containing
+                      event_date is an "on" week, and the next one is not - so
+                      the date must be set to the first session.
+
+                      MONTHLY needs an ordinal ("2nd Sunday") that the schema
+                      does not store, so it is still not offered.
                     */}
+                    <option value="daily">DAILY (EVERY DAY)</option>
                     <option value="weekly">WEEKLY (EVERY WEEK)</option>
-                    <option value="none">ONE-OFF / CUSTOM DATE ONLY</option>
+                    <option value="biweekly">BI-WEEKLY (EVERY 2 WEEKS)</option>
+                    <option value="none">ONE DAY ONLY (SINGLE DATE)</option>
                   </select>
                 </div>
 
@@ -329,15 +364,11 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                   </label>
                   <select
                     value={recurrenceDay}
-                    disabled={recurrencePattern === "none"}
+                    disabled={recurrencePattern === "none" || recurrencePattern === "daily"}
                     onChange={(e) => {
                       const day = e.target.value;
                       setRecurrenceDay(day);
-                      if (recurrencePattern === "weekly") {
-                        setCustomScheduleText(`EVERY ${day.toUpperCase()} | ${recurrenceTime} TILL LATE`);
-                      } else if (recurrencePattern === "monthly") {
-                        setCustomScheduleText(`MONTHLY (${day.toUpperCase()}) | ${recurrenceTime}`);
-                      }
+                      setCustomScheduleText(deriveScheduleText(recurrencePattern, day, recurrenceTime));
                     }}
                     className="w-full p-1.5 border border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none disabled:opacity-50"
                   >
@@ -357,10 +388,9 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                     value={recurrenceTime}
                     placeholder="14:00"
                     onChange={(e) => {
-                      setRecurrenceTime(e.target.value);
-                      if (recurrencePattern !== "none") {
-                        setCustomScheduleText(`EVERY ${recurrenceDay.toUpperCase()} | ${e.target.value} TILL LATE`);
-                      }
+                      const time = e.target.value;
+                      setRecurrenceTime(time);
+                      setCustomScheduleText(deriveScheduleText(recurrencePattern, recurrenceDay, time));
                     }}
                     className="w-full p-1.5 border border-brand-navy bg-white text-xs font-bold focus:outline-none"
                   />

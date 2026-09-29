@@ -1,5 +1,5 @@
 import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket } from "./supabase-db-types";
-import { getEventAvailability } from "./event-availability";
+import { getEventAvailability, type SchedulableEvent } from "./event-availability";
 
 // Re-export interface types so all existing pages compile unchanged
 export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket };
@@ -74,12 +74,13 @@ export async function fetchAllEvents(): Promise<Event[]> {
  * `fetchActiveEvent` reads with `LIMIT 1` - so making Park & Chill sellable
  * would have risked displacing the GOODLIFE 4 flagship. Sellability is now
  * status + sales window + recurrence; `is_active` means "homepage event" only.
+ *
+ * The parameter is `SchedulableEvent` rather than a hand-picked subset so that
+ * a caller cannot silently omit `event_date` and thereby skip the one-off
+ * "this event day has passed" gate. A narrower type here would fail OPEN, which
+ * is the dangerous direction for a money-taking decision.
  */
-export function isEventSellable(
-  e: Pick<Event, "status"> &
-    Partial<Pick<Event, "sales_open_date" | "sales_close_date" | "recurrence_pattern" | "recurrence_day" | "recurrence_time">> | null | undefined,
-  now?: Date
-): boolean {
+export function isEventSellable(e: SchedulableEvent, now?: Date): boolean {
   return getEventAvailability(e, now).sellable;
 }
 
@@ -160,12 +161,49 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
   }
 
   try {
-    const isScheduleOnly = event.status === 'scheduled' || event.is_active === false;
+    // Decide whether this event may take the single `is_active` ("homepage
+    // event") slot. See lib/event-availability.ts for why that slot and
+    // sellability are separate concerns.
+    //
+    // Two rules, both of which used to be violated:
+    //
+    // 1. A MINI event never takes the slot. `is_active` used to be derived
+    //    from `status === 'live'`, so creating "SUNDAY PARK & CHILL #13" as
+    //    live ran the demote query below and ARCHIVED the GOODLIFE 4 flagship,
+    //    leaving the homepage advertising a 2pm mini festival instead of the
+    //    main event. The whole point of a recurring mini festival is that it is
+    //    sellable without displacing anything, and it was not.
+    //
+    // 2. A flagship takes the slot only if it is actually free. Planning the
+    //    next flagship (GOODLIFE 5) while GOODLIFE 4 is still selling must not
+    //    knock GOODLIFE 4 offline - otherwise every "get the next one ready"
+    //    action silently takes the site down. There is a deliberate activate
+    //    action for switching over (POST /api/events/[id]/archive with
+    //    activate), which is where that decision belongs.
+    const wantsHomepage = event.is_active === true && event.category !== 'mini';
 
-    // Archive current active event ONLY if this new event is immediately live
-    if (!isScheduleOnly) {
-      await neonQuery("UPDATE events SET is_active = FALSE, archived_at = NOW() WHERE is_active = TRUE");
+    let claimsHomepage = false;
+    if (wantsHomepage) {
+      const { rows: taken } = await neonQuery(
+        "SELECT id FROM events WHERE is_active = TRUE AND COALESCE(category, '') <> 'mini' LIMIT 1"
+      );
+      claimsHomepage = !taken || taken.length === 0;
     }
+
+    // Demote the incumbent WITHOUT archiving it. `archived_at` means "moved to
+    // trash", and nothing about creating a new event is a decision to trash the
+    // old one - that silently destroyed the previous flagship's presence in the
+    // dashboard and, with it, any admin's mental model of where tickets went.
+    if (claimsHomepage) {
+      await neonQuery("UPDATE events SET is_active = FALSE WHERE is_active = TRUE");
+    }
+
+    // Unrelated to the homepage slot: whether this is a "schedule-only"
+    // announcement. Kept separate from `claimsHomepage` on purpose - tying the
+    // two together would mean a live flagship created while the slot was taken
+    // (correctly) declined the slot, and then had its status silently rewritten
+    // to 'scheduled'. Losing the homepage slot must not cost you "live".
+    const isScheduleOnly = event.status === 'scheduled' || event.is_active === false;
 
     // Create new event
     const { rows } = await neonQuery(
@@ -189,7 +227,7 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.ticker_text || '',
         event.till_number || '',
         event.event_date || null,
-        !isScheduleOnly,
+        claimsHomepage,
         event.status || (isScheduleOnly ? 'scheduled' : 'live'),
         event.category || 'flagship',
         event.sales_open_date || null,
@@ -206,9 +244,25 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
     );
     const newEvent = rows[0];
 
-    // Seed tiers for the new event without overwriting previous events' tiers
+    // Seed tiers for the new event by copying the most recent previous event.
+    //
+    // This used to be `(SELECT id FROM events WHERE is_active = TRUE LIMIT 1)`,
+    // i.e. "the currently active event". That is the wrong source, and it was
+    // wrong in both directions:
+    //
+    //   - On a flagship rollover the demote query above has already run by this
+    //     point, so the subquery found nothing and the new event silently got
+    //     DEFAULT_POSTER_TIERS instead of the real pricing ladder.
+    //   - The answer also depended on a side effect of an unrelated column,
+    //     which is the same "two copies of one rule drift apart" bug this
+    //     module was written to kill.
+    //
+    // Ordered exactly like fetchActiveEvent's tiebreak - flagship before mini,
+    // newest first - so a new flagship clones the previous flagship, and a new
+    // mini festival clones the main event's tiers to start from.
     const { rows: prevTiers } = await neonQuery(
-      "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL AND event_id = (SELECT id FROM events WHERE is_active = TRUE LIMIT 1)"
+      "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL AND event_id = (SELECT id FROM events WHERE id <> $1 ORDER BY (COALESCE(category, '') = 'mini') ASC, created_at DESC, id DESC LIMIT 1)",
+      [newEvent.id]
     );
     const sourceTiers = prevTiers && prevTiers.length > 0 ? prevTiers : DEFAULT_POSTER_TIERS;
     for (const tier of sourceTiers) {
