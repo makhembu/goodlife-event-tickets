@@ -1249,12 +1249,12 @@ let localEventDetails: EventDetails = {
   subtitle: "237-THIKA | JULY 11",
   tag: "SMWHR INC · MARARA CAMP",
   venue: "MARARA CAMP, THIKA",
-  till_number: "5761205",
+  till_number: "",
   flyer_url: "/flyer.png",
   regulations: "Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified.",
   ticker_text: "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦",
   logo_url: "",
-  simulators_enabled: true,
+  simulators_enabled: false,
   operator_notifications_enabled: false,
   footer_title: "GOODLIFE TICKETING",
   footer_legal: "STRICTLY 18+ NO OUTSIDE DRINKS",
@@ -1271,7 +1271,6 @@ function getLocalEventDetails(): EventDetails {
     try {
       const stored = localStorage.getItem("goodlife_event_details");
       if (stored) return JSON.parse(stored);
-      localStorage.setItem("goodlife_event_details", JSON.stringify(localEventDetails));
     } catch {}
   }
   return localEventDetails;

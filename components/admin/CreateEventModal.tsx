@@ -40,12 +40,12 @@ interface CreateEventModalProps {
 
 export default function CreateEventModal({ isOpen, onClose, onEventCreated }: CreateEventModalProps) {
   const [category, setCategory] = useState<"flagship" | "mini">("flagship");
-  const [title, setTitle] = useState("GOODLIFE 5");
+  const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("MARARA CAMP, THIKA | OCT 31");
   const [tag, setTag] = useState("SMWHR INC / MARARA CAMP");
-  const [venue, setVenue] = useState("MARARA CAMP, THIKA");
+  const [venue, setVenue] = useState("");
   const [mapsUrl, setMapsUrl] = useState("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
-  const [tillNumber, setTillNumber] = useState("5761205");
+  const [tillNumber, setTillNumber] = useState("");
   const [flyerUrl, setFlyerUrl] = useState("/flyer.png");
   const [eventDate, setEventDate] = useState("");
   const [status, setStatus] = useState<"live" | "scheduled">("scheduled");
@@ -82,10 +82,10 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setCustomScheduleText("EVERY SUNDAY | 2:00 PM TILL LATE");
       setRegulations("Gates open at 2:00 PM. Chill acoustic vibes, food trucks, and craft beverages. Carry your valid pass.");
     } else {
-      setTitle("GOODLIFE 5");
+      setTitle("");
       setSubtitle("MARARA CAMP, THIKA | OCT 31");
       setTag("SMWHR INC / MARARA CAMP");
-      setVenue("MARARA CAMP, THIKA");
+      setVenue("");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
       setFlyerUrl("/flyer.png");
       setMaxTentInventory(30);

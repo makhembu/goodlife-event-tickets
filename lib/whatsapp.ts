@@ -13,7 +13,7 @@ export function getWhatsAppConfig() {
   const apiKey =
     process.env.WAHA_API_KEY ||
     process.env.WHATSAPP_API_KEY ||
-    "goodlife_waha_secret_2026";
+    "";
 
   const sessionId =
     process.env.WAHA_SESSION_ID ||
@@ -239,7 +239,7 @@ export async function sendTicketViaWhatsApp(
   let eventFlyerUrl = "/flyer.png";
   let ticketType = "General Admission";
   let whatsappTemplate = "";
-  let paymentContact = "+254 799 560 898";
+  let paymentContact = process.env.OPERATOR_PAYMENT_CONTACT || "";
   let eventId: number | null = null;
 
   try {

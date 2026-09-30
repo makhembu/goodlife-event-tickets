@@ -10,21 +10,18 @@ import { createHmac, timingSafeEqual } from "crypto";
  * for arbitrary tabs.
  *
  * Secret: TAB_SELF_PAY_SECRET env var. If unset, falls back to the PayHero
- * callback token, then the database URL — so links keep working without new
- * configuration, but setting a dedicated secret is strongly recommended.
+ * callback token. DATABASE_URL is intentionally excluded — using the database
+ * password as a cryptographic signing key is a security anti-pattern.
+ * If no secret is configured, an empty string is returned and all verification
+ * calls will fail, which is safe (no forged tokens accepted).
  */
 
 function getSecret(): string {
-  const secret =
+  return (
     process.env.TAB_SELF_PAY_SECRET ||
     process.env.PAYHERO_CALLBACK_TOKEN ||
-    process.env.DATABASE_URL ||
-    "";
-  if (!secret) {
-    // Should never happen in a configured deployment (DATABASE_URL is required).
-    throw new Error("No secret available for self-pay token signing");
-  }
-  return secret;
+    ""
+  );
 }
 
 export function isSelfPayTokenConfigured(): boolean {

@@ -84,7 +84,7 @@ export function wahaConfig() {
   const apiKey =
     process.env.WAHA_API_KEY ||
     process.env.WHATSAPP_API_KEY ||
-    "goodlife_waha_secret_2026";
+    "";
 
   const sessionId =
     process.env.WAHA_SESSION_ID || process.env.WHATSAPP_SESSION_ID || "default";
