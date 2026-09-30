@@ -17,7 +17,15 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 
-type GatewayStatus = "LOADING" | "STARTING" | "SCAN_QR_CODE" | "CONNECTED" | "OFFLINE";
+type GatewayStatus =
+  | "LOADING"
+  | "STARTING"
+  | "SCAN_QR_CODE"
+  | "CONNECTED"
+  | "OFFLINE"
+  // The browser session crashed. Terminal: it will not finish booting, so it
+  // must not be shown the "warming up" copy, and it gets a Restart action.
+  | "FAILED";
 
 interface Me {
   id: string | null;
@@ -35,11 +43,15 @@ interface Snapshot {
  * Poll cadence is driven by the session state, not a countdown. CONNECTED is
  * terminal so we stop pinging; SCAN_QR_CODE stays fast because the user is
  * holding a phone up to the screen; OFFLINE backs off.
+ *
+ * FAILED polls slowest but not never: an operator may fix the gateway box out
+ * of band, and the console should notice on its own.
  */
 const POLL_INTERVAL: Partial<Record<GatewayStatus, number>> = {
   SCAN_QR_CODE: 5000,
   STARTING: 5000,
   OFFLINE: 10000,
+  FAILED: 15000,
 };
 
 const STATUS_COPY: Record<GatewayStatus, string> = {
@@ -48,6 +60,7 @@ const STATUS_COPY: Record<GatewayStatus, string> = {
   SCAN_QR_CODE: "SCAN QR CODE TO LINK WHATSAPP PHONE",
   STARTING: "WHATSAPP GATEWAY IS WARMING UP",
   OFFLINE: "GATEWAY UNREACHABLE",
+  FAILED: "WHATSAPP SESSION CRASHED",
 };
 
 const isLinked = (status: GatewayStatus) => status === "CONNECTED";
@@ -59,6 +72,8 @@ export default function AdminWhatsAppPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [restarting, setRestarting] = useState(false);
+  const [restartNote, setRestartNote] = useState<string | null>(null);
 
   // Test message state
   const [testPhone, setTestPhone] = useState("");
@@ -172,6 +187,39 @@ export default function AdminWhatsAppPage() {
     void loadGateway();
   }, [loadGateway]);
 
+  /**
+   * Restart a crashed session in place.
+   *
+   * This is the recovery path that did not exist before: the console could only
+   * ever say "warming up, please wait 15-30 seconds", which is actively wrong
+   * for a `FAILED` session, so the only way out was an SSH session. Restarting
+   * takes the engine from FAILED to SCAN_QR_CODE in roughly 20 seconds (measured
+   * against the live gateway), after which the pairing code reappears.
+   */
+  const handleRestart = useCallback(async () => {
+    setRestarting(true);
+    setRestartNote(null);
+    try {
+      const res = await fetch("/api/admin/whatsapp/restart", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setRestartNote(data.message || "Session restarting.");
+        // Kick the poller immediately so the QR appears as soon as it is ready
+        // rather than at the next tick.
+        setStatus("STARTING");
+        void loadGateway();
+      } else {
+        setRestartNote(
+          data?.message || "The session could not be restarted. Try again in a moment."
+        );
+      }
+    } catch {
+      setRestartNote("Could not reach the gateway service. Check your connection and retry.");
+    } finally {
+      setRestarting(false);
+    }
+  }, [loadGateway]);
+
   const handleSendTestMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!testPhone.trim()) return;
@@ -203,6 +251,7 @@ export default function AdminWhatsAppPage() {
   const pollEvery = POLL_INTERVAL[status];
   const showWarmup = status === "STARTING" || (status === "SCAN_QR_CODE" && !qrImage);
   const showQr = status === "SCAN_QR_CODE" && Boolean(qrImage);
+  const showFailed = status === "FAILED";
 
   const bannerTone = isLinked(status)
     ? "bg-emerald-500 text-white"
@@ -347,7 +396,31 @@ export default function AdminWhatsAppPage() {
                 </div>
               ) : (
                 <div className="py-12 text-center space-y-3">
-                  {status === "STARTING" ? (
+                  {showFailed ? (
+                    <>
+                      <AlertTriangle className="w-8 h-8 mx-auto text-red-600" />
+                      <p className="text-xs font-black uppercase text-red-800">
+                        The WhatsApp session crashed
+                      </p>
+                      <p className="text-[11px] text-stone-600 max-w-sm mx-auto">
+                        This is not a &ldquo;wait for it&rdquo; state &mdash; the browser session on the
+                        gateway stopped and will not finish booting on its own. Restarting it takes
+                        about 20 seconds, after which a fresh pairing code appears.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleRestart}
+                        disabled={restarting}
+                        className="inline-flex items-center gap-2 px-4 py-2 border-2 border-[var(--brand-navy)] bg-[var(--brand-navy)] text-white font-black uppercase text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${restarting ? "animate-spin" : ""}`} />
+                        {restarting ? "Restarting..." : "Restart session"}
+                      </button>
+                      {restartNote && (
+                        <p className="text-[11px] font-bold text-stone-700">{restartNote}</p>
+                      )}
+                    </>
+                  ) : status === "STARTING" ? (
                     <>
                       <Thermometer className="w-8 h-8 mx-auto text-sky-600 animate-pulse" />
                       <p className="text-xs font-black uppercase">

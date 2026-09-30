@@ -30,6 +30,20 @@ export interface WahaSessionSnapshot {
   reachable: boolean;
   /** the engine answered, but the browser session is still booting */
   warming: boolean;
+  /**
+   * The session reached a terminal failure (`FAILED`) and will not recover on
+   * its own. Distinct from `OFFLINE`, which means "stopped / never created" —
+   * both need an operator action, but only this one is a crash.
+   *
+   * This field exists because `FAILED` used to fall through to
+   * `warming: true`. The console then sat on "warming up, please wait 15-30
+   * seconds" and kept polling a session that was never going to finish
+   * booting, with no way forward except an SSH session. Verified live on
+   * 2026-09-30: `/api/sessions/default` returned `{"status":"FAILED"}` while
+   * the page reported "warming"; a plain restart walked it to `SCAN_QR_CODE`
+   * in ~20s.
+   */
+  failed: boolean;
 }
 
 export interface WahaQr {
@@ -159,13 +173,24 @@ function extractQrString(data: unknown): string | null {
 
 const STOPPED_STATES = new Set(["STOPPED", "STOPPING", "ENDED", "REMOVED"]);
 
+/**
+ * Terminal crash states. WAHA sets these when the Chromium/browser session
+ * dies — a crash, a lost WhatsApp pairing, or an OOM kill on the box. They are
+ * NOT "still booting" and they will never resolve by waiting.
+ *
+ * `FAILED` is the one actually observed in production (2026-09-30). The rest
+ * are listed defensively because every unrecognized state used to be reported
+ * as warming, which is the bug: it converts a crash into an infinite wait.
+ */
+const FAILED_STATES = new Set(["FAILED", "FAILURE", "ERROR", "CRASHED"]);
+
 /** Read the session's current lifecycle state. */
 export async function getWahaSession(timeoutMs = 6000): Promise<WahaSessionSnapshot> {
   const { sessionId } = wahaConfig();
   const result = await probe(`/api/sessions/${encodeURIComponent(sessionId)}`, timeoutMs);
 
   if (result.kind === "unreachable") {
-    return { status: "OFFLINE", me: null, reachable: false, warming: false };
+    return { status: "OFFLINE", me: null, reachable: false, warming: false, failed: false };
   }
 
   if (result.kind === "error") {
@@ -176,6 +201,7 @@ export async function getWahaSession(timeoutMs = 6000): Promise<WahaSessionSnaps
       me: null,
       reachable: result.httpStatus < 500,
       warming: false,
+      failed: false,
     };
   }
 
@@ -188,21 +214,25 @@ export async function getWahaSession(timeoutMs = 6000): Promise<WahaSessionSnaps
   const rawStatus =
     typeof body.status === "string" ? body.status.trim().toUpperCase() : "";
 
+  if (FAILED_STATES.has(rawStatus)) {
+    return { status: "OFFLINE", me: null, reachable: true, warming: false, failed: true };
+  }
+
   if (me || rawStatus === "WORKING" || rawStatus === "CONNECTED") {
-    return { status: "CONNECTED", me, reachable: true, warming: false };
+    return { status: "CONNECTED", me, reachable: true, warming: false, failed: false };
   }
 
   if (rawStatus === "SCAN_QR_CODE" || rawStatus === "SCAN_QR") {
-    return { status: "SCAN_QR_CODE", me: null, reachable: true, warming: false };
+    return { status: "SCAN_QR_CODE", me: null, reachable: true, warming: false, failed: false };
   }
 
   if (STOPPED_STATES.has(rawStatus)) {
-    return { status: "OFFLINE", me: null, reachable: true, warming: false };
+    return { status: "OFFLINE", me: null, reachable: true, warming: false, failed: false };
   }
 
   // STARTING, or an unrecognized state: treat as still booting rather than
   // guessing, so the UI shows the warming state instead of a false failure.
-  return { status: "STARTING", me: null, reachable: true, warming: true };
+  return { status: "STARTING", me: null, reachable: true, warming: true, failed: false };
 }
 
 /** Fetch the live pairing QR, as a raw payload or an inlined PNG. */
@@ -226,6 +256,70 @@ export async function getWahaQr(timeoutMs = 6000): Promise<WahaQr> {
   }
 
   return { raw: null, dataUrl: null };
+}
+
+/**
+ * Restart the browser session so a crashed/failed one can be recovered from
+ * the admin page instead of over SSH.
+ *
+ * Safe to call from a client-triggered POST: it only re-launches Chromium. It
+ * does not touch stored credentials, message history, or any ticket data, and a
+ * session that is already healthy is re-paired from scratch either way (that is
+ * inherent to WhatsApp, not to this endpoint).
+ *
+ * Returns the resulting status rather than the gateway body, for the same
+ * sanitization reason as everything else in this module.
+ */
+export async function restartWahaSession(
+  timeoutMs = 20000
+): Promise<{ ok: boolean; status: WahaStatus | null; message: string }> {
+  const { sessionId } = wahaConfig();
+  const result = await probe(
+    `/api/sessions/${encodeURIComponent(sessionId)}/restart`,
+    timeoutMs,
+    { method: "POST", body: {} }
+  );
+
+  if (result.kind === "unreachable") {
+    return {
+      ok: false,
+      status: null,
+      message: "The WhatsApp gateway is unreachable right now.",
+    };
+  }
+
+  if (result.kind === "error") {
+    return { ok: false, status: null, message: restartErrorMessage(result.httpStatus) };
+  }
+
+  // 201 with the fresh session, or 200 when it was already restarting.
+  const body =
+    result.kind === "json" && result.data && typeof result.data === "object"
+      ? (result.data as Record<string, unknown>)
+      : {};
+  const rawStatus = typeof body.status === "string" ? body.status.trim().toUpperCase() : "";
+
+  return {
+    ok: true,
+    status: rawStatus === "SCAN_QR_CODE" ? "SCAN_QR_CODE" : "STARTING",
+    message: "Session restarting. The pairing code will appear in a few seconds.",
+  };
+}
+
+function restartErrorMessage(httpStatus: number): string {
+  if (httpStatus === 401 || httpStatus === 403) {
+    return "Gateway credentials were rejected. Contact the operator.";
+  }
+  if (httpStatus === 404) {
+    return "That WhatsApp session no longer exists on the gateway.";
+  }
+  if (httpStatus === 409) {
+    return "The WhatsApp session is busy restarting. Give it a moment.";
+  }
+  if (httpStatus >= 500) {
+    return "The WhatsApp gateway reported a server error. Try again shortly.";
+  }
+  return "The session could not be restarted. Please try again.";
 }
 
 function sendErrorMessage(httpStatus: number): string {

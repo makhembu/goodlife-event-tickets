@@ -23,6 +23,9 @@ export async function GET() {
       me: session.me,
       reachable: session.reachable,
       warming: session.warming,
+      // Terminal crash. The console shows a Restart action instead of an
+      // endless "warming up" message that could never resolve.
+      failed: session.failed,
       sessionId: wahaSessionId(),
       checkedAt: Date.now(),
     },
