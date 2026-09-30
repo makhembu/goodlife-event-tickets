@@ -1,11 +1,34 @@
+/**
+ * Shared WhatsApp gateway configuration and session resolver.
+ * Priority: WAHA_* then WHATSAPP_GATEWAY_* then hardcoded defaults.
+ * Defaults session to "default" so all dispatcher and console paths align.
+ */
+export function getWhatsAppConfig() {
+  const url = (
+    process.env.WAHA_BASE_URL ||
+    process.env.WHATSAPP_GATEWAY_URL ||
+    "https://waha.darajadigital.com"
+  ).replace(/\/+$/, "");
+
+  const apiKey =
+    process.env.WAHA_API_KEY ||
+    process.env.WHATSAPP_API_KEY ||
+    "goodlife_waha_secret_2026";
+
+  const sessionId =
+    process.env.WAHA_SESSION_ID ||
+    process.env.WHATSAPP_SESSION_ID ||
+    "default";
+
+  return { url, apiKey, sessionId };
+}
+
 export async function sendTicketViaWhatsApp(
   ticketId: string,
   phoneNumber: string,
   buyerName?: string
 ) {
-  const url = process.env.WHATSAPP_GATEWAY_URL;
-  const apiKey = process.env.WHATSAPP_API_KEY;
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "goodlife-tickets";
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
   const appUrl = process.env.APP_URL || "";
 
   if (!url) {
@@ -119,17 +142,13 @@ export async function sendTicketViaWhatsApp(
       };
     } else if (isWaha) {
       const baseUrl = url.replace(/\/+$/, "");
-      targetUrl = `${baseUrl}/api/sendFile`;
+      targetUrl = `${baseUrl}/api/sendText`;
       headers["X-Api-Key"] = apiKey || "";
 
       bodyData = {
         chatId: `${formattedPhone}@c.us`,
         session: sessionId || "default",
-        file: {
-          url: pdfUrl,
-          filename: `GOODLIFE-TICKET-${ticketId}.pdf`
-        },
-        caption: messageText
+        text: messageText,
       };
     } else {
       // Evolution API Configuration
@@ -178,9 +197,7 @@ export async function notifyOperators(
   amountPaid: number,
   reference: string
 ) {
-  const url = process.env.WHATSAPP_GATEWAY_URL;
-  const apiKey = process.env.WHATSAPP_API_KEY;
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
   const operatorsEnv = process.env.OPERATOR_WHATSAPP_NUMBERS;
 
   if (!url || !operatorsEnv) {
@@ -300,9 +317,7 @@ export async function notifyOperators(
  * Used for system alerts (e.g., low PayHero fee float) as well as purchase broadcasts.
  */
 export async function sendOperatorText(messageText: string) {
-  const url = process.env.WHATSAPP_GATEWAY_URL;
-  const apiKey = process.env.WHATSAPP_API_KEY;
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
   const operatorsEnv = process.env.OPERATOR_WHATSAPP_NUMBERS;
 
   if (!url || !operatorsEnv) return;
@@ -356,9 +371,7 @@ export async function sendScanNotification(
   ticketType: string,
   scannerName: string = "Admin Guard"
 ) {
-  const url = process.env.WHATSAPP_GATEWAY_URL;
-  const apiKey = process.env.WHATSAPP_API_KEY;
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
 
   if (!url) {
     console.warn("WhatsApp gateway not configured. Skipping scan notification.");
@@ -467,9 +480,7 @@ export async function sendTextMessage(
   phoneNumber: string,
   messageText: string
 ): Promise<boolean> {
-  const url = process.env.WHATSAPP_GATEWAY_URL;
-  const apiKey = process.env.WHATSAPP_API_KEY;
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "goodlife-tickets";
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
 
   if (!url) {
     console.warn("WhatsApp gateway URL not configured. Skipping text message dispatcher.");

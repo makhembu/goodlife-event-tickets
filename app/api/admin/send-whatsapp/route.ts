@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     if (!sent) {
       return NextResponse.json(
         { error: "WhatsApp gateway returned an error or is not configured" },
-        { status: 502 }
+        { status: 500 }
       );
     }
 
