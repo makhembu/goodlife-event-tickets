@@ -773,7 +773,26 @@ export default function TicketCheckoutPage({
       <div className="absolute inset-0 z-0 pointer-events-none opacity-20"
            style={{ backgroundImage: 'radial-gradient(rgba(20,43,76,0.18) 1px, transparent 1px), radial-gradient(rgba(199,154,86,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
 
-      <div className="relative z-10 max-w-6xl mx-auto">
+      {/* Page shell. Widened from max-w-6xl (1152px) on large screens, and
+          this is what makes the poster actually grow on a big monitor.
+
+          At 1152px the left column was pinned at 461px no matter how wide the
+          window got, so a 2560x1440 display - which had 376px of spare
+          vertical space and 1400px of spare horizontal space - showed the
+          exact same 405px poster as a 1440px laptop. The poster was sized by
+          the COLUMN, so extra pixels went into empty space to the right of
+          the booking panel rather than into the artwork.
+
+          A 0.707 portrait poster can only get bigger by getting taller, and
+          height is capped by the fold, so widening the column is the only
+          lever that can enlarge the poster on a large display at all. It is
+          measured against the fold cap on the poster itself: the two are
+          coupled, and widening the shell alone would have pushed the poster
+          past the fold on mid-size screens.
+
+          Scoped to this page's own shell, not app/layout.tsx, so the admin
+          dashboard, POS and scanner are untouched by it. */}
+      <div className="relative z-10 max-w-6xl xl:max-w-[1400px] 2xl:max-w-[1680px] mx-auto">
         
         {/* HEADER NAVBAR */}
         <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-3 mb-4 md:pb-6 md:mb-6 gap-3 md:gap-6">
@@ -979,61 +998,6 @@ export default function TicketCheckoutPage({
               </div>
 
               <div className="relative flex flex-col md:space-y-4">
-                {/*
-                  IDENTITY BAR - the title card used to sit ON TOP of the poster
-                  as an absolutely positioned overlay, and the marquee ticker was
-                  pinned across the bottom 24px of the artwork, so a 420px-tall
-                  poster was covered top and bottom. A cream gradient was also
-                  veiling the top third. The poster is the reason anyone is on
-                  this page, so it now runs edge to edge with nothing on it, and
-                  these facts sit above it where they get their own space
-                  instead of stealing the image's.
-
-                  The LIVE EVENT / MINI EVENT badge is deliberately NOT counted
-                  here: it is positioned against this card's corner, outside the
-                  poster box, so it never covered the artwork.
-
-                  The title is kept (not dropped) because it is the h1, it comes
-                  from the database rather than the artwork, and the poster text
-                  is not selectable or translatable. It is simply no longer
-                  fighting the image for the same pixels.
-
-                  MOBILE KEEPS THE OLD OVERLAY, and that is deliberate. Stacking
-                  this bar above the poster on a phone cost 79px of height and
-                  pushed the first price from y=1039 to y=1118, because on mobile
-                  the poster is already capped at 52dvh and every pixel the
-                  title stops covering is a pixel of buy button pushed down.
-                  Desktop is where the poster was too small and too busy;
-                  mobile was accepted as-is, so max-md: puts this back on top of
-                  the artwork exactly as it was.
-                */}
-                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:pointer-events-auto">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-2 py-0.5 mb-1.5">
-                        {eventDetails.tag}
-                      </span>
-                      <h1 className="text-3xl sm:text-4xl md:text-5xl font-display uppercase text-brand-navy leading-none">
-                        {eventDetails.title}
-                      </h1>
-                      <p className="text-[11px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1.5 flex items-center gap-1.5 md:gap-2">
-                        <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
-                        <span className="truncate">{eventDetails.subtitle}</span>
-                      </p>
-                    </div>
-                  </div>
-                  {eventDetails.custom_schedule_text ? (
-                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
-                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
-                      <span>{eventDetails.custom_schedule_text}</span>
-                    </div>
-                  ) : eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none' ? (
-                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
-                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
-                      <span>EVERY {eventDetails.recurrence_day?.toUpperCase()} | {eventDetails.recurrence_time}</span>
-                    </div>
-                  ) : null}
-                </div>
 
                 {/* EVENT FLYER CONTAINER
                     The flyer is A-series portrait: measured at 1131x1600 on
@@ -1056,15 +1020,42 @@ export default function TicketCheckoutPage({
                        a cut-off price. The hard-coded ratio is an optimisation,
                        not a safety mechanism; the safety is contain.
 
-                    The height cap is now a VIEWPORT cap rather than a fixed
-                    pixel one, because a portrait poster gets bigger only by
-                    getting taller: at 0.707, a 500px-wide poster is 707px tall,
-                    which is most of a 900px laptop screen. `68dvh` fills the
-                    space available on a big display and still shrinks on a
-                    short one. The page scrolls a little on desktop, which is
-                    the correct trade - the alternative was a small poster with
-                    empty space either side of it. */}
-                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] md:max-h-[68dvh] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
+                    3. SIZED FROM THE FOLD, NOT THE VIEWPORT. The old cap was
+                       `md:max-h-[68dvh]`, which is a bug in disguise: 68dvh
+                       measures the viewport from the top of the window, but
+                       the poster does not start at the top of the window. It
+                       starts 219px down (nav 115, EDITIONS bar 67, main 24,
+                       card padding 24). So the cap was comparing the poster's
+                       height against space that 219px of chrome had already
+                       spent, and the poster overflowed the fold by 101px on a
+                       1440x900 screen and landed with exactly 0px to spare on
+                       1920x1080. Any extra chrome and it clipped.
+
+                       The cap is now a WIDTH cap derived from the height that
+                       is actually left over, because width is what the column
+                       binds on and the ratio turns width into height for us:
+
+                         width = (100dvh - 219px offset - margin) * 0.707
+                               = 70.7dvh - 180px
+
+                       Written as calc(70.7dvh - 180px) and applied as max-w.
+                       Underscores are Tailwind's escape for the spaces calc()
+                       requires around the minus sign - without them the whole
+                       declaration is invalid and the poster silently reverts to
+                       filling the column, which is the bug this replaces.
+
+                       This makes the fold guarantee hold at EVERY desktop
+                       height, and mx-auto keeps the poster centred in the
+                       column when the cap is the binding constraint. The
+                       honest trade: on a short screen fitting the poster above
+                       the fold caps it at ~371px wide, versus ~405px if you
+                       allow a 20px scroll. Big poster and no scrolling are
+                       genuinely exclusive on a 900px-tall screen - 780px of
+                       viewport minus 219px of chrome leaves 561px, and 0.707
+                       of that is 396px. Fitting was chosen because the scroll
+                       was the thing that was complained about, and 371px is
+                       still wider than the 294px that started all this. */}
+                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] md:mx-auto md:max-w-[calc(70.7dvh_-_180px)] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
                   <button 
                     type="button"
                     onClick={() => setIsFlyerExpanded(true)}
@@ -1113,6 +1104,92 @@ export default function TicketCheckoutPage({
                     </div>
 
                   </button>
+                </div>
+                {/*
+                  IDENTITY BAR - the title card used to sit ON TOP of the poster
+                  as an absolutely positioned overlay, and the marquee ticker was
+                  pinned across the bottom 24px of the artwork, so a 420px-tall
+                  poster was covered top and bottom. A cream gradient was also
+                  veiling the top third. The poster is the reason anyone is on
+                  this page, so it now runs edge to edge with nothing on it, and
+                  these facts sit under it on desktop where they get their own
+                  space instead of stealing the image's.
+
+                  The LIVE EVENT / MINI EVENT badge is deliberately NOT counted
+                  here: it is positioned against this card's corner, outside the
+                  poster box, so it never covered the artwork.
+
+                  The title is kept (not dropped) because it is the h1, it comes
+                  from the database rather than the artwork, and the poster text
+                  is not selectable or translatable. It is simply no longer
+                  fighting the image for the same pixels.
+
+                  MOBILE KEEPS THE OLD OVERLAY, and that is deliberate. Stacking
+                  this bar above the poster on a phone cost 79px of height and
+                  pushed the first price from y=1039 to y=1118, because on mobile
+                  the poster is already capped at 52dvh and every pixel the
+                  title stops covering is a pixel of buy button pushed down.
+                  Desktop is where the poster was too small and too busy;
+                  mobile was accepted as-is, so max-md: puts this back on top of
+                  the artwork exactly as it was.
+
+                  WHY IT MOVED BELOW THE POSTER (desktop), when it had only just
+                  been moved above it. Sitting above, the bar cost 128px of the
+                  column before the artwork even started - nav 115 + EDITIONS 67
+                  + main 24 + card padding 24 + bar 100 + gap 8 - which is what
+                  made the whole poster need scrolling. The two options were:
+
+                    - move it into the right column, above the tier list
+                    - move it down, here, in the same column
+
+                  The right column was rejected because that section is
+                  `lg:sticky` and the booking panel inside it is itself an
+                  overflow-y-auto box capped at
+                  `calc(100dvh - headerBottom - 48px)`. Adding 100px above that
+                  box eats directly into the panel's own scroll area on
+                  exactly the short screens where the poster needs the help. It
+                  would have fixed the poster by making the checkout form worse.
+
+                  Dropping it below gets the same 128px back with none of that,
+                  and it puts the poster first - the hero is the artwork, and
+                  the title is metadata about it. The h1 stays first in DOM
+                  order in earlier revisions of this file's history but is now
+                  after the poster in source order, matching what is painted;
+                  CSS `order` was rejected because it desynchronises DOM order
+                  from visual order for screen readers.
+
+                  The mobile overlay survives the move without any extra work:
+                  the bar is max-md:absolute and its containing block is the
+                  parent `relative flex flex-col` div, not the poster. Absolute
+                  positioning lifts it out of flow wherever it sits in the DOM,
+                  and top-2/left-2 land it on the poster's top-left corner
+                  because the poster is that parent's first in-flow child. */}
+                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:pointer-events-auto">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-2 py-0.5 mb-1.5">
+                        {eventDetails.tag}
+                      </span>
+                      <h1 className="text-3xl sm:text-4xl md:text-5xl font-display uppercase text-brand-navy leading-none">
+                        {eventDetails.title}
+                      </h1>
+                      <p className="text-[11px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1.5 flex items-center gap-1.5 md:gap-2">
+                        <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
+                        <span className="truncate">{eventDetails.subtitle}</span>
+                      </p>
+                    </div>
+                  </div>
+                  {eventDetails.custom_schedule_text ? (
+                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
+                      <span>{eventDetails.custom_schedule_text}</span>
+                    </div>
+                  ) : eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none' ? (
+                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
+                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
+                      <span>EVERY {eventDetails.recurrence_day?.toUpperCase()} | {eventDetails.recurrence_time}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Ticker, moved off the artwork.
