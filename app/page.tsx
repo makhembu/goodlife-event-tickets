@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
@@ -6,6 +7,88 @@ import ClosedEventClientPage from "./ClosedEventClientPage";
 import ScheduledEventClientPage from "./ScheduledEventClientPage";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Page-level metadata, so `/?event=3` is titled for event 3.
+ *
+ * `app/layout.tsx` sets the site-wide defaults from the `event_details`
+ * singleton, which describes whichever event is currently featured — GOODLIFE 4
+ * at the time of writing. It cannot know about `?event=`, so every edition in
+ * the switcher inherited the featured event's title, venue and OG image. A
+ * visitor who tapped "SUNDAY PARK & CHILL" from the Facebook ad saw a tab
+ * reading "GOODLIFE 4 - MARARA CAMP, THIKA | NOV 7" above Park & Chill content,
+ * and shared links carried the wrong event to WhatsApp.
+ *
+ * The layout template is `%s | GOODLIFE 4`, so a child that supplies `title` as
+ * a string gets the featured event's name appended. Overriding the whole object
+ * here is the only way to fully own the title for an edition page.
+ */
+export async function generateMetadata(props: {
+  searchParams?: Promise<{ event?: string }>;
+}): Promise<Metadata> {
+  const searchParams = props.searchParams ? await props.searchParams : {};
+  const eventParam = searchParams?.event;
+
+  // Never throw: this runs during rendering and metadata resolution.
+  try {
+    let target: Awaited<ReturnType<typeof getEventById>> = null;
+    if (eventParam) {
+      const parsedId = Number.parseInt(eventParam, 10);
+      if (Number.isFinite(parsedId)) {
+        target = await getEventById(parsedId);
+      }
+    }
+    if (!target) {
+      const routable = (await fetchAllEvents()).filter((e) => !isHiddenFromSite(e));
+      target =
+        routable.find((e) => e.category === "flagship" && e.is_active && canonicalStatus(e.status) === "live") ??
+        routable.find((e) => e.category === "flagship" && canonicalStatus(e.status) === "live") ??
+        routable.find((e) => e.category === "flagship") ??
+        routable[0] ??
+        null;
+    }
+    if (!target) return {};
+
+    const baseUrl = process.env.APP_URL || "https://goodlife.smwhr.space";
+    const title = target.title;
+    const venue = target.venue || "MARARA CAMP, THIKA";
+    const description =
+      `Official tickets for ${title} at ${venue}. ` +
+      `Instant M-Pesa checkout and instant WhatsApp PDF ticket delivery.`;
+    // The flyer is a per-event field, not the site-wide singleton's, so an
+    // edition link shares that edition's artwork.
+    const flyer = target.flyer_url || "/flyer.png";
+    const image = flyer.startsWith("http") ? flyer : `${baseUrl}${flyer}`;
+
+    return {
+      title: `${title} - ${venue}`,
+      description,
+      openGraph: {
+        title: `${title} - ${venue}`,
+        description,
+        url: baseUrl,
+        type: "website",
+        images: [
+          {
+            url: image,
+            width: 1200,
+            height: 1600,
+            alt: `${title} official event flyer`,
+          },
+        ],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: `${title} - ${venue}`,
+        description,
+        images: [image],
+      },
+    };
+  } catch {
+    // Fall back to the layout's site-wide defaults.
+    return {};
+  }
+}
 
 export default async function Page(props: { searchParams?: Promise<{ event?: string; tier?: string }> }) {
   const searchParams = props.searchParams ? await props.searchParams : {};

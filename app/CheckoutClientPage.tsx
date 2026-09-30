@@ -404,27 +404,21 @@ export default function TicketCheckoutPage({
       ? eatToday.dateKey === new Date(eventDetails.event_date).toISOString().slice(0, 10)
       : false;
 
-    // The built-in price ladder below only ever described the flagship festival.
-    // It fired for ANY event with no tiers in the DB — including the mini
-    // festivals — so a "Park & Chill" with no tiers yet rendered 4px group
-    // tents at KES 4,000 and a glamping dome at KES 6,000, none of which that
-    // event sells. `app/page.tsx` now routes zero-tier events to the coming-soon
-    // page instead, so this is a belt-and-braces guard: if we ever reach the
-    // checkout with nothing to sell, show nothing rather than invent a price.
-    const rawTiers: any[] = ticketTiers.length > 0
-      ? ticketTiers
-      : isMiniEvent
-      ? []
-      : [
-      { id: "early-bird-500", name: "Early Bird Pass", price: 450, description: "Limited early access festival entry pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, badge_text: "SELLING FAST" },
-      { id: "advance-800", name: "ADVANCE PASS", price: 800, description: "Standard advance admission pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1 },
-      { id: "vip-gate-1000", name: "gate VIP Fast‑Track Pass", price: 1000, description: "VIP lounge access + express queue jump", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, show_only_on_event_day: true },
-      { id: "shared-bed-6px-1200", name: "1PX BED IN SHARED 6PX TENT", price: 1200, description: "Festival Entry + 1 Bed in shared 6-Person dorm tent. Assigned on arrival at gate.", tag: "CAMPING", tier_category: "camping", admits_quantity: 1, is_camping_bundle: true, camping_type: "shared_bed", badge_text: "SOLO FAVORITE" },
-      { id: "pitch-own-tent-1500", name: "PITCH YOUR OWN TENT", price: 1500, description: "Festival Entry for 2 Guests + Reserved Tent Pitch Ground Space", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private" },
-      { id: "2px-private-tent-2500", name: "2PX PRIVATE DOME TENT", price: 2500, description: "Festival Entry for 2 Guests + Private Dome Tent + 2 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private" },
-      { id: "4px-group-tent-4000", name: "4PX PRIVATE GROUP TENT", price: 4000, description: "Festival Entry for 4 Guests + Large 4-Person Dome Tent + 4 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 4, is_camping_bundle: true, camping_type: "private", badge_text: "BEST VALUE" },
-      { id: "6px-glamping-tent-6000", name: "6PX PRIVATE GLAMPING TENT", price: 6000, description: "Festival Entry for 6 Guests + Full Spacious Glamping Dome Tent", tag: "CAMPING", tier_category: "camping", admits_quantity: 6, is_camping_bundle: true, camping_type: "private" }
-    ];
+    // There is no fallback price ladder here, and there never should be.
+    //
+    // This used to fall back to eight hardcoded tiers for the flagship. It fired
+    // for ANY event with no tiers in the DB, so an unconfigured "Park & Chill"
+    // rendered 4px group tents at KES 4,000 and a glamping dome at KES 6,000 —
+    // passes that event does not sell. The copy had already drifted from the
+    // `DEFAULT_POSTER_TIERS` list it was duplicating (different Early Bird
+    // price, a non-breaking hyphen in the VIP tier name), which is how two
+    // copies of one price list turn into two different price lists.
+    //
+    // Zero tiers now means zero tiers. `app/page.tsx` routes such an event to
+    // the coming-soon page, and if one ever reaches this component anyway the
+    // empty-state panel below explains that no passes are on sale rather than
+    // inventing a price. An admin sets the prices.
+    const rawTiers: any[] = ticketTiers;
 
     return rawTiers
       .filter((tier: any) => {

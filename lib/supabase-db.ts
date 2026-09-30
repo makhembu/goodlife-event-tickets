@@ -234,8 +234,12 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.sales_close_date || null,
         event.next_event_title || '',
         event.recap_video_url || '',
-        event.max_tent_inventory || 30,
-        event.max_shared_beds || 12,
+        // `??` not `||`. A mini festival legitimately has ZERO tent inventory,
+        // and the Create Event modal sets exactly that — but `0 || 30` is 30,
+        // so every mini was being stored with the flagship's 30 tents and 12
+        // beds. The preset was silently discarded.
+        event.max_tent_inventory ?? 30,
+        event.max_shared_beds ?? 12,
         event.recurrence_pattern || 'none',
         event.recurrence_day || 'sunday',
         event.recurrence_time || '14:00',
@@ -245,56 +249,77 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
     );
     const newEvent = rows[0];
 
-    // Seed tiers for the new event by copying the most recent previous event.
+    // Carry the pricing ladder across to a new edition.
     //
-    // This used to be `(SELECT id FROM events WHERE is_active = TRUE LIMIT 1)`,
-    // i.e. "the currently active event". That is the wrong source, and it was
-    // wrong in both directions:
+    // Cloning IS right for a flagship rollover — prices carry year to year, and
+    // retyping eight tiers annually is how mistakes happen. Two things about
+    // the old query were wrong, though:
     //
-    //   - On a flagship rollover the demote query above has already run by this
-    //     point, so the subquery found nothing and the new event silently got
-    //     DEFAULT_POSTER_TIERS instead of the real pricing ladder.
-    //   - The answer also depended on a side effect of an unrelated column,
-    //     which is the same "two copies of one rule drift apart" bug this
-    //     module was written to kill.
+    //   1. ORDER BY (COALESCE(category,'') = 'mini') ASC puts non-mini first
+    //      UNCONDITIONALLY — 0 for flagship, 1 for mini. The new event's own
+    //      category was never consulted, so a brand-new mini festival always
+    //      cloned the flagship and never cloned another mini. That is where
+    //      "SUNDAY PARK & CHILL" quietly acquired five camping tents came from.
+    //   2. The donor was allowed to be closed or archived, so an event that
+    //      concluded 18 months ago was a perfectly valid source.
     //
-    // Ordered exactly like fetchActiveEvent's tiebreak - flagship before mini,
-    // newest first - so a new flagship clones the previous flagship, and a new
-    // mini festival clones the main event's tiers to start from.
+    // Both fixed below: match on category, and require a usable donor.
     const { rows: prevTiers } = await neonQuery(
-      "SELECT * FROM ticket_tiers WHERE deleted_at IS NULL AND event_id = (SELECT id FROM events WHERE id <> $1 ORDER BY (COALESCE(category, '') = 'mini') ASC, created_at DESC, id DESC LIMIT 1)",
-      [newEvent.id]
+      `SELECT * FROM ticket_tiers
+        WHERE deleted_at IS NULL
+          AND event_id = (
+            SELECT id FROM events
+             WHERE id <> $1
+               AND archived_at IS NULL
+               AND LOWER(COALESCE(status, '')) NOT IN ('closed', 'archived')
+               AND (COALESCE(category, 'flagship') = COALESCE($2, 'flagship'))
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1
+          )`,
+      [newEvent.id, event.category || 'flagship']
     );
-    const sourceTiers = prevTiers && prevTiers.length > 0 ? prevTiers : DEFAULT_POSTER_TIERS;
+
+    // NO fallback ladder. An event with no tiers is a valid starting state that
+    // the admin completes, not one the database invents on their behalf.
+    const sourceTiers = prevTiers && prevTiers.length > 0 ? prevTiers : [];
+    // Report what was copied so the UI can tell the admin, instead of 8 tiers
+    // appearing from nowhere.
+    const copiedFromEventId = sourceTiers.length > 0 ? sourceTiers[0].event_id : null;
+
     for (const tier of sourceTiers) {
       await neonQuery(
         `INSERT INTO ticket_tiers (
-          id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, 
-          available_from, available_until, max_quantity, event_id, tier_category, 
+          id, name, price, description, tag, show_only_on_event_day, hide_on_event_day,
+          available_from, available_until, max_quantity, event_id, tier_category,
           admits_quantity, is_camping_bundle, camping_type, badge_text, tour_media_urls
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, NULL, NULL, $8, $9, $10, $11, $12, NULL, $13)
          ON CONFLICT (id, event_id) DO UPDATE SET
            name = EXCLUDED.name,
            price = EXCLUDED.price,
            description = EXCLUDED.description`,
         [
-          tier.id, 
-          tier.name, 
-          tier.price, 
-          tier.description, 
-          tier.tag || 'TICKETS', 
-          tier.show_only_on_event_day ?? false, 
-          tier.hide_on_event_day ?? false, 
-          tier.available_from || null, 
-          tier.available_until || null, 
-          tier.max_quantity || null, 
+          tier.id,
+          tier.name,
+          tier.price,
+          tier.description,
+          // Tag carries the TICKETS/CAMPING grouping, which is a property of
+          // the pass itself, so it travels with it.
+          tier.tag || 'TICKETS',
+          tier.show_only_on_event_day ?? false,
+          tier.hide_on_event_day ?? false,
           newEvent.id,
           tier.tier_category || (tier.tag === 'CAMPING' ? 'camping' : 'entry'),
           tier.admits_quantity || 1,
           tier.is_camping_bundle ?? (tier.tag === 'CAMPING'),
           tier.camping_type || (tier.id?.includes('shared') ? 'shared_bed' : tier.tag === 'CAMPING' ? 'private' : 'none'),
-          tier.badge_text || null,
+          // available_from, available_until, max_quantity and badge_text are
+          // deliberately NOT copied. They are absolute values belonging to an
+          // event that has already happened: a cloned `available_until` of
+          // 2025-10-31 makes the tier permanently invisible rather than merely
+          // late, and a cloned max_quantity resets scarcity to zero because
+          // sold_count is recomputed from tickets for the new event. An admin
+          // sets these for the new edition in seconds.
           JSON.stringify(tier.tour_media_urls || [])
         ]
       );
@@ -317,7 +342,12 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
       ...newEvent,
       created_at: newEvent.created_at ? new Date(newEvent.created_at).toISOString() : new Date().toISOString(),
       archived_at: null,
-      event_date: newEvent.event_date ? new Date(newEvent.event_date).toISOString() : null
+      event_date: newEvent.event_date ? new Date(newEvent.event_date).toISOString() : null,
+      // Non-persisted, so the Create Event modal can say what happened instead
+      // of eight tiers appearing from nowhere. Sale windows and capacities are
+      // intentionally NOT inherited — see the loop above.
+      copied_tier_count: sourceTiers.length,
+      copied_tiers_from_event_id: copiedFromEventId
     };
   } catch (err) {
     console.error("Neon createEvent error:", err);
@@ -526,43 +556,79 @@ export async function setActiveEvent(id: number): Promise<boolean> {
   }
 }
 
-// In-memory / local storage fallbacks for browser client-side robustness if API is unreachable
-let localTicketsMemory: Ticket[] = [];
+/**
+ * The `localStorage` ticket mirror is GONE, deliberately.
+ *
+ * This used to be a "robustness fallback": if a request to the API failed for
+ * any reason, the module quietly served a copy of the ledger out of
+ * `localStorage["goodlife_tickets"]`, and — worse — for writes it *wrote to
+ * localStorage and returned success*.
+ *
+ * That was not robustness, it was a lie, and it had three separate failure
+ * modes that all bit in production:
+ *
+ *   1. It resurrected deleted customers. `scripts/seed-tickets.js` had inserted
+ *      three fake passes ("John Doe", "Alice Smith", "Bob Johnson") with no
+ *      `event_id`. Once those rows were removed from Neon, the key still held
+ *      them, so the admin ledger showed a ticket that no longer existed, with
+ *      no event attached, flickering in and out of view every time the 30s
+ *      auto-refresh alternated between a good response and a bad one. The
+ *      "UNASSIGNED" event label was the giveaway: real tickets always have one.
+ *
+ *   2. **Gate scans reported admissions that never happened.** `processTicketScan`
+ *      fell through to mutating localStorage and returning `success: true` with
+ *      an "Admitted 1 guest" message when the network call failed. An operator
+ *      at a gate was told a ticket was used, and the gate list was unchanged.
+ *      This is a security failure, not a display one.
+ *
+ *   3. **Deletes and updates reported success without persisting.**
+ *      `deleteTicket` returned `true` and `updateTicket` returned the mutated
+ *      object while the database kept the old row, so the UI and the ledger
+ *      disagreed.
+ *
+ * Any one of those fires on a routine 401 after a session expiry, or a blip of
+ * mobile data — which is exactly when the admin console is being used at a
+ * gate. Neon is the single source of truth; a request that did not reach it did
+ * not happen, and the code now says so instead of inventing an outcome.
+ */
 
-function getLocalStore(): Ticket[] {
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem("goodlife_tickets");
-      if (stored) return JSON.parse(stored);
-      return [];
-    } catch {
-      return [];
+/**
+ * One-time cleanup of the legacy mirror, so any browser that still carries a
+ * ghost ledger drops it. A ticket the operator can see is a ticket they might
+ * act on, so this runs on the admin dashboard rather than waiting for a
+ * rewrite. The write path is gone, so the key can only ever grow stale.
+ */
+export function purgeLegacyTicketMirror(): number {
+  if (typeof window === "undefined") return 0;
+  let removed = 0;
+  try {
+    const raw = localStorage.getItem("goodlife_tickets");
+    if (raw) {
+      removed = (JSON.parse(raw) as unknown[]).length || 0;
+      localStorage.removeItem("goodlife_tickets");
     }
+  } catch {
+    try { localStorage.removeItem("goodlife_tickets"); } catch {}
   }
-  return [];
-}
-
-function saveLocalStore(tickets: Ticket[]) {
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem("goodlife_tickets", JSON.stringify(tickets));
-    } catch {}
-  } else {
-    localTicketsMemory = tickets;
-  }
+  return removed;
 }
 
 // Fetch all tickets (optionally filtered by eventId, -1 = all events)
 export async function fetchAllTickets(eventId?: number): Promise<Ticket[]> {
   if (typeof window !== "undefined") {
-    try {
-      const url = eventId === -1 ? "/api/admin/tickets?eventId=-1" : eventId ? `/api/admin/tickets?eventId=${eventId}` : "/api/admin/tickets";
-      const res = await fetch(url);
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn("API tickets fetch failed. Falling back to local store.", e);
+    // Throw rather than return a substitute. `fetchDashboardMetrics` catches this
+    // and sets `metricsError`, which the dashboard renders as a visible banner —
+    // so a failed refresh tells the operator, instead of quietly swapping the
+    // real ledger for a stale copy (or, worse, an empty one that reads as
+    // "no tickets sold").
+    const url = eventId === -1 ? "/api/admin/tickets?eventId=-1" : eventId ? `/api/admin/tickets?eventId=${eventId}` : "/api/admin/tickets";
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(
+        `Could not load tickets from the server (HTTP ${res.status}). Nothing has been changed — the figures on screen may be out of date.`
+      );
     }
-    return getLocalStore();
+    return await res.json();
   }
 
   // Server side - Neon SQL
@@ -593,8 +659,14 @@ export async function fetchAllTickets(eventId?: number): Promise<Ticket[]> {
       scanned_at: r.scanned_at ? new Date(r.scanned_at).toISOString() : null
     }));
   } catch (err) {
+    // The server branch also ended in a cache: on a database error it returned
+    // the in-process mirror, which on a serverless function is per-lambda and
+    // so usually empty — reading as "zero tickets sold" rather than "the query
+    // failed". Throw, so callers surface a real error.
     console.error("Neon fetchAllTickets error:", err);
-    return localTicketsMemory;
+    throw new Error(
+      `Could not load tickets from the database. Nothing has been changed — the figures on screen may be out of date.`
+    );
   }
 }
 
@@ -778,34 +850,38 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
     .reduce((sum, t) => sum + Number(t.amount_paid), 0);
 
   // --- Event labels so the ledger can show which event each row belongs to --
-  // Cached: this runs on the dashboard's 30s auto-refresh, and the events table
-  // changes only when an admin creates one.
+  // This module is imported by the CLIENT dashboard, so every call here is an
+  // HTTP round-trip to our own API. It used to call `fetchAllEvents()` twice —
+  // once behind the cache guard, then again unconditionally for `allEvents` —
+  // so every single dashboard refresh (including the 30s auto-refresh and every
+  // event switch) paid for a duplicate `/api/events` request it had already
+  // made. One call, reused for both purposes, and never cached as a list, so
+  // creating an event is still immediately visible in the switcher.
   let eventLabels: Record<string, string> = {};
   let eventDates: Record<string, string | null> = {};
-  try {
-    if (!eventLabelCache) {
-      const events = await fetchAllEvents();
-      // Never cache an empty result: a single transient failure would otherwise
-      // blank the EVENT column for the rest of the session.
-      if (events.length > 0) {
-        const next: Record<string, string> = {};
-        const dates: Record<string, string | null> = {};
-        events.forEach(e => {
-          next[String(e.id)] = e.title;
-          dates[String(e.id)] = e.event_date || null;
-        });
-        eventLabelCache = next;
-        eventDateCache = dates;
-      }
-    }
-    eventLabels = eventLabelCache || {};
-    eventDates = eventDateCache || {};
-  } catch {}
-
   let allEvents: Event[] = [];
   try {
-    allEvents = await fetchAllEvents();
-  } catch {}
+    const events = await fetchAllEvents();
+    allEvents = events;
+    if (events.length > 0) {
+      // Never cache an empty result: a single transient failure would otherwise
+      // blank the EVENT column for the rest of the session.
+      const next: Record<string, string> = {};
+      const dates: Record<string, string | null> = {};
+      events.forEach(e => {
+        next[String(e.id)] = e.title;
+        dates[String(e.id)] = e.event_date || null;
+      });
+      eventLabelCache = next;
+      eventDateCache = dates;
+    }
+  } catch (e: any) {
+    // `allEvents` drives the event switcher and the status badge, so this is
+    // worth surfacing rather than silently rendering an empty switcher.
+    console.error("fetchAllEvents failed; event labels and switcher will be empty:", e);
+  }
+  eventLabels = eventLabelCache || {};
+  eventDates = eventDateCache || {};
 
   return {
     totalCashCollected,
@@ -824,14 +900,18 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
 // Get single ticket
 export async function getTicketById(id: string): Promise<Ticket | null> {
   if (typeof window !== "undefined") {
-    try {
-      const res = await fetch(`/api/admin/tickets/${id}`);
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn("API getTicketById failed. Falling back to local store.", e);
+    // No local-mirror fallback (see the note on `purgeLegacyTicketMirror`).
+    // "Not found" and "could not ask" must not look the same: a scanner that
+    // cannot reach the gate API has to be told to retry, not told the pass is
+    // invalid.
+    const res = await fetch(`/api/admin/tickets/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      if (res.status === 404) return null;
+      throw new Error(
+        `Could not reach the gate server (HTTP ${res.status}). This scan was NOT recorded — please retry.`
+      );
     }
-    const local = getLocalStore();
-    return local.find(t => t.id === id) || null;
+    return await res.json();
   }
 
   // Server side - Neon SQL
@@ -1056,27 +1136,40 @@ export async function processTicketScan(
   };
 
   if (typeof window !== "undefined") {
+    // This path used to fall through to mutating localStorage and returning
+    // `success: true` with an "Admitted N guest(s)" message whenever the request
+    // failed. So a gate operator could be told a pass was used while the gate
+    // list was completely unchanged — the same pass would then admit the next
+    // person, and the first admission was never recorded.
+    //
+    // A scan that did not reach the server has not happened. Say so, loudly,
+    // and tell the operator to retry.
+    let res: Response;
     try {
-      const res = await fetch(`/api/admin/scan/${id}`, {
+      res = await fetch(`/api/admin/scan/${encodeURIComponent(id)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scanned_by: scannerName, event_id: gateEventId, admit_count: countToAdmit })
       });
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn("API scan failed. Saving to local store.", e);
+    } catch (e: any) {
+      return {
+        success: false,
+        ticket,
+        message: `NETWORK FAILURE — SCAN NOT RECORDED. The gate server could not be reached, so nobody has been admitted yet. Check your connection and scan again. Do NOT admit on this result.`
+      };
     }
-    const local = getLocalStore();
-    const updatedList = local.map(t => t.id === id ? updatedTicket : t);
-    saveLocalStore(updatedList);
-    return {
-      success: true,
-      ticket: updatedTicket,
-      message: `SUCCESS! Admitted ${countToAdmit} guest(s) (${newAdmitted}/${totalGuests}) [${ticket.ticket_type}].`,
-      camping_instruction: campingInstruction,
-      admitted_count: newAdmitted,
-      guest_count: totalGuests
-    };
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = (await res.json())?.message || (await res.text())?.slice(0, 200) || "";
+      } catch {}
+      return {
+        success: false,
+        ticket,
+        message: `SCAN REJECTED BY SERVER (HTTP ${res.status})${detail ? ` — ${detail}` : ""}. Nothing was recorded; nobody has been admitted.`
+      };
+    }
+    return await res.json();
   }
 
   // Server side - Neon SQL
@@ -1278,20 +1371,23 @@ export async function updateTicket(id: string, updates: Partial<Ticket>): Promis
   const updatedTicket = { ...ticket, ...updates };
 
   if (typeof window !== "undefined") {
-    try {
-      const res = await fetch(`/api/admin/tickets/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates)
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn("API updateTicket failed. Saving to local store.", e);
+    // Previously this returned `updatedTicket` — an optimistic object the UI
+    // then rendered as saved — whenever the request failed. The database kept
+    // the old values, so the ledger and the screen disagreed with no error
+    // anywhere. Fail honestly instead; callers already handle null.
+    const res = await fetch(`/api/admin/tickets/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const err = new Error(
+        `Could not save changes to ticket ${id} (HTTP ${res.status}). Nothing was changed.`
+      ) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
     }
-    const local = getLocalStore();
-    const updatedList = local.map(t => t.id === id ? updatedTicket : t);
-    saveLocalStore(updatedList);
-    return updatedTicket;
+    return await res.json();
   }
 
   // Server side - Neon SQL
@@ -1314,18 +1410,14 @@ export async function updateTicket(id: string, updates: Partial<Ticket>): Promis
 // Soft-delete ticket
 export async function deleteTicket(id: string): Promise<boolean> {
   if (typeof window !== "undefined") {
-    try {
-      const res = await fetch(`/api/admin/tickets/${id}`, {
-        method: "DELETE"
-      });
-      if (res.ok) return true;
-    } catch (e) {
-      console.warn("API deleteTicket failed. Updating local store.", e);
-    }
-    const local = getLocalStore();
-    const updatedList = local.filter(t => t.id !== id);
-    saveLocalStore(updatedList);
-    return true;
+    // Previously returned `true` on failure, so the dashboard removed the row
+    // from the screen and reported success while the ticket stayed live in the
+    // database — a "deleted" attendee who then walks in. Return the server's
+    // real answer.
+    const res = await fetch(`/api/admin/tickets/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    });
+    return res.ok;
   }
 
   // Server side - Neon SQL
@@ -1338,11 +1430,15 @@ export async function deleteTicket(id: string): Promise<boolean> {
   }
 }
 
-// Soft-delete ticket tier
-export async function deleteTicketTier(id: string): Promise<boolean> {
+// Soft-delete ticket tier.
+// Event-scoped: `ticket_tiers`' key is `(id, event_id)`, so `WHERE id = $1`
+// alone trashed the same tier id in every event.
+export async function deleteTicketTier(id: string, eventId?: number | null): Promise<boolean> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/ticket-tiers/${id}`, {
+      const qs = new URLSearchParams();
+      if (eventId && eventId > 0) qs.set("eventId", String(eventId));
+      const res = await fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?${qs}`, {
         method: "DELETE"
       });
       if (res.ok) return true;
@@ -1352,10 +1448,18 @@ export async function deleteTicketTier(id: string): Promise<boolean> {
     return false;
   }
 
+  if (!eventId || eventId <= 0) {
+    console.error("deleteTicketTier refused: no event scope for tier", id);
+    return false;
+  }
+
   // Server side - Neon SQL
   try {
-    await neonQuery("UPDATE ticket_tiers SET deleted_at = NOW() WHERE id = $1", [id]);
-    return true;
+    const { rows } = await neonQuery(
+      "UPDATE ticket_tiers SET deleted_at = NOW() WHERE id = $1 AND event_id = $2 RETURNING id",
+      [id, eventId]
+    );
+    return rows.length > 0;
   } catch (err) {
     console.error("Neon deleteTicketTier error:", err);
     return false;
@@ -1386,11 +1490,17 @@ export async function permanentlyDeleteTicket(id: string): Promise<boolean> {
   }
 }
 
-// Permanently delete ticket tier
-export async function permanentlyDeleteTicketTier(id: string): Promise<boolean> {
+// Permanently delete ticket tier. Event-scoped, for the same reason as the
+// soft delete above.
+export async function permanentlyDeleteTicketTier(
+  id: string,
+  eventId?: number | null
+): Promise<boolean> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/ticket-tiers/${id}?permanent=true`, {
+      const qs = new URLSearchParams({ permanent: "true" });
+      if (eventId && eventId > 0) qs.set("eventId", String(eventId));
+      const res = await fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?${qs}`, {
         method: "DELETE"
       });
       return res.ok;
@@ -1400,10 +1510,18 @@ export async function permanentlyDeleteTicketTier(id: string): Promise<boolean> 
     }
   }
 
+  if (!eventId || eventId <= 0) {
+    console.error("permanentlyDeleteTicketTier refused: no event scope for tier", id);
+    return false;
+  }
+
   // Server side - Neon SQL
   try {
-    await neonQuery("DELETE FROM ticket_tiers WHERE id = $1", [id]);
-    return true;
+    const { rows } = await neonQuery(
+      "DELETE FROM ticket_tiers WHERE id = $1 AND event_id = $2 RETURNING id",
+      [id, eventId]
+    );
+    return rows.length > 0;
   } catch (err) {
     console.error("Neon permanentlyDeleteTicketTier error:", err);
     return false;
@@ -1538,12 +1656,30 @@ export async function createPendingPayment(payment: PendingPayment): Promise<Pen
   }
 }
 
-// Fetch all pending payments (for admin reconciliation)
-export async function fetchAllPendingPayments(): Promise<PendingPayment[]> {
+/**
+ * Fetch pending payments for admin reconciliation, optionally scoped to an
+ * event. Was unfiltered and unbounded: no WHERE and no LIMIT, so the payments
+ * tab listed every event's rows with nothing identifying which event any of
+ * them belonged to.
+ */
+export async function fetchAllPendingPayments(
+  eventId?: number | null,
+  limit = 500
+): Promise<PendingPayment[]> {
   if (typeof window !== "undefined") return [];
 
   try {
-    const { rows } = await neonQuery("SELECT * FROM pending_payments ORDER BY created_at DESC");
+    const capped = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+    const { rows } =
+      eventId && eventId > 0
+        ? await neonQuery(
+            "SELECT * FROM pending_payments WHERE event_id = $1 ORDER BY created_at DESC LIMIT $2",
+            [eventId, capped]
+          )
+        : await neonQuery(
+            "SELECT * FROM pending_payments ORDER BY created_at DESC LIMIT $1",
+            [capped]
+          );
     return rows.map((r: any) => ({
       ...r,
       amount: Number(r.amount),
@@ -1695,16 +1831,30 @@ export async function rejectPendingPayment(checkoutRequestId: string): Promise<b
   }
 }
 
-export const DEFAULT_POSTER_TIERS: TicketTier[] = [
-  { id: "early-bird-500", name: "EARLY BIRD", price: 500, description: "Limited early access festival entry pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false, badge_text: "SELLING FAST" },
-  { id: "advance-800", name: "ADVANCE PASS", price: 800, description: "Standard advance admission pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false },
-  { id: "vip-gate-1000", name: "VIP FAST-TRACK", price: 1000, description: "VIP lounge access + express queue jump", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, hidden: false },
-  { id: "shared-bed-6px-1200", name: "1PX BED IN SHARED 6PX TENT", price: 1200, description: "Festival Entry + 1 Bed in shared 6-Person dorm tent. Assigned on arrival at gate.", tag: "CAMPING", tier_category: "camping", admits_quantity: 1, is_camping_bundle: true, camping_type: "shared_bed", hidden: false, badge_text: "SOLO FAVORITE" },
-  { id: "2px-private-tent-2500", name: "2PX PRIVATE DOME TENT", price: 2500, description: "Festival Entry for 2 Guests + Private Dome Tent + 2 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private", hidden: false },
-  { id: "4px-group-tent-4000", name: "4PX PRIVATE GROUP TENT", price: 4000, description: "Festival Entry for 4 Guests + Large 4-Person Dome Tent + 4 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 4, is_camping_bundle: true, camping_type: "private", hidden: false, badge_text: "BEST VALUE" },
-  { id: "6px-glamping-tent-6000", name: "6PX PRIVATE GLAMPING TENT", price: 6000, description: "Festival Entry for 6 Guests + Full Spacious Glamping Dome Tent", tag: "CAMPING", tier_category: "camping", admits_quantity: 6, is_camping_bundle: true, camping_type: "private", hidden: false },
-  { id: "pitch-own-tent-1500", name: "PITCH YOUR OWN TENT", price: 1500, description: "Festival Entry for 2 Guests + Reserved Tent Pitch Ground Space", tag: "CAMPING", tier_category: "camping", admits_quantity: 2, is_camping_bundle: true, camping_type: "private", hidden: false }
-];
+/**
+ * There is deliberately NO default price ladder.
+ *
+ * This constant used to hold 8 invented tiers (3 entry + 5 camping tents, KES
+ * 500 -> 6000) and was used three ways: as `createEvent`'s fallback, as a
+ * client-side fallback when the tiers API failed, and — worst — inserted
+ * directly into `ticket_tiers` by `fetchTicketTiers` whenever an event came
+ * back with zero rows.
+ *
+ * That last one made this a *read* function that wrote to the database, on a
+ * route (`GET /api/ticket-tiers`) that `middleware.ts` exempts from the auth
+ * check. So an unauthenticated GET seeded a full price list into any event.
+ *
+ * Verified live on 2026-09-30: event #2 (GOODLIFE 4) had 8 rows, 8/8 matching
+ * this constant's fingerprint, 5 of them camping tents. Nobody chose those
+ * prices and the event was sellable.
+ *
+ * It also made "an event with zero tiers" an unreachable state, which silently
+ * disabled the `app/page.tsx` guard that routes a tierless event to the
+ * coming-soon page instead of selling at an invented price.
+ *
+ * An event with no tiers is a valid, visible, fixable state. Zero tiers must
+ * mean zero tiers.
+ */
 
 // Helper to format tier rows and apply automated laddering
 function formatTierRows(rows: any[]): TicketTier[] {
@@ -1755,7 +1905,21 @@ function formatTierRows(rows: any[]): TicketTier[] {
   return mapped;
 }
 
-// Fetch all ticket tiers (optionally filtered by eventId)
+/**
+ * Fetch all ticket tiers (optionally filtered by eventId).
+ *
+ * This is a PURE READ. It used to INSERT `DEFAULT_POSTER_TIERS` when the event
+ * had no tiers, which made it a write on an unauthenticated GET route. Every
+ * error path also returned that same fabricated ladder, so a network blip
+ * showed a customer eight camping tents the event does not sell. Both are
+ * gone. An empty array is now a truthful answer and callers must handle it —
+ * `app/page.tsx` routes a zero-tier event to the coming-soon page for exactly
+ * that reason.
+ *
+ * `eventId` is intentionally optional and client-controlled: `CheckoutClientPage`
+ * calls this from the browser to power the editions switcher. That is why
+ * `GET /api/ticket-tiers` stays public — it is now safe to, because it only reads.
+ */
 export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> {
   if (typeof window !== "undefined") {
     try {
@@ -1763,12 +1927,15 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) return data;
+        if (Array.isArray(data)) return data;
       }
     } catch (e) {
       console.warn("API fetchTicketTiers failed.", e);
     }
-    return DEFAULT_POSTER_TIERS;
+    // A failed read must not become an invented price list. Showing "no passes
+    // available" is recoverable; charging KES 6,000 for a tent that does not
+    // exist is not.
+    return [];
   }
 
   // Server side - Neon SQL
@@ -1796,45 +1963,11 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     `;
 
     const { rows } = await neonQuery(query, [resolvedEventId]);
-    if (!rows || rows.length === 0) {
-      // Seed default tiers for this event if none exist
-      for (const tier of DEFAULT_POSTER_TIERS) {
-        try {
-          await neonQuery(
-            `INSERT INTO ticket_tiers (
-              id, name, price, description, tag, show_only_on_event_day, hide_on_event_day, 
-              available_from, available_until, max_quantity, event_id, tier_category, 
-              admits_quantity, is_camping_bundle, camping_type, badge_text, tour_media_urls
-             )
-             VALUES ($1, $2, $3, $4, $5, false, false, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-             ON CONFLICT (id, event_id) DO NOTHING`,
-            [
-              tier.id,
-              tier.name,
-              tier.price,
-              tier.description,
-              tier.tag || "TICKETS",
-              tier.available_from || null,
-              tier.available_until || null,
-              tier.max_quantity || null,
-              resolvedEventId,
-              tier.tier_category || (tier.tag === "CAMPING" ? "camping" : "entry"),
-              tier.admits_quantity || 1,
-              tier.is_camping_bundle ?? (tier.tag === "CAMPING"),
-              tier.camping_type || (tier.id.includes("shared") ? "shared_bed" : tier.tag === "CAMPING" ? "private" : "none"),
-              tier.badge_text || null,
-              JSON.stringify(tier.tour_media_urls || [])
-            ]
-          );
-        } catch {}
-      }
-      const { rows: seeded } = await neonQuery(query, [resolvedEventId]);
-      return formatTierRows(seeded);
-    }
     return formatTierRows(rows);
   } catch (err) {
     console.error("Neon fetchTicketTiers error:", err);
-    return DEFAULT_POSTER_TIERS;
+    // A database error must not surface as an invented price list either.
+    return [];
   }
 }
 
@@ -1855,10 +1988,15 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
 
   // Server side - Neon SQL
   try {
-    let eventId = tier.event_id;
-    if (!eventId) {
-      const active = await fetchActiveEvent();
-      eventId = active?.id || 1;
+    // A tier must belong to an event the caller named. This used to fall back
+    // to `fetchActiveEvent()` and finally to a hardcoded `1`, which meant that
+    // creating a tier while the dashboard's selector read "All Events" silently
+    // attached it to an arbitrary event. Fail loudly instead.
+    const eventId = tier.event_id;
+    if (!eventId || eventId <= 0) {
+      throw new Error(
+        "A ticket tier must be assigned to a specific event. Select an event before adding a tier."
+      );
     }
 
     await neonQuery(
@@ -1912,11 +2050,71 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
   }
 }
 
-// Update ticket tier
-export async function updateTicketTier(id: string, updates: Partial<TicketTier>): Promise<TicketTier | null> {
+/**
+ * Columns a client is allowed to set on a tier.
+ *
+ * `updateTicketTier` used to interpolate every key of the request body straight
+ * into the SET clause, which made it an arbitrary-column write: `deleted_at`,
+ * `id`, `event_id` and `sold_count` were all settable. The dashboard's edit
+ * form PUTs the whole fetched tier back, and `sold_count` is a computed
+ * subquery alias from `fetchTicketTiers` — not a stored column — so it was
+ * being written back as if it were one.
+ */
+const WRITABLE_TIER_COLUMNS = new Set([
+  "name",
+  "price",
+  "description",
+  "tag",
+  "available_from",
+  "available_until",
+  "max_quantity",
+  "hidden",
+  "show_only_on_event_day",
+  "hide_on_event_day",
+  "tier_category",
+  "admits_quantity",
+  "is_camping_bundle",
+  "camping_type",
+  "badge_text",
+  "tour_media_urls",
+  // Needed by the trash "Restore" action (`PUT { deleted_at: null }`). Without
+  // it the allowlist silently dropped the only key that restore sends, so the
+  // button reported success and the tier stayed in the bin forever. Safe to
+  // allow because the only route that reaches this function is admin-gated
+  // (`app/api/ticket-tiers/[id]` calls `requireAdmin()`), and soft-delete is an
+  // operator action by definition.
+  "deleted_at",
+]);
+
+/**
+ * Update a ticket tier.
+ *
+ * `eventId` is now REQUIRED, because `ticket_tiers`' primary key is
+ * `(id, event_id)` and the old `WHERE id = $1` updated every event that shared
+ * that tier id while `RETURNING *` reported only one. That is how "Hide
+ * selected" on one event's tiers silently hid the same tiers on every other
+ * event — and it is part of why the seeded price lists became impossible to
+ * reason about and untangle.
+ *
+ * Pass `eventId` explicitly. `updates.event_id` is accepted as a fallback for
+ * the edit form, which carries the whole tier, but it is not an editable
+ * column and is stripped from the SET clause either way.
+ */
+export async function updateTicketTier(
+  id: string,
+  updates: Partial<TicketTier>,
+  eventId?: number | null
+): Promise<TicketTier | null> {
+  const scopedEventId = eventId ?? updates.event_id ?? null;
+  if (!scopedEventId || scopedEventId <= 0) {
+    console.error("updateTicketTier refused: no event scope for tier", id);
+    return null;
+  }
+
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/ticket-tiers/${id}`, {
+      const qs = new URLSearchParams({ eventId: String(scopedEventId) });
+      const res = await fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?${qs}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates)
@@ -1930,13 +2128,13 @@ export async function updateTicketTier(id: string, updates: Partial<TicketTier>)
 
   // Server side - Neon SQL
   try {
-    const fields = Object.keys(updates);
+    const fields = Object.keys(updates).filter((f) => WRITABLE_TIER_COLUMNS.has(f));
     if (fields.length === 0) return null;
-    const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
-    const values = fields.map(f => (updates as any)[f]);
+    const setClause = fields.map((f, idx) => `"${f}" = $${idx + 3}`).join(", ");
+    const values = fields.map((f) => (updates as any)[f]);
     const { rows } = await neonQuery(
-      `UPDATE ticket_tiers SET ${setClause} WHERE id = $1 RETURNING *`,
-      [id, ...values]
+      `UPDATE ticket_tiers SET ${setClause} WHERE id = $1 AND event_id = $2 RETURNING *`,
+      [id, scopedEventId, ...values]
     );
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -1992,10 +2190,18 @@ export async function insertPaymentLog(log: {
   }
 }
 
-export async function fetchPaymentLogs(): Promise<any[]> {
+/**
+ * Fetch payment logs, optionally scoped to one event.
+ *
+ * Was `SELECT * FROM payment_logs ORDER BY created_at DESC` — no WHERE and no
+ * LIMIT, so the admin payments tab showed every event's money with no event
+ * label and no bound on how much it pulled. `eventId` is now honoured.
+ */
+export async function fetchPaymentLogs(eventId?: number | null, limit = 500): Promise<any[]> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch("/api/admin/payment-logs");
+      const qs = eventId && eventId > 0 ? `?eventId=${eventId}` : "";
+      const res = await fetch(`/api/admin/payment-logs${qs}`);
       if (res.ok) return await res.json();
     } catch (e) {
       console.warn("API fetchPaymentLogs failed.", e);
@@ -2005,7 +2211,18 @@ export async function fetchPaymentLogs(): Promise<any[]> {
 
   // Server side - Neon SQL
   try {
-    const { rows } = await neonQuery("SELECT * FROM payment_logs ORDER BY created_at DESC");
+    const capped = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+    if (eventId && eventId > 0) {
+      const { rows } = await neonQuery(
+        "SELECT * FROM payment_logs WHERE event_id = $1 ORDER BY created_at DESC LIMIT $2",
+        [eventId, capped]
+      );
+      return rows;
+    }
+    const { rows } = await neonQuery(
+      "SELECT * FROM payment_logs ORDER BY created_at DESC LIMIT $1",
+      [capped]
+    );
     return rows;
   } catch (err) {
     console.error("Neon fetchPaymentLogs error:", err);
@@ -2024,10 +2241,25 @@ export async function deletePaymentLog(id: number): Promise<boolean> {
   }
 }
 
-export async function deleteAllPaymentLogs(): Promise<boolean> {
+/**
+ * Clear payment logs.
+ *
+ * An event id is now REQUIRED. This used to be `DELETE FROM payment_logs` —
+ * every event's audit rows — reachable from a dashboard button whose only
+ * guard was a native `confirm()` that an operator on a phone can muscle
+ * through while believing they are working inside one event.
+ *
+ * Returning false (rather than throwing) keeps the caller's existing shape;
+ * the route turns that into a 400 with an explanation.
+ */
+export async function deleteAllPaymentLogs(eventId?: number | null): Promise<boolean> {
   if (typeof window !== "undefined") return false;
+  if (!eventId || eventId <= 0) {
+    console.error("deleteAllPaymentLogs refused: refusing to delete every event's audit rows");
+    return false;
+  }
   try {
-    await neonQuery("DELETE FROM payment_logs", []);
+    await neonQuery("DELETE FROM payment_logs WHERE event_id = $1", [eventId]);
     return true;
   } catch (err) {
     console.error("Neon deleteAllPaymentLogs error:", err);
@@ -2046,10 +2278,19 @@ export async function deletePendingPayment(checkoutRequestId: string): Promise<b
   }
 }
 
-export async function clearAllPendingPayments(): Promise<boolean> {
+/**
+ * Clear pending payments. Like `deleteAllPaymentLogs`, an event id is required —
+ * this was `DELETE FROM pending_payments`, i.e. every event's unresolved
+ * payments, behind a single native confirm().
+ */
+export async function clearAllPendingPayments(eventId?: number | null): Promise<boolean> {
   if (typeof window !== "undefined") return false;
+  if (!eventId || eventId <= 0) {
+    console.error("clearAllPendingPayments refused: refusing to delete every event's pending payments");
+    return false;
+  }
   try {
-    await neonQuery("DELETE FROM pending_payments", []);
+    await neonQuery("DELETE FROM pending_payments WHERE event_id = $1", [eventId]);
     return true;
   } catch (err) {
     console.error("Neon clearAllPendingPayments error:", err);

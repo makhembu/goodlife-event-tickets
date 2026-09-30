@@ -35,3 +35,8 @@ tsconfig.tsbuildinfo
 /seed-for-screenshots.js
 /final_verification_report.md
 
+# Raw WhatsApp webhook payloads: inbound message bodies and phone numbers.
+# Was tracked with 49 real deliveries in it. The route now logs a redacted
+# shape summary to stdout instead and no longer writes this file at all.
+webhook-logs.txt
+

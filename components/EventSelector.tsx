@@ -74,6 +74,10 @@ export default function EventSelector({ selectedEventId, onSelect, onEventCreate
     if (selectedEventId === null) return "All Events (Universal)";
     const event = events.find((e) => e.id === selectedEventId);
     if (!event) return "Select Event";
+    // An archived edition cannot be opened, so the trigger must not imply that
+    // the visitor is looking at one. (`?event=<archived>` is a 404, so this only
+    // shows in the admin dashboard's switcher, which lists every edition.)
+    if (isArchived(event)) return `${event.title} (archived)`;
     return `${event.title} - ${event.subtitle}`;
   };
 
@@ -105,27 +109,67 @@ export default function EventSelector({ selectedEventId, onSelect, onEventCreate
     </div>
   );
 
-  const row = (event: Event, badge: React.ReactNode, muted = false) => (
-    <button
-      key={event.id}
-      onClick={() => {
-        onSelect(event.id);
-        setIsOpen(false);
-      }}
-      className={itemClass(event.id)}
-    >
-      <div className="flex items-center justify-between gap-1">
-        <div className={`font-bold truncate ${muted ? "opacity-75" : ""}`}>
-          {event.category === "mini" ? "🌿 " : "⭐ "}
-          {event.title}
+  /**
+   * A row in the editions dropdown.
+   *
+   * `navigable: false` is required for ARCHIVED editions. `publicState()` in
+   * `lib/event-availability.ts` returns `unavailable` for them, and
+   * `app/page.tsx` turns that into `notFound()` — so an archived edition
+   * rendered as a button did not open a recap, it 404'd the entire site. The
+   * dropdown was advertising "GOODLIFE XP / ARCHIVED (HIDDEN FROM SITE)" with a
+   * live-looking row, and tapping it looked like the site was broken.
+   *
+   * A closed edition is a different case and stays navigable on purpose: it
+   * renders the recap page, which is the only place a customer can read why
+   * sales stopped.
+   */
+  const row = (
+    event: Event,
+    badge: React.ReactNode,
+    muted = false,
+    navigable = true
+  ) => {
+    const content = (
+      <>
+        <div className="flex items-center justify-between gap-1">
+          <div className={`font-bold truncate ${muted ? "opacity-75" : ""}`}>
+            {event.category === "mini" ? "🌿 " : "⭐ "}
+            {event.title}
+          </div>
+          {badge}
         </div>
-        {badge}
-      </div>
-      <div className={`text-[10px] truncate ${muted ? "opacity-60" : "opacity-70"}`}>
-        {event.subtitle || event.venue}
-      </div>
-    </button>
-  );
+        <div className={`text-[10px] truncate ${muted ? "opacity-60" : "opacity-70"}`}>
+          {navigable ? event.subtitle || event.venue : "Not published — cannot be opened"}
+        </div>
+      </>
+    );
+
+    if (!navigable) {
+      return (
+        <div
+          key={event.id}
+          aria-disabled="true"
+          title="This edition is archived, so it is not published and cannot be opened."
+          className={`w-full px-3 py-2 text-left font-mono text-xs border-b border-[var(--brand-navy)]/20 text-brand-navy/50 opacity-70 select-none ${muted ? "opacity-60" : ""}`}
+        >
+          {content}
+        </div>
+      );
+    }
+
+    return (
+      <button
+        key={event.id}
+        onClick={() => {
+          onSelect(event.id);
+          setIsOpen(false);
+        }}
+        className={itemClass(event.id)}
+      >
+        {content}
+      </button>
+    );
+  };
 
   return (
     <>
@@ -274,7 +318,9 @@ export default function EventSelector({ selectedEventId, onSelect, onEventCreate
                     <span className="text-[9px] px-1 py-0.2 uppercase border font-mono bg-neutral-800 text-neutral-200 border-neutral-600">
                       ARCHIVED
                     </span>,
-                    true
+                    true,
+                    // Archived is not routable — see the note on `row`.
+                    false
                   )
                 )}
               </div>

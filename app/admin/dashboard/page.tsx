@@ -23,7 +23,8 @@ import {
   emptyTrash,
   TicketTier,
   TicketAudience,
-  NormalizedTicket
+  NormalizedTicket,
+  purgeLegacyTicketMirror
 } from "@/lib/supabase-db";
 import {
   Sparkles,
@@ -223,6 +224,10 @@ export default function AdminDashboardPage() {
   const [selectedTrashTierIds, setSelectedTrashTierIds] = useState<string[]>([]);
   const [deletingTicketId, setDeletingTicketId] = useState<string | null>(null);
   const [deletingTierId, setDeletingTierId] = useState<string | null>(null);
+  // A tier id alone is ambiguous across events (`ticket_tiers`' key is
+  // `(id, event_id)`), so the delete confirmation has to remember which event
+  // the tier came from rather than reading the event selector at confirm time.
+  const [deletingTierEventId, setDeletingTierEventId] = useState<number | null>(null);
   const [trashPassword, setTrashPassword] = useState("");
   const [showTrashPasswordModal, setShowTrashPasswordModal] = useState(false);
   const [trashActionType, setTrashActionType] = useState<"clear_all" | "delete_selected" | "">("");
@@ -346,6 +351,7 @@ export default function AdminDashboardPage() {
     setDeletingTicketId(null);
     setResolvingPayment(null);
     setDeletingTierId(null);
+    setDeletingTierEventId(null);
     setShowTrashPasswordModal(false);
     setShowGatePinModal(false);
     setResendTicket(null);
@@ -362,7 +368,24 @@ export default function AdminDashboardPage() {
     window.location.href = "/login";
   };
 
+  /**
+   * Guards against out-of-order responses.
+   *
+   * Every one of these calls was fire-and-forget, and `setMetrics` was
+   * last-writer-wins. With a 30s auto-refresh *and* an event switch in flight at
+   * the same time, the older request could land last and paint the previous
+   * event's tickets under the newly selected event's name. That is the same
+   * class of bug as the one already fixed for the error path: the screen
+   * disagreeing with the filter that is supposedly driving it.
+   *
+   * A newer request invalidates every older one. The response is dropped, not
+   * rendered, and `loading` is only cleared by the request that owns the screen.
+   */
+  const metricsSeqRef = React.useRef(0);
+
   const loadDashboardMetrics = async (eventId?: number | null, nextAudience?: TicketAudience) => {
+    const seq = ++metricsSeqRef.current;
+    const isCurrent = () => seq === metricsSeqRef.current;
     setLoading(true);
     try {
       const targetId = eventId !== undefined ? eventId : selectedEventIdRef.current;
@@ -370,15 +393,17 @@ export default function AdminDashboardPage() {
       // null = "All Events", mapped to -1 for the API
       const queryId = targetId === null ? -1 : targetId;
       const data = await fetchDashboardMetrics(queryId, targetAudience);
+      if (!isCurrent()) return; // a newer request owns the screen
       setMetrics(data);
       setMetricsError(null);
     } catch (err: any) {
+      if (!isCurrent()) return;
       // Previously this was a bare console.error, which left the PREVIOUS
       // event's rows on screen under the newly selected event's label.
       console.error("Failed to load metrics:", err);
       setMetricsError(err?.message || "Could not load dashboard metrics.");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -395,9 +420,15 @@ export default function AdminDashboardPage() {
     setSelectedEventId(eventId);
     selectedEventIdRef.current = eventId;
     syncEventToUrl(eventId);
-    loadDashboardMetrics(eventId);
-    loadTicketTiers(eventId && eventId > 0 ? eventId : undefined);
-    loadWaitlist(eventId && eventId > 0 ? eventId : undefined);
+    // These three are independent reads of the same event. They were awaited
+    // one after another, so switching events took the SUM of three sequential
+    // round-trips. Fire them together; `loadDashboardMetrics` already has its
+    // own sequencing guard, so there is no race between them.
+    void Promise.all([
+      loadDashboardMetrics(eventId),
+      loadTicketTiers(eventId && eventId > 0 ? eventId : undefined),
+      loadWaitlist(eventId && eventId > 0 ? eventId : undefined),
+    ]);
   };
 
   const handleAudienceSelect = (next: TicketAudience) => {
@@ -439,9 +470,17 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const loadPaymentLogs = async () => {
+  /**
+   * Both loaders are event-scoped. They used to hit the bare URL, so the
+   * payments tab showed every event's money with no event label and no way to
+   * tell which row belonged where. `selectedEventIdRef` is read rather than
+   * `selectedEventId` so a stale closure can't reintroduce the bug.
+   */
+  const loadPaymentLogs = async (eventId?: number | null) => {
     try {
-      const res = await fetch("/api/admin/payment-logs");
+      const scope = eventId === undefined ? selectedEventIdRef.current : eventId;
+      const qs = scope && scope > 0 ? `?eventId=${scope}` : "";
+      const res = await fetch(`/api/admin/payment-logs${qs}`);
       if (res.ok) {
         const data = await res.json();
         setPaymentLogs(data);
@@ -451,9 +490,11 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const loadPendingPayments = async () => {
+  const loadPendingPayments = async (eventId?: number | null) => {
     try {
-      const res = await fetch("/api/admin/pending-payments");
+      const scope = eventId === undefined ? selectedEventIdRef.current : eventId;
+      const qs = scope && scope > 0 ? `?eventId=${scope}` : "";
+      const res = await fetch(`/api/admin/pending-payments${qs}`);
       if (res.ok) {
         const data = await res.json();
         setPendingPayments(data);
@@ -471,8 +512,7 @@ export default function AdminDashboardPage() {
         fetch("/api/ticket-tiers?deleted=true")
       ]);
       if (ticketsRes.ok) setDeletedTickets(await ticketsRes.json());
-      if (tiersRes.ok) setDeletedTiers(await tiersRes.json());
-    } catch (err) {
+      if (tiersRes.ok) setDeletedTiers(await tiersRes.json());    } catch (err) {
       console.error("Failed to load deleted items:", err);
     } finally {
       setLoadingTrash(false);
@@ -493,15 +533,74 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleRestoreTier = async (id: string) => {
+  /**
+   * Apply one change to every selected tier, always scoped to the event the
+   * operator is actually looking at.
+   *
+   * These three bulk buttons used to fire `PUT`/`DELETE /api/ticket-tiers/<id>`
+   * with no event scope and no `res.ok` check. Because `ticket_tiers`' key is
+   * `(id, event_id)`, an unscoped write hit *every* event that happened to share
+   * the tier id - so "Hide selected" on one edition silently hid the same
+   * passes on the others, and a 500 was indistinguishable from success. Now that
+   * the route requires a scope, an unscoped call is a 400, so the scope has to
+   * be sent *and* the result has to be checked, or the buttons do nothing.
+   */
+  const runBulkTierAction = async (
+    ids: string[],
+    label: string,
+    apply: (id: string) => Promise<Response>
+  ): Promise<boolean> => {
+    const scope = selectedEventIdRef.current;
+    if (!scope || scope <= 0) {
+      alert(`Select a single event before ${label.toLowerCase()} — tiers belong to an event.`);
+      return false;
+    }
+    let okCount = 0;
+    const failures: string[] = [];
+    for (const id of ids) {
+      try {
+        const res = await apply(id);
+        if (res.ok) okCount += 1;
+        else failures.push(`${id} (HTTP ${res.status})`);
+      } catch {
+        failures.push(id);
+      }
+    }
+    setSelectedTierIds([]);
+    loadTicketTiers(scope);
+    if (failures.length > 0) {
+      alert(
+        `${label}: ${okCount} of ${ids.length} succeeded.\n\n` +
+          `These could not be applied — they were NOT changed:\n${failures.join("\n")}`
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const handleRestoreTier = async (id: string, tierEventId?: number | null) => {
+    // A trashed tier is restored from the trash view, which can be showing any
+    // event - so the scope must come from the ROW being restored, not from
+    // whichever event happens to be selected. `ticket_tiers`' key is
+    // `(id, event_id)`, and a restore without it either 400s or, before the
+    // route was scoped, un-trashed the same tier id on every event.
+    if (!tierEventId) {
+      alert("This trashed tier has no event attached, so it cannot be restored safely.");
+      return;
+    }
     try {
-      await fetch(`/api/ticket-tiers/${id}`, {
+      const res = await fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${tierEventId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deleted_at: null })
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`Could not restore the tier: ${body?.error || `HTTP ${res.status}`}`);
+        return;
+      }
       loadDeletedItems();
-      loadTicketTiers();
+      loadTicketTiers(tierEventId);
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to restore tier:", err);
@@ -601,7 +700,7 @@ export default function AdminDashboardPage() {
   const handleDeletePaymentLog = async (id: number) => {
     if (!confirm("Delete this payment log entry?")) return;
     try {
-      const res = await fetch(`/api/admin/payment-logs?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/payment-logs?id=${id}&eventId=${selectedEventIdRef.current ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPaymentLogs();
     } catch (err) {
       console.error("Failed to delete payment log:", err);
@@ -609,20 +708,41 @@ export default function AdminDashboardPage() {
   };
 
   const handleClearAllPaymentLogs = async () => {
-    if (!confirm("Delete ALL payment log entries? This cannot be undone.")) return;
+    const scope = selectedEventIdRef.current;
+    if (
+      !confirm(
+        scope === null
+          ? "Delete payment log entries for ALL events? This cannot be undone."
+          : `Delete ALL payment log entries for "${selectedEventTitle}"? This cannot be undone.`
+      )
+    )
+      return;
     try {
-      const res = await fetch("/api/admin/payment-logs?all=true", { method: "DELETE" });
+      // The route refuses a scope-less `all=true` on purpose: it used to be a
+      // bare DELETE with no WHERE clause, so "Clear All" in one event's view
+      // wiped every other edition's payment history.
+      const res = await fetch(`/api/admin/payment-logs?all=true&eventId=${scope ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPaymentLogs();
+      else alert("Could not clear payment logs. Nothing was deleted.");
     } catch (err) {
       console.error("Failed to clear payment logs:", err);
     }
   };
 
   const handleClearAllPendingPayments = async () => {
-    if (!confirm("Delete ALL pending payment records? This cannot be undone.")) return;
+    const scope = selectedEventIdRef.current;
+    if (
+      !confirm(
+        scope === null
+          ? "Delete pending payment records for ALL events? This cannot be undone."
+          : `Delete ALL pending payment records for "${selectedEventTitle}"? This cannot be undone.`
+      )
+    )
+      return;
     try {
-      const res = await fetch("/api/admin/pending-payments?all=true", { method: "DELETE" });
+      const res = await fetch(`/api/admin/pending-payments?all=true&eventId=${scope ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPendingPayments();
+      else alert("Could not clear pending payments. Nothing was deleted.");
     } catch (err) {
       console.error("Failed to clear pending payments:", err);
     }
@@ -631,7 +751,7 @@ export default function AdminDashboardPage() {
   const handleDeletePendingPayment = async (checkoutRequestId: string) => {
     if (!confirm(`Delete pending payment ${checkoutRequestId}?`)) return;
     try {
-      const res = await fetch(`/api/admin/pending-payments?checkout_request_id=${encodeURIComponent(checkoutRequestId)}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/pending-payments?checkout_request_id=${encodeURIComponent(checkoutRequestId)}&eventId=${selectedEventIdRef.current ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPendingPayments();
     } catch (err) {
       console.error("Failed to delete pending payment:", err);
@@ -643,7 +763,7 @@ export default function AdminDashboardPage() {
     if (!resolvingPayment) return;
     setResolveMessage("Resolving...");
     try {
-      const res = await fetch("/api/admin/pending-payments", {
+      const res = await fetch(`/api/admin/pending-payments?eventId=${selectedEventIdRef.current ?? ""}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -668,7 +788,7 @@ export default function AdminDashboardPage() {
 
   const loadTillPayments = async () => {
     try {
-      const res = await fetch("/api/admin/pending-payments");
+      const res = await fetch(`/api/admin/pending-payments?eventId=${selectedEventIdRef.current ?? ""}`);
       if (res.ok) {
         const all = await res.json();
         const till = all.filter((p: any) => p.status === "till_pending");
@@ -801,10 +921,28 @@ export default function AdminDashboardPage() {
       setEventResolved(true);
       // Write the choice back so the address bar is never stale.
       syncEventToUrl(eventId);
-      loadDashboardMetrics(eventId);
-      loadTicketTiers(eventId && eventId > 0 ? eventId : undefined);
-      loadWaitlist(eventId && eventId > 0 ? eventId : undefined);
+      // Independent reads of the same event — fire them together rather than
+      // paying for three sequential round-trips on first paint.
+      void Promise.all([
+        loadDashboardMetrics(eventId),
+        loadTicketTiers(eventId && eventId > 0 ? eventId : undefined),
+        loadWaitlist(eventId && eventId > 0 ? eventId : undefined),
+      ]);
     };
+
+    // Drop the legacy localStorage ticket mirror before the first read, so a
+    // browser that still carries the old fake passes (the seeded "John Doe"
+    // rows) cannot show them. The write path is gone, so this key can only
+    // ever hold stales.
+    try {
+      const purged = purgeLegacyTicketMirror();
+      if (purged > 0) {
+        console.info(
+          `[GOODLIFE] Cleared ${purged} stale ticket(s) from this browser's local cache. ` +
+          `Those were not real sales.`
+        );
+      }
+    } catch {}
 
     if (paramIsValid) {
       boot(resolvedFromParam);
@@ -880,7 +1018,25 @@ export default function AdminDashboardPage() {
     //    opposite of the "visitors will see the Event Concluded page" the
     //    confirm dialog promised. Closing and archiving are separate actions and
     //    the route now takes an explicit `mode`.
-    const isCurrentlyClosed = curStatus === "closed" || curStatus === "archived";
+    // An ARCHIVED event is deliberately NOT re-opened by this button.
+    // `mode: "activate"` clears `archived_at`, so treating archived as "closed"
+    // meant one tap on a button labelled "Re-open" silently un-hid an event
+    // that had been retired on purpose — and the admin was told it was now LIVE.
+    // Archived is the correct resting state for a finished edition; un-retiring
+    // one is a deliberate act, done in the event editor where it is labelled
+    // as such.
+    const isArchivedEvent = !!currentEvent?.archived_at || curStatus === ("archived" as string);
+    const isCurrentlyClosed = !isArchivedEvent && curStatus === "closed";
+
+    if (isArchivedEvent) {
+      alert(
+        `Event #${selectedEventId} ("${currentEvent?.title || ""}") is ARCHIVED, which means it is ` +
+        `hidden from the public site entirely. Re-opening it would also make it live and ` +
+        `un-hide it, which is a separate decision. Use the event editor's ARCHIVE control if you ` +
+        `want to bring it back deliberately.`
+      );
+      return;
+    }
 
     if (isCurrentlyClosed) {
       const confirmed = confirm(
@@ -889,18 +1045,24 @@ export default function AdminDashboardPage() {
           (currentEvent?.sales_open_date
             ? `Note: this event has a tickets-open date of ${String(currentEvent.sales_open_date).slice(0, 16).replace("T", " ")}. ` +
               `If that is still in the future the site will keep showing the coming-soon page until it passes.\n\n`
-            : "") +
-          (curStatus === "archived"
-            ? `This event is currently ARCHIVED, so it is hidden from the public site. Re-opening will un-hide it.\n`
             : "")
       );
       if (!confirmed) return;
       try {
-        await fetch(`/api/events/${selectedEventId}/archive`, {
+        const res = await fetch(`/api/events/${selectedEventId}/archive`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "activate" })
         });
+        // `fetch` only rejects on a network fault. An HTTP 500 resolves
+        // normally, so the old `await fetch(...)` with no status check reported
+        // "is now LIVE" after the server had refused. That is the "clicking
+        // close does nothing" symptom: the alert said it worked, nothing
+        // changed, and the operator re-tapped.
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `Server refused the request (HTTP ${res.status}).`);
+        }
         alert(`Event #${selectedEventId} is now LIVE — ticket sales are open.`);
         loadDashboardMetrics();
       } catch (err: any) {
@@ -916,11 +1078,17 @@ export default function AdminDashboardPage() {
       );
       if (!confirmed) return;
       try {
-        await fetch(`/api/events/${selectedEventId}/archive`, {
+        const res = await fetch(`/api/events/${selectedEventId}/archive`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "close" })
         });
+        // See the note on the activate branch above: without a status check this
+        // announced success on an HTTP 500 and changed nothing.
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `Server refused the request (HTTP ${res.status}).`);
+        }
         alert(`Event #${selectedEventId} has been concluded & closed.`);
         loadDashboardMetrics();
       } catch (err: any) {
@@ -1034,11 +1202,32 @@ export default function AdminDashboardPage() {
         for (const id of selectedTrashTicketIds) {
           await permanentlyDeleteTicket(id);
         }
+        // Permanent delete of a tier is irreversible and there is no undo, so
+        // the event scope must be resolved from the trashed row and anything
+        // unresolvable is reported rather than skipped. `permanentlyDeleteTicketTier`
+        // refuses an unscoped call by design - `ticket_tiers`' key is
+        // `(id, event_id)`, so an unscoped delete removed the same tier id from
+        // every event it appeared on.
+        let deleted = 0;
+        const refused: string[] = [];
         for (const id of selectedTrashTierIds) {
-          await permanentlyDeleteTicketTier(id);
+          const row = deletedTiers.find((t) => t.id === id);
+          if (!row?.event_id) {
+            refused.push(`${id} (no event attached)`);
+            continue;
+          }
+          const ok = await permanentlyDeleteTicketTier(id, row.event_id);
+          if (ok) deleted += 1;
+          else refused.push(`${id} (refused by server)`);
         }
         setSelectedTrashTicketIds([]);
         setSelectedTrashTierIds([]);
+        if (refused.length > 0) {
+          alert(
+            `Permanently deleted ${deleted} tier(s).\n\n` +
+              `These were NOT deleted and are still in the trash:\n${refused.join("\n")}`
+          );
+        }
       }
       setShowTrashPasswordModal(false);
       loadDeletedItems();
@@ -1144,35 +1333,63 @@ export default function AdminDashboardPage() {
     if (!editingTier) return;
     setSaving("edit-tier");
     try {
-      await updateTicketTier(editingTier.id, tierFormState);
+      // The scope must come from the tier being edited, never from the event
+      // selector: the edit form is opened from the tiers table, and if the
+      // operator switched event while it was open, an unscoped write would
+      // land on whichever event the selector happened to point at.
+      const scope = editingTier.event_id ?? tierFormState.event_id;
+      if (!scope) {
+        alert("This tier has no event attached, so it cannot be saved safely.");
+        return;
+      }
+      await updateTicketTier(editingTier.id, tierFormState, scope);
       setEditingTier(null);
-      loadTicketTiers();
+      loadTicketTiers(scope);
       loadDashboardMetrics();
     } catch (err) {
       console.error("Failed to update ticket tier:", err);
+      alert(`Could not save this tier: ${(err as any)?.message ?? "unknown error"}. Nothing was changed.`);
     } finally { setSaving(null); }
   };
 
   const handleToggleHiddenTier = async (tier: TicketTier) => {
     try {
-      await updateTicketTier(tier.id, { hidden: !tier.hidden });
-      loadTicketTiers();
+      if (!tier.event_id) {
+        alert("This tier has no event attached, so it cannot be changed safely.");
+        return;
+      }
+      const ok = await updateTicketTier(tier.id, { hidden: !tier.hidden }, tier.event_id);
+      if (!ok) alert("Could not change this tier's visibility. Nothing was changed.");
+      loadTicketTiers(tier.event_id);
     } catch (err) {
       console.error("Failed to toggle tier visibility:", err);
     }
   };
 
-  const handleDeleteTierClick = (id: string) => {
-    setDeletingTierId(id);
+  const handleDeleteTierClick = (tier: TicketTier) => {
+    setDeletingTierId(tier.id);
+    setDeletingTierEventId(tier.event_id ?? null);
   };
 
   const handleConfirmDeleteTier = async () => {
     if (!deletingTierId) return;
     try {
-      await deleteTicketTier(deletingTierId);
+      // `ticket_tiers`' key is `(id, event_id)`. An unscoped delete trashed the
+      // same tier id in every event, which is how the seeded ladders ended up
+      // inconsistent across editions.
+      if (!deletingTierEventId) {
+        alert("This tier has no event attached, so it cannot be deleted safely.");
+        setDeletingTierId(null);
+        return;
+      }
+      const ok = await deleteTicketTier(deletingTierId, deletingTierEventId);
+      if (!ok) {
+        alert("Could not delete this tier. Nothing was changed.");
+      } else {
+        loadDashboardMetrics();
+      }
       setDeletingTierId(null);
-      loadTicketTiers();
-      loadDashboardMetrics();
+      loadTicketTiers(deletingTierEventId);
     } catch (err) {
       console.error("Failed to delete ticket tier:", err);
     }
@@ -2175,11 +2392,11 @@ export default function AdminDashboardPage() {
                 <button
                   onClick={async () => {
                     if (confirm("Send selected tiers to Trash?")) {
-                      for (const id of selectedTierIds) {
-                        await fetch(`/api/ticket-tiers/${id}`, { method: "DELETE" });
-                      }
-                      setSelectedTierIds([]);
-                      loadTicketTiers();
+                      await runBulkTierAction(selectedTierIds, "Send to Trash", (id) =>
+                        fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${selectedEventIdRef.current}`, {
+                          method: "DELETE"
+                        })
+                      );
                     }
                   }}
                   className="px-2.5 py-1 bg-red-600 text-white text-[11px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all duration-150 cursor-pointer border border-red-700"
@@ -2187,33 +2404,29 @@ export default function AdminDashboardPage() {
                   Send to Trash
                 </button>
                 <button
-                  onClick={async () => {
-                    for (const id of selectedTierIds) {
-                      await fetch(`/api/ticket-tiers/${id}`, {
+                  onClick={() =>
+                    runBulkTierAction(selectedTierIds, "Hide selected", (id) =>
+                      fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${selectedEventIdRef.current}`, {
                         method: "PUT",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ hidden: true })
-                      });
-                    }
-                    setSelectedTierIds([]);
-                    loadTicketTiers();
-                  }}
+                      })
+                    )
+                  }
                   className="px-2.5 py-1 bg-brand-warning text-white text-[11px] font-black uppercase hover:bg-brand-warning active:scale-95 transition-all duration-150 cursor-pointer border border-brand-warning"
                 >
                   Hide selected
                 </button>
                 <button
-                  onClick={async () => {
-                    for (const id of selectedTierIds) {
-                      await fetch(`/api/ticket-tiers/${id}`, {
+                  onClick={() =>
+                    runBulkTierAction(selectedTierIds, "Show selected", (id) =>
+                      fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${selectedEventIdRef.current}`, {
                         method: "PUT",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ hidden: false })
-                      });
-                    }
-                    setSelectedTierIds([]);
-                    loadTicketTiers();
-                  }}
+                      })
+                    )
+                  }
                   className="px-2.5 py-1 bg-green-600 text-white text-[11px] font-black uppercase hover:bg-green-700 active:scale-95 transition-all duration-150 cursor-pointer border border-green-700"
                 >
                   Show selected
@@ -2325,7 +2538,7 @@ export default function AdminDashboardPage() {
                               <Edit className="w-3 h-3" /> Edit
                             </button>
                             <button
-                              onClick={() => handleDeleteTierClick(t.id)}
+                              onClick={() => handleDeleteTierClick(t)}
                               className="text-red-600 hover:text-red-800 font-bold text-[11px] uppercase flex items-center gap-0.5 active:scale-95 transition-all duration-150"
                             >
                               <Trash2 className="w-3 h-3" /> Delete
@@ -2405,7 +2618,7 @@ export default function AdminDashboardPage() {
                           <Edit className="w-3 h-3" /> Edit
                         </button>
                         <button
-                          onClick={() => handleDeleteTierClick(t.id)}
+                          onClick={() => handleDeleteTierClick(t)}
                           className="text-red-600 hover:text-red-800 uppercase flex items-center gap-0.5 text-[11px]"
                         >
                           <Trash2 className="w-3 h-3" /> Delete
@@ -2457,23 +2670,47 @@ export default function AdminDashboardPage() {
                   onClick={async () => {
                     if (confirm("Restore all selected items?")) {
                       for (const id of selectedTrashTicketIds) {
-                        await fetch(`/api/admin/tickets/${id}`, {
+                        await fetch(`/api/admin/tickets/${encodeURIComponent(id)}`, {
                           method: "PUT",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ deleted_at: null })
                         });
                       }
+                      // Tiers are identified by `(id, event_id)`, so the scope has
+                      // to come from the trashed ROW, not from the trash
+                      // selection (which is a bare list of id strings) and not
+                      // from the event currently being viewed - the trash spans
+                      // every event. Resolve it, and report anything that
+                      // cannot be restored rather than silently skipping it.
+                      let restored = 0;
+                      const unrestorable: string[] = [];
                       for (const id of selectedTrashTierIds) {
-                        await fetch(`/api/ticket-tiers/${id}`, {
-                          method: "PUT",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ deleted_at: null })
-                        });
+                        const row = deletedTiers.find((t) => t.id === id);
+                        if (!row?.event_id) {
+                          unrestorable.push(`${id} (no event attached)`);
+                          continue;
+                        }
+                        const res = await fetch(
+                          `/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${row.event_id}`,
+                          {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ deleted_at: null })
+                          }
+                        );
+                        if (res.ok) restored += 1;
+                        else unrestorable.push(`${id} (HTTP ${res.status})`);
                       }
                       setSelectedTrashTicketIds([]);
                       setSelectedTrashTierIds([]);
                       loadDeletedItems();
                       loadDashboardMetrics();
+                      if (unrestorable.length > 0) {
+                        alert(
+                          `Restored ${restored} tier(s).\n\n` +
+                            `These were NOT restored:\n${unrestorable.join("\n")}`
+                        );
+                      }
                       loadTicketTiers();
                     }
                   }}
@@ -2847,7 +3084,7 @@ export default function AdminDashboardPage() {
                   <Trash2 className="w-3 h-3" /> Clear All
                 </button>
                 <button 
-                  onClick={loadPaymentLogs}
+                  onClick={() => loadPaymentLogs()}
                   className="p-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10"
                   title="Refresh payment logs"
                 >
@@ -3049,7 +3286,7 @@ export default function AdminDashboardPage() {
                     <Trash2 className="w-3 h-3" /> Clear All
                   </button>
                   <button
-                    onClick={loadPendingPayments}
+                    onClick={() => loadPendingPayments()}
                     className="p-1 border border-brand-warning/30 hover:bg-[var(--brand-warning-bg)] text-brand-warning"
                     title="Refresh pending payments"
                   >
@@ -3112,7 +3349,7 @@ export default function AdminDashboardPage() {
 
       {/* EVENT DETAILS EDIT MODAL */}
       {isEditingEvent && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90vh] flex flex-col p-6 relative shadow-(--shadow-brut-xl)">
             <button
               autoFocus
@@ -3466,11 +3703,11 @@ export default function AdminDashboardPage() {
 
       {/* TICKET EDIT MODAL */}
       {editingTicket && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setEditingTicket(null)}
-              className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-6 h-6" />
             </button>
@@ -3624,11 +3861,11 @@ export default function AdminDashboardPage() {
 
       {/* CREATE MANUAL TICKET MODAL */}
       {isCreatingTicket && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-md w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
             <button 
               onClick={() => setIsCreatingTicket(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-6 h-6" />
             </button>
@@ -3803,11 +4040,11 @@ export default function AdminDashboardPage() {
 
       {/* CREATE TICKET TIER MODAL */}
       {isCreatingTier && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-(--shadow-brut-xl)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setIsCreatingTier(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-6 h-6" />
             </button>
@@ -3942,11 +4179,11 @@ export default function AdminDashboardPage() {
 
       {/* EDIT TICKET TIER MODAL */}
       {editingTier && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full p-6 relative shadow-(--shadow-brut-xl)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
             <button
               onClick={() => setEditingTier(null)}
-              className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-6 h-6" />
             </button>
@@ -4076,8 +4313,8 @@ export default function AdminDashboardPage() {
 
       {/* DELETE TICKET CONFIRM MODAL */}
       {deletingTicketId && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-fire)">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
               Send to Trash
             </h3>
@@ -4106,11 +4343,11 @@ export default function AdminDashboardPage() {
 
       {/* RESOLVE PENDING PAYMENT MODAL */}
       {resolvingPayment && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-brand-warning bg-[var(--brand-off-white)] max-w-md w-full p-6 relative shadow-(--shadow-brut-xl-accent)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-brand-warning bg-[var(--brand-off-white)] max-w-md w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl-accent)">
             <button
               onClick={() => setResolvingPayment(null)}
-              className="absolute top-4 right-4 p-1 hover:bg-[var(--brand-warning-bg)] text-brand-warning z-10"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-warning-bg)] text-brand-warning z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-5 h-5" />
             </button>
@@ -4174,18 +4411,31 @@ export default function AdminDashboardPage() {
 
       {/* DELETE TIER CONFIRM MODAL */}
       {deletingTierId && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-fire)">
             <h3 className="text-lg font-black uppercase text-red-600 border-b-2 border-red-200 pb-2 mb-4 font-display">
               Send to Trash
             </h3>
             <p className="text-xs font-bold text-[var(--brand-navy)] mb-6 uppercase">
               Are you sure you want to send ticket tier <span className="font-mono text-red-600 font-black">{deletingTierId}</span> to the Trash? You can restore it later.
             </p>
+            {/*
+              State the event explicitly. The scope of this delete is fixed when
+              the row is clicked, and a tier id like "ADV 500" can exist on more
+              than one event - so the operator needs to see which edition is
+              about to be changed, not infer it from whatever the selector
+              happens to show.
+            */}
+            <div className="mb-5 p-2.5 border-2 border-[var(--brand-navy)]/20 bg-[var(--brand-navy)]/5 text-[11px] uppercase">
+              <span className="text-[var(--brand-navy-light)]">On event</span>{" "}
+              <span className="font-black text-[var(--brand-navy)]">
+                {deletingTierEventId ? selectedEventTitle : "UNKNOWN - cannot be deleted safely"}
+              </span>
+            </div>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeletingTierId(null)}
+                onClick={() => { setDeletingTierId(null); setDeletingTierEventId(null); }}
                 className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase transition-all duration-150 active:scale-95 bg-[var(--brand-off-white)] cursor-pointer"
               >
                 Cancel
@@ -4204,11 +4454,11 @@ export default function AdminDashboardPage() {
 
       {/* TRASH PASSWORD CONFIRMATION MODAL */}
       {showTrashPasswordModal && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-fire)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
+          <div className="border-4 border-red-650 bg-[var(--brand-off-white)] max-w-sm w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-fire)">
             <button
               onClick={() => setShowTrashPasswordModal(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-red-50 text-red-600"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-red-50 text-red-600 z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="w-5 h-5" />
             </button>
@@ -4255,8 +4505,8 @@ export default function AdminDashboardPage() {
 
       {/* RESEND WHATSAPP MODAL */}
       {resendTicket && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape") setResendTicket(null); }}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-sm w-full p-6 relative shadow-(--shadow-brut-xl)">
+        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={(e) => { if (e.key === "Escape") setResendTicket(null); }}>
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-sm w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
             <h3 className="text-lg font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-4 flex items-center gap-2">
               <svg className="w-5 h-5 text-green-700" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
               Resend WhatsApp Ticket
@@ -4299,7 +4549,7 @@ export default function AdminDashboardPage() {
       {/* GATE SCANNER PIN & STEWARD DISPATCH MODAL */}
       {showGatePinModal && (
         <div 
-          className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-all duration-200" 
+          className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-3 sm:p-6 transition-all duration-200" 
           role="dialog" 
           aria-modal="true" 
           onKeyDown={(e) => { if (e.key === "Escape") setShowGatePinModal(false); }}
