@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { neonQuery } from "@/lib/supabase-db";
+import { neonQuery, fetchActiveEvent } from "@/lib/supabase-db";
 
 export async function GET(
   request: NextRequest,
@@ -179,11 +179,15 @@ export async function GET(
     if (eventId) {
       const match = assignmentRows.find((a: any) => a.event_id === eventId);
       if (match) {
-        commissionRate = Number(match.commission_rate) || 10.0;
+        commissionRate = match.commission_rate !== null && match.commission_rate !== undefined && !isNaN(parseFloat(String(match.commission_rate)))
+          ? parseFloat(String(match.commission_rate))
+          : 10.0;
         settledAmount = Number(match.settled_amount) || 0;
       }
     } else if (assignmentRows.length > 0) {
-      commissionRate = Number(assignmentRows[0].commission_rate) || 10.0;
+      commissionRate = assignmentRows[0].commission_rate !== null && assignmentRows[0].commission_rate !== undefined && !isNaN(parseFloat(String(assignmentRows[0].commission_rate)))
+        ? parseFloat(String(assignmentRows[0].commission_rate))
+        : 10.0;
       settledAmount = assignmentRows.reduce((sum: number, a: any) => sum + Number(a.settled_amount || 0), 0);
     }
 
@@ -366,18 +370,40 @@ export async function PATCH(
       );
     }
 
-    if (commission_rate !== undefined && event_id) {
-      await neonQuery(
-        `UPDATE vendor_event_assignments
-         SET commission_rate = $1
-         WHERE vendor_id = $2 AND event_id = $3`,
-        [parseFloat(commission_rate), vendorId, Number(event_id)]
-      );
+    if (commission_rate !== undefined) {
+      const parsedRate = parseFloat(String(commission_rate));
+      const rateToSet = isNaN(parsedRate) ? 10.0 : parsedRate;
+
+      let targetEventId = event_id ? Number(event_id) : null;
+      if (!targetEventId) {
+        const { rows: existingAssignments } = await neonQuery(
+          `SELECT event_id FROM vendor_event_assignments WHERE vendor_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [vendorId]
+        );
+        if (existingAssignments.length > 0) {
+          targetEventId = existingAssignments[0].event_id;
+        } else {
+          const activeEvent = await fetchActiveEvent();
+          if (activeEvent) targetEventId = activeEvent.id;
+        }
+      }
+
+      if (targetEventId) {
+        await neonQuery(
+          `INSERT INTO vendor_event_assignments (vendor_id, event_id, commission_rate)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (vendor_id, event_id) DO UPDATE SET
+             commission_rate = EXCLUDED.commission_rate`,
+          [vendorId, targetEventId, rateToSet]
+        );
+      }
     }
 
     return NextResponse.json({ success: true, message: "Vendor profile updated successfully" });
   } catch (err: any) {
-    console.error("Vendor analytics PATCH error:", err);
+    console.error("Vendor analytics update error:", err);
     return NextResponse.json({ error: err.message || "Failed to update vendor" }, { status: 500 });
   }
 }
+
+export const PUT = PATCH;

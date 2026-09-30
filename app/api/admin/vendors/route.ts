@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAllVendors, createVendor, assignVendorToEvent, createOperator, fetchOperatorsForVendor } from '@/lib/supabase-db';
+import { fetchAllVendors, createVendor, assignVendorToEvent, createOperator, fetchOperatorsForVendor, fetchActiveEvent } from '@/lib/supabase-db';
 import { requireAdmin } from '@/lib/admin-auth';
 
 export async function GET() {
@@ -32,11 +32,13 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const data = await req.json().catch(() => ({}));
-    const { name, contact_phone, contact_name, logo_url, eventId, commissionRate, flatFee, operator_name, operator_pin } = data;
+    const { name, contact_phone, contact_name, logo_url, eventId, flatFee, operator_name, operator_pin } = data;
 
     if (!name) {
       return NextResponse.json({ error: 'Missing vendor name' }, { status: 400 });
     }
+
+    const commRate = parseFloat(String(data.commission_rate ?? data.commissionRate ?? 10)) || 10.0;
 
     const newVendor = await createVendor({
       name,
@@ -48,10 +50,20 @@ export async function POST(req: Request) {
     if (eventId) {
       await assignVendorToEvent(
         newVendor.id,
-        eventId,
-        commissionRate || 0,
+        Number(eventId),
+        commRate,
         flatFee || 0
       );
+    } else {
+      const activeEvent = await fetchActiveEvent();
+      if (activeEvent) {
+        await assignVendorToEvent(
+          newVendor.id,
+          activeEvent.id,
+          commRate,
+          flatFee || 0
+        );
+      }
     }
 
     let operator = null;
@@ -65,6 +77,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
+      success: true,
       vendor: newVendor,
       operator
     });

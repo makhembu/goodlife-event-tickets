@@ -9,7 +9,7 @@ export default function AdminVendorsPage() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({ name: "", contact_name: "", contact_phone: "" });
+  const [formData, setFormData] = useState({ name: "", contact_name: "", contact_phone: "", commission_rate: "10" });
   const [selectedDrawerVendorId, setSelectedDrawerVendorId] = useState<number | null>(null);
 
   // PIN Visibility States
@@ -126,11 +126,14 @@ export default function AdminVendorsPage() {
       const res = await fetch("/api/admin/vendors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          commission_rate: parseFloat(formData.commission_rate) || 10.0,
+        }),
       });
       if (res.ok) {
         setShowAddModal(false);
-        setFormData({ name: "", contact_name: "", contact_phone: "" });
+        setFormData({ name: "", contact_name: "", contact_phone: "", commission_rate: "10" });
         await loadVendors();
       }
     } catch (err) {}
@@ -447,6 +450,24 @@ export default function AdminVendorsPage() {
                 <div>
                   <label className="block text-sm font-bold uppercase mb-1">Contact Phone</label>
                   <input type="text" value={formData.contact_phone} onChange={e => setFormData({...formData, contact_phone: e.target.value})} className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold uppercase mb-1">
+                    Commission Rate (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    value={formData.commission_rate}
+                    onChange={(e) => setFormData({ ...formData, commission_rate: e.target.value })}
+                    className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    placeholder="e.g. 10.0"
+                  />
+                  <p className="text-[11px] opacity-75 mt-1">
+                    Agreed festival commission percentage retained from sales (defaults to 10%).
+                  </p>
                 </div>
                 <div className="flex gap-4 pt-4">
                   <button type="submit" className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-bold uppercase p-3 hover:bg-brand-accent hover:text-brand-navy transition-colors">Create</button>

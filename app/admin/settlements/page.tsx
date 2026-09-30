@@ -280,10 +280,10 @@ export default function AdminSettlementsPage() {
               <div className="bg-brand-off-white p-3 border-2 border-brand-navy space-y-1">
                 <p className="font-bold uppercase text-brand-navy flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4 text-emerald-700 shrink-0" />
-                  1. Gross Sales & 10% Cut
+                  1. Gross Sales & Commission Cut
                 </p>
                 <p className="text-brand-navy/80 text-[11px]">
-                  <strong>Gross Sales</strong> is the total value of items sold by the stall. Goodlife retains a <strong>10% festival commission</strong>. The remaining <strong>90% is the Vendor Net Share</strong> that belongs to the vendor.
+                  <strong>Gross Sales</strong> is the total value of items sold by the stall. Goodlife retains the <strong>agreed festival commission</strong> (configured per vendor, standard 10%). The remaining portion is the <strong>Vendor Net Share</strong> that belongs to the vendor.
                 </p>
               </div>
 
@@ -303,7 +303,7 @@ export default function AdminSettlementsPage() {
                   3. What is Owed & Settled?
                 </p>
                 <p className="text-brand-navy/80 text-[11px]">
-                  <strong>What is Owed:</strong> If Goodlife holds digital money, Goodlife owes the vendor <code className="bg-white px-1 py-0.5 border border-brand-navy font-bold">Digital − 10% Comm</code>. If vendor took all cash, vendor owes Goodlife the 10% cut.
+                  <strong>What is Owed:</strong> If Goodlife holds digital money, Goodlife owes the vendor <code className="bg-white px-1 py-0.5 border border-brand-navy font-bold">Digital − Agreed Comm</code>. If vendor took all cash, vendor owes Goodlife the agreed commission cut.
                   <br />
                   <strong>Settled:</strong> Cumulative payouts already sent/transferred.
                 </p>
@@ -410,7 +410,7 @@ export default function AdminSettlementsPage() {
                   <th className="p-3 border-b-4 border-brand-navy">Stall / Vendor</th>
                   <th className="p-3 border-b-4 border-brand-navy text-right">Gross Sales</th>
                   <th className="p-3 border-b-4 border-brand-navy">Money Location (Who Holds What)</th>
-                  <th className="p-3 border-b-4 border-brand-navy text-right">10% Comm & Net</th>
+                  <th className="p-3 border-b-4 border-brand-navy text-right">Comm & Net</th>
                   <th className="p-3 border-b-4 border-brand-navy">Settlement Position (Who Owes Who)</th>
                   <th className="p-3 border-b-4 border-brand-navy text-right">Settled to Date</th>
                   <th className="p-3 border-b-4 border-brand-navy text-center">Action</th>
@@ -512,7 +512,7 @@ export default function AdminSettlementsPage() {
                           Net: KES {m.vendorNetShare.toLocaleString()}
                         </div>
                         <div className="text-[9px] text-emerald-700">
-                          (90% vendor share)
+                          ({100 - m.commRate}% vendor share)
                         </div>
                       </td>
 

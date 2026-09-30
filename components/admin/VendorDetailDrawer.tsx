@@ -134,10 +134,11 @@ export default function VendorDetailDrawer({
         if (resData.success) {
           setData(resData);
           if (resData.vendor) {
+            const resolvedComm = resData.summary?.commissionRate ?? (resData.assignments?.[0]?.commission_rate !== undefined ? resData.assignments[0].commission_rate : 10);
             setVendorForm({
               contact_name: resData.vendor.contact_name || "",
               contact_phone: resData.vendor.contact_phone || "",
-              commission_rate: String(resData.summary?.commissionRate || 10)
+              commission_rate: String(resolvedComm ?? 10)
             });
           }
         } else {
@@ -170,10 +171,11 @@ export default function VendorDetailDrawer({
         if (resData.success) {
           setData(resData);
           if (resData.vendor) {
+            const resolvedComm = resData.summary?.commissionRate ?? (resData.assignments?.[0]?.commission_rate !== undefined ? resData.assignments[0].commission_rate : 10);
             setVendorForm({
               contact_name: resData.vendor.contact_name || "",
               contact_phone: resData.vendor.contact_phone || "",
-              commission_rate: String(resData.summary?.commissionRate || 10)
+              commission_rate: String(resolvedComm ?? 10)
             });
           }
         } else {
@@ -364,23 +366,26 @@ export default function VendorDetailDrawer({
   };
 
   // Profile Edit Handler
-  const handleUpdateVendorProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setUpdatingVendor(true);
     try {
+      const parsedComm = parseFloat(vendorForm.commission_rate);
+      const commissionRate = isNaN(parsedComm) ? 10.0 : parsedComm;
       const res = await fetch(`/api/admin/vendors/${vendorId}/analytics`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contact_name: vendorForm.contact_name,
           contact_phone: vendorForm.contact_phone,
-          commission_rate: vendorForm.commission_rate,
+          commission_rate: commissionRate,
           event_id: eventId ? Number(eventId) : (data?.assignments?.[0]?.event_id || 2)
         })
       });
       if (res.ok) {
         setShowEditVendorModal(false);
         refreshData();
+        if (onSettlementRecorded) onSettlementRecorded();
       } else {
         const d = await res.json().catch(() => ({}));
         alert(d.error || "Failed to update profile");
@@ -391,6 +396,7 @@ export default function VendorDetailDrawer({
       setUpdatingVendor(false);
     }
   };
+  const handleUpdateVendorProfile = handleSaveProfile;
 
   // Operator Handlers
   const handleAddOperator = async (e: React.FormEvent) => {
@@ -711,7 +717,7 @@ export default function VendorDetailDrawer({
                   </span>
                 )}
                 <span className="text-[10px] font-mono uppercase bg-white/10 px-2 py-0.5 text-stone-300">
-                  COMM: {summary.commissionRate || 10}%
+                  COMM: {summary.commissionRate ?? 10}%
                 </span>
               </div>
               
@@ -827,7 +833,7 @@ export default function VendorDetailDrawer({
                   </div>
 
                   <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Commission ({summary.commissionRate || 10}%)</p>
+                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Commission ({summary.commissionRate ?? 10}%)</p>
                     <p className="text-lg sm:text-xl font-mono font-black text-amber-700 mt-1">
                       KES {Number(summary.commissionOwed || 0).toLocaleString()}
                     </p>
@@ -1987,7 +1993,7 @@ export default function VendorDetailDrawer({
                 </button>
               </div>
 
-              <form onSubmit={handleUpdateVendorProfile} className="space-y-3">
+              <form onSubmit={handleSaveProfile} className="space-y-3">
                 <div>
                   <label className="text-[10px] font-black uppercase block mb-1">Contact Person Name</label>
                   <input
