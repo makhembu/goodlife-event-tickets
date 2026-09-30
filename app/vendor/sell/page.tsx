@@ -333,7 +333,7 @@ export default function VendorSellPage() {
     }
   };
 
-  useEffect(() => {
+  const loadItems = () => {
     fetch("/api/vendor/items")
       .then(res => res.json())
       .then(data => {
@@ -345,6 +345,10 @@ export default function VendorSellPage() {
         console.error("Error loading vendor items:", err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadItems();
     
     fetch("/api/vendor/tabs")
       .then(res => res.json())
@@ -358,6 +362,14 @@ export default function VendorSellPage() {
 
     loadCustomers();
     loadRecentSales();
+
+    // Background sync every 10 seconds for real-time multi-cashier stock updates
+    const syncInterval = setInterval(() => {
+      loadItems();
+      loadTabs();
+    }, 10000);
+
+    return () => clearInterval(syncInterval);
   }, []);
 
   // Debounced search for event customers
@@ -521,6 +533,22 @@ export default function VendorSellPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         HapticFeedback.trigger("success");
+
+        // 1. Instant optimistic update so numbers like '45 LEFT' update in 0ms!
+        const soldItems = [...cart];
+        setItems(prev => prev.map(item => {
+          const sold = soldItems.find(c => c.id === item.id);
+          if (sold && item.stock_qty !== null && item.stock_qty !== undefined) {
+            const newQty = Math.max(0, Number(item.stock_qty) - sold.quantity);
+            return {
+              ...item,
+              stock_qty: newQty,
+            };
+          }
+          return item;
+        }));
+
+        loadItems(); // Server-verified stock sync
         loadTabs(); // Immediate refresh to avoid stale credit limits
         loadRecentSales();
         setCompletedSale({
