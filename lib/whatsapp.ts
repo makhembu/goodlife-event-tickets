@@ -23,6 +23,201 @@ export function getWhatsAppConfig() {
   return { url, apiKey, sessionId };
 }
 
+export interface VenueLocation {
+  latitude: number;
+  longitude: number;
+  title: string;
+  address?: string;
+}
+
+/**
+ * Resolves venue coordinates from venue name or maps URL.
+ * Supports known venues (Marara Camp, The Hub Karen) and extracts lat/lng from URL patterns.
+ */
+export function resolveVenueCoordinates(
+  venueName?: string,
+  mapsUrl?: string
+): VenueLocation | null {
+  // 1. Try parsing latitude and longitude from mapsUrl
+  if (mapsUrl) {
+    const coordMatch = mapsUrl.match(/(?:@|[?&](?:q|query|ll)=)(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return {
+          latitude: lat,
+          longitude: lng,
+          title: venueName || "Event Venue",
+          address: venueName || "Event Location",
+        };
+      }
+    }
+  }
+
+  // 2. Known venue directory
+  const venueLower = (venueName || "").toLowerCase();
+  const mapsLower = (mapsUrl || "").toLowerCase();
+
+  if (venueLower.includes("marara") || mapsLower.includes("marara")) {
+    return {
+      latitude: -1.0664,
+      longitude: 37.1436,
+      title: "Marara Camp Ventures",
+      address: "Thika Landless, Kenya",
+    };
+  }
+
+  if (
+    venueLower.includes("the hub") ||
+    venueLower.includes("hub karen") ||
+    mapsLower.includes("the+hub") ||
+    mapsLower.includes("hub+karen")
+  ) {
+    return {
+      latitude: -1.3197,
+      longitude: 36.7062,
+      title: "The Hub Karen",
+      address: "Dagoretti Rd, Karen, Nairobi, Kenya",
+    };
+  }
+
+  if (venueLower.includes("thika")) {
+    return {
+      latitude: -1.0664,
+      longitude: 37.1436,
+      title: "Marara Camp Ventures",
+      address: "Thika Landless, Kenya",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Dispatches a native Google Maps location pin card to a WhatsApp recipient.
+ * Supported on WAHA gateway via /api/sendLocation.
+ */
+export async function sendWhatsAppLocation(
+  phoneNumber: string,
+  location: VenueLocation
+): Promise<boolean> {
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
+  if (!url) return false;
+
+  let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
+  if (formattedPhone.startsWith("0")) {
+    formattedPhone = "254" + formattedPhone.slice(1);
+  } else if (formattedPhone.length === 9) {
+    formattedPhone = "254" + formattedPhone;
+  }
+
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha =
+    !isWhapi &&
+    !isOpenWA &&
+    (process.env.WHATSAPP_GATEWAY_TYPE === "waha" ||
+      url.includes("waha") ||
+      url.includes("compassionate-optimism"));
+
+  if (!isWaha) {
+    return false;
+  }
+
+  try {
+    const baseUrl = url.replace(/\/+$/, "");
+    const res = await fetch(`${baseUrl}/api/sendLocation`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": apiKey || "",
+      },
+      body: JSON.stringify({
+        session: sessionId || "default",
+        chatId: `${formattedPhone}@c.us`,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        title: location.title,
+        address: location.address || location.title,
+      }),
+    });
+
+    if (res.ok) {
+      console.log(`[WhatsApp Location] Sent map pin for ${location.title} to ${formattedPhone}`);
+      return true;
+    } else {
+      const err = await res.text();
+      console.warn(`[WhatsApp Location] Failed to send map pin [${res.status}]: ${err}`);
+      return false;
+    }
+  } catch (err) {
+    console.warn("[WhatsApp Location] Error sending location pin:", err);
+    return false;
+  }
+}
+
+/**
+ * Dispatches an image file/flyer to a WhatsApp recipient.
+ * Wraps in try-catch so upstream engine quirks never block ticketing.
+ */
+export async function sendWhatsAppImage(
+  phoneNumber: string,
+  imageUrl: string,
+  caption?: string
+): Promise<boolean> {
+  const { url, apiKey, sessionId } = getWhatsAppConfig();
+  if (!url) return false;
+
+  let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
+  if (formattedPhone.startsWith("0")) {
+    formattedPhone = "254" + formattedPhone.slice(1);
+  } else if (formattedPhone.length === 9) {
+    formattedPhone = "254" + formattedPhone;
+  }
+
+  const isWhapi = url.includes("whapi.cloud");
+  const isOpenWA = !isWhapi && apiKey?.startsWith("owa_");
+  const isWaha =
+    !isWhapi &&
+    !isOpenWA &&
+    (process.env.WHATSAPP_GATEWAY_TYPE === "waha" ||
+      url.includes("waha") ||
+      url.includes("compassionate-optimism"));
+
+  try {
+    if (isWaha) {
+      const baseUrl = url.replace(/\/+$/, "");
+      const res = await fetch(`${baseUrl}/api/sendImage`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": apiKey || "",
+        },
+        body: JSON.stringify({
+          session: sessionId || "default",
+          chatId: `${formattedPhone}@c.us`,
+          file: {
+            url: imageUrl,
+          },
+          caption: caption || "",
+        }),
+      });
+      if (res.ok) {
+        console.log(`[WhatsApp Image] Sent flyer to ${formattedPhone}`);
+        return true;
+      } else {
+        const err = await res.text();
+        console.warn(`[WhatsApp Image] Gateway failed [${res.status}]: ${err}`);
+        return false;
+      }
+    }
+  } catch (e) {
+    console.warn("[WhatsApp Image] Send image error:", e);
+  }
+  return false;
+}
+
 export async function sendTicketViaWhatsApp(
   ticketId: string,
   phoneNumber: string,
@@ -41,7 +236,12 @@ export async function sendTicketViaWhatsApp(
   let eventSubtitle = "";
   let eventRegs = "NO DRINKS FROM OUTSIDE | STRICTLY 18+";
   let eventMapsUrl = "https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika";
+  let eventFlyerUrl = "/flyer.png";
+  let ticketType = "General Admission";
   let whatsappTemplate = "";
+  let paymentContact = "+254 799 560 898";
+  let eventId: number | null = null;
+
   try {
     const { fetchEventDetails, getTicketById, getEventById } = await import("@/lib/supabase-db");
     const ed = await fetchEventDetails();
@@ -51,25 +251,34 @@ export async function sendTicketViaWhatsApp(
       eventSubtitle = ed.subtitle?.replace("|", "-") || eventSubtitle;
       eventRegs = ed.regulations?.replace(/\n/g, " | ") || eventRegs;
       eventMapsUrl = ed.maps_url || eventMapsUrl;
+      eventFlyerUrl = ed.flyer_url || eventFlyerUrl;
       whatsappTemplate = ed.whatsapp_message || "";
+      paymentContact = ed.payment_contact || paymentContact;
     }
 
-    // Resolve event-specific metadata (title, venue, regulations, maps pin) from the ticket's event
+    // Resolve event-specific metadata (title, venue, regulations, maps pin, flyer) from the ticket's event
     const ticket = await getTicketById(ticketId);
-    if (ticket?.event_id) {
-      const ev = await getEventById(ticket.event_id);
-      if (ev) {
-        eventTitle = ev.title || eventTitle;
-        eventVenue = ev.venue || eventVenue;
-        eventSubtitle = ev.subtitle?.replace("|", "-") || eventSubtitle;
-        eventRegs = ev.regulations?.replace(/\n/g, " | ") || eventRegs;
-        if (ev.maps_url && ev.maps_url.trim()) {
-          eventMapsUrl = ev.maps_url.trim();
+    if (ticket) {
+      if (ticket.ticket_type) ticketType = ticket.ticket_type;
+      if (ticket.event_id) {
+        eventId = ticket.event_id;
+        const ev = await getEventById(ticket.event_id);
+        if (ev) {
+          eventTitle = ev.title || eventTitle;
+          eventVenue = ev.venue || eventVenue;
+          eventSubtitle = ev.subtitle?.replace("|", "-") || eventSubtitle;
+          eventRegs = ev.regulations?.replace(/\n/g, " | ") || eventRegs;
+          if (ev.maps_url && ev.maps_url.trim()) {
+            eventMapsUrl = ev.maps_url.trim();
+          }
+          if (ev.flyer_url && ev.flyer_url.trim()) {
+            eventFlyerUrl = ev.flyer_url.trim();
+          }
         }
       }
     }
   } catch (err) {
-    console.warn("Failed to load event details for operator notifications:", err);
+    console.warn("Failed to load event details for WhatsApp notification:", err);
   }
 
   let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
@@ -97,6 +306,7 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{ticketId\}\}/gi, ticketId)
       .replace(/\{\{phoneNumber\}\}/gi, phoneNumber)
       .replace(/\{\{pdfUrl\}\}/gi, pdfUrl)
+      .replace(/\{\{ticketType\}\}/gi, ticketType)
       .replace(/\{\{eventTitle\}\}/gi, eventTitle)
       .replace(/\{\{eventSubtitle\}\}/gi, eventSubtitle)
       .replace(/\{\{eventVenue\}\}/gi, eventVenue)
@@ -104,7 +314,7 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{buyerName\}\}/gi, buyerName || "")
       .replace(/\{\{eventRegulations\}\}/gi, eventRegs);
   } else {
-    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n📍 Directions: ${eventMapsUrl}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
+    messageText = `*${eventTitle.toUpperCase()} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nTier: ${ticketType}\nPhone: ${phoneNumber}\nEvent: ${eventTitle}${eventSubtitle ? ` - ${eventSubtitle}` : ""}\nVenue: ${eventVenue}\n📍 Directions: ${eventMapsUrl}\n\nDownload Ticket PDF:\n${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
 
   try {
