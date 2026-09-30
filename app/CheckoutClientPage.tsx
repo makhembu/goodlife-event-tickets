@@ -26,7 +26,9 @@ import {
   X,
   Compass,
   BedSingle,
-  Users
+  Users,
+  MapPin,
+  Navigation
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -59,8 +61,17 @@ export default function TicketCheckoutPage({
     venue: "MARARA CAMP, THIKA",
     till_number: "5761205",
     flyer_url: "/flyer.png",
-    regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification."
+    regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification.",
+    maps_url: "https://www.google.com/maps/search/?api=1&query=MARARA+CAMP,+THIKA"
   });
+
+  const directionsUrl = useMemo(() => {
+    if (eventDetails.maps_url && eventDetails.maps_url.trim()) return eventDetails.maps_url.trim();
+    const query = eventDetails.venue
+      ? (eventDetails.venue.toLowerCase().includes("marara") ? "Marara Camp Ventures, Thika" : eventDetails.venue)
+      : eventDetails.title;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  }, [eventDetails.maps_url, eventDetails.venue, eventDetails.title]);
 
   // Dynamic Ticket Tiers from Database
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers || []);
@@ -334,7 +345,8 @@ export default function TicketCheckoutPage({
         recurrence_pattern: targetEvent.recurrence_pattern,
         recurrence_day: targetEvent.recurrence_day,
         recurrence_time: targetEvent.recurrence_time,
-        custom_schedule_text: targetEvent.custom_schedule_text
+        custom_schedule_text: targetEvent.custom_schedule_text,
+        maps_url: targetEvent.maps_url
       });
       setTicketTiers(tiers);
       
@@ -822,7 +834,19 @@ export default function TicketCheckoutPage({
             {/* Desktop Unified Metadata Strip */}
             <div className="hidden lg:flex items-center gap-3 ml-2 font-mono text-xs font-bold uppercase tracking-wider text-brand-navy/80">
               <span className="w-2 h-2 border border-brand-navy bg-brand-accent animate-pulse shrink-0" />
-              <span className="truncate">{eventDetails.venue || eventDetails.subtitle}</span>
+              <a
+                href={directionsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Get directions to ${eventDetails.venue || "venue"} on Google Maps`}
+                className="truncate flex items-center gap-1.5 hover:text-brand-navy hover:underline group text-brand-navy/90 select-none"
+              >
+                <span className="truncate">{eventDetails.venue || eventDetails.subtitle}</span>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-brand-accent text-brand-navy px-1 py-0.5 border border-brand-navy inline-flex items-center gap-0.5 group-hover:bg-brand-navy group-hover:text-brand-accent transition-colors shrink-0 no-underline">
+                  <span>📍 MAP</span>
+                  <span className="text-[9px]">↗</span>
+                </span>
+              </a>
               <span className="text-brand-accent font-black">/</span>
               <span className="bg-brand-navy text-brand-accent px-1.5 py-0.5 text-[10px] tracking-widest">{eventDetails.tag}</span>
             </div>
@@ -1308,13 +1332,39 @@ export default function TicketCheckoutPage({
 
                 {/* Venue / Till details - mobile only, desktop has them in the header ribbon */}
                 <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase pt-1 max-md:grid md:hidden">
-                  <div className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0">
-                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">LOCATION</span>
-                    <span className="text-brand-navy block text-[11px] md:text-xs leading-tight break-words">{eventDetails.venue}</span>
-                  </div>
-                  <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0">
-                    <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">PAYMENT TILL</span>
-                    <span className="text-brand-navy block text-sm md:text-base font-display break-all">#{eventDetails.till_number}</span>
+                  <a
+                    href={directionsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => HapticFeedback.trigger("confirmation")}
+                    aria-label={`Get directions to ${eventDetails.venue} on Google Maps`}
+                    className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0 group flex flex-col justify-between active:translate-y-[1px] active:shadow-none transition-all cursor-pointer select-none no-underline"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between border-b border-brand-navy pb-1 mb-1.5 font-mono">
+                        <span className="text-[10px] text-brand-navy font-bold">LOCATION</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider bg-brand-accent text-brand-navy px-1 py-0.5 border border-brand-navy flex items-center gap-0.5 group-hover:bg-brand-navy group-hover:text-brand-accent transition-colors">
+                          <span>📍 MAP</span>
+                          <span className="text-[8px]">↗</span>
+                        </span>
+                      </div>
+                      <span className="text-brand-navy block text-[11px] md:text-xs leading-tight break-words font-black group-hover:underline">
+                        {eventDetails.venue}
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-mono font-bold tracking-wider text-brand-navy/70 group-hover:text-brand-navy flex items-center gap-1 mt-2">
+                      <span>TAP FOR DIRECTIONS</span>
+                      <span>→</span>
+                    </span>
+                  </a>
+                  <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0 flex flex-col justify-between">
+                    <div>
+                      <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1.5 font-mono font-bold">PAYMENT TILL</span>
+                      <span className="text-brand-navy block text-sm md:text-base font-display break-all">#{eventDetails.till_number}</span>
+                    </div>
+                    <span className="text-[9px] font-mono font-bold tracking-wider text-brand-navy/60 block mt-2">
+                      INSTANT STK PUSH
+                    </span>
                   </div>
                 </div>
 
@@ -1892,6 +1942,15 @@ export default function TicketCheckoutPage({
                                           SHARE TO STATUS
                                         </a>
                                       </div>
+
+                                      <a
+                                        href={directionsUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-full py-2.5 border-2 border-brand-accent/60 bg-brand-navy text-brand-accent font-display text-lg uppercase hover:bg-brand-accent hover:text-brand-navy transition-all flex items-center justify-center gap-2 shadow-(--shadow-brut-xs)"
+                                      >
+                                        <MapPin className="w-4 h-4 shrink-0" /> GET DIRECTIONS TO VENUE ↗
+                                      </a>
 
                                       {/* Permanent URL input */}
                                       <div>

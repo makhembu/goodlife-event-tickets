@@ -17,6 +17,7 @@ export async function sendTicketViaWhatsApp(
   let eventVenue = "Marara Camp, Thika Landless";
   let eventSubtitle = "";
   let eventRegs = "NO DRINKS FROM OUTSIDE | STRICTLY 18+";
+  let eventMapsUrl = "https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika";
   let whatsappTemplate = "";
   try {
     const { fetchEventDetails } = await import("@/lib/supabase-db");
@@ -26,6 +27,7 @@ export async function sendTicketViaWhatsApp(
       eventVenue = ed.venue || eventVenue;
       eventSubtitle = ed.subtitle?.replace("|", "-") || eventSubtitle;
       eventRegs = ed.regulations?.replace(/\n/g, " | ") || eventRegs;
+      eventMapsUrl = ed.maps_url || eventMapsUrl;
       whatsappTemplate = ed.whatsapp_message || "";
     }
   } catch (err) {
@@ -51,10 +53,11 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{eventTitle\}\}/gi, eventTitle)
       .replace(/\{\{eventSubtitle\}\}/gi, eventSubtitle)
       .replace(/\{\{eventVenue\}\}/gi, eventVenue)
+      .replace(/\{\{eventMapsUrl\}\}/gi, eventMapsUrl)
       .replace(/\{\{buyerName\}\}/gi, buyerName || "")
     .replace(/\{\{eventRegulations\}\}/gi, eventRegs);
   } else {
-    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
+    messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n📍 Directions: ${eventMapsUrl}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
 
   try {

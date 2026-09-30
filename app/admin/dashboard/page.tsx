@@ -178,7 +178,7 @@ export default function AdminDashboardPage() {
   // Trash / restore states
   const [deletedTickets, setDeletedTickets] = useState<Ticket[]>([]);
 
-  const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
+  const getDefaultWhatsAppTemplate = () => `*{{eventTitle}} TICKET CONFIRMED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nPhone: {{phoneNumber}}\nEvent: {{eventTitle}} {{eventSubtitle}}\nVenue: {{eventVenue}}\n📍 Directions: {{eventMapsUrl}}\n\nDownload the ticket PDF here: {{pdfUrl}}\n\nREGULATIONS:\n{{eventRegulations}}`;
   const getDefaultOperatorTemplate = () => `*NEW TICKET SECURED*\n\nBuyer: {{buyerName}}\nTicket Type: {{ticketType}} (Qty: {{quantity}})\nAmount Paid: KES {{amountPaid}}\nReference/ID: {{reference}}`;
   const getDefaultScanTemplate = () => `*{{eventTitle}} GATE ENTRY VALIDATED*\n\nTicket ID: {{ticketId}}\nAttendee: {{buyerName}}\nTicket Type: {{ticketType}}\nScanned By: {{scannerName}}\nTime: {{scanTime}}`;
   const [deletedTiers, setDeletedTiers] = useState<TicketTier[]>([]);
@@ -2791,6 +2791,29 @@ export default function AdminDashboardPage() {
                   />
                 </div>
                 <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase">Google Maps Pin Link *</label>
+                    {eventFormState.maps_url && (
+                      <a
+                        href={eventFormState.maps_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-mono font-bold text-brand-navy hover:text-brand-accent underline flex items-center gap-0.5"
+                      >
+                        Test Pin ↗
+                      </a>
+                    )}
+                  </div>
+                  <input
+                    type="url"
+                    required
+                    value={eventFormState.maps_url || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, maps_url: e.target.value })}
+                    placeholder="https://maps.app.goo.gl/... or dropped pin"
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-xs font-black uppercase">Till Number</label>
                   <input
                     type="text"
@@ -2917,7 +2940,7 @@ export default function AdminDashboardPage() {
                     WhatsApp Message Template (optional)
                   </label>
                   <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventRegulations}}'}</code>
+                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventMapsUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventRegulations}}'}</code>
                   </p>
                   <textarea
                     rows={4}

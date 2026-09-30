@@ -22,6 +22,7 @@ export interface Event {
   custom_schedule_text?: string;
   max_tent_inventory?: number;
   max_shared_beds?: number;
+  maps_url?: string;
   created_at: string;
   archived_at: string | null;
   is_active: boolean;
@@ -95,6 +96,7 @@ export interface EventDetails {
   recap_video_url?: string;
   max_tent_inventory?: number;
   max_shared_beds?: number;
+  maps_url?: string;
   simulators_enabled?: boolean;
   operator_notifications_enabled?: boolean;
   footer_title?: string;

@@ -212,9 +212,9 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         ticker_text, till_number, event_date, is_active, status, category,
         sales_open_date, sales_close_date, next_event_title, recap_video_url,
         max_tent_inventory, max_shared_beds, recurrence_pattern, recurrence_day,
-        recurrence_time, custom_schedule_text
+        recurrence_time, custom_schedule_text, maps_url
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
        RETURNING *`,
       [
         event.title,
@@ -239,7 +239,8 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.recurrence_pattern || 'none',
         event.recurrence_day || 'sunday',
         event.recurrence_time || '14:00',
-        event.custom_schedule_text || ''
+        event.custom_schedule_text || '',
+        event.maps_url || ''
       ]
     );
     const newEvent = rows[0];
@@ -355,13 +356,14 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
     // If this is the active event, sync to event_details
     if (r.is_active) {
       await neonQuery(
-        `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url)
-         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, maps_url)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, subtitle = EXCLUDED.subtitle, tag = EXCLUDED.tag,
            venue = EXCLUDED.venue, till_number = EXCLUDED.till_number, flyer_url = EXCLUDED.flyer_url,
-           regulations = EXCLUDED.regulations, ticker_text = EXCLUDED.ticker_text, logo_url = EXCLUDED.logo_url`,
-        [r.title, r.subtitle, r.tag, r.venue, r.till_number, r.flyer_url, r.regulations, r.ticker_text, r.logo_url]
+           regulations = EXCLUDED.regulations, ticker_text = EXCLUDED.ticker_text, logo_url = EXCLUDED.logo_url,
+           maps_url = EXCLUDED.maps_url`,
+        [r.title, r.subtitle, r.tag, r.venue, r.till_number, r.flyer_url, r.regulations, r.ticker_text, r.logo_url, r.maps_url || '']
       );
     }
 
@@ -1059,6 +1061,7 @@ let localEventDetails: EventDetails = {
   whatsapp_operator_template: "",
   whatsapp_scan_template: "",
   event_date: null,
+  maps_url: "https://www.google.com/maps/search/?api=1&query=MARARA+CAMP,+THIKA",
 };
 
 function getLocalEventDetails(): EventDetails {
@@ -1126,8 +1129,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
   // Server side - Neon SQL
   try {
     await neonQuery(
-      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, event_date, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message, payment_contact, whatsapp_operator_template, whatsapp_scan_template)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $18, $11, $12, $13, $14, $15, $16, $17)
+      `INSERT INTO event_details (id, title, subtitle, tag, venue, till_number, flyer_url, regulations, ticker_text, logo_url, event_date, simulators_enabled, operator_notifications_enabled, footer_title, footer_legal, whatsapp_message, payment_contact, whatsapp_operator_template, whatsapp_scan_template, maps_url)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $18, $11, $12, $13, $14, $15, $16, $17, $19)
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title,
          subtitle = EXCLUDED.subtitle,
@@ -1146,7 +1149,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
          whatsapp_message = EXCLUDED.whatsapp_message,
          payment_contact = EXCLUDED.payment_contact,
          whatsapp_operator_template = EXCLUDED.whatsapp_operator_template,
-         whatsapp_scan_template = EXCLUDED.whatsapp_scan_template`,
+         whatsapp_scan_template = EXCLUDED.whatsapp_scan_template,
+         maps_url = EXCLUDED.maps_url`,
       [
         updated.title,
         updated.subtitle,
@@ -1165,7 +1169,8 @@ export async function updateEventDetails(details: Partial<EventDetails>): Promis
         updated.whatsapp_message || "",
         updated.payment_contact || "",
         updated.whatsapp_operator_template || "",
-        updated.whatsapp_scan_template || ""
+        updated.whatsapp_scan_template || "",
+        updated.maps_url || ""
       ]
     );
     return updated;

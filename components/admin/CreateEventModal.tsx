@@ -44,6 +44,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   const [subtitle, setSubtitle] = useState("MARARA CAMP, THIKA | OCT 31");
   const [tag, setTag] = useState("SMWHR INC / MARARA CAMP");
   const [venue, setVenue] = useState("MARARA CAMP, THIKA");
+  const [mapsUrl, setMapsUrl] = useState("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
   const [tillNumber, setTillNumber] = useState("5761205");
   const [flyerUrl, setFlyerUrl] = useState("/flyer.png");
   const [eventDate, setEventDate] = useState("");
@@ -71,6 +72,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setSubtitle("THE HUB GARDEN | EVERY SUNDAY");
       setTag("GOODLIFE MINI SESSIONS");
       setVenue("THE HUB GARDEN, NAIROBI");
+      setMapsUrl("https://www.google.com/maps/search/?api=1&query=The+Hub+Karen+Nairobi");
       setMaxTentInventory(0);
       setMaxSharedBeds(0);
       setRecurrencePattern("weekly");
@@ -83,6 +85,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setSubtitle("MARARA CAMP, THIKA | OCT 31");
       setTag("SMWHR INC / MARARA CAMP");
       setVenue("MARARA CAMP, THIKA");
+      setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
       setMaxTentInventory(30);
       setMaxSharedBeds(12);
       setRecurrencePattern("none");
@@ -97,6 +100,14 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setError("Please provide an event title.");
       return;
     }
+    if (!mapsUrl.trim()) {
+      setError("Please provide a Google Maps pin or directions link for the venue.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(mapsUrl.trim())) {
+      setError("Google Maps link must start with https:// or http://");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -107,6 +118,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
         subtitle,
         tag,
         venue,
+        maps_url: mapsUrl.trim(),
         till_number: tillNumber,
         flyer_url: flyerUrl,
         logo_url: "",
@@ -246,11 +258,11 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
             </div>
           </div>
 
-          {/* Venue & Tag */}
+          {/* Venue & Google Maps Pin */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                VENUE LOCATION
+                VENUE LOCATION (E.G. MARARA CAMP - THE GARDEN)
               </label>
               <input
                 type="text"
@@ -259,6 +271,35 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
               />
             </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold uppercase text-brand-navy">
+                  GOOGLE MAPS PIN LINK *
+                </label>
+                {mapsUrl && (
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] font-mono font-bold text-brand-navy hover:text-brand-accent underline flex items-center gap-0.5"
+                  >
+                    Test Pin ↗
+                  </a>
+                )}
+              </div>
+              <input
+                type="url"
+                required
+                value={mapsUrl}
+                onChange={(e) => setMapsUrl(e.target.value)}
+                placeholder="https://maps.app.goo.gl/... or dropped pin"
+                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono font-bold focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Tag & Payment Till */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
                 CATEGORY TAG
@@ -270,10 +311,21 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
               />
             </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
+                PAYMENT TILL
+              </label>
+              <input
+                type="text"
+                value={tillNumber}
+                onChange={(e) => setTillNumber(e.target.value)}
+                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* Status & Event Date */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
                 STATUS
@@ -295,17 +347,6 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                 type="date"
                 value={eventDate}
                 onChange={(e) => setEventDate(e.target.value)}
-                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                PAYMENT TILL
-              </label>
-              <input
-                type="text"
-                value={tillNumber}
-                onChange={(e) => setTillNumber(e.target.value)}
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-bold uppercase focus:outline-none"
               />
             </div>
