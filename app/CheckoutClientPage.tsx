@@ -989,8 +989,35 @@ export default function TicketCheckoutPage({
           {/* LEFT COLUMN: HERO FLYER & ADVISORIES (5 cols on lg) */}
           <section className="lg:col-span-5 space-y-4 md:space-y-6">
             
-            {/* HERO FLYER MOTIF CARD */}
-            <div className="border-4 border-brand-navy bg-brand-off-white p-3 md:p-6 relative shadow-(--shadow-brut-sm-strong) md:shadow-(--shadow-brut-xl-soft)">
+            {/* HERO FLYER MOTIF CARD
+
+                This card carries the fold cap, NOT the poster inside it. That is
+                the whole fix for the frame reading as oversized.
+
+                The cap used to sit on the poster with md:mx-auto, so the poster
+                shrank to the cap and then centred itself inside a full-width
+                card. Whatever the cap left over split into two cream wedges
+                that nobody chose: 15px a side at 1440x900, 21px at 1920x1080,
+                0 at 2560x1440 where the column binds first. The visible frame
+                was 43-49px against a designed 28px (border-4 + p-6), and it
+                moved on every resize.
+
+                Applying the cap here instead makes the card hug the artwork, so
+                the frame is exactly 28px everywhere and the margin stops
+                depending on which constraint happened to win.
+
+                md:box-content is load-bearing and easy to undo by accident.
+                Tailwind sets border-box globally, so a plain max-width on this
+                card would be measured to the OUTSIDE of the 28px frame and the
+                artwork would silently come out 56px smaller than the cap
+                allows. content-box measures max-width to the inside, which is
+                what makes the artwork land on exactly the cap.
+
+                Deliberately no w-full: a content-box width:100% resolves
+                against the column and pushes the frame 56px past it,
+                overflowing the grid. Block width:auto already fills the column
+                minus the frame, and the cap then trims it. */}
+            <div className="border-4 border-brand-navy bg-brand-off-white p-3 md:p-6 relative shadow-(--shadow-brut-sm-strong) md:shadow-(--shadow-brut-xl-soft) md:box-content md:mx-auto md:max-w-[calc(70.7dvh_-_180px)]">
               
               {/* Category / Status badge */}
               <div className="absolute -top-3 -right-3 md:-top-4 md:-right-4 bg-brand-accent text-brand-navy border-2 border-brand-navy px-2 py-0.5 md:px-4 md:py-1 text-[11px] md:text-xs font-black tracking-widest uppercase shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) rotate-3">
@@ -1041,21 +1068,29 @@ export default function TicketCheckoutPage({
                        Written as calc(70.7dvh - 180px) and applied as max-w.
                        Underscores are Tailwind's escape for the spaces calc()
                        requires around the minus sign - without them the whole
-                       declaration is invalid and the poster silently reverts to
-                       filling the column, which is the bug this replaces.
+                       declaration is invalid and the card silently reverts to
+                       the full column, which is the bug this replaces.
 
                        This makes the fold guarantee hold at EVERY desktop
-                       height, and mx-auto keeps the poster centred in the
-                       column when the cap is the binding constraint. The
-                       honest trade: on a short screen fitting the poster above
-                       the fold caps it at ~371px wide, versus ~405px if you
-                       allow a 20px scroll. Big poster and no scrolling are
+                       height. The cap itself lives on the CARD, one level up,
+                       so that the frame stays a constant 28px - see the note
+                       on the card. Applying it here instead was correct for the
+                       fold and wrong for the frame.
+
+                       The honest trade: on a short screen fitting the poster
+                       above the fold caps it at ~371px wide, versus ~405px if
+                       you allow a 20px scroll. Big poster and no scrolling are
                        genuinely exclusive on a 900px-tall screen - 780px of
                        viewport minus 219px of chrome leaves 561px, and 0.707
                        of that is 396px. Fitting was chosen because the scroll
                        was the thing that was complained about, and 371px is
                        still wider than the 294px that started all this. */}
-                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] md:mx-auto md:max-w-[calc(70.7dvh_-_180px)] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
+                {/* w-full with no cap and no mx-auto on purpose. The card above
+                    now owns the width constraint, so the poster just fills the
+                    frame it is given. Re-adding a cap here is what produced
+                    the drifting cream margin - the poster must be allowed to
+                    take the full interior or the frame stops being constant. */}
+                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
                   <button 
                     type="button"
                     onClick={() => setIsFlyerExpanded(true)}
