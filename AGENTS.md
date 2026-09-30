@@ -18,14 +18,14 @@ npm run clean   # removes .next/ and tsconfig.tsbuildinfo
 - There is no `typecheck` script; use `npx tsc --noEmit` for a fast check that skips the Next build.
 - HMR is only disabled when `DISABLE_HMR=true` is present in the environment (checked in `next.config.ts` `webpack()`). It is **not** in `.env.local`; export it yourself (`$env:DISABLE_HMR="true"; npm run dev`).
 - No test framework, no CI. Verification is manual plus ad-hoc `scripts/*.js` that hit the **live** database.
-- `npm run lint` is currently **red on `main`-adjacent WIP**: ~12 pre-existing `react-hooks/set-state-in-effect` and `react/no-unescaped-entities` errors in `CheckoutClientPage`, `ClosedEventClientPage`, `admin/scanner`, `vendor/login`, `pay/tab/[id]`. Not caused by the current change; fix before trusting lint as a signal. `eslint.config.mjs` ignores `.netlify/**`, `replace.js` and `check.js` (all non-source), and the ignores **must** live in their own config object to act globally in flat config.
+- `npm run lint` is currently **red**: 28 problems (16 errors, 12 warnings), all pre-existing. `react/no-unescaped-entities` and `react-hooks/set-state-in-effect` dominate, spread over `CheckoutClientPage`, `ClosedEventClientPage`, `admin/dashboard`, `admin/gallery`, `admin/settlements`, `admin/whatsapp`, `login`, `pay/tab/[id]`, `scanner`, `vendor/login`, `vendor/sales`, `vendor/sell`, and `components/admin/VendorDetailDrawer`. Read the counts against this baseline before blaming your change. `eslint.config.mjs` ignores `.netlify/**`, `replace.js` and `check.js` (all non-source), and the ignores **must** live in their own config object to act globally in flat config.
 
 ## Environment gotchas
 
-- **`.env.local` has no `PAYHERO_*` keys** — local "Pay with M-Pesa" fails with "PayHero not configured" until you add them. Production values live only in the Vercel dashboard, never in a file.
-- `.env.local` still carries legacy `DARAJA_*`; `/api/mpesa/*` is dead Daraja code (superseded by PayHero, and `README.md`/`CLAUDE.md` still describe it). Don't wire new work to it.
+- **`.env.local` has no `PAYHERO_*` keys** — local "Pay with M-Pesa" fails with "PayHero not configured" until you add them (`.env.example` documents them). Production values live only in the Vercel dashboard, never in a file. Present keys are `DATABASE_URL`, legacy `DARAJA_CONSUMER_*`, `WHATSAPP_GATEWAY_*`, `PAYSTACK_*`, `APP_URL`, `OPERATOR_WHATSAPP_NUMBERS`.
+- `/api/mpesa/*` is dead Daraja code (superseded by PayHero, and `README.md`/`CLAUDE.md` still describe it). Don't wire new work to it — note `lib/supabase-db.ts`'s *client* branch of `createPendingPayment` still posts to `/api/mpesa/stkpush`; the live PayHero routes call the server branch instead.
 - `TAB_SELF_PAY_SECRET` silently falls back to `PAYHERO_CALLBACK_TOKEN`, then `DATABASE_URL` (`lib/self-pay-token.ts`) — links keep working, but set it explicitly.
-- ~12 files in `scripts/` hardcode the production Neon URL **including the password**, and `.gitignore` doesn't exclude `scripts/`. Assume the prod DB credential is already leaked; don't add more, and treat DB-touching scripts as dangerous.
+- ~12 files in `scripts/` hardcode the production Neon URL **including the password**. `.gitignore` now excludes `scripts/` (untracked, so the leak doesn't spread further), but assume the credential is already burned; don't add more, and treat DB-touching scripts as dangerous.
 - `scripts/test-e2e-suite.js` is not a unit test: it connects to the live DB, INSERTs/UPDATEs tickets + waitlist rows for hardcoded event `2`, then deletes them. Don't run it casually.
 
 ## Data model (the thing most likely to be got wrong)
@@ -37,7 +37,7 @@ Two overlapping "event" models — mixing them breaks checkout, tiers, and gate 
 | `events` (many rows, `event_id` everywhere) | Real events: checkout, ticket tiers, tickets, vendors, gallery, radio, waitlist, gate scans |
 | `event_details` (singleton `id = 1`) | Site-wide settings only: WhatsApp templates, `simulators_enabled`, `operator_notifications_enabled`, footer, `payment_contact`. Also the source for `app/layout.tsx` `generateMetadata` (page title/OG image) |
 
-- `lib/supabase-db.ts` (~2700 lines) *is* the data layer. Every function branches on `typeof window === "undefined"`: server → Neon SQL, client → `fetch` to its own `/api/*` route. Adding a field means editing `lib/supabase-db-types.ts`, the function's server branch, and its client fallback.
+- `lib/supabase-db.ts` (~3500 lines) *is* the data layer. Every function branches on `typeof window === "undefined"`: server → Neon SQL, client → `fetch` to its own `/api/*` route. Adding a field means editing `lib/supabase-db-types.ts`, the function's server branch, and its client fallback.
 - `lib/supabase-db.ts` module-loads a single `pg.Pool`. `lib/payhero-fulfill.ts` and several API routes build a **new `Pool` per call** and `pool.end()` it — that's the existing pattern. `lib/neon-client.ts` (`getDbPool`) is the cached singleton but is imported by only 2 files.
 - **Supabase is vestigial.** `utils/` is empty and nothing in `app/`, `lib/`, or `components/` imports `@supabase/*`, despite `README.md`/`CLAUDE.md` describing a Supabase+Neon split and the deps still being installed. It's Neon-only.
 - **No migration runner.** `schema-neon.sql` / `schema.sql` cover only 4 tables and are stale (no `events`, POS, or hub tables). Schema changes are one-off `scripts/*.js` that hand-parse `DATABASE_URL` from `.env.local` (there is no `dotenv` dependency). Check `scripts/` before assuming a column exists; add a new script rather than editing the old ones.
@@ -65,12 +65,12 @@ There is **one** function that decides which public page an event gets: `publicS
 
 - **`status` is a hand-set label; the recurrence engine is the truth for minis.** A mini festival parked on `scheduled` is sellable today, so gating its page on `status` would show a countdown while the payment API took its money. Never re-derive page choice from `status` anywhere else.
 - **The `active` → `live` legacy value.** The old event-editor `<select>` and the old "re-open event" button both wrote `status = 'active'`, which `getEventAvailability` rejects — so those events rendered a working checkout page and refused **every** payment. `canonicalStatus()` now folds `active` to `live`, and every status read goes through it. If you add a status comparison anywhere, use `canonicalStatus`, not `e.status`. Once `scripts/repair-event-status.js` has been run against prod, the fold is no longer load-bearing.
-- **Never invent prices.** `CheckoutClientPage` has a built-in flagship price ladder that fires when an event has zero tiers. `app/page.tsx` downgrades such an event to `coming_soon`; do not add a second path to a tierless checkout.
+- **Never invent prices.** There is *no* fallback tier ladder anywhere, and that is deliberate: `CheckoutClientPage` used to fall back to eight hardcoded flagship tiers for any event with zero DB tiers, and `fetchTicketTiers` used to INSERT them from an unauthenticated `GET /api/ticket-tiers`. Both are gone. Zero tiers means zero tiers — `app/page.tsx` downgrades a tierless checkout to `coming_soon`, and `CheckoutClientPage` refuses submit and shows an empty-state panel. Do not reintroduce a default ladder, and do not make a read function write.
 - **`sales_open_date` / `sales_close_date` are now editable** ("Tickets Open" / "Tickets Close", `datetime-local`, entered as Kenya time — the column is a naive EAT string). They gate both the page and payment. Do not add a second hand-rolled auto-open rule.
 - **Closing ≠ archiving.** `POST /api/events/[id]/archive` takes an explicit `mode`: `activate` | `close` | `archive`. `closeEvent()` sets `status='closed'` and keeps the recap page; `archiveEvent()` stamps `archived_at` and 404s it. The old boolean `activate` flag made the dashboard's END/CLOSE button *archive* as well as close. For backward compat `activate: true` still works; absent a `mode`, it archives.
 - `isHiddenFromSite()` shares `publicState`'s rule for "may this be linked" (the editions switcher, the mini promo). Use it rather than re-checking `archived_at`.
 
-**Verification:** `npx tsx tests/public-state.check.ts` asserts every case above against the real module, including a routing/payment agreement invariant with a named allowlist (`sales_closed`, `occurrence_day` — pages that deliberately render so the customer can read *why* payment is refused). Add a case there before changing routing. `--live` re-runs the same decisions read-only against the real database.
+**Verification:** `npx tsx tests/public-state.check.ts` asserts every case above against the real module — **47 passing as of 2026-09-30**, no DB or env needed. It includes a routing/payment agreement invariant with a named allowlist (`sales_closed`, `occurrence_day` — pages that deliberately render so the customer can read *why* payment is refused). Add a case there before changing routing. `--live` re-runs the same decisions read-only against the real database.
 
 `tests/` is a new tracked directory, deliberately outside `scripts/`: `.gitignore` excludes `scripts/` because the ad-hoc DB scripts there hardcode the production Neon password, so a verification tool the codebase depends on must not live there. The one-off data repair (`scripts/repair-event-status.js`, writes to prod, dry-run by default) stays untracked in `scripts/` alongside its peers — recreate it from this file's description if you ever need it again.
 
@@ -79,8 +79,9 @@ There is **one** function that decides which public page an event gets: `publicS
 - Admin: hardcoded `admin@goodlife.com` / `GoodlifeAdmin2026!` → cookie `goodlife_admin_session=true` (1 day, httpOnly). No Supabase Auth. The same password is re-typed client-side to confirm permanent deletes in the dashboard trash.
 - Simulator/dev-panel toggle has its own password, `GoodlifeSim2026!` (`/api/admin/verify-simulator-password`), stored per event as `simulators_enabled`.
 - Vendor operator: 4-digit PIN → `goodlife_vendor_session` = base64 JSON (`vendorId`, `operatorId`, `role`, …), 12h. Decoded, not signed — treat every `vendorId` in a request body as untrusted.
-- `middleware.ts` protects `/admin/*`, `/login`, `/vendor/*`, `/api/admin/*`, non-GET `/api/ticket-tiers`, `/api/event-details` PUT, and `/api/events/*` except public `GET /api/events/active`. **The `config.matcher` is an explicit allowlist**: a brand-new `/api/*` route is public until you add it there, and handlers should still call `requireAdmin()` (`lib/admin-auth.ts`) or re-check the cookie. `/api/hub/*` (gallery/radio writes) is currently unauthenticated.
-- `lib/rate-limit.ts` is per-instance in-memory: it resets on cold start and is useless across replicas. It is already wired onto the login, vendor-auth, and payment-init POSTs — follow that pattern for new sensitive routes.
+- **Gate scanner is a third session**, `goodlife_scanner_session` (also base64 JSON, `/api/scanner/auth`), and it accepts the admin password as a superuser bypass. `/scanner` + `/scanner/login` are its own route pair, and middleware redirects `/admin/scanner` → `/scanner` when a scanner session exists. Don't assume "protected by middleware" means "admin cookie".
+- `middleware.ts` protects `/admin/*`, `/scanner/*`, `/login`, `/vendor/*`, `/api/admin/*`, `/api/scanner/*`, `/api/vendor/*`, non-GET `/api/ticket-tiers`, `/api/event-details` PUT, and `/api/events/*` except public `GET /api/events/active`. **The `config.matcher` is an explicit allowlist**: a brand-new `/api/*` route is public until you add it there, and handlers should still call `requireAdmin()` (`lib/admin-auth.ts`) or re-check the cookie. `/api/hub/*` (gallery/radio writes) is currently unauthenticated.
+- `lib/rate-limit.ts` is per-instance in-memory: it resets on cold start and is useless across replicas. It is already wired onto admin login, scanner auth, vendor login, tab self-pay, rsvp-free, till-submit, Paystack init and PayHero init — follow that pattern for new sensitive routes.
 
 ## WhatsApp gateway console (WAHA)
 
@@ -99,9 +100,14 @@ There is **one** function that decides which public page an event gets: `publicS
 ## Route map (non-obvious parts only)
 
 - Public: `/` (checkout; `closed` **and** `scheduled` events render `ClosedEventClientPage`), `/events`, `/events/[id]`, `/gallery`, `/radio`, `/pay/tab/[id]`, `/login`, `/vendor/*`.
+- Gate scanner: `/scanner`, `/scanner/login` — its own session, reached from the ticket QR via `/admin/scanner`.
 - Admin: `/admin/dashboard` (a ~180 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/scanner`, `/admin/vendors`, `/admin/gallery`, `/admin/settlements`, `/admin/whatsapp` (WAHA pairing console).
-- Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell`, `/vendor/tabs` — per-event vendor assignments with commission, split payments, and customer tabs.
+- Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell`, `/vendor/sales`, `/vendor/tabs` — per-event vendor assignments with commission, split payments, and customer tabs.
 - `components/EventSelector.tsx` is how users switch events (`/?event=<id>`); the root page always anchors to the flagship event without that param.
+
+## Half-removed payment code (do not resurrect blindly)
+
+- `app/api/tickets/rsvp-free/route.ts` still exists and issues a ticket for **no payment**, but the checkout's free-RSVP pipeline was deleted — and the UI still contains `totalPrice === 0` branches ("KES 0 (FREE)", "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP"). `CheckoutClientPage` now guards the empty-ladder case before anything else, because a zero-ladder page computes `totalPrice === 0` and would otherwise hand out a pass that doesn't exist. KES 0 is meant to be a *discount*, never a giveaway.
 
 ## Conventions
 

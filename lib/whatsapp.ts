@@ -43,7 +43,7 @@ export async function sendTicketViaWhatsApp(
   let eventMapsUrl = "https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika";
   let whatsappTemplate = "";
   try {
-    const { fetchEventDetails } = await import("@/lib/supabase-db");
+    const { fetchEventDetails, getTicketById, getEventById } = await import("@/lib/supabase-db");
     const ed = await fetchEventDetails();
     if (ed) {
       eventTitle = ed.title || eventTitle;
@@ -52,6 +52,21 @@ export async function sendTicketViaWhatsApp(
       eventRegs = ed.regulations?.replace(/\n/g, " | ") || eventRegs;
       eventMapsUrl = ed.maps_url || eventMapsUrl;
       whatsappTemplate = ed.whatsapp_message || "";
+    }
+
+    // Resolve event-specific metadata (title, venue, regulations, maps pin) from the ticket's event
+    const ticket = await getTicketById(ticketId);
+    if (ticket?.event_id) {
+      const ev = await getEventById(ticket.event_id);
+      if (ev) {
+        eventTitle = ev.title || eventTitle;
+        eventVenue = ev.venue || eventVenue;
+        eventSubtitle = ev.subtitle?.replace("|", "-") || eventSubtitle;
+        eventRegs = ev.regulations?.replace(/\n/g, " | ") || eventRegs;
+        if (ev.maps_url && ev.maps_url.trim()) {
+          eventMapsUrl = ev.maps_url.trim();
+        }
+      }
     }
   } catch (err) {
     console.warn("Failed to load event details for operator notifications:", err);
@@ -69,7 +84,16 @@ export async function sendTicketViaWhatsApp(
 
   let messageText: string;
   if (whatsappTemplate) {
-    messageText = whatsappTemplate
+    let tpl = whatsappTemplate;
+    // If the template stored in DB predated {{eventMapsUrl}}, inject it after venue
+    if (eventMapsUrl && !tpl.includes("{{eventMapsUrl}}") && !tpl.toLowerCase().includes("directions") && !tpl.toLowerCase().includes("maps")) {
+      if (tpl.includes("{{eventVenue}}")) {
+        tpl = tpl.replace("{{eventVenue}}", "{{eventVenue}}\n📍 Directions: {{eventMapsUrl}}");
+      } else {
+        tpl = `📍 Directions: {{eventMapsUrl}}\n\n` + tpl;
+      }
+    }
+    messageText = tpl
       .replace(/\{\{ticketId\}\}/gi, ticketId)
       .replace(/\{\{phoneNumber\}\}/gi, phoneNumber)
       .replace(/\{\{pdfUrl\}\}/gi, pdfUrl)
@@ -78,7 +102,7 @@ export async function sendTicketViaWhatsApp(
       .replace(/\{\{eventVenue\}\}/gi, eventVenue)
       .replace(/\{\{eventMapsUrl\}\}/gi, eventMapsUrl)
       .replace(/\{\{buyerName\}\}/gi, buyerName || "")
-    .replace(/\{\{eventRegulations\}\}/gi, eventRegs);
+      .replace(/\{\{eventRegulations\}\}/gi, eventRegs);
   } else {
     messageText = `*${eventTitle} TICKET CONFIRMED*\n\nTicket ID: ${ticketId}\nAttendee: ${buyerName || "—"}\nPhone: ${phoneNumber}\nEvent: ${eventTitle} ${eventSubtitle}\nVenue: ${eventVenue}\n📍 Directions: ${eventMapsUrl}\n\nDownload the ticket PDF here: ${pdfUrl}\n\nREGULATIONS:\n${eventRegs}`;
   }
