@@ -84,7 +84,8 @@ export interface EventDetails {
   ticker_text?: string;
   logo_url?: string | null;
   event_date?: string | null; // proper DATE field: "2026-09-05"
-  status?: 'scheduled' | 'live' | 'closed' | 'archived';
+  status?: 'active' | 'scheduled' | 'live' | 'closed' | 'archived';
+  is_active?: boolean;
   category?: 'flagship' | 'mini';
   recurrence_pattern?: 'none' | 'weekly' | 'biweekly' | 'monthly';
   recurrence_day?: string;

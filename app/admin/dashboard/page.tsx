@@ -51,7 +51,8 @@ import {
   ExternalLink,
   Key,
   MessageSquare,
-  Copy
+  Copy,
+  StopCircle
 } from "lucide-react";
 import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
@@ -93,6 +94,8 @@ interface MetricsState {
   eventLabels: Record<string, string>;
   /** event_id -> "YYYY-MM-DD", or null when the event has no date set. */
   eventDates: Record<string, string | null>;
+  /** All events list for status badge and lifecycle controls */
+  allEvents?: any[];
 }
 
 const AUDIENCE_OPTIONS: { value: TicketAudience; label: string }[] = [
@@ -805,12 +808,87 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleToggleEventLifecycle = async () => {
+    if (!selectedEventId || selectedEventId <= 0) {
+      alert("Please select a specific event edition before ending or re-opening it.");
+      return;
+    }
+    const currentEvent = (metrics?.allEvents || []).find((e: any) => e.id === selectedEventId);
+    const isCurrentlyClosed = currentEvent?.status === "closed" || currentEvent?.is_active === false;
+
+    if (isCurrentlyClosed) {
+      const confirmed = confirm(
+        `Re-open Event #${selectedEventId} ("${currentEvent?.title || ""}") and set it to Active/Live?\n\nTicket sales and checkout will resume immediately.`
+      );
+      if (!confirmed) return;
+      try {
+        await fetch(`/api/events/${selectedEventId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activate: true })
+        });
+        await fetch(`/api/events/${selectedEventId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "active", is_active: true })
+        });
+        alert(`Event #${selectedEventId} is now ACTIVE!`);
+        loadDashboardMetrics();
+      } catch (err: any) {
+        alert(`Failed to activate event: ${err.message}`);
+      }
+    } else {
+      const confirmed = confirm(
+        `Are you sure you want to END / CLOSE Event #${selectedEventId} ("${currentEvent?.title || ""}")?\n\nThis marks the edition as concluded. Online visitors will see the "Event Concluded" page.`
+      );
+      if (!confirmed) return;
+      try {
+        await fetch(`/api/events/${selectedEventId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activate: false })
+        });
+        await fetch(`/api/events/${selectedEventId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "closed", is_active: false })
+        });
+        alert(`Event #${selectedEventId} has been concluded & closed.`);
+        loadDashboardMetrics();
+      } catch (err: any) {
+        alert(`Failed to close event: ${err.message}`);
+      }
+    }
+  };
+
   const handleSaveEventDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving("event");
     try {
       const updated = await updateEventDetails(eventFormState);
       setEventDetails(updated);
+
+      if (selectedEventId && selectedEventId > 0) {
+        await fetch(`/api/events/${selectedEventId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: eventFormState.title,
+            subtitle: eventFormState.subtitle,
+            tag: eventFormState.tag,
+            venue: eventFormState.venue,
+            event_date: eventFormState.event_date,
+            maps_url: eventFormState.maps_url,
+            till_number: eventFormState.till_number,
+            flyer_url: eventFormState.flyer_url,
+            ticker_text: eventFormState.ticker_text,
+            logo_url: eventFormState.logo_url,
+            status: (eventFormState as any).status || ((eventFormState as any).is_active ? "active" : "closed"),
+            is_active: (eventFormState as any).is_active ?? true
+          })
+        });
+      }
+
       setIsEditingEvent(false);
       loadDashboardMetrics();
     } catch (err) {
@@ -1227,6 +1305,25 @@ export default function AdminDashboardPage() {
           <div className="flex flex-wrap items-center gap-3">
             <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
 
+            {/* Current Event Status Badge */}
+            {selectedEventId && selectedEventId > 0 && (() => {
+              const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
+              const isClosed = cur?.status === "closed" || cur?.is_active === false;
+              const isSched = cur?.status === "scheduled";
+              return (
+                <span className={`text-[10px] font-mono font-black uppercase px-2.5 py-1 border-2 border-[var(--brand-navy)] flex items-center gap-1.5 shadow-(--shadow-brut-xs) ${
+                  isClosed
+                    ? "bg-red-500 text-white"
+                    : isSched
+                    ? "bg-amber-300 text-[var(--brand-navy)]"
+                    : "bg-emerald-400 text-[var(--brand-navy)]"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${isClosed ? "bg-white" : "bg-[var(--brand-navy)]"} animate-pulse`} />
+                  {isClosed ? "CONCLUDED / CLOSED" : isSched ? "SCHEDULED (WAITLIST)" : "ACTIVE / LIVE"}
+                </span>
+              );
+            })()}
+
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-caption font-black uppercase text-[var(--brand-navy)]">Showing</span>
               <div className="flex border-2 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
@@ -1270,13 +1367,25 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* Right: Operational Tool Buttons */}
-          <div className="flex gap-2 flex-wrap items-center">
+          {/* Right: Operational Tool Buttons — 2-Col Grid on Mobile, Flex on Desktop */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto">
             <button
               onClick={() => {
                 setIsEditingEvent(true);
+                const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
                 setEventFormState({
                   ...eventDetails,
+                  title: cur?.title || eventDetails?.title,
+                  subtitle: cur?.subtitle || eventDetails?.subtitle,
+                  tag: cur?.tag || eventDetails?.tag,
+                  venue: cur?.venue || eventDetails?.venue,
+                  event_date: cur?.event_date || eventDetails?.event_date,
+                  maps_url: cur?.maps_url || eventDetails?.maps_url,
+                  till_number: cur?.till_number || eventDetails?.till_number,
+                  flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
+                  ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
+                  logo_url: cur?.logo_url || eventDetails?.logo_url,
+                  status: cur?.status || (cur?.is_active ? "active" : "closed"),
                   whatsapp_message: eventDetails?.whatsapp_message?.trim()
                     ? eventDetails.whatsapp_message
                     : getDefaultWhatsAppTemplate(),
@@ -1288,39 +1397,71 @@ export default function AdminDashboardPage() {
                     ? eventDetails.whatsapp_scan_template
                     : getDefaultScanTemplate(),
                   operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
-                });
+                } as any);
               }}
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-white shadow-(--shadow-brut-xs)"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 bg-white shadow-(--shadow-brut-xs) text-center cursor-pointer"
             >
-              <Edit className="w-3.5 h-3.5" /> EDIT EVENT INFO
+              <Edit className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">EDIT EVENT INFO</span>
             </button>
             <Link 
               href="/admin/vendors" 
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
             >
-              <Store className="w-3.5 h-3.5" /> STAFF & POS
+              <Store className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">STAFF & POS</span>
             </Link>
             <Link 
               href="/admin/settlements" 
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
             >
-              <Receipt className="w-3.5 h-3.5" /> SETTLEMENTS
+              <Receipt className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">SETTLEMENTS</span>
             </Link>
             <Link 
               href="/scanner" 
-              className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+              className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
             >
-              <Activity className="w-3.5 h-3.5" /> GATE SCAN
+              <Activity className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">GATE SCAN</span>
             </Link>
             <button
               onClick={() => {
                 loadGateScannerData();
                 setShowGatePinModal(true);
               }}
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center cursor-pointer"
             >
-              <Key className="w-3.5 h-3.5" /> GATE PIN & STAFF
+              <Key className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">GATE PIN</span>
             </button>
+            <Link
+              href="/admin/whatsapp"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
+              title="Open WhatsApp Gateway pairing QR code and live status"
+            >
+              <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">WHATSAPP QR</span>
+            </Link>
+            {selectedEventId && selectedEventId > 0 && (() => {
+              const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
+              const isClosed = cur?.status === "closed" || cur?.is_active === false;
+              return (
+                <button
+                  type="button"
+                  onClick={handleToggleEventLifecycle}
+                  className={`text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center cursor-pointer col-span-2 sm:col-span-1 ${
+                    isClosed
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-red-600 text-white hover:bg-red-700"
+                  }`}
+                  title={isClosed ? "Re-open this event and resume ticket sales" : "Conclude/close this event"}
+                >
+                  <StopCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{isClosed ? "RE-OPEN EVENT" : "END EVENT"}</span>
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -2861,6 +3002,28 @@ export default function AdminDashboardPage() {
             </h3>
             <form onSubmit={handleSaveEventDetails} className="space-y-4 overflow-y-auto flex-1 pr-1">
               <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1 col-span-2 p-2.5 bg-brand-accent/20 border-2 border-[var(--brand-navy)]">
+                  <label className="text-xs font-black uppercase flex items-center justify-between text-[var(--brand-navy)]">
+                    <span>Event Lifecycle Status</span>
+                    <span className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/80">Controls checkout vs waitlist vs closed</span>
+                  </label>
+                  <select
+                    value={(eventFormState as any).status || ((eventFormState as any).is_active ? "active" : "closed")}
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      setEventFormState({
+                        ...(eventFormState as any),
+                        status: newStatus,
+                        is_active: newStatus === "active"
+                      });
+                    }}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-black text-xs bg-white shadow-(--shadow-brut-xs)"
+                  >
+                    <option value="active">🟢 Active / Live (Ticket sales open)</option>
+                    <option value="scheduled">🟡 Scheduled / Coming Soon (Waitlist open)</option>
+                    <option value="closed">🔴 Concluded / Closed (Past event, sales ended)</option>
+                  </select>
+                </div>
                 <div className="space-y-1 col-span-2">
                   <label className="text-xs font-black uppercase">Event Title</label>
                   <input

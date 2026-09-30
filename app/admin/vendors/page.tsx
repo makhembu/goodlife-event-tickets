@@ -247,45 +247,48 @@ export default function AdminVendorsPage() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-6 font-mono">
+    <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-4 sm:p-6 font-mono">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-4 border-brand-navy pb-4 gap-4">
           <div className="flex items-center gap-3">
-            <Link href="/admin/dashboard" className="text-brand-navy hover:bg-brand-accent p-2 border-2 border-brand-navy transition-colors font-bold uppercase text-sm">
+            <Link href="/admin/dashboard" className="text-brand-navy hover:bg-brand-accent p-2 border-2 border-brand-navy transition-colors font-bold uppercase text-sm shrink-0">
               &larr; Dashboard
             </Link>
-            <h1 className="text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
-              <Store className="w-7 h-7 md:w-8 md:h-8 text-brand-navy"/> STAFF & VENDOR POS
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
+              <Store className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-brand-navy shrink-0"/> STAFF & VENDOR POS
             </h1>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setShowAllPins((prev) => !prev)}
-              className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs cursor-pointer select-none"
+              className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs cursor-pointer select-none text-center"
               title={showAllPins ? "Mask all operator PINs" : "Reveal all operator PINs"}
             >
-              {showAllPins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-brand-navy" />}
-              {showAllPins ? "Mask All PINs" : "View All PINs"}
+              {showAllPins ? <EyeOff className="w-3.5 h-3.5 shrink-0" /> : <Eye className="w-3.5 h-3.5 text-brand-navy shrink-0" />}
+              <span className="truncate">{showAllPins ? "Mask PINs" : "View PINs"}</span>
             </button>
             <Link
               href="/admin/settlements"
-              className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs"
+              className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs text-center"
             >
-              <Receipt className="w-3.5 h-3.5" /> Settlements
+              <Receipt className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Settlements</span>
             </Link>
             <Link
               href="/vendor/sell"
               target="_blank"
-              className="border-2 border-brand-navy bg-brand-navy text-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy flex items-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs"
+              className="border-2 border-brand-navy bg-brand-navy text-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs text-center"
             >
-              <ExternalLink className="w-3.5 h-3.5" /> Open POS Terminal
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Open POS</span>
             </Link>
             <button 
               onClick={() => setShowAddModal(true)}
-              className="border-2 border-brand-navy bg-brand-accent px-4 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center gap-2 shadow-(--shadow-brut-sm) transition-colors cursor-pointer text-xs md:text-sm"
+              className="border-2 border-brand-navy bg-brand-accent px-3 sm:px-4 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center justify-center gap-1.5 shadow-(--shadow-brut-sm) transition-colors cursor-pointer text-xs md:text-sm text-center"
             >
-              <Plus className="w-4 h-4" /> Add POS Stall / Vendor
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="truncate">+ Add Vendor</span>
             </button>
           </div>
         </div>

@@ -696,7 +696,7 @@ export default function VendorDetailDrawer({
         <div className="w-full max-w-5xl bg-[var(--brand-off-white)] h-full overflow-y-auto border-l-4 border-[var(--brand-navy)] flex flex-col shadow-(--shadow-brut-xl)">
           
           {/* TOP APP HEADER */}
-          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-4 sm:p-5 flex justify-between items-start border-b-4 border-yellow-400 sticky top-0 z-20">
+          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 border-b-4 border-yellow-400 sticky top-0 z-20">
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5">
@@ -715,7 +715,7 @@ export default function VendorDetailDrawer({
                 </span>
               </div>
               
-              <h2 className="text-2xl sm:text-3xl font-sans font-black uppercase tracking-tight text-white mt-1">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-sans font-black uppercase tracking-tight text-white mt-1">
                 {loading ? "LOADING VENDOR..." : vendor?.name || "VENDOR DATA"}
               </h2>
               
@@ -735,23 +735,23 @@ export default function VendorDetailDrawer({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={handleTakeoverPos}
                 disabled={takingOverPos}
-                className="px-3 py-1.5 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50 text-center"
                 title="Log in to POS as this vendor to sell items if vendor has left"
               >
-                <Store className="w-4 h-4 text-[var(--brand-navy)]" />
-                <span>{takingOverPos ? "ENTERING POS..." : "POS TAKEOVER ↗"}</span>
+                <Store className="w-4 h-4 text-[var(--brand-navy)] shrink-0" />
+                <span className="truncate">{takingOverPos ? "ENTERING POS..." : "POS TAKEOVER ↗"}</span>
               </button>
               {intlVendorPhone && (
                 <a
                   href={`https://wa.me/${intlVendorPhone}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs)"
+                  className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
                   title="Message Vendor on WhatsApp"
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -760,7 +760,7 @@ export default function VendorDetailDrawer({
               {vendor?.contact_phone && (
                 <a
                   href={`tel:${vendor.contact_phone}`}
-                  className="p-2 bg-blue-600 hover:bg-blue-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs)"
+                  className="p-2 bg-blue-600 hover:bg-blue-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
                   title="Call Vendor"
                 >
                   <Phone className="w-4 h-4" />
@@ -768,7 +768,7 @@ export default function VendorDetailDrawer({
               )}
               <button
                 onClick={onClose}
-                className="p-2 border-2 border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer"
+                className="p-2 border-2 border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
                 title="Close Drawer"
               >
                 <X className="w-5 h-5" />
@@ -860,8 +860,8 @@ export default function VendorDetailDrawer({
                 </div>
 
                 {/* ACTION TOOLBAR: EXPORT + SETTLE */}
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-black uppercase text-[var(--brand-navy)]">STALL STAFF:</span>
                     <div className="flex flex-wrap gap-1">
                       {operators.length > 0 ? (
@@ -876,27 +876,29 @@ export default function VendorDetailDrawer({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
                     <button
                       onClick={handleExportCSV}
-                      className="text-xs font-black uppercase px-3 py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-stone-100 transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer"
+                      className="text-xs font-black uppercase px-3 py-2 sm:py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-stone-100 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer text-center"
                     >
-                      <Download className="w-3.5 h-3.5" /> EXPORT CSV
+                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">EXPORT CSV</span>
                     </button>
                     <button
                       onClick={() => {
                         setSettleAmount(summary.outstandingDue > 0 ? summary.outstandingDue.toString() : "");
                         setShowSettleModal(true);
                       }}
-                      className="text-xs font-black uppercase px-3 py-1.5 bg-yellow-300 text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer"
+                      className="text-xs font-black uppercase px-3 py-2 sm:py-1.5 bg-yellow-300 text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer text-center"
                     >
-                      <HandCoins className="w-3.5 h-3.5" /> RECORD SETTLEMENT
+                      <HandCoins className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">RECORD SETTLEMENT</span>
                     </button>
                   </div>
                 </div>
 
-                {/* 6-TAB NAVIGATION BAR */}
-                <div className="flex border-b-3 border-[var(--brand-navy)] gap-1 flex-wrap overflow-x-auto pb-0.5">
+                {/* 6-TAB NAVIGATION BAR (SWIPEABLE HORIZONTAL LIST ON MOBILE) */}
+                <div className="flex border-b-3 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto scrollbar-none pb-0.5 w-full">
                   {[
                     { id: "velocity", label: "PRODUCTS MOVING MOST", icon: TrendingUp },
                     { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, icon: Package },
@@ -911,7 +913,7 @@ export default function VendorDetailDrawer({
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-3 sm:px-4 py-2 text-xs font-black uppercase flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
+                        className={`px-3 sm:px-4 py-2 text-xs font-black uppercase flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer shrink-0 ${
                           isActive
                             ? "bg-[var(--brand-navy)] text-white border-t-3 border-x-3 border-[var(--brand-navy)] -mb-[3px]"
                             : "bg-white text-[var(--brand-navy)] hover:bg-stone-100 border border-[var(--brand-navy)]/30"

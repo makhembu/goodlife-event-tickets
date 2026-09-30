@@ -393,7 +393,7 @@ export async function archiveEvent(id: number): Promise<boolean> {
 
   try {
     await neonQuery(
-      "UPDATE events SET is_active = FALSE, archived_at = NOW() WHERE id = $1",
+      "UPDATE events SET is_active = FALSE, status = 'closed', archived_at = NOW() WHERE id = $1",
       [id]
     );
     return true;
@@ -419,7 +419,7 @@ export async function setActiveEvent(id: number): Promise<boolean> {
     // Deactivate all events
     await neonQuery("UPDATE events SET is_active = FALSE");
     // Activate the selected event
-    await neonQuery("UPDATE events SET is_active = TRUE, archived_at = NULL WHERE id = $1", [id]);
+    await neonQuery("UPDATE events SET is_active = TRUE, status = 'active', archived_at = NULL WHERE id = $1", [id]);
 
     // Sync to event_details
     const event = await getEventById(id);
@@ -717,6 +717,11 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
     eventDates = eventDateCache || {};
   } catch {}
 
+  let allEvents: Event[] = [];
+  try {
+    allEvents = await fetchAllEvents();
+  } catch {}
+
   return {
     totalCashCollected,
     totalTicketsSold,
@@ -726,7 +731,8 @@ export async function fetchDashboardMetrics(eventId?: number, audience: TicketAu
     tickets,
     staffPasses,
     eventLabels,
-    eventDates
+    eventDates,
+    allEvents
   };
 }
 
