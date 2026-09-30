@@ -62,7 +62,7 @@ export default function LiveMiniEventBanner({ events }: { events?: Event[] }) {
                 {mini.title} IS BOOKABLE NOW
               </h3>
               <p className="font-mono text-xs md:text-sm uppercase text-brand-navy/80 font-bold">
-                {mini.venue} • PASSES &amp; FREE RSVP AVAILABLE
+                {mini.venue} • PASSES ON SALE — EARLY RSVP KES 50 OFF
               </p>
             </div>
             <Link

@@ -427,16 +427,23 @@ export default function TicketCheckoutPage({
         const isCamping = tier.tier_category === 'camping' || tier.is_camping_bundle || tier.tag === 'CAMPING';
 
         // 1. MINI EVENT (e.g. Sunday Park & Chill #12)
-        // Rule: Mon-Fri: ONLY Free RSVP pass. Sat-Sun (weekend): 300 & 1000 passes show, Free RSVP is hidden.
+        // Rule: Mon-Fri the discounted early RSVP is the offer; Sat-Sun the
+        // weekend passes are, and the early RSVP is not offered.
+        //
+        // "RSVP" is identified by the tier's own label, never by its price.
+        // `tier.price === 0` used to be the first term of this test, which made
+        // "free" and "early bird" the same idea: repricing the early RSVP from
+        // KES 0 to a discounted rate could have flipped this gate by accident,
+        // and conversely a genuinely free tier would have been sold at the
+        // weekend. An RSVP is a booking window, not a price point.
         if (isMiniEvent) {
-          const isRsvp = tier.price === 0 || tier.tag?.includes('RSVP') || tier.id?.includes('rsvp') || tier.name?.toLowerCase().includes('rsvp');
+          const isRsvp = Boolean(tier.tag?.includes('RSVP') || tier.id?.includes('rsvp') || tier.name?.toLowerCase().includes('rsvp'));
           if (isWeekend) {
-            // Weekend: Hide RSVP, show paid passes
+            // Weekend: hide the early RSVP, show the weekend passes.
             return !isRsvp;
-          } else {
-            // Weekday: ONLY show RSVP, hide paid passes
-            return isRsvp;
           }
+          // Weekday: the early RSVP only.
+          return isRsvp;
         }
 
         // 2. FLAGSHIP EVENT (e.g. GOODLIFE 4)
@@ -625,47 +632,33 @@ export default function TicketCheckoutPage({
 
     setLoading(true);
 
-    // KES 0 FREE RSVP PIPELINE (Instant Server-Side Issuance without STK Push)
-    if (totalPrice === 0 || selectedTierObj?.price === 0) {
-      setStatusMessage("Registering your free pass...");
-      try {
-        const res = await fetch("/api/tickets/rsvp-free", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_id: eventDetails.id,
-            ticket_type: safeSelectedTier,
-            buyer_name: buyerName || "Guest",
-            phone_number: phoneNumber,
-            whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : ""
-          })
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "Free registration failed. Capacity may be reached.");
-        }
-
-        const ids = data.ticket_ids || [data.ticket_id];
-        setGeneratedTicketId(ids[0]);
-        setMyTickets(prev => {
-          const merged = Array.from(new Set([...ids, ...prev]));
-          if (typeof window !== "undefined") {
-            localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
-          }
-          return merged;
-        });
-
-        triggerHaptic("success");
-        setStatusMessage("RSVP Confirmed! Your free entry pass is ready and has been dispatched to WhatsApp.");
-      } catch (err: any) {
-        triggerHaptic("error");
-        setStatusMessage(err.message || "An error occurred issuing your free pass.");
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
+    /*
+     * THE FREE-RSVP PIPELINE THAT USED TO BE HERE IS GONE, AND IT WAS NEVER
+     * WORKING.
+     *
+     * It issued a ticket server-side with no payment whenever the selected tier
+     * cost KES 0, so a customer tapping "Pay" on a free pass got a real ticket by
+     * WhatsApp without paying. Two things ended it.
+     *
+     * First, it was broken. The POST sent `ticket_type` while
+     * `app/api/tickets/rsvp-free/route.ts` requires `tier_id`, so the route
+     * answered 400 "Missing required fields: buyer_name, phone_number,
+     * tier_id." That mismatch has been in the file since the route and the call
+     * landed in the same commit, so this branch has never once issued a ticket.
+     *
+     * Second, and the actual reason it should not be restored: there is no free
+     * pass. Every tier in the ladder is paid, the early RSVP being a discounted
+     * rate rather than a giveaway, so `totalPrice === 0` is no longer a state a
+     * customer can reach. Keeping a second, un-metered ticket-issuing path
+     * alongside the payment path is a liability regardless: the next KES 0 tier
+     * anybody creates would silently bypass M-Pesa, and it would do so through
+     * a branch that 400s.
+     *
+     * If a genuinely free public tier is ever wanted back, it should be
+     * deliberate and it should be rate-limited, quota-checked and written
+     * through one issuance path shared with paid checkout. Do not restore this
+     * block.
+     */
 
     // STANDARD PAID CHECKOUT (PayHero STK Push)
     setStatusMessage("Sending the M-Pesa prompt to your phone...");
@@ -1547,7 +1540,7 @@ export default function TicketCheckoutPage({
                         </p>
                         <p className="font-mono text-xs md:text-sm text-brand-navy/75 leading-relaxed max-w-md mx-auto">
                           {isMiniEvent
-                            ? "This session sells a free RSVP on weekdays and paid passes at the weekend. Check back on Saturday, or tap Notify Me above and we&apos;ll ping you."
+                            ? "This session sells the discounted early RSVP on weekdays and the full passes at the weekend. Check back on Saturday, or tap Notify Me above and we&apos;ll ping you."
                             : "Every pass for this edition is either sold out or not yet released. Check back shortly, or tap Notify Me and we&apos;ll tell you the moment more open up."}
                         </p>
                       </div>

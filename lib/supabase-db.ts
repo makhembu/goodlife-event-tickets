@@ -702,16 +702,34 @@ export async function fetchAllTicketsAll(): Promise<Ticket[]> {
  * the dashboard crew form (SECURITY, BAR, STAGE, MEDIA, VENDOR). A zero
  * `amount_paid` is treated as staff too, which catches comps and giveaways that
  * were never given a CREW prefix, and any tier explicitly tagged CREW.
+ *
+ * WHY THIS DOES NOT LOOK AT THE TIER'S PRICE
+ * -------------------------------------------
+ * It used to. The rule was "zero paid is a comp, UNLESS the tier it points at
+ * is currently free", and that `tier.price` is the tier's price *right now*,
+ * not what the customer was charged. Repricing a tier therefore silently
+ * reclassified every ticket already sold against it: the SUNDAY PARK & CHILL
+ * weekday RSVP went from KES 0 to KES 250, and each KES 0 ticket issued while it
+ * was free fell through to the comp branch, moved from the customer ledger to
+ * the staff ledger, and vanished from the default view, the sold total, the tier
+ * breakdown and the CSV export. Nothing was wrong with the tickets; only the
+ * price of a tier they happened to reference had changed.
+ *
+ * Interpreting a historical sale from present-day configuration is the defect,
+ * so the dependency is gone rather than the number being corrected. `tier` is
+ * still consulted, but only for its `CREW` tag, which is a label an operator
+ * sets deliberately and which means the same thing across the tier's life.
+ *
+ * Every pass in the ladder is now paid, so a zero-paid ticket really is a comp.
+ * If a genuinely free public tier is ever reintroduced it must be marked
+ * explicitly - a `FREE PUBLIC` tag handled here, or a stored flag on the ticket
+ * written at issue time. Do not reintroduce a price comparison here.
  */
 function classifyStaffTicket(rawType: string, amountPaid: number, tier: TicketTier | null): boolean {
   const raw = (rawType || "").trim();
   if (/^CREW(\/|$)/i.test(raw)) return true;
   if (tier && String(tier.tag || "").toUpperCase() === "CREW") return true;
   if (Number(amountPaid) !== 0) return false;
-  // Zero paid, but the matched tier is itself free - that's a genuinely free
-  // public tier, not a comp. Only treat zero-paid as staff when there is no
-  // free public tier behind it, so a KES 0 promo tier isn't silently reclassified.
-  if (tier && Number(tier.price) === 0) return false;
   return true;
 }
 
