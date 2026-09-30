@@ -104,12 +104,17 @@ export default function GateTerminalPage() {
   const [switchStewardName, setSwitchStewardName] = useState("");
   const [updatingStation, setUpdatingStation] = useState(false);
 
-  // Load events list for switcher
+  // Load events list for switcher (exclude closed & archived events)
   useEffect(() => {
     fetch("/api/events")
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) setEventsList(data);
+        if (Array.isArray(data)) {
+          const openEvents = data.filter(
+            (e) => (e.status || "").toLowerCase() !== "closed" && (e.status || "").toLowerCase() !== "archived" && !e.archived_at
+          );
+          setEventsList(openEvents);
+        }
       })
       .catch(console.error);
   }, []);

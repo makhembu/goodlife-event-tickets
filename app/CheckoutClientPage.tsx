@@ -937,34 +937,43 @@ export default function TicketCheckoutPage({
               </Link>
             </nav>
 
-            <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
+            <div className="flex items-center gap-1.5 md:gap-3 shrink-0 justify-end">
               {myTickets.length > 0 && (
                 <button 
                   onClick={() => document.getElementById("my-tickets-section")?.scrollIntoView({ behavior: "smooth" })}
                   className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap"
                 >
-                  My Tickets ({myTickets.length})
+                  <span className="hidden sm:inline">My Tickets</span><span className="sm:hidden">Tickets</span> ({myTickets.length})
                 </button>
               )}
               {isAdmin && (
                 <>
                   <Link
                     href="/admin/dashboard"
-                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1"
+                    title="Admin Console"
+                    aria-label="Admin Console"
+                    className="p-1.5 md:px-4 md:py-2 text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1.5"
                   >
-                    <Settings className="w-3 h-3 md:w-4 md:h-4" /> Admin
+                    <Settings className="w-4 h-4" />
+                    <span className="hidden md:inline">Admin</span>
+                  </Link>
+                  <Link
+                    href="/scanner"
+                    title="Gate Scanner"
+                    aria-label="Gate Scanner"
+                    className="p-1.5 md:px-4 md:py-2 text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <TicketIcon className="w-4 h-4" strokeWidth={2.5} />
+                    <span className="hidden md:inline">Scanner</span>
                   </Link>
                   <Link
                     href="/admin/vendors"
-                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-3 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap hidden sm:inline-flex items-center gap-1"
+                    title="Vendors & Staff"
+                    aria-label="Vendors & Staff"
+                    className="p-1.5 md:px-3 md:py-2 text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[1px] active:translate-x-[1px] active:shadow-none transition-all whitespace-nowrap hidden sm:inline-flex items-center gap-1.5"
                   >
-                    <Store className="w-3 h-3 md:w-4 md:h-4" /> Vendors & Staff
-                  </Link>
-                  <Link
-                    href="/admin/scanner"
-                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
-                  >
-                    <TicketIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
+                    <Store className="w-4 h-4" />
+                    <span className="hidden md:inline">Vendors & Staff</span>
                   </Link>
                 </>
               )}

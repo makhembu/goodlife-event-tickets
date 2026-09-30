@@ -21,8 +21,12 @@ export default function ScannerLoginPage() {
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
-          setEvents(data);
-          const active = data.find((e) => e.is_active) || data[0];
+          // Gate scanners should only validate open/active events, exclude closed & archived
+          const openEvents = data.filter(
+            (e) => (e.status || "").toLowerCase() !== "closed" && (e.status || "").toLowerCase() !== "archived" && !e.archived_at
+          );
+          setEvents(openEvents);
+          const active = openEvents.find((e) => e.is_active) || openEvents[0];
           if (active) setSelectedEventId(active.id);
         }
       })
