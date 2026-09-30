@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
+import { resolveEventFlyer } from "@/lib/event-flyer";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
 import ScheduledEventClientPage from "./ScheduledEventClientPage";
@@ -55,9 +56,8 @@ export async function generateMetadata(props: {
     const description =
       `Official tickets for ${title} at ${venue}. ` +
       `Instant M-Pesa checkout and instant WhatsApp PDF ticket delivery.`;
-    // The flyer is a per-event field, not the site-wide singleton's, so an
-    // edition link shares that edition's artwork.
-    const flyer = target.flyer_url || "/flyer.png";
+    const pageUrl = eventParam ? `${baseUrl}/?event=${target.id}` : baseUrl;
+    const flyer = resolveEventFlyer(target);
     const image = flyer.startsWith("http") ? flyer : `${baseUrl}${flyer}`;
 
     return {
@@ -66,14 +66,15 @@ export async function generateMetadata(props: {
       openGraph: {
         title: `${title} - ${venue}`,
         description,
-        url: baseUrl,
+        url: pageUrl,
         type: "website",
         images: [
           {
             url: image,
-            width: 1200,
+            width: 1131,
             height: 1600,
             alt: `${title} official event flyer`,
+            type: "image/png",
           },
         ],
       },
@@ -147,7 +148,7 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     tag: targetEvent.tag,
     venue: targetEvent.venue,
     till_number: targetEvent.till_number,
-    flyer_url: targetEvent.flyer_url,
+    flyer_url: resolveEventFlyer(targetEvent),
     regulations: targetEvent.regulations,
     ticker_text: targetEvent.ticker_text,
     logo_url: targetEvent.logo_url,

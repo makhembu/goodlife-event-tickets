@@ -73,6 +73,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setTag("GOODLIFE MINI SESSIONS");
       setVenue("THE HUB GARDEN, NAIROBI");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=The+Hub+Karen+Nairobi");
+      setFlyerUrl("/flyer-park-chill.png");
       setMaxTentInventory(0);
       setMaxSharedBeds(0);
       setRecurrencePattern("weekly");
@@ -86,6 +87,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setTag("SMWHR INC / MARARA CAMP");
       setVenue("MARARA CAMP, THIKA");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
+      setFlyerUrl("/flyer.png");
       setMaxTentInventory(30);
       setMaxSharedBeds(12);
       setRecurrencePattern("none");

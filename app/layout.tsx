@@ -24,6 +24,7 @@ const bebasNeue = Bebas_Neue({
 });
 
 import { fetchEventDetails } from '@/lib/supabase-db';
+import { resolveEventFlyer } from '@/lib/event-flyer';
 
 export async function generateMetadata(): Promise<Metadata> {
   // Must never throw. generateMetadata runs for every prerendered route, so an
@@ -36,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // "JULY 11" ended up contradicting the live event.
   const venue = event?.venue || 'MARARA CAMP, THIKA';
   const subtitle = event?.subtitle || venue;
-  const flyerUrl = event?.flyer_url || '/flyer.png';
+  const flyerUrl = resolveEventFlyer(event);
   const description = `Get your official tickets for ${title} (${subtitle}) at ${venue}. Instant M-Pesa checkout & instant WhatsApp PDF ticket delivery.`;
 
   const baseUrl = process.env.APP_URL || 'https://goodlife.smwhr.space';
@@ -62,7 +63,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [
         {
           url: absoluteImageUrl,
-          width: 1200,
+          width: 1131,
           height: 1600,
           alt: `${title} - ${subtitle} Official Event Flyer`,
           type: 'image/png',
