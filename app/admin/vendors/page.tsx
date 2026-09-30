@@ -76,6 +76,27 @@ export default function AdminVendorsPage() {
     errorMessage: null,
   });
 
+  const [takingOverVendorId, setTakingOverVendorId] = useState<number | null>(null);
+
+  const handleQuickLoginAsVendor = async (vendorId: number) => {
+    setTakingOverVendorId(vendorId);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/login-as`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        window.location.href = data.redirectUrl || "/vendor/sell";
+      } else {
+        alert(data.error || "Failed to switch to vendor session");
+        setTakingOverVendorId(null);
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error logging into vendor POS");
+      setTakingOverVendorId(null);
+    }
+  };
+
   const loadVendors = async () => {
     try {
       const res = await fetch("/api/admin/vendors");
@@ -369,6 +390,16 @@ export default function AdminVendorsPage() {
                 </div>
 
                 <div className="pt-3 border-t-2 border-brand-navy space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLoginAsVendor(v.id)}
+                    disabled={takingOverVendorId === v.id}
+                    className="w-full border-2 border-brand-navy bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy px-3 py-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                    title="Quick login as this vendor to sell items if vendor has left"
+                  >
+                    <Store className="w-3.5 h-3.5 text-brand-accent" />
+                    {takingOverVendorId === v.id ? "TAKING OVER POS..." : "LOGIN AS VENDOR (MAKE SALES) ↗"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setSelectedDrawerVendorId(v.id)}

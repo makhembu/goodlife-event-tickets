@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    let { assignmentId, vendor_id, event_id, amount } = body;
+    let { assignmentId, vendor_id, event_id, amount, mode } = body;
 
     if ((!assignmentId || assignmentId === 0) && vendor_id && event_id) {
       const { rows } = await neonQuery(
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing assignmentId or amount' }, { status: 400 });
     }
 
-    const success = await recordSettlement(assignmentId, amount);
+    const success = await recordSettlement(assignmentId, amount, mode || 'add');
     if (!success) {
       return NextResponse.json({ error: 'Failed to record settlement' }, { status: 500 });
     }

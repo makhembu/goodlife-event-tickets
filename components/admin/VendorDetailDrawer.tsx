@@ -98,6 +98,27 @@ export default function VendorDetailDrawer({
   const [newOperator, setNewOperator] = useState({ name: "", pin: "", role: "cashier" });
   const [resettingPinOpId, setResettingPinOpId] = useState<number | null>(null);
   const [pinSuccessNotice, setPinSuccessNotice] = useState<string | null>(null);
+  const [takingOverPos, setTakingOverPos] = useState(false);
+
+  const handleTakeoverPos = async () => {
+    if (!vendorId) return;
+    setTakingOverPos(true);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/login-as`, {
+        method: "POST"
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        window.location.href = d.redirectUrl || "/vendor/sell";
+      } else {
+        alert(d.error || "Failed to switch to vendor session");
+        setTakingOverPos(false);
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error logging into vendor POS");
+      setTakingOverPos(false);
+    }
+  };
 
   // Refresh Analytics Data
   const refreshData = () => {
@@ -715,6 +736,16 @@ export default function VendorDetailDrawer({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTakeoverPos}
+                disabled={takingOverPos}
+                className="px-3 py-1.5 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                title="Log in to POS as this vendor to sell items if vendor has left"
+              >
+                <Store className="w-4 h-4 text-[var(--brand-navy)]" />
+                <span>{takingOverPos ? "ENTERING POS..." : "POS TAKEOVER ↗"}</span>
+              </button>
               {intlVendorPhone && (
                 <a
                   href={`https://wa.me/${intlVendorPhone}`}

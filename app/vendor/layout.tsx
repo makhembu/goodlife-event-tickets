@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Store, Tag, List, Users, LogOut, Receipt } from "lucide-react";
+import { Store, Tag, List, Users, LogOut, Receipt, Shield } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -63,6 +63,17 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
           </Link>
         </div>
         
+        {session?.isAdminTakeover && (
+          <Link
+            href="/admin/vendors"
+            className="hidden md:flex flex-col items-center justify-center py-3 px-2 bg-yellow-400 text-brand-navy hover:bg-yellow-300 transition-colors border-t-2 border-brand-navy font-bold text-center"
+            title="Exit takeover mode and return to admin"
+          >
+            <Shield className="w-5 h-5 mb-1" />
+            <span className="text-[9px] font-black uppercase tracking-wider leading-tight">Exit Admin</span>
+          </Link>
+        )}
+
         <button onClick={handleLogout} className="hidden md:flex flex-col items-center justify-center py-4 px-2 hover:bg-red-500 hover:text-white transition-colors border-t-2 border-brand-accent/20">
           <LogOut className="w-6 h-6 mb-1" />
           <span className="text-[10px] font-bold uppercase tracking-widest">Logout</span>
@@ -73,13 +84,33 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
       <main className="flex-1 w-full h-[calc(100dvh-4.25rem)] md:h-[100dvh] overflow-y-auto overscroll-y-contain">
         <header className="sticky top-0 z-40 bg-brand-off-white border-b-4 border-brand-navy p-3 md:p-4 flex justify-between items-center shadow-(--shadow-brut-xs)">
           <div>
-            <h1 className="font-display text-xl md:text-2xl uppercase tracking-wider">{session.vendorName || "Vendor POS"}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-display text-xl md:text-2xl uppercase tracking-wider">{session.vendorName || "Vendor POS"}</h1>
+              {session.isAdminTakeover && (
+                <span className="bg-yellow-400 text-brand-navy text-[9px] md:text-[10px] font-black uppercase px-1.5 py-0.5 border border-brand-navy tracking-widest shadow-(--shadow-brut-xs)">
+                  ADMIN TAKEOVER
+                </span>
+              )}
+            </div>
             <p className="text-[10px] font-bold opacity-60 uppercase">Op: {session.operatorName}</p>
           </div>
-          {/* Mobile Logout */}
-          <button onClick={handleLogout} className="md:hidden p-2 text-brand-navy hover:bg-red-500 hover:text-white border-2 border-brand-navy shadow-(--shadow-brut-xs) transition-colors">
-            <LogOut className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {session.isAdminTakeover && (
+              <Link
+                href="/admin/vendors"
+                className="px-2.5 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-brand-navy border-2 border-brand-navy text-[10px] md:text-xs font-black uppercase flex items-center gap-1 shadow-(--shadow-brut-xs) transition-all"
+                title="Return to Admin Vendors panel"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Exit to Admin</span>
+                <span className="sm:hidden">Exit</span>
+              </Link>
+            )}
+            {/* Mobile Logout */}
+            <button onClick={handleLogout} className="md:hidden p-2 text-brand-navy hover:bg-red-500 hover:text-white border-2 border-brand-navy shadow-(--shadow-brut-xs) transition-colors">
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </header>
         
         <div className="w-full">

@@ -2291,18 +2291,35 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
         COALESCE(vea.status, 'active') as status,
         COALESCE(sales_summary.total_sales, vea.total_sales, 0) as total_sales,
         COALESCE(sales_summary.order_count, 0) as order_count,
-        ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed
+        COALESCE(sales_summary.cash_collected, 0) as cash_collected,
+        COALESCE(sales_summary.mpesa_collected, 0) as mpesa_collected,
+        COALESCE(sales_summary.tab_collected, 0) as tab_collected,
+        (COALESCE(sales_summary.mpesa_collected, 0) + COALESCE(sales_summary.tab_collected, 0)) as digital_collected,
+        ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
+        ROUND(COALESCE(sales_summary.total_sales, vea.total_sales, 0) - (COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share
       FROM vendors v
       LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND vea.event_id = $1
       LEFT JOIN events e ON e.id = $1
       LEFT JOIN (
         SELECT 
-          vendor_id,
-          SUM(total) as total_sales,
-          COUNT(*) as order_count
-        FROM pos_sales
-        WHERE event_id = $1 AND payment_status != 'voided'
-        GROUP BY vendor_id
+          ps.vendor_id,
+          COALESCE(SUM(ps.total), 0) as total_sales,
+          COUNT(DISTINCT ps.id) as order_count,
+          COALESCE(SUM(pay.cash_amt), 0) as cash_collected,
+          COALESCE(SUM(pay.mpesa_amt), 0) as mpesa_collected,
+          COALESCE(SUM(pay.tab_amt), 0) as tab_collected
+        FROM pos_sales ps
+        LEFT JOIN (
+          SELECT 
+            sale_id,
+            SUM(CASE WHEN method = 'cash' THEN amount ELSE 0 END) as cash_amt,
+            SUM(CASE WHEN method = 'mpesa' THEN amount ELSE 0 END) as mpesa_amt,
+            SUM(CASE WHEN method = 'tab' THEN amount ELSE 0 END) as tab_amt
+          FROM pos_split_payments
+          GROUP BY sale_id
+        ) pay ON pay.sale_id = ps.id
+        WHERE ps.event_id = $1 AND ps.payment_status != 'voided'
+        GROUP BY ps.vendor_id
       ) sales_summary ON sales_summary.vendor_id = v.id
       WHERE v.deleted_at IS NULL
         AND (vea.id IS NOT NULL OR sales_summary.total_sales IS NOT NULL)
@@ -2329,17 +2346,34 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
       COALESCE(vea.status, 'active') as status,
       COALESCE(ps.total_sales, vea.total_sales, 0) as total_sales,
       COALESCE(ps.order_count, 0) as order_count,
-      ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed
+      COALESCE(ps.cash_collected, 0) as cash_collected,
+      COALESCE(ps.mpesa_collected, 0) as mpesa_collected,
+      COALESCE(ps.tab_collected, 0) as tab_collected,
+      (COALESCE(ps.mpesa_collected, 0) + COALESCE(ps.tab_collected, 0)) as digital_collected,
+      ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
+      ROUND(COALESCE(ps.total_sales, vea.total_sales, 0) - (COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share
     FROM vendors v
     LEFT JOIN (
       SELECT 
-        vendor_id,
-        event_id,
-        SUM(total) as total_sales,
-        COUNT(*) as order_count
-      FROM pos_sales
-      WHERE payment_status != 'voided'
-      GROUP BY vendor_id, event_id
+        ps.vendor_id,
+        ps.event_id,
+        COALESCE(SUM(ps.total), 0) as total_sales,
+        COUNT(DISTINCT ps.id) as order_count,
+        COALESCE(SUM(pay.cash_amt), 0) as cash_collected,
+        COALESCE(SUM(pay.mpesa_amt), 0) as mpesa_collected,
+        COALESCE(SUM(pay.tab_amt), 0) as tab_collected
+      FROM pos_sales ps
+      LEFT JOIN (
+        SELECT 
+          sale_id,
+          SUM(CASE WHEN method = 'cash' THEN amount ELSE 0 END) as cash_amt,
+          SUM(CASE WHEN method = 'mpesa' THEN amount ELSE 0 END) as mpesa_amt,
+          SUM(CASE WHEN method = 'tab' THEN amount ELSE 0 END) as tab_amt
+        FROM pos_split_payments
+        GROUP BY sale_id
+      ) pay ON pay.sale_id = ps.id
+      WHERE ps.payment_status != 'voided'
+      GROUP BY ps.vendor_id, ps.event_id
     ) ps ON ps.vendor_id = v.id
     LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND (vea.event_id = ps.event_id OR ps.event_id IS NULL)
     LEFT JOIN events e ON e.id = COALESCE(vea.event_id, ps.event_id)
@@ -2350,22 +2384,32 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
   return rows;
 }
 
-export async function recordSettlement(assignmentId: number, amount: number) {
+export async function recordSettlement(assignmentId: number, amount: number, mode: 'add' | 'set' = 'add') {
   if (typeof window !== "undefined") {
     const res = await fetch("/api/admin/settlements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assignmentId, amount })
+      body: JSON.stringify({ assignmentId, amount, mode })
     });
     return res.ok;
   }
-  await neonQuery(
-    `UPDATE vendor_event_assignments
-     SET settled_amount = settled_amount + $2,
-         status = CASE WHEN (commission_owed - (settled_amount + $2)) <= 0 THEN 'settled' ELSE 'active' END
-     WHERE id = $1`,
-    [assignmentId, amount]
-  );
+  if (mode === 'set') {
+    await neonQuery(
+      `UPDATE vendor_event_assignments
+       SET settled_amount = $2,
+           status = CASE WHEN $2 > 0 THEN 'settled' ELSE 'active' END
+       WHERE id = $1`,
+      [assignmentId, amount]
+    );
+  } else {
+    await neonQuery(
+      `UPDATE vendor_event_assignments
+       SET settled_amount = settled_amount + $2,
+           status = CASE WHEN (settled_amount + $2) > 0 THEN 'settled' ELSE 'active' END
+       WHERE id = $1`,
+      [assignmentId, amount]
+    );
+  }
   return true;
 }
 
