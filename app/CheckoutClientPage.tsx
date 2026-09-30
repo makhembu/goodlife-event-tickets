@@ -345,6 +345,9 @@ export default function TicketCheckoutPage({
       if (tiers.length > 0) {
         setSelectedTier(tiers[0].id);
       }
+      if (typeof window !== "undefined") {
+        window.history.pushState({}, "", `/?event=${targetEvent.id}`);
+      }
     } catch (e) {
       console.error("Failed to switch event:", e);
     } finally {
@@ -795,155 +798,223 @@ export default function TicketCheckoutPage({
       <div className="relative z-10 max-w-6xl xl:max-w-[1400px] 2xl:max-w-[1680px] mx-auto">
         
         {/* HEADER NAVBAR */}
-        <header ref={headerRef} className="w-full flex items-center justify-between border-b-4 border-brand-navy pb-3 mb-4 md:pb-6 md:mb-6 gap-3 md:gap-6">
-          <button
-            type="button"
-            className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
-            onClick={handleLogoTap}
-            aria-label={isAdmin ? `${eventDetails.title} home` : "Open staff access after five taps"}
-          >
-            <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) flex items-center justify-center">
-              {eventDetails.logo_url ? (
-                <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
-              ) : (
-                <span className="font-display font-black text-xs md:text-sm tracking-tighter text-brand-navy">GL</span>
+        {/* HEADER NAVBAR & UNIFIED BROADSHEET RIBBON */}
+        <header ref={headerRef} className="w-full border-b-4 border-brand-navy pb-3 mb-3 md:pb-5 md:mb-5 bg-brand-bg flex items-center justify-between gap-3 md:gap-6">
+          <div className="flex items-center gap-2 md:gap-4 shrink-0 min-w-0">
+            <button
+              type="button"
+              className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
+              onClick={handleLogoTap}
+              aria-label={isAdmin ? `${eventDetails.title} home` : "Open staff access after five taps"}
+            >
+              <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) flex items-center justify-center">
+                {eventDetails.logo_url ? (
+                  <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
+                ) : (
+                  <span className="font-display font-black text-xs md:text-sm tracking-tighter text-brand-navy">GL</span>
+                )}
+              </div>
+              <h1 className="font-display text-2xl md:text-4xl lg:text-5xl tracking-wide uppercase text-brand-navy leading-none pt-1">
+                {eventDetails.title}
+              </h1>
+            </button>
+
+            {/* Desktop Unified Metadata Strip */}
+            <div className="hidden lg:flex items-center gap-3 ml-2 font-mono text-xs font-bold uppercase tracking-wider text-brand-navy/80">
+              <span className="w-2 h-2 border border-brand-navy bg-brand-accent animate-pulse shrink-0" />
+              <span className="truncate">{eventDetails.venue || eventDetails.subtitle}</span>
+              <span className="text-brand-accent font-black">/</span>
+              <span className="bg-brand-navy text-brand-accent px-1.5 py-0.5 text-[10px] tracking-widest">{eventDetails.tag}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-4 shrink-0 justify-end">
+            {/* Desktop Editions Switcher inside Header */}
+            {eventsList.length > 1 && (
+              <div ref={editionsRef} className="relative hidden md:block">
+                <button
+                  type="button"
+                  onClick={() => setEditionsOpen(o => !o)}
+                  aria-expanded={editionsOpen}
+                  aria-haspopup="listbox"
+                  className="flex items-center gap-2 border-2 border-brand-navy bg-brand-navy text-brand-off-white px-3 py-1.5 shadow-(--shadow-brut-xs) hover:bg-brand-navy/90 active:translate-y-[1px] transition-all cursor-pointer"
+                >
+                  <span className="font-mono text-[10px] font-black uppercase tracking-widest text-brand-accent">
+                    EDITIONS
+                  </span>
+                  <span className="font-mono text-[10px] font-black uppercase bg-brand-accent text-brand-navy px-1.5 py-0.5 leading-none">
+                    {eventsList.length} ▼
+                  </span>
+                </button>
+
+                <AnimatePresence>
+                  {editionsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      role="listbox"
+                      aria-label="Event editions"
+                      className="absolute right-0 top-full mt-2 w-72 border-4 border-brand-navy bg-brand-navy shadow-(--shadow-brut-xl-accent) overflow-hidden z-50"
+                    >
+                      {eventsList.map(evt => {
+                        const isCurrent = evt.id === eventDetails.id;
+                        return (
+                          <button
+                            key={evt.id}
+                            type="button"
+                            role="option"
+                            aria-selected={isCurrent}
+                            onClick={() => {
+                              setEditionsOpen(false);
+                              handleSwitchEvent(evt);
+                            }}
+                            className={`w-full text-left px-4 py-3 flex items-center gap-2 border-b border-brand-off-white/15 last:border-b-0 transition-colors cursor-pointer ${
+                              isCurrent
+                                ? "bg-brand-accent text-brand-navy"
+                                : "text-brand-off-white hover:bg-brand-off-white/10"
+                            }`}
+                          >
+                            <span className="font-display text-base uppercase tracking-wider truncate">
+                              {evt.title}
+                            </span>
+                            {evt.category === 'mini' && (
+                              <span className="shrink-0 text-[9px] font-mono font-black uppercase px-1 py-0.5 border border-current">
+                                Mini
+                              </span>
+                            )}
+                            {isCurrent && <Check className="w-4 h-4 ml-auto shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* PUBLIC NAV — Gallery, Radio */}
+            <nav className="hidden md:flex items-center gap-4 shrink-0">
+              <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
+                <Camera className="w-3.5 h-3.5" /> Gallery
+              </Link>
+              <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
+                <Radio className="w-3.5 h-3.5" /> Radio
+              </Link>
+            </nav>
+            {/* Mobile: icon-only */}
+            <nav className="flex md:hidden items-center gap-1.5 shrink-0">
+              <Link href="/gallery" aria-label="Gallery" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
+                <Camera className="w-4 h-4 text-brand-navy" />
+              </Link>
+              <Link href="/radio" aria-label="Radio" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
+                <Radio className="w-4 h-4 text-brand-navy" />
+              </Link>
+            </nav>
+
+            <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
+              {myTickets.length > 0 && (
+                <button 
+                  onClick={() => document.getElementById("my-tickets-section")?.scrollIntoView({ behavior: "smooth" })}
+                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap"
+                >
+                  My Tickets ({myTickets.length})
+                </button>
+              )}
+              {isAdmin && (
+                <>
+                  <Link
+                    href="/admin/dashboard"
+                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1"
+                  >
+                    <Settings className="w-3 h-3 md:w-4 md:h-4" /> Admin
+                  </Link>
+                  <Link
+                    href="/admin/vendors"
+                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-3 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap hidden sm:inline-flex items-center gap-1"
+                  >
+                    <Store className="w-3 h-3 md:w-4 md:h-4" /> Vendors & Staff
+                  </Link>
+                  <Link
+                    href="/admin/scanner"
+                    className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
+                  >
+                    <TicketIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
+                  </Link>
+                </>
               )}
             </div>
-            <span className="font-display text-xl md:text-4xl tracking-wide uppercase text-brand-navy pt-1">{eventDetails.title}</span>
-          </button>
-
-          {/* PUBLIC NAV — Gallery, Radio only.
-              Staff surfaces (Admin Console, Gate Scanner, Vendor POS) are reached
-              by tapping the logo 5 times, which opens the secret staff menu
-              further down. They must not be advertised here: middleware already
-              blocks the routes, but publishing the links pointed every visitor
-              straight at the back doors. */}
-          <nav className="hidden md:flex items-center gap-4 shrink-0">
-            <Link href="/gallery" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
-              <Camera className="w-3.5 h-3.5" /> Gallery
-            </Link>
-            <Link href="/radio" className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-accent transition-colors flex items-center gap-1">
-              <Radio className="w-3.5 h-3.5" /> Radio
-            </Link>
-          </nav>
-          {/* Mobile: icon-only */}
-          <nav className="flex md:hidden items-center gap-1.5 shrink-0">
-            <Link href="/gallery" aria-label="Gallery" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
-              <Camera className="w-4 h-4 text-brand-navy" />
-            </Link>
-            <Link href="/radio" aria-label="Radio" className="p-1.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs)">
-              <Radio className="w-4 h-4 text-brand-navy" />
-            </Link>
-          </nav>
-
-          <div className="flex gap-2 md:gap-4 shrink-0 justify-end">
-            {myTickets.length > 0 && (
-              <button 
-                onClick={() => document.getElementById("my-tickets-section")?.scrollIntoView({ behavior: "smooth" })}
-                className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap"
-              >
-                My Tickets ({myTickets.length})
-              </button>
-            )}
-            {/* Show admin nav when session is active */}
-            {isAdmin && (
-              <>
-                <Link
-                  href="/admin/dashboard"
-                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1"
-                >
-                  <Settings className="w-3 h-3 md:w-4 md:h-4" /> Admin
-                </Link>
-                <Link
-                  href="/admin/vendors"
-                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-3 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap hidden sm:inline-flex items-center gap-1"
-                >
-                  <Store className="w-3 h-3 md:w-4 md:h-4" /> Vendors & Staff
-                </Link>
-                <Link
-                  href="/admin/scanner"
-                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white px-2 py-1 md:px-4 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center gap-1 md:gap-2 whitespace-nowrap"
-                >
-                  <TicketIcon className="w-3 h-3 md:w-4 md:h-4" strokeWidth={2.5} /> Scanner
-                </Link>
-              </>
-            )}
           </div>
         </header>
 
-        {/* MULTI-EVENT SWITCHER (Rendered if > 1 live/scheduled events exist)
-            Collapsed into a single trigger. The row of buttons it replaced was
-            already reduced to 32px by the earlier horizontal-scroller pass, but
-            it still spent that 32px permanently and split the buy path from the
-            poster. The count badge is the affordance: it is only ever >1 here, so
-            a number in the corner is itself the signal that another edition
-            exists. */}
+        {/* MOBILE SLIM FESTIVAL WRISTBAND TAPE (Solution 3) */}
         {eventsList.length > 1 && (
-          <div ref={editionsRef} className="relative z-30 mb-4 md:mb-6">
-            <button
-              type="button"
-              onClick={() => setEditionsOpen(o => !o)}
-              aria-expanded={editionsOpen}
-              aria-haspopup="listbox"
-              className="w-full flex items-center gap-2 border-4 border-brand-navy bg-brand-navy text-brand-off-white pl-3 pr-2 py-2 shadow-(--shadow-brut-sm) hover:bg-brand-navy/90 active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+          <>
+            <div
+              onClick={() => {
+                const others = eventsList.filter(e => e.id !== eventDetails.id);
+                if (others.length === 1) {
+                  handleSwitchEvent(others[0]);
+                } else {
+                  setEditionsOpen(o => !o);
+                }
+              }}
+              className="w-full flex items-center justify-between border-2 border-brand-navy bg-brand-accent text-brand-navy px-3 py-1.5 mb-3 shadow-(--shadow-brut-xs) active:translate-y-[1px] cursor-pointer md:hidden select-none"
             >
-              <Layers className="w-4 h-4 text-brand-accent shrink-0" />
-              <span className="font-mono text-[11px] md:text-xs font-bold uppercase tracking-widest">
-                Editions
+              <span className="font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 truncate">
+                <span>✦</span>
+                <span>ALSO LIVE:</span>
+                <strong className="underline underline-offset-2">
+                  {eventsList.length === 2
+                    ? (eventsList.find(e => e.id !== eventDetails.id)?.title || "MORE EDITIONS")
+                    : `${eventsList.length - 1} OTHER EDITIONS`}
+                </strong>
               </span>
-              <span className="ml-auto font-mono text-[10px] font-black uppercase bg-brand-accent text-brand-navy px-1.5 py-0.5">
-                {eventsList.length}
+              <span className="font-mono text-[9px] font-black uppercase tracking-wider bg-brand-navy text-brand-accent px-1.5 py-0.5 shrink-0 ml-2">
+                {eventsList.length === 2 ? "SWITCH →" : (editionsOpen ? "CLOSE ▲" : "VIEW ▼")}
               </span>
-              <ChevronDown
-                className={`w-4 h-4 text-brand-accent shrink-0 transition-transform duration-200 ${editionsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
+            </div>
 
+            {/* Mobile Drawer (visible when multiple editions and editionsOpen is true) */}
             <AnimatePresence>
               {editionsOpen && (
                 <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  role="listbox"
-                  aria-label="Event editions"
-                  className="absolute left-0 right-0 top-full mt-1.5 border-4 border-brand-navy bg-brand-navy shadow-(--shadow-brut-xl-accent) overflow-hidden"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="w-full border-2 border-brand-navy bg-brand-navy p-2 mb-3 shadow-(--shadow-brut-sm) md:hidden overflow-hidden"
                 >
-                  {eventsList.map(evt => {
-                    const isCurrent = evt.id === eventDetails.id;
-                    return (
-                      <button
-                        key={evt.id}
-                        type="button"
-                        role="option"
-                        aria-selected={isCurrent}
-                        onClick={() => {
-                          setEditionsOpen(false);
-                          handleSwitchEvent(evt);
-                        }}
-                        className={`w-full text-left px-3 py-3 flex items-center gap-2 border-b border-brand-off-white/15 last:border-b-0 transition-colors cursor-pointer ${
-                          isCurrent
-                            ? "bg-brand-accent text-brand-navy"
-                            : "text-brand-off-white hover:bg-brand-off-white/10"
-                        }`}
-                      >
-                        <span className="font-display text-sm uppercase tracking-wider truncate">
-                          {evt.title}
-                        </span>
-                        {evt.category === 'mini' && (
-                          <span className="shrink-0 text-[9px] font-mono font-black uppercase px-1 py-0.5 border border-current">
-                            Mini
-                          </span>
-                        )}
-                        {isCurrent && <Check className="w-4 h-4 ml-auto shrink-0" />}
-                      </button>
-                    );
-                  })}
+                  <div className="font-mono text-[9px] font-black uppercase text-brand-accent mb-1 px-1">
+                    SELECT ACTIVE EVENT EDITION:
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {eventsList.map(evt => {
+                      const isCurrent = evt.id === eventDetails.id;
+                      return (
+                        <button
+                          key={evt.id}
+                          type="button"
+                          onClick={() => {
+                            setEditionsOpen(false);
+                            handleSwitchEvent(evt);
+                          }}
+                          className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs font-mono font-bold uppercase border border-brand-navy transition-colors ${
+                            isCurrent
+                              ? "bg-brand-accent text-brand-navy font-black"
+                              : "bg-brand-navy text-brand-off-white hover:bg-brand-off-white/10"
+                          }`}
+                        >
+                          <span className="truncate">{evt.title}</span>
+                          {isCurrent ? <span>CURRENT ✓</span> : <span>SWITCH →</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </>
         )}
 
         {/* SECRET ADMIN MENU */}
@@ -1199,7 +1270,7 @@ export default function TicketCheckoutPage({
                   positioning lifts it out of flow wherever it sits in the DOM,
                   and top-2/left-2 land it on the poster's top-left corner
                   because the poster is that parent's first in-flow child. */}
-                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:pointer-events-auto">
+                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:hidden">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-2 py-0.5 mb-1.5">
@@ -1227,28 +1298,16 @@ export default function TicketCheckoutPage({
                   ) : null}
                 </div>
 
-                {/* Ticker, moved off the artwork.
-                    It was absolutely positioned across the bottom 24px of the
-                    poster, so the bottom sixth of the flyer - where the cheap
-                    tier names and the M-Pesa callout sit - was permanently
-                    covered. It is now a strip in normal flow under the poster,
-                    which also stops it being clipped by the poster's own
-                    object-contain letterboxing. Still desktop-only: on a phone
-                    the poster is height-constrained by 52dvh, and 24px there is
-                    taken straight out of the above-the-fold budget. */}
-                <div className="w-full h-6 bg-brand-accent border-2 border-brand-navy overflow-hidden flex items-center max-md:hidden">
+                {/* Ticker - hidden on desktop since the unified broadsheet ribbon owns the event facts */}
+                <div className="w-full h-6 bg-brand-accent border-2 border-brand-navy overflow-hidden hidden items-center">
                   <div className="flex animate-marquee whitespace-nowrap font-display text-lg tracking-wider text-brand-navy pt-0.5">
                     <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
                     <span className="pr-4">{eventDetails.ticker_text || "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦ "}</span>
                   </div>
                 </div>
 
-                {/* Venue / Till details.
-                    These used to be `truncate` in a 2-column grid, so on a phone
-                    "MARARA CAMP, THIKA" was cut to "MARARA CAM..." - the two
-                    facts a buyer most wants to check before paying. Wrapping
-                    keeps the 2-up layout and makes the text legible. */}
-                <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase pt-1">
+                {/* Venue / Till details - mobile only, desktop has them in the header ribbon */}
+                <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase pt-1 max-md:grid md:hidden">
                   <div className="bg-brand-off-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0">
                     <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">LOCATION</span>
                     <span className="text-brand-navy block text-[11px] md:text-xs leading-tight break-words">{eventDetails.venue}</span>
@@ -1257,6 +1316,12 @@ export default function TicketCheckoutPage({
                     <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1 font-mono">PAYMENT TILL</span>
                     <span className="text-brand-navy block text-sm md:text-base font-display break-all">#{eventDetails.till_number}</span>
                   </div>
+                </div>
+
+                {/* Desktop gallery caption */}
+                <div className="hidden md:flex items-center justify-between pt-2.5 border-t-2 border-brand-navy mt-2.5 font-mono text-[10px] font-bold tracking-widest uppercase text-brand-navy">
+                  <span>{eventDetails.title} ✦ OFFICIAL POSTER</span>
+                  <span className="text-brand-navy/60">EDITION {eventDetails.id < 10 ? `0${eventDetails.id}` : eventDetails.id}</span>
                 </div>
               </div>
             </div>

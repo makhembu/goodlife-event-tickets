@@ -16,10 +16,12 @@ coverage/
 # including the owner password. Never commit them - see AGENTS.md.
 scripts/
 
-# Playwright screenshots
+# Playwright & audit screenshots
 checkout-whatsapp-open.png
 .playwright-mcp/
-
+/*.png
+!/public/**
+/research/
 
 .vercel
 
