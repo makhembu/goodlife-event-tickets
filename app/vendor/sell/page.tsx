@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export default function VendorSellPage() {
@@ -9,6 +10,11 @@ export default function VendorSellPage() {
   const [cart, setCart] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCheckout, setShowCheckout] = useState(false);
+
+  // Recent Sales Drawer state
+  const [showRecentSalesDrawer, setShowRecentSalesDrawer] = useState(false);
+  const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
+  const [loadingRecentSales, setLoadingRecentSales] = useState(false);
   
   // Split payment state
   const [cashAmount, setCashAmount] = useState("");
@@ -187,6 +193,23 @@ export default function VendorSellPage() {
       });
   };
 
+  const loadRecentSales = () => {
+    setLoadingRecentSales(true);
+    fetch("/api/vendor/sales")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.sales)) {
+          setRecentSalesList(data.sales);
+        }
+      })
+      .catch(err => {
+        console.error("Error loading vendor sales:", err);
+      })
+      .finally(() => {
+        setLoadingRecentSales(false);
+      });
+  };
+
   const handleCreateNewTab = async (remainderToFill?: number) => {
     if (!newTabName.trim()) {
       alert("Please enter a customer or staff name");
@@ -333,6 +356,7 @@ export default function VendorSellPage() {
       });
 
     loadCustomers();
+    loadRecentSales();
   }, []);
 
   // Debounced search for event customers
@@ -470,6 +494,7 @@ export default function VendorSellPage() {
       if (res.ok && data.success) {
         HapticFeedback.trigger("success");
         loadTabs(); // Immediate refresh to avoid stale credit limits
+        loadRecentSales();
         setCompletedSale({
           saleId: data.saleId,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -520,6 +545,24 @@ export default function VendorSellPage() {
     <div className="w-full h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
       <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+        <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-brand-navy/20">
+          <div>
+            <h2 className="font-display text-lg uppercase tracking-wider text-brand-navy">Menu Catalog</h2>
+            <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">Tap items to add to order</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              loadRecentSales();
+              setShowRecentSalesDrawer(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs)"
+          >
+            <Receipt className="w-3.5 h-3.5 text-brand-navy" />
+            <span>Recent Sales ({recentSalesList.length})</span>
+          </button>
+        </div>
+
         {loading ? (
           <div className="animate-pulse font-bold uppercase text-brand-navy">Loading Menu...</div>
         ) : (
@@ -1505,6 +1548,82 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
               >
                 Done / Next Sale
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK RECENT SALES DRAWER */}
+      {showRecentSalesDrawer && (
+        <div className="fixed inset-0 bg-brand-navy/70 z-50 flex justify-end">
+          <div className="w-full max-w-md bg-brand-off-white h-full border-l-4 border-brand-navy p-4 flex flex-col font-mono shadow-(--shadow-brut-lg) animate-in slide-in-from-right duration-200">
+            <div className="flex justify-between items-center border-b-3 border-brand-navy pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-navy" />
+                <h3 className="font-display text-xl uppercase tracking-wider">Recent Register Sales</h3>
+              </div>
+              <button 
+                onClick={() => setShowRecentSalesDrawer(false)}
+                className="p-1 hover:bg-red-500 hover:text-white border-2 border-brand-navy transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs font-bold uppercase text-brand-navy/70">
+                Last {recentSalesList.length} Transactions
+              </span>
+              <Link 
+                href="/vendor/sales"
+                className="text-xs font-black text-brand-navy hover:text-brand-accent underline flex items-center gap-1 uppercase"
+              >
+                Full Ledger & CSV <ExternalLink className="w-3 h-3" />
+              </Link>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {loadingRecentSales ? (
+                <div className="p-8 text-center text-xs font-bold uppercase animate-pulse">Loading recent receipts...</div>
+              ) : recentSalesList.length === 0 ? (
+                <div className="p-8 text-center text-xs text-brand-navy/60 uppercase">No sales recorded yet this session.</div>
+              ) : (
+                recentSalesList.slice(0, 20).map((s) => (
+                  <div key={s.id} className="p-3 bg-white border-2 border-brand-navy shadow-(--shadow-brut-xs) space-y-1.5">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-black text-xs uppercase block">{s.id}</span>
+                        <span className="text-[10px] text-brand-navy/60">
+                          {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Op: {s.operator_name}
+                        </span>
+                      </div>
+                      <span className="font-black text-sm text-brand-navy">KES {s.total.toLocaleString()}</span>
+                    </div>
+
+                    <div className="text-[11px] text-brand-navy/80 truncate">
+                      {s.items_summary || "—"}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-100">
+                      {s.payments.map((p: any, idx: number) => (
+                        <span key={idx} className="text-[9px] font-black px-1.5 py-0.2 bg-brand-navy/10 text-brand-navy uppercase border border-brand-navy/20">
+                          {p.method}: KES {Number(p.amount).toLocaleString()}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t-2 border-brand-navy mt-auto">
+              <Link
+                href="/vendor/sales"
+                className="w-full py-2.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-brand-navy hover:text-white transition-colors shadow-(--shadow-brut-xs)"
+              >
+                <span>Open Sales Page & Export CSV</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </div>
         </div>

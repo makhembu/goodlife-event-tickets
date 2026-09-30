@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Store, Tag, List, Users, LogOut } from "lucide-react";
+import { Store, Tag, List, Users, LogOut, Receipt } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -56,6 +56,10 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
           <Link href="/vendor/tabs" className={`flex-1 md:flex-none flex flex-col items-center justify-center md:py-4 px-2 hover:bg-brand-accent hover:text-brand-navy transition-colors ${pathname === "/vendor/tabs" ? "bg-brand-accent text-brand-navy" : ""}`}>
             <Users className="w-6 h-6 mb-1" />
             <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">Tabs</span>
+          </Link>
+          <Link href="/vendor/sales" className={`flex-1 md:flex-none flex flex-col items-center justify-center md:py-4 px-2 hover:bg-brand-accent hover:text-brand-navy transition-colors ${pathname === "/vendor/sales" ? "bg-brand-accent text-brand-navy" : ""}`}>
+            <Receipt className="w-6 h-6 mb-1" />
+            <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">Sales</span>
           </Link>
         </div>
         

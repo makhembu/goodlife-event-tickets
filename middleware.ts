@@ -3,14 +3,49 @@ import { type NextRequest, NextResponse } from "next/server";
 export async function middleware(request: NextRequest) {
   const session = request.cookies.get("goodlife_admin_session")?.value;
   const vendorSession = request.cookies.get("goodlife_vendor_session")?.value;
+  const scannerSession = request.cookies.get("goodlife_scanner_session")?.value;
   const pathname = request.nextUrl.pathname;
 
   // Protect admin page routes
   if (pathname.startsWith("/admin")) {
+    if (pathname === "/admin/scanner" && scannerSession) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/scanner";
+      return NextResponse.redirect(url);
+    }
     if (session !== "true") {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       return NextResponse.redirect(url);
+    }
+  }
+
+  // Scanner page routes
+  if (pathname.startsWith("/scanner") || pathname === "/scanner") {
+    if (pathname === "/scanner/login") {
+      if (scannerSession || session === "true") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/scanner";
+        return NextResponse.redirect(url);
+      }
+    } else {
+      if (!scannerSession && session !== "true") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/scanner/login";
+        return NextResponse.redirect(url);
+      }
+    }
+  }
+
+  // Scanner API routes
+  if (pathname.startsWith("/api/scanner/") || pathname === "/api/scanner") {
+    const isPublicScannerRoute =
+      pathname === "/api/scanner/auth" ||
+      pathname === "/api/scanner/logout" ||
+      pathname === "/api/scanner/session";
+
+    if (!isPublicScannerRoute && !scannerSession && session !== "true") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
@@ -28,7 +63,13 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/admin/") || pathname === "/api/admin") {
     // Allow login, logout, and me endpoints without auth
     const publicAdminRoutes = ["/api/admin/login", "/api/admin/logout", "/api/admin/me"];
-    if (!publicAdminRoutes.includes(pathname) && session !== "true") {
+    
+    // Gate scanners can call ticket scan verification API
+    if (pathname.startsWith("/api/admin/scan")) {
+      if (session !== "true" && !scannerSession) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    } else if (!publicAdminRoutes.includes(pathname) && session !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -96,9 +137,12 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/admin/:path*",
+    "/scanner/:path*",
+    "/scanner",
     "/login",
     "/vendor/:path*",
     "/api/admin/:path*",
+    "/api/scanner/:path*",
     "/api/vendor/:path*",
     "/api/event-details",
     "/api/ticket-tiers/:path*",

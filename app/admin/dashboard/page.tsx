@@ -1092,123 +1092,133 @@ export default function AdminDashboardPage() {
     <div className="min-h-screen bg-[var(--brand-off-white)] py-6 px-4 md:px-8 text-[var(--brand-navy)] font-sans selection:bg-[var(--brand-navy)] selection:text-white">
       
       {/* BRANDING HEADER SYSTEM */}
-      <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between sm:items-center border-b-4 border-[var(--brand-navy)] pb-4 mb-6 gap-4">
-        <div>
-          <span className="font-sans font-black tracking-widest text-[11px] bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
-            ADMIN CONSOLE
-          </span>
-          <h1 className="text-3xl font-sans font-black tracking-tighter uppercase mt-1 leading-none text-[var(--brand-navy)]">
-            {selectedEventTitle.toUpperCase()} ADMIN
-          </h1>
-          <div className="mt-2">
-            <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
-          </div>
-          {/* Audience is a global scope, not a table-only filter: it also drives
-              the box office figures, the tier card and the CSV export, so the
-              numbers can never disagree with the rows underneath them. */}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-caption font-black uppercase text-[var(--brand-navy)]">Showing</span>
-            <div className="flex border-2 border-[var(--brand-navy)]">
-              {AUDIENCE_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleAudienceSelect(opt.value)}
-                  aria-pressed={audience === opt.value}
-                  className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors duration-150 active:scale-95 ${
-                    audience === opt.value
-                      ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
-                      : "bg-[var(--brand-off-white)] text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <span className="text-caption text-[var(--brand-navy-light)] font-bold uppercase">
-              {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"} in this event
+      <div className="w-full max-w-7xl xl:max-w-[1500px] mx-auto border-b-4 border-[var(--brand-navy)] pb-4 mb-6">
+        {/* Tier 1: Title & Global Actions */}
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+          <div>
+            <span className="font-sans font-black tracking-widest text-[11px] bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-2.5 py-0.5 uppercase">
+              ADMIN CONSOLE
             </span>
-            {dateMismatches.map(m => (
-              <span
-                key={m.eventId}
-                className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
-                title={`${data.eventLabels[String(m.eventId)] || `Event #${m.eventId}`} ${m.reason}. Either the event date is wrong, or these tickets were sold under the wrong event_id. Check EDIT EVENT INFO and the EVENT column on each row before trusting these numbers.`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                {data.eventLabels[String(m.eventId)] || `EVENT #${m.eventId}`} &mdash; {m.reason}
-              </span>
-            ))}
-            {duplicateCount > 0 && (
-              <span
-                className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
-                title={`Same phone, same tier, bought twice within ${DUPLICATE_WINDOW_MIN} minutes. Usually a double-tapped pay button or a retry after a STK timeout - each one inflates revenue. Review and delete the extra.`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                {duplicateCount} possible duplicate payment{duplicateCount === 1 ? "" : "s"}
-              </span>
-            )}
+            <h1 className="text-2xl sm:text-3xl font-sans font-black tracking-tighter uppercase mt-1 leading-none text-[var(--brand-navy)]">
+              {selectedEventTitle.toUpperCase()} ADMIN
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link 
+              href="/" 
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 bg-white shadow-(--shadow-brut-xs)"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> CHECKOUT PORTAL
+            </Link>
+            <button 
+              onClick={handleSignOut}
+              className="text-xs font-black uppercase border-2 border-red-600 text-red-600 px-3 py-1.5 hover:bg-red-600 hover:text-white transition-colors bg-white shadow-(--shadow-brut-xs)"
+            >
+              SIGN OUT
+            </button>
           </div>
         </div>
 
-        <div className="flex gap-2 shrink-0 flex-wrap">
-          <button
-            onClick={() => {
-              setIsEditingEvent(true);
-              setEventFormState({
-                ...eventDetails,
-                whatsapp_message: eventDetails?.whatsapp_message?.trim()
-                  ? eventDetails.whatsapp_message
-                  : getDefaultWhatsAppTemplate(),
-                payment_contact: eventDetails?.payment_contact || "",
-                whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
-                  ? eventDetails.whatsapp_operator_template
-                  : getDefaultOperatorTemplate(),
-                whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
-                  ? eventDetails.whatsapp_scan_template
-                  : getDefaultScanTemplate(),
-                operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
-              });
-            }}
-            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-[var(--brand-off-white)]"
-          >
-            <Edit className="w-3.5 h-3.5" /> EDIT EVENT INFO
-          </button>
-          <Link 
-            href="/admin/vendors" 
-            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
-          >
-            <Store className="w-3.5 h-3.5" /> STAFF & POS
-          </Link>
-          <Link 
-            href="/admin/settlements" 
-            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 bg-[var(--brand-off-white)] hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5"
-          >
-            <Receipt className="w-3.5 h-3.5" /> SETTLEMENTS
-          </Link>
-          <Link 
-            href="/admin/scanner" 
-            className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center gap-1.5"
-          >
-            <Activity className="w-3.5 h-3.5" /> GATE SCAN
-          </Link>
-          <Link 
-            href="/" 
-            className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3.5 py-2 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> CHECKOUT PORTAL
-          </Link>
-          <button 
-            onClick={handleSignOut}
-            className="text-xs font-black uppercase border-2 border-red-600 text-red-600 px-3.5 py-2 hover:bg-red-600 hover:text-white transition-colors"
-          >
-            SIGN OUT
-          </button>
+        {/* Tier 2: Event Selector & Operational Action Bar */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pt-3 border-t-2 border-dashed border-[var(--brand-navy)]/30">
+          {/* Left: Event Picker & Audience Filter */}
+          <div className="flex flex-wrap items-center gap-3">
+            <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-caption font-black uppercase text-[var(--brand-navy)]">Showing</span>
+              <div className="flex border-2 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
+                {AUDIENCE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleAudienceSelect(opt.value)}
+                    aria-pressed={audience === opt.value}
+                    className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors duration-150 active:scale-95 ${
+                      audience === opt.value
+                        ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                        : "bg-white text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-caption text-[var(--brand-navy-light)] font-bold uppercase whitespace-nowrap">
+                {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"}
+              </span>
+              {dateMismatches.map(m => (
+                <span
+                  key={m.eventId}
+                  className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+                  title={`${data.eventLabels[String(m.eventId)] || `Event #${m.eventId}`} ${m.reason}.`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {data.eventLabels[String(m.eventId)] || `EVENT #${m.eventId}`} &mdash; {m.reason}
+                </span>
+              ))}
+              {duplicateCount > 0 && (
+                <span
+                  className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+                  title="Possible duplicate payment."
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {duplicateCount} possible duplicate payment{duplicateCount === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Operational Tool Buttons */}
+          <div className="flex gap-2 flex-wrap items-center">
+            <button
+              onClick={() => {
+                setIsEditingEvent(true);
+                setEventFormState({
+                  ...eventDetails,
+                  whatsapp_message: eventDetails?.whatsapp_message?.trim()
+                    ? eventDetails.whatsapp_message
+                    : getDefaultWhatsAppTemplate(),
+                  payment_contact: eventDetails?.payment_contact || "",
+                  whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
+                    ? eventDetails.whatsapp_operator_template
+                    : getDefaultOperatorTemplate(),
+                  whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
+                    ? eventDetails.whatsapp_scan_template
+                    : getDefaultScanTemplate(),
+                  operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
+                });
+              }}
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-white shadow-(--shadow-brut-xs)"
+            >
+              <Edit className="w-3.5 h-3.5" /> EDIT EVENT INFO
+            </button>
+            <Link 
+              href="/admin/vendors" 
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+            >
+              <Store className="w-3.5 h-3.5" /> STAFF & POS
+            </Link>
+            <Link 
+              href="/admin/settlements" 
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+            >
+              <Receipt className="w-3.5 h-3.5" /> SETTLEMENTS
+            </Link>
+            <Link 
+              href="/scanner" 
+              className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+            >
+              <Activity className="w-3.5 h-3.5" /> GATE SCAN
+            </Link>
+          </div>
         </div>
       </div>
 
       {/* Stale-data guard: a failed load used to be swallowed, leaving the
           previous event's rows on screen under the new event's label. */}
       {metricsError && (
-        <div className="max-w-4xl mx-auto mb-4 border-4 border-red-600 bg-red-50 p-3 flex flex-wrap items-center gap-3">
+        <div className="w-full max-w-7xl xl:max-w-[1500px] mx-auto mb-4 border-4 border-red-600 bg-red-50 p-3 flex flex-wrap items-center gap-3">
           <span className="text-xs font-black uppercase text-red-800 flex-1 min-w-[200px]">
             Could not refresh this view: {metricsError} The figures below may be stale.
           </span>
@@ -1221,7 +1231,7 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="w-full max-w-7xl xl:max-w-[1500px] mx-auto space-y-6">
 
         <BoxOfficeMetrics
           totalCashCollected={data.totalCashCollected}

@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Mail, Flame, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { Lock, Mail, Flame, AlertTriangle, QrCode, Store } from "lucide-react";
 import { fetchEventDetails, EventDetails } from "@/lib/supabase-db";
 
 export default function LoginPage() {
@@ -162,6 +163,15 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
+
+        <div className="pt-4 border-t-2 border-[var(--brand-navy)]/20 flex flex-col sm:flex-row justify-between items-center gap-2 text-xs font-mono font-bold">
+          <Link href="/scanner/login" className="text-[var(--brand-navy)] hover:text-brand-accent underline uppercase flex items-center gap-1">
+            <QrCode className="w-3.5 h-3.5" /> Gate Scanner Login
+          </Link>
+          <Link href="/vendor/login" className="text-[var(--brand-navy)] hover:text-brand-accent underline uppercase flex items-center gap-1">
+            <Store className="w-3.5 h-3.5" /> Vendor POS Login
+          </Link>
+        </div>
 
       </div>
     </div>
