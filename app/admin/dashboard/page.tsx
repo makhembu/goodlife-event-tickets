@@ -64,6 +64,7 @@ import EventSelector from "@/components/EventSelector";
 // and using it here means this badge, the lifecycle dropdown and the payment
 // routes can never disagree about what a row's status means.
 import { canonicalStatus } from "@/lib/event-availability";
+import { useFeedback } from "@/components/ui/feedback";
 
 /**
  * Two sales of the same tier on the same phone further apart than this are
@@ -156,6 +157,10 @@ const AUDIENCE_OPTIONS: { value: TicketAudience; label: string }[] = [
 ];
 
 export default function AdminDashboardPage() {
+  // App-styled replacements for the native confirm()/alert(). `host` is mounted
+  // once near the end of the render; the call sites keep their original shape
+  // (`if (!(await confirm({...}))) return;`).
+  const { confirm, alert, host: feedbackHost } = useFeedback();
   const [metrics, setMetrics] = useState<MetricsState | null>(null);
   const [loading, setLoading] = useState(true);
   const [metricsError, setMetricsError] = useState<string | null>(null);
@@ -698,10 +703,18 @@ export default function AdminDashboardPage() {
   };
 
   const handleDeletePaymentLog = async (id: number) => {
-    if (!confirm("Delete this payment log entry?")) return;
+    const ok = await confirm({
+      title: "Delete payment log entry",
+      body: "This removes the audit row for one payment. It cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete entry",
+      scope: selectedEventTitle,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/payment-logs?id=${id}&eventId=${selectedEventIdRef.current ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPaymentLogs();
+      else await alert({ title: "Not deleted", body: "The server refused the delete. Nothing was changed.", tone: "danger" });
     } catch (err) {
       console.error("Failed to delete payment log:", err);
     }
@@ -709,21 +722,24 @@ export default function AdminDashboardPage() {
 
   const handleClearAllPaymentLogs = async () => {
     const scope = selectedEventIdRef.current;
-    if (
-      !confirm(
+    const ok = await confirm({
+      title: "Delete payment log entries",
+      body:
         scope === null
-          ? "Delete payment log entries for ALL events? This cannot be undone."
-          : `Delete ALL payment log entries for "${selectedEventTitle}"? This cannot be undone.`
-      )
-    )
-      return;
+          ? "This deletes the payment history of EVERY event. It cannot be undone."
+          : "This deletes EVERY payment log entry for this event, including successful sales records. It cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete all entries",
+      scope,
+    });
+    if (!ok) return;
     try {
       // The route refuses a scope-less `all=true` on purpose: it used to be a
       // bare DELETE with no WHERE clause, so "Clear All" in one event's view
       // wiped every other edition's payment history.
       const res = await fetch(`/api/admin/payment-logs?all=true&eventId=${scope ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPaymentLogs();
-      else alert("Could not clear payment logs. Nothing was deleted.");
+      else await alert({ title: "Nothing was deleted", body: "The server refused the request. No payment logs were removed.", tone: "danger" });
     } catch (err) {
       console.error("Failed to clear payment logs:", err);
     }
@@ -731,25 +747,35 @@ export default function AdminDashboardPage() {
 
   const handleClearAllPendingPayments = async () => {
     const scope = selectedEventIdRef.current;
-    if (
-      !confirm(
+    const ok = await confirm({
+      title: "Delete pending payment records",
+      body:
         scope === null
-          ? "Delete pending payment records for ALL events? This cannot be undone."
-          : `Delete ALL pending payment records for "${selectedEventTitle}"? This cannot be undone.`
-      )
-    )
-      return;
+          ? "This deletes pending payment records for EVERY event. It cannot be undone."
+          : "This deletes EVERY pending payment record for this event. Payments that have not been resolved yet will be lost. It cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete all records",
+      scope,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/pending-payments?all=true&eventId=${scope ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPendingPayments();
-      else alert("Could not clear pending payments. Nothing was deleted.");
+      else await alert({ title: "Nothing was deleted", body: "The server refused the request. No pending payments were removed.", tone: "danger" });
     } catch (err) {
       console.error("Failed to clear pending payments:", err);
     }
   };
 
   const handleDeletePendingPayment = async (checkoutRequestId: string) => {
-    if (!confirm(`Delete pending payment ${checkoutRequestId}?`)) return;
+    const ok = await confirm({
+      title: "Delete pending payment",
+      body: "The customer will not be able to complete this payment through the checkout flow. Use Reject instead if the payment should be refused rather than forgotten.",
+      danger: true,
+      confirmLabel: "Delete record",
+      scope: checkoutRequestId,
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/admin/pending-payments?checkout_request_id=${encodeURIComponent(checkoutRequestId)}&eventId=${selectedEventIdRef.current ?? ""}`, { method: "DELETE" });
       if (res.ok) loadPendingPayments();
@@ -800,7 +826,19 @@ export default function AdminDashboardPage() {
   };
 
   const handleApproveTillPayment = async (pp: any) => {
-    if (!confirm(`Approve payment from ${pp.buyer_name} (${pp.mpesa_reference || "no ref"}) and create tickets?`)) return;
+    const approved = await confirm({
+      title: "Approve this till payment",
+      body: (
+        <span className="whitespace-pre-line">{`Approve the manual till payment from ${pp.buyer_name}${
+          pp.mpesa_reference ? ` (M-Pesa ref ${pp.mpesa_reference})` : " (no M-Pesa reference was recorded)"
+        } and issue real tickets for it.
+
+Tickets exist the moment you approve, and the customer is sent them on WhatsApp. Check the amount against the cash in the till first.`}</span>
+      ),
+      confirmLabel: "Approve & issue tickets",
+      scope: `Checkout request ${pp.checkout_request_id}`,
+    });
+    if (!approved) return;
     setApprovingPayment(pp.checkout_request_id);
     try {
       const ref = pp.mpesa_reference || pp.checkout_request_id.replace("TILL-", "").split("-")[0];
@@ -828,7 +866,13 @@ export default function AdminDashboardPage() {
   };
 
   const handleRejectTillPayment = async (checkoutRequestId: string) => {
-    if (!confirm("Reject this payment request?")) return;
+    const rejected = await confirm({
+      title: "Reject this payment request",
+      body: "The pending till payment is marked rejected and no tickets are issued. Rejecting does not notify the requester, so if they already handed over cash, follow up with them directly.",
+      confirmLabel: "Reject payment",
+      danger: true,
+    });
+    if (!rejected) return;
     try {
       await fetch("/api/admin/pending-payments/reject", {
         method: "POST",
@@ -869,7 +913,13 @@ export default function AdminDashboardPage() {
       alert("No pending subscribers to notify for this edition.");
       return;
     }
-    const confirmed = confirm(`Are you sure you want to broadcast WhatsApp early-bird notifications to ${pendingCount} pending subscriber(s) for Event #${targetEventId}?`);
+    const confirmed = await confirm({
+      title: `Message ${pendingCount} waitlisted subscriber${pendingCount === 1 ? "" : "s"}`,
+      body: "Sends a WhatsApp early-bird notification to everyone on this edition's waitlist who has not been notified yet. Once the gateway accepts a message it cannot be recalled.",
+      confirmLabel: "Send broadcast",
+      danger: true,
+      scope: `Event #${targetEventId}`,
+    });
     if (!confirmed) return;
 
     setBroadcasting(true);
@@ -1039,14 +1089,22 @@ export default function AdminDashboardPage() {
     }
 
     if (isCurrentlyClosed) {
-      const confirmed = confirm(
-        `Re-open Event #${selectedEventId} ("${currentEvent?.title || ""}") and set it to Live?\n\n` +
-          `Ticket sales and checkout will resume immediately.\n\n` +
-          (currentEvent?.sales_open_date
-            ? `Note: this event has a tickets-open date of ${String(currentEvent.sales_open_date).slice(0, 16).replace("T", " ")}. ` +
-              `If that is still in the future the site will keep showing the coming-soon page until it passes.\n\n`
-            : "")
-      );
+      const confirmed = await confirm({
+        title: "Re-open this event and set it Live",
+        body: (
+          <span className="whitespace-pre-line">{`Ticket sales and checkout resume immediately.
+
+${
+  currentEvent?.sales_open_date
+    ? `Note: this event has a tickets-open date of ${String(currentEvent.sales_open_date)
+        .slice(0, 16)
+        .replace("T", " ")}. If that is still in the future the site will keep showing the coming-soon page until it passes.`
+    : ""
+}`}</span>
+        ),
+        confirmLabel: "Re-open & go live",
+        scope: `Event #${selectedEventId}${currentEvent?.title ? ` — ${currentEvent.title}` : ""}`,
+      });
       if (!confirmed) return;
       try {
         const res = await fetch(`/api/events/${selectedEventId}/archive`, {
@@ -1069,13 +1127,17 @@ export default function AdminDashboardPage() {
         alert(`Failed to activate event: ${err.message}`);
       }
     } else {
-      const confirmed = confirm(
-        `Are you sure you want to END / CLOSE Event #${selectedEventId} ("${currentEvent?.title || ""}")?\n\n` +
-          `This marks the edition as concluded. Online visitors will see the "Event Concluded" page and ` +
-          `payment will be refused.\n\n` +
-          `The event stays listed in the editions switcher. Use ARCHIVE in the event editor if you ` +
-          `want to hide it from the public site entirely.`
-      );
+      const confirmed = await confirm({
+        title: "End / close this event",
+        body: (
+          <span className="whitespace-pre-line">{`This marks the edition as concluded. Online visitors will see the "Event Concluded" page and payment will be refused.
+
+The event stays listed in the editions switcher. Use ARCHIVE in the event editor if you want to hide it from the public site entirely.`}</span>
+        ),
+        confirmLabel: "End event",
+        danger: true,
+        scope: `Event #${selectedEventId}${currentEvent?.title ? ` — ${currentEvent.title}` : ""}`,
+      });
       if (!confirmed) return;
       try {
         const res = await fetch(`/api/events/${selectedEventId}/archive`, {
@@ -2039,7 +2101,13 @@ export default function AdminDashboardPage() {
                 <span className="text-brand-warning">Selected: {selectedTicketIds.length} tickets</span>
                 <button
                   onClick={async () => {
-                    if (confirm("Send selected tickets to Trash?")) {
+                    if (await confirm({
+                      title: "Send tickets to Trash",
+                      body: "The selected tickets become recoverable from the Trash. Gate scans and check-ins for them stop working until they are restored.",
+                      danger: true,
+                      confirmLabel: "Send to Trash",
+                      scope: `${selectedTicketIds.length} ticket(s) on ${selectedEventTitle}`,
+                    })) {
                       for (const id of selectedTicketIds) {
                         await fetch(`/api/admin/tickets/${id}`, { method: "DELETE" });
                       }
@@ -2053,7 +2121,15 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (!confirm(`Resend ${selectedTicketIds.length} ticket(s) via WhatsApp to their own numbers?`)) return;
+                    if (
+                      !(await confirm({
+                        title: `Resend ${selectedTicketIds.length} ticket(s) on WhatsApp`,
+                        body: "Each selected ticket is sent again to the number already on that ticket. Anyone who received the first copy will get a duplicate, and re-sending does not re-issue the ticket or reset the gate scan.",
+                        confirmLabel: "Resend tickets",
+                        scope: `${selectedTicketIds.length} ticket(s) on ${selectedEventTitle}`,
+                      }))
+                    )
+                      return;
                     let ok = 0, fail = 0;
                     for (const id of selectedTicketIds) {
                       const t = metrics?.tickets.find(tk => tk.id === id);
@@ -2076,7 +2152,12 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (confirm("Mark selected tickets as Scanned?")) {
+                    if (await confirm({
+                      title: "Mark as scanned",
+                      body: "Marks every selected ticket as scanned at the gate. This is a report of admission, not a new scan, so it does not increase guest counts.",
+                      confirmLabel: "Mark scanned",
+                      scope: `${selectedTicketIds.length} ticket(s) on ${selectedEventTitle}`,
+                    })) {
                       for (const id of selectedTicketIds) {
                         await fetch(`/api/admin/tickets/${id}`, {
                           method: "PUT",
@@ -2094,7 +2175,12 @@ export default function AdminDashboardPage() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (confirm("Mark selected tickets as Active (Unscanned)?")) {
+                    if (await confirm({
+                      title: "Reset to unscanned",
+                      body: "Returns every selected ticket to unscanned, clearing the gate check-in. Use this to undo a scan recorded against the wrong tickets.",
+                      confirmLabel: "Reset",
+                      scope: `${selectedTicketIds.length} ticket(s) on ${selectedEventTitle}`,
+                    })) {
                       for (const id of selectedTicketIds) {
                         await fetch(`/api/admin/tickets/${id}`, {
                           method: "PUT",
@@ -2391,7 +2477,13 @@ export default function AdminDashboardPage() {
                 <span className="text-brand-warning">Selected: {selectedTierIds.length} tiers</span>
                 <button
                   onClick={async () => {
-                    if (confirm("Send selected tiers to Trash?")) {
+                    if (await confirm({
+                      title: "Send tiers to Trash",
+                      body: "The selected passes stop being offered on the public checkout page. They can be restored from the Trash.",
+                      danger: true,
+                      confirmLabel: "Send to Trash",
+                      scope: `${selectedTierIds.length} tier(s) on ${selectedEventTitle}`,
+                    })) {
                       await runBulkTierAction(selectedTierIds, "Send to Trash", (id) =>
                         fetch(`/api/ticket-tiers/${encodeURIComponent(id)}?eventId=${selectedEventIdRef.current}`, {
                           method: "DELETE"
@@ -2668,7 +2760,12 @@ export default function AdminDashboardPage() {
                 <span className="text-brand-warning">Selected: {selectedTrashTicketIds.length} tickets, {selectedTrashTierIds.length} tiers</span>
                 <button
                   onClick={async () => {
-                    if (confirm("Restore all selected items?")) {
+                    if (await confirm({
+                      title: "Restore selected items",
+                      body: "Returns the selected trashed items to the active list. Tickets become scannable again and passes become purchasable again.",
+                      confirmLabel: "Restore all",
+                      scope: `${selectedTrashTicketIds.length} ticket(s), ${selectedTrashTierIds.length} tier(s)`,
+                    })) {
                       for (const id of selectedTrashTicketIds) {
                         await fetch(`/api/admin/tickets/${encodeURIComponent(id)}`, {
                           method: "PUT",
@@ -3098,7 +3195,13 @@ export default function AdminDashboardPage() {
                 <span className="text-brand-warning">Selected: {selectedPaymentLogIds.length} logs</span>
                 <button
                   onClick={async () => {
-                    if (confirm("Delete selected payment logs permanently?")) {
+                    if (await confirm({
+                      title: "Delete payment logs permanently",
+                      body: "These audit rows are removed from the database entirely. Unlike the Trash there is no restore, so the payment history for these entries is gone.",
+                      danger: true,
+                      confirmLabel: "Delete permanently",
+                      scope: `${selectedPaymentLogIds.length} log(s) on ${selectedEventTitle}`,
+                    })) {
                       for (const id of selectedPaymentLogIds) {
                         await fetch(`/api/admin/payment-logs?id=${id}`, { method: "DELETE" });
                       }
@@ -4788,6 +4891,9 @@ export default function AdminDashboardPage() {
       <div className="max-w-4xl mx-auto text-center mt-12 mb-8 text-[11px] text-[var(--brand-navy-light)] font-bold tracking-widest uppercase">
         © {new Date().getFullYear()} {(eventDetails?.footer_title || eventDetails?.title || "GOODLIFE").toUpperCase()} · SECURED TRANSACTION CHANNELS
       </div>
+
+      {/* The single mount point for every confirm/alert on this screen. */}
+      {feedbackHost}
 
     </div>
   );
