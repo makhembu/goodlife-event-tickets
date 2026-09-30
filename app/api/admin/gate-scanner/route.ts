@@ -7,7 +7,7 @@ async function ensureGatePinColumn() {
   try {
     await neonQuery(`
       ALTER TABLE event_details 
-      ADD COLUMN IF NOT EXISTS gate_pin TEXT DEFAULT '2026';
+      ADD COLUMN IF NOT EXISTS gate_pin TEXT;
     `);
   } catch (e) {
     console.warn("Could not alter event_details table for gate_pin:", e);
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   await ensureGatePinColumn();
 
   try {
-    let pin = "2026";
+    let pin = "";
     const { rows } = await neonQuery("SELECT gate_pin FROM event_details WHERE id = 1 LIMIT 1");
     if (rows.length > 0 && rows[0].gate_pin) {
       pin = rows[0].gate_pin.trim();
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { newPin, stewardName, stewardPhone, gateName, sendWhatsApp } = body;
 
-    let updatedPin = "2026";
+    let updatedPin = "";
 
     // If newPin is passed, update it
     if (newPin && typeof newPin === "string") {

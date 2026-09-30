@@ -11,7 +11,12 @@ function getSession(request: NextRequest) {
   const sessionCookie = request.cookies.get("goodlife_vendor_session");
   if (!sessionCookie || !sessionCookie.value) return null;
   try {
-    return JSON.parse(atob(sessionCookie.value));
+    const raw = sessionCookie.value.includes(".") ? sessionCookie.value.split(".")[0] : sessionCookie.value;
+    try {
+      return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    } catch {
+      return JSON.parse(atob(raw));
+    }
   } catch {
     return null;
   }

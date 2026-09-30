@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac } from "crypto";
 import { fetchActiveEvent, fetchAllEvents, neonQuery } from "@/lib/supabase-db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -14,9 +15,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "PIN is required" }, { status: 400 });
     }
 
-    // Gate PIN can be configured in event_details, via environment variable GATE_SCANNER_PIN, or defaults to 2026.
-    // The master admin password (GoodlifeAdmin2026!) is also accepted as superuser bypass.
-    let dbPin = "2026";
+    // Gate PIN can be configured in event_details, via environment variable GATE_SCANNER_PIN.
+    // The master admin password (ADMIN_PASSWORD env) is also accepted as superuser bypass.
+    let dbPin = "";
     try {
       const { rows } = await neonQuery("SELECT gate_pin FROM event_details WHERE id = 1 LIMIT 1");
       if (rows && rows.length > 0 && rows[0].gate_pin) {
@@ -24,10 +25,10 @@ export async function POST(request: NextRequest) {
       }
     } catch {}
 
-    const validPin = (process.env.GATE_SCANNER_PIN || "2026").trim();
-    const masterAdminPass = "GoodlifeAdmin2026!";
+    const validPin = (process.env.GATE_SCANNER_PIN || "").trim();
+    const masterAdminPass = (process.env.ADMIN_PASSWORD || "").trim();
 
-    const isPinMatch = pin.trim() === dbPin || pin.trim() === validPin || pin.trim() === masterAdminPass;
+    const isPinMatch = (dbPin && pin.trim() === dbPin) || (validPin && pin.trim() === validPin) || (masterAdminPass && pin.trim() === masterAdminPass);
 
     if (!isPinMatch) {
       return NextResponse.json({ success: false, message: "Invalid Gate Access PIN" }, { status: 401 });
@@ -61,6 +62,11 @@ export async function POST(request: NextRequest) {
       loginAt: new Date().toISOString()
     };
 
+    const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
+    const payloadB64 = Buffer.from(JSON.stringify(sessionData)).toString("base64url");
+    const sig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+    const signedToken = `${payloadB64}.${sig}`;
+
     const response = NextResponse.json({
       success: true,
       message: `Welcome, ${stewardName}! Gate terminal active at ${gateName}.`,
@@ -68,7 +74,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Set secure scanner session cookie
-    response.cookies.set("goodlife_scanner_session", btoa(JSON.stringify(sessionData)), {
+    response.cookies.set("goodlife_scanner_session", signedToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

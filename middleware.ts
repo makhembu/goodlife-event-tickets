@@ -1,4 +1,37 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
+
+function isValidScannerSession(cookieValue: string | undefined): boolean {
+  if (!cookieValue || !cookieValue.includes(".")) return false;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return false;
+  const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
+  const expectedSig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  if (expectedSig.length !== sig.length) return false;
+  if (!timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sig))) return false;
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    return Boolean(parsed && parsed.role === "scanner");
+  } catch {
+    return false;
+  }
+}
+
+function isValidVendorSession(cookieValue: string | undefined): boolean {
+  if (!cookieValue || !cookieValue.includes(".")) return false;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return false;
+  const secret = process.env.VENDOR_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_vendor_secret_salt";
+  const expectedSig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  if (expectedSig.length !== sig.length) return false;
+  if (!timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sig))) return false;
+  try {
+    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    return Boolean(parsed && parsed.vendorId);
+  } catch {
+    return false;
+  }
+}
 
 export async function middleware(request: NextRequest) {
   const session = request.cookies.get("goodlife_admin_session")?.value;
@@ -8,7 +41,7 @@ export async function middleware(request: NextRequest) {
 
   // Protect admin page routes
   if (pathname.startsWith("/admin")) {
-    if (pathname === "/admin/scanner" && scannerSession) {
+    if (pathname === "/admin/scanner" && isValidScannerSession(scannerSession)) {
       const url = request.nextUrl.clone();
       url.pathname = "/scanner";
       return NextResponse.redirect(url);
@@ -23,13 +56,13 @@ export async function middleware(request: NextRequest) {
   // Scanner page routes
   if (pathname.startsWith("/scanner") || pathname === "/scanner") {
     if (pathname === "/scanner/login") {
-      if (scannerSession || session === "true") {
+      if (isValidScannerSession(scannerSession) || session === "true") {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!scannerSession && session !== "true") {
+      if (!isValidScannerSession(scannerSession) && session !== "true") {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner/login";
         return NextResponse.redirect(url);
@@ -44,7 +77,7 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/scanner/logout" ||
       pathname === "/api/scanner/session";
 
-    if (!isPublicScannerRoute && !scannerSession && session !== "true") {
+    if (!isPublicScannerRoute && !isValidScannerSession(scannerSession) && session !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -66,7 +99,7 @@ export async function middleware(request: NextRequest) {
     
     // Gate scanners can call ticket scan verification API
     if (pathname.startsWith("/api/admin/scan")) {
-      if (session !== "true" && !scannerSession) {
+      if (session !== "true" && !isValidScannerSession(scannerSession)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     } else if (!publicAdminRoutes.includes(pathname) && session !== "true") {
@@ -96,13 +129,13 @@ export async function middleware(request: NextRequest) {
   // Protect vendor page routes
   if (pathname.startsWith("/vendor/") || pathname === "/vendor") {
     if (pathname === "/vendor/login") {
-      if (vendorSession) {
+      if (isValidVendorSession(vendorSession)) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/sell";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!vendorSession) {
+      if (!isValidVendorSession(vendorSession)) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/login";
         return NextResponse.redirect(url);
@@ -117,7 +150,7 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/vendor/logout" ||
       pathname === "/api/vendor/mpesa/status"; // read-only; TABPAY_ refs only (see route)
 
-    if (!isPublicRoute && !vendorSession) {
+    if (!isPublicRoute && !isValidVendorSession(vendorSession)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }

@@ -12,7 +12,13 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const sessionData = JSON.parse(atob(sessionCookie.value));
+      const raw = sessionCookie.value.includes(".") ? sessionCookie.value.split(".")[0] : sessionCookie.value;
+      let sessionData: any = null;
+      try {
+        sessionData = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+      } catch {
+        sessionData = JSON.parse(atob(raw));
+      }
       return NextResponse.json({
         success: true,
         session: sessionData

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac } from "crypto";
 import { authenticateOperator } from "@/lib/supabase-db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -38,8 +39,13 @@ export async function POST(request: NextRequest) {
         role: authResult.operator.role
       };
 
+      const secret = process.env.VENDOR_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_vendor_secret_salt";
+      const payloadB64 = Buffer.from(JSON.stringify(sessionData)).toString("base64url");
+      const sig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+      const signedToken = `${payloadB64}.${sig}`;
+
       // Set session cookie
-      response.cookies.set("goodlife_vendor_session", btoa(JSON.stringify(sessionData)), {
+      response.cookies.set("goodlife_vendor_session", signedToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",

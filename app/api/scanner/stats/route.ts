@@ -13,7 +13,13 @@ export async function GET(request: NextRequest) {
     let stewardGate = "";
     if (scannerCookie) {
       try {
-        const parsed = JSON.parse(atob(scannerCookie));
+        const raw = scannerCookie.includes(".") ? scannerCookie.split(".")[0] : scannerCookie;
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+        } catch {
+          parsed = JSON.parse(atob(raw));
+        }
         stewardGate = parsed.stewardName || "";
       } catch {}
     }

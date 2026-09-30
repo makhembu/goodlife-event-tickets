@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac } from "crypto";
 import { fetchActiveEvent, fetchAllEvents } from "@/lib/supabase-db";
 
 export async function GET(request: NextRequest) {
@@ -7,7 +8,13 @@ export async function GET(request: NextRequest) {
 
   if (scannerCookie) {
     try {
-      const session = JSON.parse(atob(scannerCookie));
+      const raw = scannerCookie.includes(".") ? scannerCookie.split(".")[0] : scannerCookie;
+      let session: any = null;
+      try {
+        session = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+      } catch {
+        session = JSON.parse(atob(raw));
+      }
       return NextResponse.json({
         authenticated: true,
         role: "scanner",
@@ -49,7 +56,12 @@ export async function PATCH(request: NextRequest) {
     let existingSession: any = {};
     if (scannerCookie) {
       try {
-        existingSession = JSON.parse(atob(scannerCookie));
+        const raw = scannerCookie.includes(".") ? scannerCookie.split(".")[0] : scannerCookie;
+        try {
+          existingSession = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+        } catch {
+          existingSession = JSON.parse(atob(raw));
+        }
       } catch {}
     }
 
@@ -75,7 +87,12 @@ export async function PATCH(request: NextRequest) {
       session: updatedSession
     });
 
-    response.cookies.set("goodlife_scanner_session", btoa(JSON.stringify(updatedSession)), {
+    const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
+    const payloadB64 = Buffer.from(JSON.stringify(updatedSession)).toString("base64url");
+    const sig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+    const signedToken = `${payloadB64}.${sig}`;
+
+    response.cookies.set("goodlife_scanner_session", signedToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

@@ -1077,7 +1077,7 @@ export default function GateTerminalPage() {
                   2. Gate Station / Lane:
                 </label>
                 <div className="flex flex-wrap gap-1.5">
-                  {["Main Gate", "VIP Gate", "Camping Gate", "Gate 2"].map((preset) => (
+                  {["Main Gate", "VIP Fast-Track", "Camping Gate", "Gate 2"].map((preset) => (
                     <button
                       key={preset}
                       type="button"
