@@ -99,6 +99,10 @@ export type SchedulableEvent = {
   recurrence_pattern?: string | null;
   recurrence_day?: string | null;
   recurrence_time?: string | null;
+  /** Recurring series vs. one-off flagship. Decides whether `status` is even
+   *  the right field to ask. See `publicState`. */
+  category?: string | null;
+  archived_at?: string | null;
 } | null | undefined;
 
 export type UnavailabilityReason =
@@ -115,6 +119,16 @@ export type EventAvailability = {
   /** Strictly-future next occurrence, or null when not recurring. */
   nextOccurrence: Date | null;
 };
+
+/**
+ * Which page the public site should render for an event.
+ *
+ * `recap`      - it happened. Recap copy, gallery, radio.
+ * `coming_soon`- announced and real, tickets not on sale yet. Countdown.
+ * `checkout`   - take money now.
+ * `unavailable`- archived; not routable at all.
+ */
+export type PublicState = "recap" | "coming_soon" | "checkout" | "unavailable";
 
 function parseWeekday(raw: string | null | undefined): number | null {
   if (!raw) return null;
@@ -396,6 +410,29 @@ export function formatOccurrence(occurrence: Date | null): string {
 }
 
 /**
+ * The canonical `events.status`, folding the one legacy value that is still in
+ * the wild.
+ *
+ * The admin event editor's lifecycle dropdown used to offer
+ * `<option value="active">` labelled "🟢 Active / Live (Ticket sales open)".
+ * Any event saved through it therefore has `status = 'active'` in the database,
+ * and `getEventAvailability` tested `status !== "live" && status !== "scheduled"`
+ * — so those events were **unable to take a single shilling**: the page rendered
+ * a full checkout and every payment was refused as "not live".
+ *
+ * `'active'` is not some foreign value; it is the app's own earlier spelling of
+ * `live` (it is still in the `EventDetails` type union), so it is normalised
+ * here rather than left to silently block sales. The dropdown now writes `live`,
+ * so this can be deleted once no rows carry `active`:
+ *
+ *   UPDATE events SET status = 'live' WHERE status = 'active';
+ */
+export function canonicalStatus(raw: string | null | undefined): string {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return s === "active" ? "live" : s;
+}
+
+/**
  * The one true answer to "may this event take money right now?".
  *
  * `events.is_active` is intentionally NOT part of this decision - it means
@@ -412,7 +449,8 @@ export function getEventAvailability(
   // A closed event must never take money. This is checked before the date
   // window on purpose: GOODLIFE XP is status='closed' with no sales_close_date,
   // so a date-only check would happily admit a finished event.
-  if (event.status !== "live" && event.status !== "scheduled") {
+  const status = canonicalStatus(event.status);
+  if (status !== "live" && status !== "scheduled") {
     return { sellable: false, reason: "not_live", nextOccurrence };
   }
 
@@ -476,4 +514,129 @@ export function unavailabilityMessage(
   overrides: Partial<Record<UnavailabilityReason, string>> = {}
 ): string {
   return overrides[reason] ?? DEFAULT_MESSAGES[reason];
+}
+
+/**
+ * Is this event hidden from the public site?
+ *
+ * Shares `publicState`'s rule, and exists as a separate export because the
+ * editions switcher and the mini-festival promo need to answer exactly this
+ * question about *other* events, without paying for a full availability
+ * evaluation of each one.
+ *
+ * `closed` is exempt for the reason documented in `publicState`: a concluded
+ * edition still gets its recap page even if a stamp also says archived.
+ */
+export function isHiddenFromSite(event: SchedulableEvent): boolean {
+  if (!event) return true;
+  const status = canonicalStatus(event.status);
+  if (status === "closed") return false;
+  return status === "archived" || !!event.archived_at;
+}
+
+/**
+ * The one answer to "which page does the public site show for this event?".
+ *
+ * WHY THIS IS NOT JUST `status === 'closed'`
+ * ------------------------------------------
+ * The homepage used to read `status` directly and collapse `closed` and
+ * `scheduled` into one page, which told customers a festival that had not
+ * happened yet had "CONCLUDED" and thanked them for coming. Two things were
+ * wrong with that and only one of them was the wording:
+ *
+ *  1. `scheduled` and `closed` are genuinely different states, so they need
+ *     different pages.
+ *  2. For a RECURRING MINI FESTIVAL, `status` is not the right field at all.
+ *     `status` is a hand-set label an admin types once and nothing ever
+ *     updates, whereas whether a weekly Park & Chill is on is computed fresh
+ *     from `recurrence_day` / `recurrence_time` on every request (see
+ *     `getEventAvailability`). A series parked on `scheduled` is sellable today
+ *     - `getEventAvailability` treats `scheduled` as a live status precisely so
+ *     an edition can be announced before its sales window opens - so gating the
+ *     page on `status` would have put a buyable mini festival behind a
+ *     countdown while the payment API kept taking its money.
+ *
+ * So: a mini festival's on/off day is never taken from `status`. It always
+ * reaches a selling page, and the recurrence engine (plus the existing
+ * unavailability messages) decides what it is allowed to buy. One-off flagships
+ * use `status` and the sales window.
+ *
+ * Two reasons deliberately do NOT route to checkout even though the page would
+ * be able to render one:
+ *
+ *  - `not_live` - nothing can pay, so there is nothing to sell.
+ *  - `not_open_yet` - the admin has explicitly set a future open date, and the
+ *    payment routes already enforce it.
+ *
+ * `occurrence_day` and `sales_closed` DO route to checkout, on purpose. Both
+ * have specific, non-alarming messages ("Today's session is under way. Online
+ * tickets reopen once it ends." / "Online ticket sales have closed. Gate
+ * tickets available at entrance.") and both can be real, correct states for an
+ * event that is otherwise open - stopping the customer from reading why is
+ * worse than letting them read it. `scripts/check-public-state.ts` encodes this
+ * distinction as an explicit allowlist so it cannot drift by accident.
+ *
+ * NOTE this never mutates `status`. An event that auto-opens when its
+ * `sales_open_date` passes stays `scheduled` on purpose: rewriting it to `live`
+ * would hand the next edition's sales window to this one and destroy the
+ * distinction this function exists to preserve.
+ */
+export function publicState(
+  event: SchedulableEvent,
+  now: Date = new Date()
+): PublicState {
+  if (!event) return "unavailable";
+
+  const status = canonicalStatus(event.status);
+
+  // Archived means hidden. Previously `app/page.tsx` only special-cased
+  // `closed`/`scheduled`, so an archived event fell through to the checkout
+  // page and stayed publicly buyable.
+  //
+  // A CLOSED event is deliberately exempt, and that is not a loophole. The
+  // dashboard's "END / CLOSE" button used to call `archiveEvent`, which stamped
+  // `archived_at = NOW()` as well as `status = 'closed'` - so concluding an
+  // edition also hid it, and `/` began returning 404 for a festival that had
+  // simply finished. The UI never offered "closed AND archived" as a state an
+  // admin chose, and the live database is full of rows that have it because of
+  // that bug. Reading a `closed` row as a recap page is the safe direction: it
+  // can never sell anything, and it is the page the admin's own confirm dialog
+  // promised ("visitors will see the Event Concluded page").
+  //
+  // `scripts/repair-event-status.js` clears those accidental stamps; once it
+  // has run this exemption can be removed.
+  if (status === "closed") return "recap";
+  if (status === "archived" || event.archived_at) return "unavailable";
+
+  const { reason } = getEventAvailability(event, now);
+
+  // `not_live` means NO payment route will accept this event: its status is
+  // blank, or a value nothing recognises. Falling through to `checkout` here
+  // was the last remaining way for the page to advertise a price ladder that
+  // all three payment routes then refuse - the exact "page says buy, payment
+  // says no" failure this function exists to prevent. It also applied to mini
+  // festivals, which is why the old mini branch had to special-case it.
+  //
+  // `coming_soon` is the honest landing spot: it claims nothing is on sale, it
+  // keeps the URL and the waitlist working, and `app/page.tsx` promotes it to
+  // checkout by itself the moment the admin sets a status the payment layer
+  // accepts. Returning `unavailable` (a 404) would instead break a bookmark for
+  // an event that merely has not been set up yet.
+  if (reason === "not_live") return "coming_soon";
+
+  // Recurring series: reach the page, let the recurrence engine decide which
+  // passes it is selling today. `not_open_yet` is deliberately NOT waived for
+  // minis - an explicit `sales_open_date` is an admin-set window that the
+  // payment routes already enforce, and routing to checkout past it would
+  // reinstate the same lie on a smaller scale.
+  if (event.category === "mini") return reason === "not_open_yet" ? "coming_soon" : "checkout";
+
+  if (reason === "not_open_yet") return "coming_soon";
+
+  // A one-off flagship whose day has passed but which nobody marked `closed` is
+  // still being advertised as buyable. Payment already refused it, so showing
+  // the recap is strictly more honest than a dead checkout.
+  if (reason === "event_finished") return "recap";
+
+  return "checkout";
 }

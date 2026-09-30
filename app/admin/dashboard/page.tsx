@@ -58,6 +58,11 @@ import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 import EventSelector from "@/components/EventSelector";
+// `canonicalStatus` folds the legacy `'active'` spelling of "live". It lives in
+// lib/event-availability, a pure module, so it is safe in a client component -
+// and using it here means this badge, the lifecycle dropdown and the payment
+// routes can never disagree about what a row's status means.
+import { canonicalStatus } from "@/lib/event-availability";
 
 /**
  * Two sales of the same tier on the same phone further apart than this are
@@ -73,6 +78,51 @@ function normalizePhone(raw: string): string {
   if (!digits) return "";
   // 0712345678 and 254712345678 are the same subscriber.
   return digits.startsWith("0") ? `254${digits.slice(1)}` : digits;
+}
+
+/** The only `events.status` values anything in the app actually tests for. */
+const LIFECYCLE_STATUSES = ["live", "scheduled", "closed", "archived"] as const;
+
+/**
+ * Map a stored status onto a value the lifecycle `<select>` can display.
+ *
+ * Two legacy values have to be folded in, or the dropdown silently shows the
+ * wrong row as selected and an admin saving the form overwrites the status:
+ *
+ *  - `'active'` was what this very dropdown used to write for "live".
+ *    `getEventAvailability` rejects it (`status !== "live" && status !==
+ *    "scheduled"`), so such an event renders checkout and then refuses payment.
+ *  - `null`/blank used to be inferred from the `is_active` flag, which stays
+ *    `true` on events that finished months ago.
+ */
+function normalizeLifecycleStatus(status: unknown, isActive: unknown): (typeof LIFECYCLE_STATUSES)[number] {
+  const s = String(status ?? "").trim().toLowerCase();
+  if ((LIFECYCLE_STATUSES as readonly string[]).includes(s)) {
+    return s as (typeof LIFECYCLE_STATUSES)[number];
+  }
+  if (s === "active") return "live";
+  return isActive ? "live" : "closed";
+}
+
+/**
+ * `YYYY-MM-DDTHH:mm` for a `<input type="datetime-local">`.
+ *
+ * The DB stores these as naive EAT strings, so a plain `slice(0, 16)` is correct
+ * and a `toISOString()` round-trip would be wrong — it would shift the value by
+ * the browser's offset and move the sales window. Anything with a real timezone
+ * offset is converted to EAT first so a value written by a script in UTC still
+ * shows the right wall-clock time.
+ */
+function toDatetimeLocal(value: string | null | undefined): string {
+  if (!value) return "";
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  // Already naive: no `Z` and no `+HH:MM` suffix.
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) return trimmed.slice(0, 16);
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return trimmed.slice(0, 16);
+  const eat = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+  return eat.toISOString().slice(0, 16);
 }
 
 interface MetricsState {
@@ -814,44 +864,62 @@ export default function AdminDashboardPage() {
       return;
     }
     const currentEvent = (metrics?.allEvents || []).find((e: any) => e.id === selectedEventId);
-    const isCurrentlyClosed = currentEvent?.status === "closed" || currentEvent?.is_active === false;
+    const curStatus = canonicalStatus(currentEvent?.status);
+
+    // Two bugs lived here.
+    //
+    // 1. "Is it currently closed?" was answered with `status === 'closed' ||
+    //    is_active === false`. `createEvent` writes `is_active = FALSE` for a
+    //    schedule-only event, so a freshly created SCHEDULED flagship was
+    //    reported as closed and the button offered to "re-open" it - which
+    //    would have flipped it straight to live and hijacked the homepage slot.
+    //
+    // 2. The close branch called `archiveEvent`, which stamps `archived_at`.
+    //    Concluding an edition therefore also HID it: `/` started returning 404
+    //    and the event vanished from the editions switcher, which is the
+    //    opposite of the "visitors will see the Event Concluded page" the
+    //    confirm dialog promised. Closing and archiving are separate actions and
+    //    the route now takes an explicit `mode`.
+    const isCurrentlyClosed = curStatus === "closed" || curStatus === "archived";
 
     if (isCurrentlyClosed) {
       const confirmed = confirm(
-        `Re-open Event #${selectedEventId} ("${currentEvent?.title || ""}") and set it to Active/Live?\n\nTicket sales and checkout will resume immediately.`
+        `Re-open Event #${selectedEventId} ("${currentEvent?.title || ""}") and set it to Live?\n\n` +
+          `Ticket sales and checkout will resume immediately.\n\n` +
+          (currentEvent?.sales_open_date
+            ? `Note: this event has a tickets-open date of ${String(currentEvent.sales_open_date).slice(0, 16).replace("T", " ")}. ` +
+              `If that is still in the future the site will keep showing the coming-soon page until it passes.\n\n`
+            : "") +
+          (curStatus === "archived"
+            ? `This event is currently ARCHIVED, so it is hidden from the public site. Re-opening will un-hide it.\n`
+            : "")
       );
       if (!confirmed) return;
       try {
         await fetch(`/api/events/${selectedEventId}/archive`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activate: true })
+          body: JSON.stringify({ mode: "activate" })
         });
-        await fetch(`/api/events/${selectedEventId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "active", is_active: true })
-        });
-        alert(`Event #${selectedEventId} is now ACTIVE!`);
+        alert(`Event #${selectedEventId} is now LIVE — ticket sales are open.`);
         loadDashboardMetrics();
       } catch (err: any) {
         alert(`Failed to activate event: ${err.message}`);
       }
     } else {
       const confirmed = confirm(
-        `Are you sure you want to END / CLOSE Event #${selectedEventId} ("${currentEvent?.title || ""}")?\n\nThis marks the edition as concluded. Online visitors will see the "Event Concluded" page.`
+        `Are you sure you want to END / CLOSE Event #${selectedEventId} ("${currentEvent?.title || ""}")?\n\n` +
+          `This marks the edition as concluded. Online visitors will see the "Event Concluded" page and ` +
+          `payment will be refused.\n\n` +
+          `The event stays listed in the editions switcher. Use ARCHIVE in the event editor if you ` +
+          `want to hide it from the public site entirely.`
       );
       if (!confirmed) return;
       try {
         await fetch(`/api/events/${selectedEventId}/archive`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activate: false })
-        });
-        await fetch(`/api/events/${selectedEventId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "closed", is_active: false })
+          body: JSON.stringify({ mode: "close" })
         });
         alert(`Event #${selectedEventId} has been concluded & closed.`);
         loadDashboardMetrics();
@@ -865,11 +933,20 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     setSaving("event");
     try {
+      // Resolve the status ONCE and use the same value for both writes. The old
+      // code fell back to the string "active", which is not a status anything
+      // downstream understands, so picking the green option in the dropdown
+      // published an event that rendered checkout and then refused payment.
+      const nextStatus = normalizeLifecycleStatus(
+        (eventFormState as any).status,
+        (eventFormState as any).is_active
+      );
+
       const updated = await updateEventDetails(eventFormState);
       setEventDetails(updated);
 
       if (selectedEventId && selectedEventId > 0) {
-        await fetch(`/api/events/${selectedEventId}`, {
+        const res = await fetch(`/api/events/${selectedEventId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -883,16 +960,28 @@ export default function AdminDashboardPage() {
             flyer_url: eventFormState.flyer_url,
             ticker_text: eventFormState.ticker_text,
             logo_url: eventFormState.logo_url,
-            status: (eventFormState as any).status || ((eventFormState as any).is_active ? "active" : "closed"),
-            is_active: (eventFormState as any).is_active ?? true
+            // The sales window and the recap/next-edition copy live on `events`,
+            // not on the `event_details` singleton, so they are only saved here.
+            sales_open_date: (eventFormState as any).sales_open_date || null,
+            sales_close_date: (eventFormState as any).sales_close_date || null,
+            next_event_title: (eventFormState as any).next_event_title || null,
+            status: nextStatus,
+            is_active: nextStatus === "live"
           })
         });
+        if (!res.ok) {
+          // Silently swallowed before: a failed PUT still closed the editor and
+          // the admin saw no error, so the form looked saved when it was not.
+          const detail = await res.json().catch(() => null);
+          throw new Error(detail?.error || `Event update failed (HTTP ${res.status})`);
+        }
       }
 
       setIsEditingEvent(false);
       loadDashboardMetrics();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to update event details:", err);
+      alert(`Failed to save event: ${err?.message || err}`);
     } finally { setSaving(null); }
   };
 
@@ -1305,21 +1394,48 @@ export default function AdminDashboardPage() {
           <div className="flex flex-wrap items-center gap-3">
             <EventSelector selectedEventId={selectedEventId} onSelect={handleEventSelect} />
 
-            {/* Current Event Status Badge */}
+            {/* Current Event Status Badge.
+                Derived from the canonical status, not from "is it closed?". The
+                old two-flag version fell through to a green pulsing
+                "ACTIVE / LIVE" for anything that was neither closed nor
+                scheduled - including an ARCHIVED event, which is hidden from the
+                public site entirely, and a row whose `status` had never been set
+                at all. */}
             {selectedEventId && selectedEventId > 0 && (() => {
               const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
-              const isClosed = cur?.status === "closed" || cur?.is_active === false;
-              const isSched = cur?.status === "scheduled";
+              const st = canonicalStatus(cur?.status);
+              const isArchived = st === "archived" || !!cur?.archived_at;
+              const isClosed = isArchived || st === "closed" || (st === "" && cur?.is_active === false);
+              const isSched = st === "scheduled";
               return (
-                <span className={`text-[10px] font-mono font-black uppercase px-2.5 py-1 border-2 border-[var(--brand-navy)] flex items-center gap-1.5 shadow-(--shadow-brut-xs) ${
-                  isClosed
-                    ? "bg-red-500 text-white"
+                <span
+                  title={
+                    isArchived
+                      ? "Hidden from the public site. The homepage returns 404 for this event."
+                      : isClosed
+                      ? "Recap page. Payment is refused."
+                      : isSched
+                      ? "Announced but not on sale yet. Goes to checkout on its own once the sales window opens and tiers exist."
+                      : "Live. Checkout and payment are open."
+                  }
+                  className={`text-[10px] font-mono font-black uppercase px-2.5 py-1 border-2 border-[var(--brand-navy)] flex items-center gap-1.5 shadow-(--shadow-brut-xs) ${
+                    isArchived
+                      ? "bg-neutral-800 text-neutral-200"
+                      : isClosed
+                      ? "bg-red-500 text-white"
+                      : isSched
+                      ? "bg-amber-300 text-[var(--brand-navy)]"
+                      : "bg-emerald-400 text-[var(--brand-navy)]"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isClosed || isArchived ? "bg-white" : "bg-[var(--brand-navy)]"} ${isClosed || isArchived ? "" : "animate-pulse"}`} />
+                  {isArchived
+                    ? "ARCHIVED (HIDDEN)"
+                    : isClosed
+                    ? "CONCLUDED / CLOSED"
                     : isSched
-                    ? "bg-amber-300 text-[var(--brand-navy)]"
-                    : "bg-emerald-400 text-[var(--brand-navy)]"
-                }`}>
-                  <span className={`w-2 h-2 rounded-full ${isClosed ? "bg-white" : "bg-[var(--brand-navy)]"} animate-pulse`} />
-                  {isClosed ? "CONCLUDED / CLOSED" : isSched ? "SCHEDULED (WAITLIST)" : "ACTIVE / LIVE"}
+                    ? "SCHEDULED (COMING SOON)"
+                    : "ACTIVE / LIVE"}
                 </span>
               );
             })()}
@@ -1385,7 +1501,15 @@ export default function AdminDashboardPage() {
                   flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
                   ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
                   logo_url: cur?.logo_url || eventDetails?.logo_url,
-                  status: cur?.status || (cur?.is_active ? "active" : "closed"),
+                  status: normalizeLifecycleStatus(cur?.status, cur?.is_active),
+                  // The sales window and next-edition title only exist on the
+                  // `events` row. They were never copied into the form, which is
+                  // why the inputs for them did not exist: there was nothing to
+                  // show and nothing to save. Null-safe so a cleared field stays
+                  // cleared instead of falling back to the singleton.
+                  sales_open_date: cur?.sales_open_date ?? null,
+                  sales_close_date: cur?.sales_close_date ?? null,
+                  next_event_title: cur?.next_event_title ?? null,
                   whatsapp_message: eventDetails?.whatsapp_message?.trim()
                     ? eventDetails.whatsapp_message
                     : getDefaultWhatsAppTemplate(),
@@ -3007,22 +3131,41 @@ export default function AdminDashboardPage() {
                     <span>Event Lifecycle Status</span>
                     <span className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/80">Controls checkout vs waitlist vs closed</span>
                   </label>
+                  {/* The option values MUST be the exact strings the rest of the
+                      system tests for. This dropdown used to offer
+                      `<option value="active">` for "live", which wrote
+                      `status = 'active'` - a value `getEventAvailability` rejects
+                      (`event.status !== "live" && event.status !== "scheduled"`),
+                      so picking the green "Active / Live" option produced an event
+                      that rendered a full checkout page and then refused every
+                      payment as "not live". 'live' is the value that means live. */}
                   <select
-                    value={(eventFormState as any).status || ((eventFormState as any).is_active ? "active" : "closed")}
+                    value={normalizeLifecycleStatus((eventFormState as any).status, (eventFormState as any).is_active)}
                     onChange={(e) => {
                       const newStatus = e.target.value;
                       setEventFormState({
                         ...(eventFormState as any),
                         status: newStatus,
-                        is_active: newStatus === "active"
+                        // `is_active` is the legacy flag and has to follow
+                        // `status`, or the old `is_active` checks keep
+                        // disagreeing with the status-driven ones.
+                        is_active: newStatus === "live"
                       });
                     }}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-black text-xs bg-white shadow-(--shadow-brut-xs)"
                   >
-                    <option value="active">🟢 Active / Live (Ticket sales open)</option>
-                    <option value="scheduled">🟡 Scheduled / Coming Soon (Waitlist open)</option>
-                    <option value="closed">🔴 Concluded / Closed (Past event, sales ended)</option>
+                    <option value="live">🟢 Live (Ticket sales open)</option>
+                    <option value="scheduled">🟡 Scheduled / Coming Soon (Announced, not on sale yet)</option>
+                    <option value="closed">🔴 Concluded / Closed (Past event, recap page)</option>
+                    <option value="archived">⚫ Archived (Hidden from the public site entirely)</option>
                   </select>
+                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/80 mt-1.5 leading-snug">
+                    Leave on <strong>Scheduled</strong> for a one-off edition you are announcing: the site
+                    shows a coming-soon page with a countdown, then switches itself to checkout on its
+                    own once &ldquo;Tickets Open&rdquo; below has passed and passes exist. Mini sessions
+                    are recurring series — whether one is on is computed from their recurrence rules,
+                    so this field does not control them.
+                  </p>
                 </div>
                 <div className="space-y-1 col-span-2">
                   <label className="text-xs font-black uppercase">Event Title</label>
@@ -3062,6 +3205,42 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setEventFormState({ ...eventFormState, event_date: e.target.value || null })}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
+                </div>
+                {/* SALES WINDOW.
+                    Both columns already existed in the schema and
+                    `getEventAvailability` already enforced them, but there was NO
+                    input for them anywhere in the admin UI - setting an open date
+                    required hand-writing a SQL script, which made the whole
+                    `scheduled` -> coming-soon -> live flow unreachable in practice.
+
+                    `datetime-local` (not `date`) because the value is stored and
+                    compared as a naive EAT string; the admin enters Kenya time, not
+                    the laptop's local zone. */}
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase">Tickets Open</label>
+                  <input
+                    type="datetime-local"
+                    value={toDatetimeLocal(eventFormState.sales_open_date)}
+                    onChange={(e) => setEventFormState({ ...eventFormState, sales_open_date: e.target.value || null })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/70">
+                    Kenya time. Before this moment the site shows the countdown instead of checkout.
+                    Leave empty for &ldquo;as soon as it goes live&rdquo;.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase">Tickets Close</label>
+                  <input
+                    type="datetime-local"
+                    value={toDatetimeLocal(eventFormState.sales_close_date)}
+                    onChange={(e) => setEventFormState({ ...eventFormState, sales_close_date: e.target.value || null })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/70">
+                    Kenya time. After this moment payment is refused and the page says sales have
+                    closed.
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-black uppercase">Venue Name</label>

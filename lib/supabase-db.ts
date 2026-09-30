@@ -342,8 +342,34 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
   }
 
   try {
-    const fields = Object.keys(updates).filter(k => k !== 'id' && k !== 'created_at');
+    // ALLOWLIST, not "exclude id and created_at".
+    //
+    // The previous filter let every other key in the request body become a
+    // column name in `SET "key" = $n`. That is an admin-only route, so it is
+    // not directly exploitable, but it means the route's blast radius is
+    // "whatever column name happens to type": a typo writes junk, and a payload
+    // that reaches this route by any other path can set `archived_at`,
+    // `is_active`, `recurrence_*` or anything else without anyone intending it.
+    // An allowlist keeps the write surface equal to the form's fields.
+    // `simulators_enabled` is deliberately absent: it lives on the
+    // `event_details` singleton, not on `events`.
+    const MUTABLE_EVENT_FIELDS = new Set<string>([
+      'title', 'subtitle', 'tag', 'venue', 'flyer_url', 'logo_url', 'regulations',
+      'ticker_text', 'till_number', 'event_date', 'status', 'is_active',
+      'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
+      'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
+      'custom_schedule_text', 'max_tent_inventory', 'max_shared_beds', 'maps_url',
+      'archived_at'
+    ]);
+
+    const fields = Object.keys(updates).filter((k) => MUTABLE_EVENT_FIELDS.has(k));
     if (fields.length === 0) return await getEventById(id);
+
+    const rejected = Object.keys(updates).filter((k) => !fields.includes(k));
+    if (rejected.length > 0) {
+      console.warn(`updateEvent(${id}) ignored non-editable field(s): ${rejected.join(", ")}`);
+    }
+
     const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
     const values = fields.map(f => (updates as any)[f]);
     const { rows } = await neonQuery(
@@ -379,11 +405,19 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
   }
 }
 
-// Archive event
+// Archive event: hide it from the public site entirely.
+//
+// The name is load-bearing. This is NOT "conclude the event" - use `closeEvent`
+// for that. `archived_at` makes `/` return 404 for the event and hides it from
+// the editions switcher, which is right for "we are done with this edition and
+// do not want it in the running" and wrong for "the festival happened".
 export async function archiveEvent(id: number): Promise<boolean> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/events/${id}/archive`, { method: "POST" });
+      const res = await fetch(`/api/events/${id}/archive`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "archive" })
+      });
       return res.ok;
     } catch (e) {
       console.warn("API archiveEvent failed.", e);
@@ -403,11 +437,51 @@ export async function archiveEvent(id: number): Promise<boolean> {
   }
 }
 
+/**
+ * Conclude an event: `status = 'closed'`, still routable, shows the recap page.
+ *
+ * This did not exist as a separate operation. The dashboard's "END / CLOSE"
+ * button called `archiveEvent`, which also stamped `archived_at` - so concluding
+ * an edition also HID it. The confirm dialog promised visitors "the Event
+ * Concluded page" and the row ended up 404ing on the homepage and vanishing from
+ * the editions switcher. Closing and archiving are different decisions and now
+ * have different functions.
+ */
+export async function closeEvent(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/events/${id}/archive`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "close" })
+      });
+      return res.ok;
+    } catch (e) {
+      console.warn("API closeEvent failed.", e);
+      return false;
+    }
+  }
+
+  try {
+    // `is_active = FALSE` only. `status` becomes 'closed' so `getEventAvailability`
+    // refuses payment and `publicState` picks the recap page. `archived_at` is
+    // deliberately untouched: an already-archived event stays hidden until
+    // someone explicitly re-opens it.
+    await neonQuery("UPDATE events SET is_active = FALSE, status = 'closed' WHERE id = $1", [id]);
+    return true;
+  } catch (err) {
+    console.error("Neon closeEvent error:", err);
+    return false;
+  }
+}
+
 // Set event as active (deactivate others, sync event_details)
 export async function setActiveEvent(id: number): Promise<boolean> {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/events/${id}/archive`, { method: "POST", body: JSON.stringify({ activate: true }) });
+      const res = await fetch(`/api/events/${id}/archive`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "activate" })
+      });
       return res.ok;
     } catch (e) {
       console.warn("API setActiveEvent failed.", e);
@@ -418,8 +492,19 @@ export async function setActiveEvent(id: number): Promise<boolean> {
   try {
     // Deactivate all events
     await neonQuery("UPDATE events SET is_active = FALSE");
-    // Activate the selected event
-    await neonQuery("UPDATE events SET is_active = TRUE, status = 'active', archived_at = NULL WHERE id = $1", [id]);
+    // Activate the selected event.
+    //
+    // This wrote `status = 'active'`, which `getEventAvailability` does not
+    // accept (`status !== "live" && status !== "scheduled"`), so every re-opened
+    // event rendered a working checkout page and then refused every payment as
+    // "not live". 'live' is the value that means live. `canonicalStatus` now
+    // reads the old spelling too, so rows written before this fix recover.
+    //
+    // `archived_at = NULL` is kept: re-opening is how an archived edition comes
+    // back. A future `sales_open_date` is NOT cleared - `getEventAvailability`
+    // still enforces it, so an event that was scheduled for a future drop
+    // correctly lands on the coming-soon page rather than selling early.
+    await neonQuery("UPDATE events SET is_active = TRUE, status = 'live', archived_at = NULL WHERE id = $1", [id]);
 
     // Sync to event_details
     const event = await getEventById(id);

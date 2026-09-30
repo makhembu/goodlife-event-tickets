@@ -1,6 +1,9 @@
+import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
+import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
+import ScheduledEventClientPage from "./ScheduledEventClientPage";
 
 export const dynamic = "force-dynamic";
 
@@ -19,21 +22,32 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     }
   }
 
+  // An archived event is not routable, so it must never be chosen as the
+  // homepage anchor. Picking one here would 404 the entire site on a
+  // mis-sequenced archive.
+  const routable = allEvents.filter(e => !isHiddenFromSite(e));
+
   // CORE RULE: Root homepage (no ?event=) ALWAYS anchors to Flagship GOODLIFE!
   if (!targetEvent) {
-    // 1. Look for live or active flagship event
-    targetEvent = allEvents.find(e => e.category === 'flagship' && (e.is_active || e.status === 'live'));
-    // 2. If no live flagship, find the latest scheduled or closed flagship event
+    // 1. The live flagship, preferring the designated homepage event.
+    targetEvent =
+      routable.find(e => e.category === 'flagship' && e.is_active && canonicalStatus(e.status) === 'live') ??
+      routable.find(e => e.category === 'flagship' && canonicalStatus(e.status) === 'live');
+    // 2. Still nothing live: the most recent flagship we are allowed to show.
+    //    `publicState` decides whether that becomes a coming-soon page or a recap.
     if (!targetEvent) {
-      targetEvent = allEvents.find(e => e.category === 'flagship');
+      targetEvent = routable.find(e => e.category === 'flagship');
     }
-    // 3. Fallback to active event
+    // 3. No flagship at all (mini-festival-only install): the active event.
     if (!targetEvent) {
       targetEvent = await fetchActiveEvent();
+      if (isHiddenFromSite(targetEvent)) {
+        targetEvent = null;
+      }
     }
-    // 4. Fallback to first event in DB
-    if (!targetEvent && allEvents.length > 0) {
-      targetEvent = allEvents[0];
+    // 4. Last resort: the newest routable row.
+    if (!targetEvent && routable.length > 0) {
+      targetEvent = routable[0];
     }
   }
 
@@ -69,15 +83,59 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     max_shared_beds: targetEvent.max_shared_beds,
   };
 
-  const isClosed = targetEvent.status === 'closed' || targetEvent.status === 'scheduled';
-  const availableEvents = allEvents.filter(e => e.status === 'live' || e.status === 'scheduled' || e.is_active);
+  // The editions switcher. `canonicalStatus` folds the legacy `'active'`
+  // spelling, so an event saved through the old admin dropdown still appears
+  // here instead of vanishing from the list unless it happened to be
+  // `is_active`. Archived events are excluded on purpose — they are not
+  // routable, so a link to one is a 404.
+  const availableEvents = routable.filter(e => {
+    const s = canonicalStatus(e.status);
+    return s === 'live' || s === 'scheduled' || s === 'closed' || e.is_active;
+  });
   // Must use the same predicate the payment routes use, or this banner
-  // advertises a "LIVE NOW ... FREE RSVP AVAILABLE" event that then refuses
-  // payment at checkout. It previously used `status === 'live' || is_active`,
-  // which qualified an event that was live but inactive: an unbuyable dead end.
-  const liveMiniEvents = allEvents.filter(e => e.category === 'mini' && isEventSellable(e));
+  // advertises a "PASSES ON SALE" event that then refuses payment at checkout.
+  // It previously used `status === 'live' || is_active`, which qualified an
+  // event that was live but inactive: an unbuyable dead end.
+  const liveMiniEvents = allEvents.filter(e => e.category === 'mini' && !isHiddenFromSite(e) && isEventSellable(e));
 
-  if (isClosed) {
+  // Which page this event gets. Decided in one place (`publicState`) so the
+  // homepage can never disagree with the payment routes about the same event.
+  const decidedState = publicState(targetEvent);
+  let state = decidedState;
+
+  // Archived is not routable at all.
+  if (state === "unavailable") notFound();
+
+  // A checkout with no tiers renders CheckoutClientPage's built-in default
+  // price ladder, so an event whose tiers have not been created yet would sell
+  // tickets at invented prices. Holding the customer on the countdown is
+  // strictly better than that, and it is what makes the `sales_open_date`
+  // auto-open safe.
+  let ticketTiers: Awaited<ReturnType<typeof fetchTicketTiers>> = [];
+  let tiersPending = false;
+  if (state === "checkout") {
+    ticketTiers = await fetchTicketTiers(targetEvent.id);
+    if (!ticketTiers || ticketTiers.length === 0) {
+      state = "coming_soon";
+      // Remember WHY. "Not on sale yet" and "on sale but no passes built yet"
+      // need different copy, and the client must not work this out by reading
+      // its own clock.
+      tiersPending = decidedState === "checkout";
+    }
+  }
+
+  if (state === "coming_soon") {
+    return (
+      <ScheduledEventClientPage
+        eventDetails={eventDetails as any}
+        availableEvents={availableEvents as any}
+        liveMiniEvents={liveMiniEvents as any}
+        tiersPending={tiersPending}
+      />
+    );
+  }
+
+  if (state === "recap") {
     return (
       <ClosedEventClientPage
         eventDetails={eventDetails as any}
@@ -87,14 +145,13 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     );
   }
 
-  // Active event, sales open — show checkout
-  const ticketTiers = await fetchTicketTiers(targetEvent.id);
-
+  // Sales open — show checkout
   return (
     <TicketCheckoutPage
       initialEventDetails={eventDetails as any}
       initialTicketTiers={ticketTiers}
       availableEvents={availableEvents as any}
+      liveMiniEvents={liveMiniEvents as any}
       initialTierParam={tierParam}
     />
   );

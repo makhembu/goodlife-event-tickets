@@ -35,11 +35,18 @@ import Image from "next/image";
 import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier, Event } from "@/lib/supabase-db";
 import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
+import { useEatToday } from "@/hooks/use-eat-today";
+import { isHiddenFromSite } from "@/lib/event-availability";
+import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 
 interface CheckoutClientPageProps {
   initialEventDetails?: EventDetails;
   initialTicketTiers?: TicketTier[];
   availableEvents?: Event[];
+  /** Mini festivals that are currently sellable. Rendered as a promo strip so
+   *  the one thing a customer *can* buy is advertised even while they are on a
+   *  flagship's ticket page. */
+  liveMiniEvents?: Event[];
   initialTierParam?: string;
 }
 
@@ -47,6 +54,7 @@ export default function TicketCheckoutPage({
   initialEventDetails, 
   initialTicketTiers,
   availableEvents = [],
+  liveMiniEvents = [],
   initialTierParam
 }: CheckoutClientPageProps) {
   // Available Events list
@@ -197,7 +205,9 @@ export default function TicketCheckoutPage({
         .then(r => r.json())
         .then(data => {
           if (Array.isArray(data)) {
-            setEventsList(data.filter((e: Event) => e.status === 'live' || e.status === 'scheduled' || e.is_active));
+            // `isHiddenFromSite` shares `publicState`'s rule, so the switcher
+            // can never offer a link that 404s.
+            setEventsList(data.filter((e: Event) => !isHiddenFromSite(e)));
           }
         })
         .catch(() => {});
@@ -369,21 +379,43 @@ export default function TicketCheckoutPage({
 
   const isVideoFlyer = eventDetails.flyer_url ? /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.flyer_url) || eventDetails.flyer_url.includes("video") : false;
 
+  // "Now" in Kenya EAT, on a 60s heartbeat, re-rendering when the EAT day rolls
+  // over so a tab left open overnight stops offering yesterday's tiers. Also
+  // supplies the shifted instant that tier windows are compared against — the
+  // component itself must not call `Date.now()` during render.
+  const eatToday = useEatToday();
+  const eatDate = useMemo(() => new Date(eatToday.eatNowMs), [eatToday.eatNowMs]);
+  const isWeekend = eatToday.dayOfWeek === 0 || eatToday.dayOfWeek === 6;
+
+  // Is this a recurring mini session rather than the flagship festival?
+  //
+  // Hoisted out of the `TICKET_TIERS` memo because three separate places need
+  // it and they must agree: whether to fall back to the built-in price ladder,
+  // which tiers the weekday/weekend rule admits, and which explanation to show
+  // when the ladder ends up empty. The title substring is kept from the original
+  // check because `category` is nullable on rows created before it was set.
+  const isMiniEvent =
+    eventDetails.category === "mini" || (eventDetails.title || "").toLowerCase().includes("sunday park");
+
   // Processed Tiers config with strict time/edition gating
   const TICKET_TIERS = useMemo(() => {
-    // Current time in Kenya EAT (UTC+3)
-    const now = new Date();
-    const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const eatDate = new Date(utcMs + (3 * 3600000));
-    const eatDayOfWeek = eatDate.getDay(); // 0 = Sun, 6 = Sat, 1..5 = Mon..Fri
-    const isWeekend = eatDayOfWeek === 0 || eatDayOfWeek === 6;
-
     // Check if today is the event date in EAT
     const isEventDay = eventDetails.event_date
-      ? eatDate.toISOString().slice(0, 10) === new Date(eventDetails.event_date).toISOString().slice(0, 10)
+      ? eatToday.dateKey === new Date(eventDetails.event_date).toISOString().slice(0, 10)
       : false;
 
-    const rawTiers: any[] = ticketTiers.length > 0 ? ticketTiers : [
+    // The built-in price ladder below only ever described the flagship festival.
+    // It fired for ANY event with no tiers in the DB — including the mini
+    // festivals — so a "Park & Chill" with no tiers yet rendered 4px group
+    // tents at KES 4,000 and a glamping dome at KES 6,000, none of which that
+    // event sells. `app/page.tsx` now routes zero-tier events to the coming-soon
+    // page instead, so this is a belt-and-braces guard: if we ever reach the
+    // checkout with nothing to sell, show nothing rather than invent a price.
+    const rawTiers: any[] = ticketTiers.length > 0
+      ? ticketTiers
+      : isMiniEvent
+      ? []
+      : [
       { id: "early-bird-500", name: "Early Bird Pass", price: 450, description: "Limited early access festival entry pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, badge_text: "SELLING FAST" },
       { id: "advance-800", name: "ADVANCE PASS", price: 800, description: "Standard advance admission pass", tag: "TICKETS", tier_category: "entry", admits_quantity: 1 },
       { id: "vip-gate-1000", name: "gate VIP Fast‑Track Pass", price: 1000, description: "VIP lounge access + express queue jump", tag: "TICKETS", tier_category: "entry", admits_quantity: 1, show_only_on_event_day: true },
@@ -393,8 +425,6 @@ export default function TicketCheckoutPage({
       { id: "4px-group-tent-4000", name: "4PX PRIVATE GROUP TENT", price: 4000, description: "Festival Entry for 4 Guests + Large 4-Person Dome Tent + 4 Mattresses", tag: "CAMPING", tier_category: "camping", admits_quantity: 4, is_camping_bundle: true, camping_type: "private", badge_text: "BEST VALUE" },
       { id: "6px-glamping-tent-6000", name: "6PX PRIVATE GLAMPING TENT", price: 6000, description: "Festival Entry for 6 Guests + Full Spacious Glamping Dome Tent", tag: "CAMPING", tier_category: "camping", admits_quantity: 6, is_camping_bundle: true, camping_type: "private" }
     ];
-
-    const isMiniEvent = eventDetails.category === 'mini' || eventDetails.title?.toLowerCase().includes("sunday park");
 
     return rawTiers
       .filter((tier: any) => {
@@ -483,7 +513,7 @@ export default function TicketCheckoutPage({
         badge_text: tier.badge_text ? tier.badge_text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim() : null,
         tour_media_urls: tier.tour_media_urls || []
       }));
-  }, [ticketTiers, eventDetails]);
+  }, [ticketTiers, eventDetails, eatDate, eatToday.dateKey, isWeekend, isMiniEvent]);
 
   // Separate Entry vs Camping passes
   const entryTiers = useMemo(() => {
@@ -575,6 +605,22 @@ export default function TicketCheckoutPage({
     setStxReference(null);
     setGeneratedTicketId(null);
     setStatusMessage("");
+
+    // Guard the empty-ladder case BEFORE anything else.
+    //
+    // With no tier selected, `selectedTierObj` is undefined and `totalPrice`
+    // falls back to 0, which is the exact value the free-RSVP branch below
+    // tests for. So a page that had filtered its own tiers down to nothing - a
+    // mini festival with only paid passes, viewed on a weekday - would happily
+    // POST a free RSVP with an empty `ticket_type` and hand out a ticket for a
+    // pass that does not exist. Refuse first, then check the phone number.
+    if (TICKET_TIERS.length === 0) {
+      triggerHaptic("error");
+      setStatusMessage(
+        "No passes are on sale for this session right now. Check back on the weekend, or join the waitlist."
+      );
+      return;
+    }
 
     if (!phoneNumber) {
       triggerHaptic("error");
@@ -1088,6 +1134,11 @@ export default function TicketCheckoutPage({
           )}
         </AnimatePresence>
 
+        {/* MINI-FESTIVAL PROMO. Rendered here too, not just on the pages that
+            are NOT selling: a customer who just bought a flagship pass is the
+            exact person most likely to come back for the cheap Sunday session. */}
+        <LiveMiniEventBanner events={liveMiniEvents} />
+
         <main className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start mb-8">
 
           {/* LEFT COLUMN: HERO FLYER & ADVISORIES (5 cols on lg) */}
@@ -1481,6 +1532,32 @@ export default function TicketCheckoutPage({
                       01. SELECT {activePackageTab === "camping" ? "CAMPING PACKAGE" : "PASS TYPE"}
                     </div>
                     
+                    {/* NO PASSES TODAY.
+                        Reachable even though `app/page.tsx` routes a zero-tier
+                        event away from checkout: the mini-festival ladder itself
+                        filters to nothing. A mini with only paid passes, viewed
+                        on a weekday, shows zero tiers - the weekday rule admits
+                        only the free RSVP. Previously that rendered an empty
+                        radiogroup with a live Pay button below it, and because
+                        `totalPrice` falls back to 0 when nothing is selected,
+                        pressing Pay POSTed a free RSVP with an empty
+                        `ticket_type`. `handleCheckout` now refuses first; this
+                        is the matching explanation on screen. */}
+                    {displayedTiers.length === 0 ? (
+                      <div
+                        role="status"
+                        className="border-4 border-dashed border-brand-navy bg-brand-off-white p-5 md:p-7 text-center"
+                      >
+                        <p className="font-display text-xl md:text-2xl uppercase tracking-wider text-brand-navy mb-2">
+                          No passes on sale right now
+                        </p>
+                        <p className="font-mono text-xs md:text-sm text-brand-navy/75 leading-relaxed max-w-md mx-auto">
+                          {isMiniEvent
+                            ? "This session sells a free RSVP on weekdays and paid passes at the weekend. Check back on Saturday, or tap Notify Me above and we&apos;ll ping you."
+                            : "Every pass for this edition is either sold out or not yet released. Check back shortly, or tap Notify Me and we&apos;ll tell you the moment more open up."}
+                        </p>
+                      </div>
+                    ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" role="radiogroup">
                       {displayedTiers.map((tier) => {
                         const isSelected = safeSelectedTier === tier.id;
@@ -1545,6 +1622,7 @@ export default function TicketCheckoutPage({
                         );
                       })}
                     </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-4">

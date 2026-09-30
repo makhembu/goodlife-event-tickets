@@ -6,6 +6,8 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { Bell, Camera, Play, Radio, ArrowRight, Video, Layers, Store, Settings, Ticket as TicketIcon } from "lucide-react";
 import { EventDetails, Event } from "@/lib/supabase-db";
+import { canonicalStatus } from "@/lib/event-availability";
+import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 
 interface ClosedEventClientPageProps {
   eventDetails: EventDetails;
@@ -20,7 +22,6 @@ export default function ClosedEventClientPage({
 }: ClosedEventClientPageProps) {
   const [waNumber, setWaNumber] = useState("");
   const [subscribed, setSubscribed] = useState(false);
-  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   // Secret staff menu: 5 taps on the logo, same gesture as the checkout page.
   const [showSecretMenu, setShowSecretMenu] = useState(false);
   const [logoTapCount, setLogoTapCount] = useState(0);
@@ -38,46 +39,14 @@ export default function ClosedEventClientPage({
     }
   }
 
-  // Countdown to the sales-open date.
-  //
-  // Switching an event that has an open date to one that has none must clear
-  // the timer, and that reset happens during render so it cannot fire a second
-  // render pass. The effect then only owns the interval, which is genuinely a
-  // side effect. The first tick is deferred by a task rather than run inline,
-  // which is what previously tripped set-state-in-effect.
-  const hasOpenDate = !!eventDetails.sales_open_date;
-  const [countdownKey, setCountdownKey] = useState(hasOpenDate);
-  if (countdownKey !== hasOpenDate) {
-    setCountdownKey(hasOpenDate);
-    if (!hasOpenDate) setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-  }
-
-  useEffect(() => {
-    // If no sales open date is specified, show 00:00:00:00
-    if (!eventDetails.sales_open_date) return;
-
-    const openDate = new Date(eventDetails.sales_open_date).getTime();
-
-    const updateTimer = () => {
-      const now = new Date().getTime();
-      const distance = openDate - now;
-
-      if (distance <= 0) {
-        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-      } else {
-        setTimeLeft({
-          days: Math.floor(distance / (1000 * 60 * 60 * 24)),
-          hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
-          seconds: Math.floor((distance % (1000 * 60)) / 1000)
-        });
-      }
-    };
-
-    const first = setTimeout(updateTimer, 0);
-    const timer = setInterval(updateTimer, 1000);
-    return () => { clearTimeout(first); clearInterval(timer); };
-  }, [eventDetails.sales_open_date]);
+  // This page renders no countdown. It used to, bound to THIS event's
+  // `sales_open_date`, underneath a heading naming a DIFFERENT event
+  // ("NEXT EDITION: GOODLIFE 4" hardcoded as a fallback). For a concluded event
+  // that date is in the past, so the digits sat at 00:00:00:00 permanently
+  // while the copy announced an imminent release. There is no future date on a
+  // concluded event's own row to count to, and inventing one would repeat the
+  // same lie — so the countdown moved to `ScheduledEventClientPage`, which
+  // holds a real, future `sales_open_date` for the edition being announced.
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,9 +166,16 @@ export default function ClosedEventClientPage({
                       }`}
                     >
                       <span>{evt.title}</span>
-                      {evt.status === 'live' ? (
+                      {canonicalStatus(evt.status) === 'live' ? (
                         <span className="text-[9px] font-mono font-bold bg-green-500/20 text-green-400 px-1 py-0.2 border border-green-500/40">
                           LIVE
+                        </span>
+                      ) : canonicalStatus(evt.status) === "scheduled" ? (
+                        /* Scheduled is not closed. Labelling it CLOSED put a
+                           "SEASON CONCLUDED" badge on an event that has not
+                           happened yet. */
+                        <span className="text-[9px] font-mono font-bold bg-amber-400/20 text-amber-200 px-1 py-0.2 border border-amber-400/40">
+                          SOON
                         </span>
                       ) : (
                         <span className="text-[9px] font-mono opacity-70 px-1 py-0.2 border border-white/20">
@@ -214,33 +190,8 @@ export default function ClosedEventClientPage({
           </section>
         )}
 
-        {/* LIVE MINI-EVENT ANNOUNCEMENT CALLOUT */}
-        {liveMiniEvents.length > 0 && (
-          <section className="border-4 border-brand-navy bg-brand-accent p-5 md:p-6 shadow-(--shadow-brut-xl) flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in duration-300">
-            <div className="space-y-1.5 text-center md:text-left">
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <span className="px-2.5 py-0.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white text-[10px] font-mono font-bold uppercase tracking-wider">
-                  HAPPENING THIS WEEK
-                </span>
-                <span className="px-2 py-0.5 border border-brand-navy/60 bg-brand-off-white text-brand-navy text-[10px] font-mono font-bold uppercase">
-                  {liveMiniEvents[0].custom_schedule_text || (liveMiniEvents[0].recurrence_pattern && liveMiniEvents[0].recurrence_pattern !== 'none' ? `EVERY ${liveMiniEvents[0].recurrence_day?.toUpperCase()} | ${liveMiniEvents[0].recurrence_time}` : 'GOODLIFE MINI SESSIONS')}
-                </span>
-              </div>
-              <h3 className="font-display text-2xl md:text-4xl uppercase tracking-wider text-brand-navy">
-                {liveMiniEvents[0].title} IS LIVE NOW
-              </h3>
-              <p className="font-mono text-xs md:text-sm uppercase text-brand-navy/80 font-bold">
-                {liveMiniEvents[0].venue} • PASSES & FREE RSVP AVAILABLE
-              </p>
-            </div>
-            <Link
-              href={`/?event=${liveMiniEvents[0].id}`}
-              className="w-full md:w-auto text-center border-4 border-brand-navy bg-brand-navy text-brand-accent px-6 py-3.5 font-display text-lg md:text-xl uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-sm) active:translate-x-[2px] active:translate-y-[2px] whitespace-nowrap"
-            >
-              GET PASSES & RSVP →
-            </Link>
-          </section>
-        )}
+        {/* MINI-FESTIVAL PROMO */}
+        <LiveMiniEventBanner events={liveMiniEvents} />
 
         {/* HERO RECAP */}
         <section className="border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-2xl) overflow-hidden relative group">
@@ -268,28 +219,26 @@ export default function ClosedEventClientPage({
           </div>
         </section>
 
-        {/* NEXT EDITION COUNTDOWN */}
+        {/* WHAT HAPPENS NEXT — no countdown, no invented edition name */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
           <div className="border-4 border-brand-navy bg-brand-accent p-6 md:p-8 shadow-(--shadow-brut-xl) flex flex-col justify-center">
-            <h2 className="font-display text-3xl md:text-5xl uppercase tracking-wider text-brand-navy mb-2">
-              NEXT EDITION: {eventDetails.next_event_title || "GOODLIFE 4"}
+            <h2 className="font-display text-3xl md:text-5xl uppercase tracking-wider text-brand-navy mb-3">
+              {eventDetails.next_event_title ? (
+                <>
+                  Next up: <span className="text-brand-off-white [-webkit-text-stroke:1px_var(--color-brand-navy)]">{eventDetails.next_event_title}</span>
+                </>
+              ) : (
+                "The next edition is being planned"
+              )}
             </h2>
-            <p className="font-mono text-sm font-bold tracking-widest uppercase text-brand-navy mb-6">
-              TICKETS DROP IN:
+            <p className="font-mono text-sm font-bold tracking-widest uppercase text-brand-navy/85">
+              {eventDetails.next_event_title
+                ? "Dates and ticket drops are announced here first — join the list to get the ping."
+                : "No date announced yet. Join the list and you'll be the first to know when there is one."}
             </p>
-            <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6">
-              {[
-                { label: "DAYS", val: timeLeft.days },
-                { label: "HRS", val: timeLeft.hours },
-                { label: "MINS", val: timeLeft.minutes },
-                { label: "SECS", val: timeLeft.seconds }
-              ].map((t) => (
-                <div key={t.label} className="border-2 border-brand-navy bg-brand-off-white p-2 md:p-4 text-center shadow-(--shadow-brut-sm)">
-                  <div className="font-display text-3xl md:text-5xl text-brand-navy">{t.val.toString().padStart(2, '0')}</div>
-                  <div className="font-mono text-[10px] md:text-xs font-bold mt-1 text-brand-navy/70">{t.label}</div>
-                </div>
-              ))}
-            </div>
+            <p className="font-mono text-[10px] text-brand-navy/70 uppercase mt-5">
+              We only start a countdown once a real drop date is set — no fake timers.
+            </p>
           </div>
 
           {/* WAITLIST FORM */}

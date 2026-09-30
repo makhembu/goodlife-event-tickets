@@ -51,6 +51,29 @@ Two overlapping "event" models — mixing them breaks checkout, tiers, and gate 
 4. **Paystack** — code fully kept, hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true`. `NEXT_PUBLIC_*` is baked at build time, so toggling requires a redeploy.
 5. `/api/mpesa/*` (Daraja) is legacy and unused by the UI.
 
+## Event lifecycle (read this before touching routing or status)
+
+There is **one** function that decides which public page an event gets: `publicState()` in `lib/event-availability.ts`, returning `recap | coming_soon | checkout | unavailable`. `app/page.tsx` calls it and nothing else. The rule order is:
+
+1. `status === 'closed'` → `recap`
+2. `status === 'archived'` or `archived_at` set → `unavailable` (404)
+3. `getEventAvailability().reason === 'not_live'` → `coming_soon`
+4. `reason === 'not_open_yet'` → `coming_soon`
+5. `category === 'mini'` → `checkout`
+6. `reason === 'event_finished'` → `recap`
+7. otherwise → `checkout`
+
+- **`status` is a hand-set label; the recurrence engine is the truth for minis.** A mini festival parked on `scheduled` is sellable today, so gating its page on `status` would show a countdown while the payment API took its money. Never re-derive page choice from `status` anywhere else.
+- **The `active` → `live` legacy value.** The old event-editor `<select>` and the old "re-open event" button both wrote `status = 'active'`, which `getEventAvailability` rejects — so those events rendered a working checkout page and refused **every** payment. `canonicalStatus()` now folds `active` to `live`, and every status read goes through it. If you add a status comparison anywhere, use `canonicalStatus`, not `e.status`. Once `scripts/repair-event-status.js` has been run against prod, the fold is no longer load-bearing.
+- **Never invent prices.** `CheckoutClientPage` has a built-in flagship price ladder that fires when an event has zero tiers. `app/page.tsx` downgrades such an event to `coming_soon`; do not add a second path to a tierless checkout.
+- **`sales_open_date` / `sales_close_date` are now editable** ("Tickets Open" / "Tickets Close", `datetime-local`, entered as Kenya time — the column is a naive EAT string). They gate both the page and payment. Do not add a second hand-rolled auto-open rule.
+- **Closing ≠ archiving.** `POST /api/events/[id]/archive` takes an explicit `mode`: `activate` | `close` | `archive`. `closeEvent()` sets `status='closed'` and keeps the recap page; `archiveEvent()` stamps `archived_at` and 404s it. The old boolean `activate` flag made the dashboard's END/CLOSE button *archive* as well as close. For backward compat `activate: true` still works; absent a `mode`, it archives.
+- `isHiddenFromSite()` shares `publicState`'s rule for "may this be linked" (the editions switcher, the mini promo). Use it rather than re-checking `archived_at`.
+
+**Verification:** `npx tsx tests/public-state.check.ts` asserts every case above against the real module, including a routing/payment agreement invariant with a named allowlist (`sales_closed`, `occurrence_day` — pages that deliberately render so the customer can read *why* payment is refused). Add a case there before changing routing. `--live` re-runs the same decisions read-only against the real database.
+
+`tests/` is a new tracked directory, deliberately outside `scripts/`: `.gitignore` excludes `scripts/` because the ad-hoc DB scripts there hardcode the production Neon password, so a verification tool the codebase depends on must not live there. The one-off data repair (`scripts/repair-event-status.js`, writes to prod, dry-run by default) stays untracked in `scripts/` alongside its peers — recreate it from this file's description if you ever need it again.
+
 ## Auth & middleware
 
 - Admin: hardcoded `admin@goodlife.com` / `GoodlifeAdmin2026!` → cookie `goodlife_admin_session=true` (1 day, httpOnly). No Supabase Auth. The same password is re-typed client-side to confirm permanent deletes in the dashboard trash.
