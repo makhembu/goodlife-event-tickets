@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPendingPayment, fetchTicketTiers, fetchActiveEvent } from "@/lib/supabase-db";
 import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, checkPayheroStkRateLimit } from "@/lib/rate-limit";
 import {
   isPayheroConfigured,
   initiatePayheroStkPush,
@@ -25,6 +25,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // PayHero STK Abuse Protection (phone cooldown + frequency limits)
+    const stkLimit = checkPayheroStkRateLimit({
+      request,
+      phoneNumber: phone_number,
+      scope: "ticket-checkout",
+    });
+    if (!stkLimit.allowed) return stkLimit.response!;
 
     if (!isPayheroConfigured()) {
       return NextResponse.json(

@@ -28,3 +28,22 @@ export async function alertLowPayheroWallet(balance: number, warning: string) {
 
   await sendOperatorText(message);
 }
+
+let lastAbuseAlertAt = 0;
+const ABUSE_ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 mins
+
+export async function alertPayheroAbuseRisk(failureCount: number, timeWindowHours: number = 6) {
+  const now = Date.now();
+  if (now - lastAbuseAlertAt < ABUSE_ALERT_COOLDOWN_MS) return;
+  lastAbuseAlertAt = now;
+
+  const message =
+    `🚨 *PAYHERO API ABUSE RISK ALERT*\n\n` +
+    `High cancelled/failed STK pushes detected: *${failureCount} failures* in the last ${timeWindowHours} hours.\n\n` +
+    `⚠️ PayHero policy: 50+ failed requests within 6h results in a 4-hour merchant account lockdown!\n\n` +
+    `Protective client rate limiting and prompt cooldowns are currently active.\n\n` +
+    `— GOODLIFE System`;
+
+  await sendOperatorText(message).catch(() => {});
+}
+

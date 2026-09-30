@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkPayheroStkRateLimit } from "@/lib/rate-limit";
 import {
   isPayheroConfigured,
   initiatePayheroStkPush,
@@ -47,6 +48,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // PayHero STK Abuse Protection (phone cooldown + frequency limits)
+    const stkLimit = checkPayheroStkRateLimit({
+      request,
+      phoneNumber: normalizedPhone,
+      scope: `vendor-pos:${session.vendorId}`,
+    });
+    if (!stkLimit.allowed) return stkLimit.response!;
 
     if (!isPayheroConfigured()) {
       return NextResponse.json(

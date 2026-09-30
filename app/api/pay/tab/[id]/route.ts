@@ -7,7 +7,7 @@ import {
   payheroCallbackUrl,
 } from "@/lib/payhero";
 import { neonQuery } from "@/lib/supabase-db";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, checkPayheroStkRateLimit } from "@/lib/rate-limit";
 import { verifySelfPayToken } from "@/lib/self-pay-token";
 
 function maskPhoneNumber(phone?: string): string {
@@ -217,6 +217,14 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // PayHero STK Abuse Protection (phone cooldown + frequency limits)
+    const stkLimit = checkPayheroStkRateLimit({
+      request,
+      phoneNumber: normalizedPhone,
+      scope: `tab-selfpay:${tab.id}`,
+    });
+    if (!stkLimit.allowed) return stkLimit.response!;
 
     if (!isPayheroConfigured()) {
       return NextResponse.json(

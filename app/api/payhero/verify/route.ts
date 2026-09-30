@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-fulfill";
 import { getPayheroTransactionStatus, payheroStatusIsSuccess, payheroStatusIsFailed } from "@/lib/payhero";
+import { recordPayheroFailure } from "@/lib/rate-limit";
 
 /**
  * Polling endpoint the checkout page hits while waiting for the customer's PIN entry.
@@ -83,6 +84,12 @@ export async function GET(request: NextRequest) {
       }
 
       if (payheroStatusIsFailed(d)) {
+        recordPayheroFailure({
+          phone: (d as any).phone || (d as any).phone_number,
+          reference: String(d.external_reference || reference),
+          reason: d.message || d.result_desc || "Status check reported failure/cancellation",
+        });
+
         const ourReference = String(d.external_reference || reference);
         await markPayheroPaymentFailed(
           ourReference,

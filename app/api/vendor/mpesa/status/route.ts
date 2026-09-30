@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPayheroTransactionStatus } from "@/lib/payhero";
+import { recordPayheroFailure } from "@/lib/rate-limit";
 
 function getSession(request: NextRequest) {
   const sessionCookie = request.cookies.get("goodlife_vendor_session");
@@ -57,6 +58,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (rawStatus === "FAILED" || rawStatus === "CANCELLED" || rawStatus === "TIMEOUT") {
+      recordPayheroFailure({
+        reference,
+        reason: data.message || data.result_desc || `Payment ${rawStatus.toLowerCase()}`,
+      });
+
       return NextResponse.json({
         success: false,
         status: rawStatus,

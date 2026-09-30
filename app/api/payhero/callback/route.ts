@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-fulfill";
+import { recordPayheroFailure } from "@/lib/rate-limit";
 
 /**
  * PayHero payment webhook.
@@ -99,6 +100,12 @@ export async function POST(request: NextRequest) {
     }
 
     // failed / cancelled
+    recordPayheroFailure({
+      phone: payload?.phone || payload?.phone_number,
+      reference: ourReference,
+      reason: payload?.message || payload?.result_desc || "PayHero callback failure",
+    });
+
     await markPayheroPaymentFailed(
       ourReference,
       payload?.message || "PayHero callback reported failure",
