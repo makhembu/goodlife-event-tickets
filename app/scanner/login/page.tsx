@@ -120,32 +120,55 @@ export default function ScannerLoginPage() {
             
             {/* Event selection */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase text-brand-navy flex items-center gap-1">
-                <Layers className="w-3.5 h-3.5" /> Event / Edition:
+              <label className="text-[11px] font-black uppercase text-brand-navy flex items-center justify-between">
+                <span className="flex items-center gap-1"><Layers className="w-3.5 h-3.5" /> 1. Select Festival Edition:</span>
+                <span className="text-[9px] text-brand-navy/60 font-bold">Boundary Check</span>
               </label>
-              <select
-                value={selectedEventId || ""}
-                onChange={(e) => setSelectedEventId(Number(e.target.value))}
-                className="w-full py-2 px-3 bg-white border-2 border-brand-navy font-mono text-xs font-bold uppercase focus:outline-none"
-              >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-1">
                 {events.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    #{e.id} — {e.title} [{e.status?.toUpperCase()}]
-                  </option>
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => setSelectedEventId(e.id)}
+                    className={`p-2 border-2 text-left text-xs font-black uppercase transition-all ${
+                      selectedEventId === e.id
+                        ? "bg-brand-navy text-brand-accent border-brand-navy shadow-(--shadow-brut-xs)"
+                        : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/20"
+                    }`}
+                  >
+                    <span className="block truncate">{e.title}</span>
+                    <span className="text-[9px] font-mono opacity-60 block">#{e.id} • {e.status?.toUpperCase() || "ACTIVE"}</span>
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* Gate / Lane Name */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-black uppercase text-brand-navy flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5" /> Gate / Station Name:
+                <MapPin className="w-3.5 h-3.5" /> 2. Gate Station / Lane:
               </label>
+              <div className="flex flex-wrap gap-1.5 mb-1">
+                {["Main Gate", "VIP Fast-Track", "Camping Gate", "Gate 2"].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setGateName(preset)}
+                    className={`text-[10px] font-black uppercase px-2 py-0.5 border-2 transition-colors ${
+                      gateName === preset
+                        ? "bg-brand-navy text-white border-brand-navy"
+                        : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/20"
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
               <input
                 type="text"
                 value={gateName}
                 onChange={(e) => setGateName(e.target.value)}
-                placeholder="e.g. Main Gate, VIP Lane, Camping Gate"
+                placeholder="Or custom: e.g. Main Gate, VIP Lane, Camping Gate"
                 className="w-full py-2 px-3 bg-white border-2 border-brand-navy font-mono text-xs font-bold uppercase focus:outline-none"
               />
             </div>

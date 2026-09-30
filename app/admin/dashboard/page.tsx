@@ -48,7 +48,10 @@ import {
   Store,
   Receipt,
   Users,
-  ExternalLink
+  ExternalLink,
+  Key,
+  MessageSquare,
+  Copy
 } from "lucide-react";
 import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
@@ -184,6 +187,103 @@ export default function AdminDashboardPage() {
   const [deletedTiers, setDeletedTiers] = useState<TicketTier[]>([]);
   const [loadingTrash, setLoadingTrash] = useState(false);
 
+  // Gate Scanner PIN & Staff modal state
+  const [showGatePinModal, setShowGatePinModal] = useState(false);
+  const [gatePinData, setGatePinData] = useState<{ pin: string; stewards: any[]; event: any | null }>({ pin: "2026", stewards: [], event: null });
+  const [newGatePinInput, setNewGatePinInput] = useState("2026");
+  const [stewardNameInput, setStewardNameInput] = useState("");
+  const [stewardPhoneInput, setStewardPhoneInput] = useState("");
+  const [stewardGateInput, setStewardGateInput] = useState("Main Gate");
+  const [savingGatePin, setSavingGatePin] = useState(false);
+  const [sendingGatePin, setSendingGatePin] = useState(false);
+  const [gatePinMessage, setGatePinMessage] = useState<string | null>(null);
+  const [gatePinError, setGatePinError] = useState<string | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
+  const loadGateScannerData = async () => {
+    try {
+      const res = await fetch("/api/admin/gate-scanner");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setGatePinData(data);
+          setNewGatePinInput(data.pin || "2026");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load gate scanner data:", e);
+    }
+  };
+
+  const handleUpdateGatePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGatePin(true);
+    setGatePinMessage(null);
+    setGatePinError(null);
+    try {
+      const res = await fetch("/api/admin/gate-scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPin: newGatePinInput })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setGatePinData(prev => ({ ...prev, pin: data.pin }));
+        setGatePinMessage("Gate Access PIN updated successfully to " + data.pin);
+      } else {
+        setGatePinError(data.error || "Failed to update PIN");
+      }
+    } catch {
+      setGatePinError("Network error updating Gate PIN");
+    } finally {
+      setSavingGatePin(false);
+    }
+  };
+
+  const handleSendGateInvite = async (openWhatsAppDirect = false) => {
+    setSendingGatePin(true);
+    setGatePinMessage(null);
+    setGatePinError(null);
+    try {
+      const res = await fetch("/api/admin/gate-scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newPin: newGatePinInput,
+          stewardName: stewardNameInput,
+          stewardPhone: stewardPhoneInput,
+          gateName: stewardGateInput,
+          sendWhatsApp: !openWhatsAppDirect
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (openWhatsAppDirect && data.shareUrl) {
+          window.open(data.shareUrl, "_blank");
+          setGatePinMessage("Opened WhatsApp conversation with invitation link!");
+        } else if (data.whatsAppSent) {
+          setGatePinMessage(`WhatsApp message dispatched to ${stewardPhoneInput}!`);
+        } else {
+          setGatePinMessage("Invitation message generated.");
+        }
+      } else {
+        setGatePinError(data.error || "Failed to send invitation");
+      }
+    } catch {
+      setGatePinError("Network error dispatching invitation");
+    } finally {
+      setSendingGatePin(false);
+    }
+  };
+
+  const handleCopyGateInvite = () => {
+    const appUrl = (typeof window !== "undefined" ? window.location.origin : "https://goodlife.smwhr.space");
+    const msg = `*GOODLIFE FESTIVAL - GATE SCANNER ACCESS*\nSteward: ${stewardNameInput || "Gate Steward"}\nGate Station: ${stewardGateInput || "Main Gate"}\nGate Access PIN: *${newGatePinInput}*\n\n📲 Scanner Terminal: ${appUrl}/scanner/login\n\nInstructions:\n1. Open link on your phone.\n2. Select event (${selectedEventTitle || "Active Event"}).\n3. Enter PIN: ${newGatePinInput} to start scanning.`;
+    navigator.clipboard.writeText(msg);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2000);
+  };
+
   const closeAllModals = () => {
     setIsEditingEvent(false);
     setEditingTicket(null);
@@ -194,6 +294,7 @@ export default function AdminDashboardPage() {
     setResolvingPayment(null);
     setDeletingTierId(null);
     setShowTrashPasswordModal(false);
+    setShowGatePinModal(false);
     setResendTicket(null);
   };
 
@@ -1211,6 +1312,15 @@ export default function AdminDashboardPage() {
             >
               <Activity className="w-3.5 h-3.5" /> GATE SCAN
             </Link>
+            <button
+              onClick={() => {
+                loadGateScannerData();
+                setShowGatePinModal(true);
+              }}
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
+            >
+              <Key className="w-3.5 h-3.5" /> GATE PIN & STAFF
+            </button>
           </div>
         </div>
       </div>
@@ -3839,6 +3949,245 @@ export default function AdminDashboardPage() {
                   Resend
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GATE SCANNER PIN & STEWARD DISPATCH MODAL */}
+      {showGatePinModal && (
+        <div 
+          className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-all duration-200" 
+          role="dialog" 
+          aria-modal="true" 
+          onKeyDown={(e) => { if (e.key === "Escape") setShowGatePinModal(false); }}
+        >
+          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-2xl w-full p-5 sm:p-7 relative shadow-(--shadow-brut-xl) max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b-3 border-[var(--brand-navy)] pb-3 mb-5">
+              <div>
+                <span className="font-sans font-black tracking-widest text-[10px] bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5 uppercase border border-[var(--brand-navy)]">
+                  ACCESS CONTROL & DISPATCH
+                </span>
+                <h3 className="text-xl sm:text-2xl font-black uppercase text-[var(--brand-navy)] mt-1 flex items-center gap-2">
+                  <Key className="w-5 h-5 text-yellow-600" />
+                  GATE SCANNER PIN & STAFF
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowGatePinModal(false)}
+                className="p-1 border-2 border-[var(--brand-navy)] hover:bg-red-600 hover:text-white transition-colors"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Notification messages */}
+            {gatePinMessage && (
+              <div className="mb-4 p-3 bg-emerald-100 border-2 border-emerald-600 text-emerald-950 font-black text-xs uppercase flex items-center justify-between">
+                <span>{gatePinMessage}</span>
+                <button onClick={() => setGatePinMessage(null)} className="text-emerald-800 font-bold ml-2">✕</button>
+              </div>
+            )}
+            {gatePinError && (
+              <div className="mb-4 p-3 bg-red-100 border-2 border-red-600 text-red-950 font-black text-xs uppercase flex items-center justify-between">
+                <span>{gatePinError}</span>
+                <button onClick={() => setGatePinError(null)} className="text-red-800 font-bold ml-2">✕</button>
+              </div>
+            )}
+
+            <div className="space-y-6">
+              {/* SECTION 1: MASTER GATE ACCESS PIN */}
+              <div className="border-2 border-[var(--brand-navy)] bg-white p-4 shadow-(--shadow-brut-xs)">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-[var(--brand-navy)] flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-brand-navy" /> 1. MASTER GATE ACCESS PIN
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold bg-[var(--brand-navy)]/10 px-2 py-0.5 text-[var(--brand-navy)] uppercase">
+                    Current: <strong>{gatePinData.pin}</strong>
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--brand-navy-light)] font-bold mb-3">
+                  Gate stewards log in at <code className="bg-yellow-200 px-1 py-0.5 text-black">/scanner</code> using this PIN. No admin account required.
+                </p>
+
+                <form onSubmit={handleUpdateGatePin} className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={newGatePinInput}
+                    onChange={(e) => setNewGatePinInput(e.target.value)}
+                    placeholder="e.g. 2026 or 7890"
+                    maxLength={10}
+                    className="border-2 border-[var(--brand-navy)] px-3 py-2 font-mono text-sm font-black focus:outline-none focus:ring-2 focus:ring-yellow-400 uppercase flex-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={savingGatePin || !newGatePinInput.trim()}
+                    className="px-4 py-2 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors active:scale-95 disabled:opacity-40 flex items-center justify-center gap-1"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    {savingGatePin ? "SAVING..." : "UPDATE PIN"}
+                  </button>
+                </form>
+
+                <div className="mt-3 pt-2.5 border-t border-dashed border-[var(--brand-navy)]/30 flex items-center justify-between text-[11px]">
+                  <span className="font-mono text-[var(--brand-navy-light)] font-bold">Terminal URL: /scanner/login</span>
+                  <Link
+                    href="/scanner/login"
+                    target="_blank"
+                    className="font-black text-blue-700 underline flex items-center gap-1 hover:text-blue-900"
+                  >
+                    Open Terminal <ExternalLink className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* SECTION 2: SEND PASS / PIN VIA WHATSAPP */}
+              <div className="border-2 border-[var(--brand-navy)] bg-white p-4 shadow-(--shadow-brut-xs)">
+                <h4 className="text-xs font-black uppercase tracking-wider text-[var(--brand-navy)] mb-1 flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-green-700" /> 2. SEND GATE PIN TO STEWARD (WHATSAPP)
+                </h4>
+                <p className="text-[11px] text-[var(--brand-navy-light)] font-bold mb-3">
+                  Assign a gate station to a door steward and send their access PIN and terminal link.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1">Steward Name</label>
+                    <input
+                      type="text"
+                      value={stewardNameInput}
+                      onChange={(e) => setStewardNameInput(e.target.value)}
+                      placeholder="e.g. John Doe / Gate Lead"
+                      className="w-full border-2 border-[var(--brand-navy)] px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[var(--brand-navy)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1">WhatsApp Number</label>
+                    <input
+                      type="tel"
+                      value={stewardPhoneInput}
+                      onChange={(e) => setStewardPhoneInput(e.target.value)}
+                      placeholder="e.g. 254712345678"
+                      className="w-full border-2 border-[var(--brand-navy)] px-2.5 py-1.5 font-mono text-xs font-bold focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-black uppercase block mb-1">Assigned Gate / Station</label>
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {["Main Gate", "VIP Fast-Track", "Camping Gate", "Gate 2", "Backstage / Crew"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setStewardGateInput(preset)}
+                          className={`text-[10px] font-black px-2 py-0.5 border border-[var(--brand-navy)] uppercase transition-colors ${
+                            stewardGateInput === preset 
+                              ? "bg-[var(--brand-navy)] text-white" 
+                              : "bg-stone-100 hover:bg-stone-200 text-[var(--brand-navy)]"
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={stewardGateInput}
+                      onChange={(e) => setStewardGateInput(e.target.value)}
+                      placeholder="Custom Gate Name"
+                      className="w-full border-2 border-[var(--brand-navy)] px-2.5 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[var(--brand-navy)]"
+                    />
+                  </div>
+                </div>
+
+                {/* Dispatch action buttons */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-[var(--brand-navy)]/20">
+                  <button
+                    type="button"
+                    onClick={() => handleSendGateInvite(true)}
+                    disabled={sendingGatePin || !stewardPhoneInput}
+                    className="flex-1 min-w-[170px] px-3 py-2 bg-emerald-700 text-white text-xs font-black uppercase border-2 border-emerald-700 hover:bg-emerald-800 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    title="Open WhatsApp chat directly with prefilled invite text"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
+                    DIRECT WHATSAPP (WA.ME)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendGateInvite(false)}
+                    disabled={sendingGatePin || !stewardPhoneInput}
+                    className="flex-1 min-w-[170px] px-3 py-2 bg-green-900 text-white text-xs font-black uppercase border-2 border-green-900 hover:bg-green-950 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    title="Send automated message from festival WhatsApp API"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    SEND VIA WHATSAPP API
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyGateInvite}
+                    className="px-3 py-2 bg-white text-[var(--brand-navy)] text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1.5"
+                    title="Copy invite text with PIN and terminal link to clipboard"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copiedInvite ? "COPIED!" : "COPY MESSAGE"}
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION 3: RECENT GATE SCAN ACTIVITY */}
+              <div className="border-2 border-[var(--brand-navy)] bg-white p-4 shadow-(--shadow-brut-xs)">
+                <h4 className="text-xs font-black uppercase tracking-wider text-[var(--brand-navy)] mb-2 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-blue-600" /> 3. ACTIVE GATE STEWARDS & RECENT SCANS
+                </h4>
+                {gatePinData.stewards && gatePinData.stewards.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[var(--brand-navy)] text-white text-[10px] font-black uppercase">
+                          <th className="p-2">Steward / Gate Station</th>
+                          <th className="p-2 text-right">Admitted Scans</th>
+                          <th className="p-2 text-right">Last Active</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--brand-navy)]/10 text-xs">
+                        {gatePinData.stewards.map((steward: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-yellow-50/50">
+                            <td className="p-2 font-mono font-bold text-[var(--brand-navy)]">
+                              {steward.operator || "Default Gate"}
+                            </td>
+                            <td className="p-2 text-right font-black text-emerald-700">
+                              {steward.total_scans}
+                            </td>
+                            <td className="p-2 text-right font-mono text-[10px] text-[var(--brand-navy-light)]">
+                              {steward.last_active ? fmtTime(steward.last_active) + " · " + fmtDate(steward.last_active) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold italic py-2">
+                    No gate check-ins logged yet for the current event.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 pt-4 mt-6 border-t-2 border-[var(--brand-navy)]">
+              <button
+                type="button"
+                onClick={() => setShowGatePinModal(false)}
+                className="px-5 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase hover:bg-[var(--brand-navy)] hover:text-white transition-colors"
+              >
+                CLOSE
+              </button>
             </div>
           </div>
         </div>

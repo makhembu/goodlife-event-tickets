@@ -2264,21 +2264,88 @@ export async function getVendorSettlement(vendorId: number, eventId: number) {
   return rows.length > 0 ? rows[0] : null;
 }
 
-export async function fetchSettlementsForEvent(eventId: number) {
+export async function fetchSettlementsForEvent(eventId?: number | null) {
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/admin/settlements?eventId=${eventId}`);
+      const url = eventId ? `/api/admin/settlements?eventId=${eventId}` : "/api/admin/settlements";
+      const res = await fetch(url);
       if (res.ok) return await res.json();
     } catch {}
     return [];
   }
+
+  if (eventId) {
+    const { rows } = await neonQuery(
+      `SELECT 
+        v.id as vendor_id,
+        v.name as vendor_name,
+        v.contact_name,
+        v.contact_phone,
+        v.logo_url,
+        COALESCE(vea.id, 0) as id,
+        COALESCE(vea.event_id, $1) as event_id,
+        COALESCE(e.title, 'Event #' || $1) as event_title,
+        COALESCE(vea.commission_rate, 10.0) as commission_rate,
+        COALESCE(vea.flat_fee, 0) as flat_fee,
+        COALESCE(vea.settled_amount, 0) as settled_amount,
+        COALESCE(vea.status, 'active') as status,
+        COALESCE(sales_summary.total_sales, vea.total_sales, 0) as total_sales,
+        COALESCE(sales_summary.order_count, 0) as order_count,
+        ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed
+      FROM vendors v
+      LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND vea.event_id = $1
+      LEFT JOIN events e ON e.id = $1
+      LEFT JOIN (
+        SELECT 
+          vendor_id,
+          SUM(total) as total_sales,
+          COUNT(*) as order_count
+        FROM pos_sales
+        WHERE event_id = $1 AND payment_status != 'voided'
+        GROUP BY vendor_id
+      ) sales_summary ON sales_summary.vendor_id = v.id
+      WHERE v.deleted_at IS NULL
+        AND (vea.id IS NOT NULL OR sales_summary.total_sales IS NOT NULL)
+      ORDER BY v.name ASC`,
+      [eventId]
+    );
+    return rows;
+  }
+
+  // All events mode
   const { rows } = await neonQuery(
-    `SELECT vea.*, v.name as vendor_name
-     FROM vendor_event_assignments vea
-     JOIN vendors v ON vea.vendor_id = v.id
-     WHERE vea.event_id = $1
-     ORDER BY v.name ASC`,
-    [eventId]
+    `SELECT 
+      v.id as vendor_id,
+      v.name as vendor_name,
+      v.contact_name,
+      v.contact_phone,
+      v.logo_url,
+      COALESCE(vea.id, 0) as id,
+      COALESCE(vea.event_id, ps.event_id, 0) as event_id,
+      COALESCE(e.title, 'Event #' || COALESCE(vea.event_id, ps.event_id, 0)) as event_title,
+      COALESCE(vea.commission_rate, 10.0) as commission_rate,
+      COALESCE(vea.flat_fee, 0) as flat_fee,
+      COALESCE(vea.settled_amount, 0) as settled_amount,
+      COALESCE(vea.status, 'active') as status,
+      COALESCE(ps.total_sales, vea.total_sales, 0) as total_sales,
+      COALESCE(ps.order_count, 0) as order_count,
+      ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed
+    FROM vendors v
+    LEFT JOIN (
+      SELECT 
+        vendor_id,
+        event_id,
+        SUM(total) as total_sales,
+        COUNT(*) as order_count
+      FROM pos_sales
+      WHERE payment_status != 'voided'
+      GROUP BY vendor_id, event_id
+    ) ps ON ps.vendor_id = v.id
+    LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND (vea.event_id = ps.event_id OR ps.event_id IS NULL)
+    LEFT JOIN events e ON e.id = COALESCE(vea.event_id, ps.event_id)
+    WHERE v.deleted_at IS NULL
+      AND (vea.id IS NOT NULL OR ps.total_sales IS NOT NULL)
+    ORDER BY v.name ASC`
   );
   return rows;
 }
@@ -2542,20 +2609,23 @@ export async function createPosSale(
       }
     }
 
-    // 4. Update Vendor Assignment Totals
+    // 4. Update or Insert Vendor Assignment Totals
     const { rows: assignmentRows } = await client.query(
       "SELECT commission_rate FROM vendor_event_assignments WHERE vendor_id = $1 AND event_id = $2",
       [sale.vendor_id, sale.event_id]
     );
-    const rawCommRate = assignmentRows.length > 0 ? Number(assignmentRows[0].commission_rate) : 0;
-    const commRate = isNaN(rawCommRate) ? 0 : rawCommRate;
+    const rawCommRate = assignmentRows.length > 0 ? Number(assignmentRows[0].commission_rate) : 10.0;
+    const commRate = isNaN(rawCommRate) ? 10.0 : rawCommRate;
     const commOwed = (sale.total * commRate) / 100;
     
     await client.query(
-      `UPDATE vendor_event_assignments
-       SET total_sales = total_sales + $3, commission_owed = commission_owed + $4
-       WHERE vendor_id = $1 AND event_id = $2`,
-      [sale.vendor_id, sale.event_id, sale.total, commOwed]
+      `INSERT INTO vendor_event_assignments (vendor_id, event_id, commission_rate, total_sales, commission_owed, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')
+       ON CONFLICT (vendor_id, event_id)
+       DO UPDATE SET
+         total_sales = COALESCE(vendor_event_assignments.total_sales, 0) + EXCLUDED.total_sales,
+         commission_owed = COALESCE(vendor_event_assignments.commission_owed, 0) + EXCLUDED.commission_owed`,
+      [sale.vendor_id, sale.event_id, commRate, sale.total, commOwed]
     );
 
     await client.query("COMMIT");

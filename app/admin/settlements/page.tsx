@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { HandCoins, DollarSign, CheckCircle, RefreshCw, Calendar } from "lucide-react";
+import { HandCoins, DollarSign, CheckCircle, RefreshCw, Calendar, ExternalLink } from "lucide-react";
 import Link from "next/link";
+import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
 export default function AdminSettlementsPage() {
   const [settlements, setSettlements] = useState<any[]>([]);
@@ -12,6 +13,7 @@ export default function AdminSettlementsPage() {
   const [showSettleModal, setShowSettleModal] = useState<any>(null);
   const [settleAmount, setSettleAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedDrawerVendorId, setSelectedDrawerVendorId] = useState<number | null>(null);
 
   // Load events list
   useEffect(() => {
@@ -193,27 +195,50 @@ export default function AdminSettlementsPage() {
                   const vendorName = s.vendor_name || s.vendors?.name || `Vendor #${s.vendor_id}`;
 
                   return (
-                    <tr key={s.id || `v-${s.vendor_id}-${s.event_id}`} className="border-b-2 border-brand-navy border-dashed hover:bg-brand-accent/10 transition-colors">
-                      <td className="p-3 md:p-4 font-bold uppercase">
-                        <div>{vendorName}</div>
+                    <tr key={s.id || `v-${s.vendor_id}-${s.event_id}`} className="border-b-2 border-brand-navy border-dashed hover:bg-yellow-50/60 transition-colors">
+                      <td 
+                        className="p-3 md:p-4 font-bold uppercase cursor-pointer group"
+                        onClick={() => setSelectedDrawerVendorId(s.vendor_id)}
+                        title="Click to view full vendor stock, velocity & sales audit"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-brand-navy underline decoration-2 underline-offset-2 group-hover:text-blue-700 font-black">
+                            {vendorName}
+                          </span>
+                          <ExternalLink className="w-3.5 h-3.5 text-brand-navy/50 group-hover:text-blue-700 shrink-0" />
+                        </div>
+                        {s.contact_name && (
+                          <div className="text-[10px] text-brand-navy/70 font-normal">
+                            Contact: {s.contact_name} {s.contact_phone ? `(${s.contact_phone})` : ""}
+                          </div>
+                        )}
                         {s.event_title && (
                           <div className="text-[10px] text-brand-navy/60 font-normal">
                             Event: {s.event_title}
                           </div>
                         )}
                       </td>
-                      <td className="p-3 md:p-4 text-right font-mono">KES {gross.toLocaleString()}</td>
+                      <td className="p-3 md:p-4 text-right font-mono font-bold">KES {gross.toLocaleString()}</td>
                       <td className="p-3 md:p-4 text-right font-mono">KES {comm.toLocaleString()}</td>
                       <td className="p-3 md:p-4 text-right font-mono text-green-700">KES {settled.toLocaleString()}</td>
                       <td className="p-3 md:p-4 text-right font-mono font-bold text-red-600">KES {owed.toLocaleString()}</td>
                       <td className="p-3 md:p-4 text-center">
-                        <button
-                          onClick={() => { setShowSettleModal(s); setSettleAmount(owed > 0 ? owed.toString() : ""); }}
-                          disabled={owed <= 0}
-                          className="bg-brand-navy text-brand-accent px-3 py-1 text-xs uppercase font-bold hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy disabled:opacity-30 disabled:border-transparent transition-all shadow-(--shadow-brut-xs)"
-                        >
-                          Settle
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => setSelectedDrawerVendorId(s.vendor_id)}
+                            className="bg-white text-brand-navy hover:bg-yellow-300 px-2.5 py-1 text-xs uppercase font-black border-2 border-brand-navy transition-all shadow-(--shadow-brut-xs) flex items-center gap-1"
+                            title="Open Stock, Bestsellers & Sales Audit"
+                          >
+                            DATA ↗
+                          </button>
+                          <button
+                            onClick={() => { setShowSettleModal(s); setSettleAmount(owed > 0 ? owed.toString() : ""); }}
+                            disabled={owed <= 0}
+                            className="bg-brand-navy text-brand-accent px-3 py-1 text-xs uppercase font-bold hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy disabled:opacity-30 disabled:border-transparent transition-all shadow-(--shadow-brut-xs)"
+                          >
+                            Settle
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -269,6 +294,15 @@ export default function AdminSettlementsPage() {
             </div>
           </div>
         )}
+
+        {/* Vendor Intelligence & Audit Drawer */}
+        <VendorDetailDrawer
+          vendorId={selectedDrawerVendorId}
+          eventId={selectedEventId}
+          isOpen={selectedDrawerVendorId !== null}
+          onClose={() => setSelectedDrawerVendorId(null)}
+          onSettlementRecorded={() => loadSettlements()}
+        />
       </div>
     </div>
   );

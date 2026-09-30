@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
 export default function AdminVendorsPage() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({ name: "", contact_name: "", contact_phone: "" });
+  const [selectedDrawerVendorId, setSelectedDrawerVendorId] = useState<number | null>(null);
 
   // PIN Visibility States
   const [showPins, setShowPins] = useState<Record<number, boolean>>({});
@@ -275,7 +277,17 @@ export default function AdminVendorsPage() {
               <div key={v.id} className="border-4 border-brand-navy bg-white p-5 shadow-(--shadow-brut-md) flex flex-col justify-between">
                 <div>
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-display text-xl uppercase leading-tight font-black">{v.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDrawerVendorId(v.id)}
+                      className="text-left group cursor-pointer"
+                      title="Click to view full vendor stock, velocity & sales audit"
+                    >
+                      <h3 className="font-display text-xl uppercase leading-tight font-black group-hover:text-blue-700 underline decoration-2 underline-offset-2 transition-colors flex items-center gap-1.5">
+                        {v.name}
+                        <ExternalLink className="w-4 h-4 text-brand-navy/50 group-hover:text-blue-700 shrink-0" />
+                      </h3>
+                    </button>
                     <span className="text-xs bg-brand-navy text-brand-accent px-2 py-0.5 uppercase font-bold">{v.status || "Active"}</span>
                   </div>
                   
@@ -356,19 +368,28 @@ export default function AdminVendorsPage() {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t-2 border-brand-navy flex gap-2">
+                <div className="pt-3 border-t-2 border-brand-navy space-y-2">
                   <button
-                    onClick={() => openEditModal(v)}
-                    className="flex-1 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-navy hover:text-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-sm)"
+                    type="button"
+                    onClick={() => setSelectedDrawerVendorId(v.id)}
+                    className="w-full border-2 border-brand-navy bg-yellow-300 hover:bg-brand-navy hover:text-white px-3 py-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
                   >
-                    <Edit className="w-3.5 h-3.5" /> Edit Contact
+                    <TrendingUp className="w-3.5 h-3.5" /> VIEW STOCK & SALES DATA ↗
                   </button>
-                  <button
-                    onClick={() => openResetPinModal(v)}
-                    className="flex-1 border-2 border-brand-navy bg-brand-accent hover:bg-brand-navy hover:text-brand-off-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-sm)"
-                  >
-                    <Key className="w-3.5 h-3.5" /> Reset PIN
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => openEditModal(v)}
+                      className="flex-1 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-navy hover:text-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-xs)"
+                    >
+                      <Edit className="w-3.5 h-3.5" /> Edit Contact
+                    </button>
+                    <button
+                      onClick={() => openResetPinModal(v)}
+                      className="flex-1 border-2 border-brand-navy bg-brand-accent hover:bg-brand-navy hover:text-brand-off-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-xs)"
+                    >
+                      <Key className="w-3.5 h-3.5" /> Reset PIN
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -630,6 +651,14 @@ export default function AdminVendorsPage() {
             </div>
           </div>
         )}
+
+        {/* Vendor Intelligence & Audit Drawer */}
+        <VendorDetailDrawer
+          vendorId={selectedDrawerVendorId}
+          isOpen={selectedDrawerVendorId !== null}
+          onClose={() => setSelectedDrawerVendorId(null)}
+          onSettlementRecorded={() => loadVendors()}
+        />
       </div>
     </div>
   );

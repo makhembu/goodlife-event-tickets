@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchActiveEvent, fetchAllEvents } from "@/lib/supabase-db";
+import { fetchActiveEvent, fetchAllEvents, neonQuery } from "@/lib/supabase-db";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -14,12 +14,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "PIN is required" }, { status: 400 });
     }
 
-    // Gate PIN can be configured via environment variable GATE_SCANNER_PIN, or defaults to 2026.
+    // Gate PIN can be configured in event_details, via environment variable GATE_SCANNER_PIN, or defaults to 2026.
     // The master admin password (GoodlifeAdmin2026!) is also accepted as superuser bypass.
-    const validPin = process.env.GATE_SCANNER_PIN || "2026";
+    let dbPin = "2026";
+    try {
+      const { rows } = await neonQuery("SELECT gate_pin FROM event_details WHERE id = 1 LIMIT 1");
+      if (rows && rows.length > 0 && rows[0].gate_pin) {
+        dbPin = String(rows[0].gate_pin).trim();
+      }
+    } catch {}
+
+    const validPin = (process.env.GATE_SCANNER_PIN || "2026").trim();
     const masterAdminPass = "GoodlifeAdmin2026!";
 
-    const isPinMatch = pin.trim() === validPin || pin.trim() === masterAdminPass;
+    const isPinMatch = pin.trim() === dbPin || pin.trim() === validPin || pin.trim() === masterAdminPass;
 
     if (!isPinMatch) {
       return NextResponse.json({ success: false, message: "Invalid Gate Access PIN" }, { status: 401 });

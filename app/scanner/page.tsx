@@ -22,7 +22,9 @@ import {
   ChevronRight,
   ShieldCheck,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Layers,
+  ChevronDown
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -94,6 +96,24 @@ export default function GateTerminalPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Station & Event Switcher Modal State
+  const [showStationModal, setShowStationModal] = useState(false);
+  const [eventsList, setEventsList] = useState<any[]>([]);
+  const [switchEventId, setSwitchEventId] = useState<number | null>(null);
+  const [switchGateName, setSwitchGateName] = useState("");
+  const [switchStewardName, setSwitchStewardName] = useState("");
+  const [updatingStation, setUpdatingStation] = useState(false);
+
+  // Load events list for switcher
+  useEffect(() => {
+    fetch("/api/events")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setEventsList(data);
+      })
+      .catch(console.error);
+  }, []);
+
   const scannerRef = useRef<any>(null);
   const verifyRef = useRef<((id: string, count?: number) => Promise<void>) | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -108,6 +128,9 @@ export default function GateTerminalPage() {
       .then((data) => {
         if (data.authenticated && data.session) {
           setSession(data.session);
+          setSwitchEventId(data.session.eventId);
+          setSwitchGateName(data.session.gateName);
+          setSwitchStewardName(data.session.stewardName);
         } else {
           router.push("/scanner/login");
         }
@@ -116,6 +139,31 @@ export default function GateTerminalPage() {
         router.push("/scanner/login");
       });
   }, [router]);
+
+  const handleSwitchStation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setUpdatingStation(true);
+    try {
+      const res = await fetch("/api/scanner/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: switchEventId,
+          gateName: switchGateName,
+          stewardName: switchStewardName
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.session) {
+        setSession(data.session);
+        setShowStationModal(false);
+      }
+    } catch (err) {
+      console.error("Failed to switch station:", err);
+    } finally {
+      setUpdatingStation(false);
+    }
+  };
 
   // Load stats and recent scans
   const loadStats = useCallback(() => {
@@ -403,7 +451,17 @@ export default function GateTerminalPage() {
       
       {/* 1. TOP STATUS BAR (COMPACT & HIGH CONTRAST) */}
       <header className="h-14 bg-brand-navy border-b-3 border-brand-accent px-3 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          onClick={() => {
+            setSwitchEventId(session.eventId);
+            setSwitchGateName(session.gateName);
+            setSwitchStewardName(session.stewardName);
+            setShowStationModal(true);
+          }}
+          className="flex items-center gap-2 min-w-0 text-left hover:opacity-90 active:scale-[0.98] transition-all p-1 -m-1 border border-transparent hover:border-brand-accent/50 cursor-pointer"
+          title="Tap to switch Event (Goodlife / Park & Chill) or Change Gate"
+        >
           <div className="w-8 h-8 bg-brand-accent text-brand-navy border-2 border-brand-navy flex items-center justify-center shrink-0">
             <QrCode className="w-5 h-5" />
           </div>
@@ -412,13 +470,15 @@ export default function GateTerminalPage() {
               <span className="font-display text-base uppercase tracking-wider truncate">
                 {session.gateName}
               </span>
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-ping shrink-0" />
+              <span className="text-[9px] font-mono font-black uppercase px-1 py-0.2 bg-brand-accent text-brand-navy border border-brand-navy flex items-center gap-0.5">
+                SWITCH <ChevronDown className="w-2.5 h-2.5" />
+              </span>
             </div>
             <p className="text-[10px] text-brand-off-white/70 font-bold uppercase truncate">
               {session.stewardName} • #{session.eventId} {session.eventTitle}
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Live Counters & Quick Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
@@ -957,6 +1017,121 @@ export default function GateTerminalPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 5. STATION & EVENT SWITCHER MODAL */}
+      {showStationModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3 font-mono animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-brand-off-white text-brand-navy border-4 border-brand-accent p-5 shadow-(--shadow-brut-lg) space-y-4">
+            
+            <div className="flex justify-between items-center border-b-2 border-brand-navy pb-2">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-brand-navy" />
+                <h3 className="font-display text-lg uppercase tracking-wider">CHANGE GATE & EVENT</h3>
+              </div>
+              <button
+                onClick={() => setShowStationModal(false)}
+                className="p-1 border border-brand-navy hover:bg-red-500 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSwitchStation} className="space-y-4">
+              
+              {/* Event selection (Goodlife / Park & Chill) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase text-brand-navy block">
+                  1. Active Event / Edition:
+                </label>
+                <div className="space-y-1">
+                  {eventsList.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => setSwitchEventId(e.id)}
+                      className={`w-full p-2 text-left border-2 text-xs font-bold uppercase transition-all flex items-center justify-between ${
+                        switchEventId === e.id
+                          ? "bg-brand-navy text-brand-accent border-brand-navy shadow-(--shadow-brut-xs)"
+                          : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/20"
+                      }`}
+                    >
+                      <span className="truncate">#{e.id} {e.title}</span>
+                      <span className={`text-[9px] px-1 py-0.2 border uppercase ${
+                        switchEventId === e.id ? "bg-brand-accent text-brand-navy border-brand-accent" : "bg-gray-100 border-gray-300"
+                      }`}>
+                        {e.status || "ACTIVE"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Gate presets & custom name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase text-brand-navy block">
+                  2. Gate Station / Lane:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Main Gate", "VIP Gate", "Camping Gate", "Gate 2"].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setSwitchGateName(preset)}
+                      className={`text-[10px] font-black uppercase px-2.5 py-1 border-2 transition-colors ${
+                        switchGateName === preset
+                          ? "bg-brand-navy text-white border-brand-navy"
+                          : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/30"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={switchGateName}
+                  onChange={(e) => setSwitchGateName(e.target.value)}
+                  placeholder="Or custom: e.g. Gate 1 - Lane B"
+                  className="w-full py-2 px-3 bg-white border-2 border-brand-navy text-xs font-bold uppercase focus:outline-none mt-1"
+                />
+              </div>
+
+              {/* Steward Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase text-brand-navy block">
+                  3. Steward / Operator Name:
+                </label>
+                <input
+                  type="text"
+                  value={switchStewardName}
+                  onChange={(e) => setSwitchStewardName(e.target.value)}
+                  placeholder="Your Name (e.g. Alex)"
+                  className="w-full py-2 px-3 bg-white border-2 border-brand-navy text-xs font-bold uppercase focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStationModal(false)}
+                  className="flex-1 py-2.5 bg-white border-2 border-brand-navy font-black text-xs uppercase hover:bg-gray-100 transition-colors"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingStation}
+                  className="flex-1 py-2.5 bg-brand-navy text-brand-accent hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy font-black text-xs uppercase transition-colors shadow-(--shadow-brut-xs)"
+                >
+                  {updatingStation ? "SWITCHING..." : "APPLY & SWITCH"}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );
