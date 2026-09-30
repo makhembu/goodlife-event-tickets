@@ -20,7 +20,7 @@ npm run clean      # next clean
 
 - **Dual database**: Supabase (`@supabase/ssr`) for client-side RLS; Neon PostgreSQL (raw `pg` pool via `lib/neon-client.ts`) for server-side heavy ops.
 - **`lib/supabase-db.ts`** is the main data access layer — isomorphic file. Server-side code uses Neon `pg` pool directly; client-side falls back to `localStorage` or `fetch`-to-API guarded by `typeof window === "undefined"`.
-- **Auth**: Hardcoded admin creds (`admin@goodlife.com` / `GoodlifeAdmin2026!`). Cookie-based session (`goodlife_admin_session=true`, 1 day). No Supabase Auth for admin. See `app/api/admin/login/route.ts`.
+- **Auth**: Admin creds (`admin@goodlife.com` / `<set in env: ADMIN_PASSWORD>`). Cookie-based session (`goodlife_admin_session=true`, 1 day). No Supabase Auth for admin. See `app/api/admin/login/route.ts`.
 - **Tables**: `tickets` (soft-delete via `deleted_at`), `event_details` (singleton row id=1), `pending_payments` (orphaned M-Pesa), `ticket_tiers` (soft-delete), `payment_logs` (webhook audit).
 
 ### Payment Flow
@@ -68,6 +68,6 @@ See `DESIGN.md`. Custom Tailwind v4 theme in `app/globals.css`: brand-navy (#142
 - **HMR disabled** — `DISABLE_HMR=true` env var prevents flicker during AI agent edits.
 - **Build** uses `output: "standalone"`. PDF generation requires `public/BebasNeue.ttf`.
 - **No test suite** — no CI/CD. Originally an AI Studio project (`metadata.json`).
-- **Admin password** hardcoded: `GoodlifeAdmin2026!` (also used for trash/permanent-delete confirmation).
+- **Admin password** via env: `ADMIN_PASSWORD` (also used for trash/permanent-delete confirmation).
 - **Simulator mode** — controlled by `event_details.simulators_enabled`. Secret admin menu via 5-tap logo.
 - **Deploy** — Netlify (CLAUDE.md has details) or Railway (`.env.example` has all env vars).

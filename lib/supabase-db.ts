@@ -1547,11 +1547,13 @@ export async function permanentlyDeleteTicketTier(
 }
 
 // Empty Trash
-export async function emptyTrash(): Promise<boolean> {
+export async function emptyTrash(password?: string): Promise<boolean> {
   if (typeof window !== "undefined") {
     try {
       const res = await fetch(`/api/admin/trash/clear`, {
-        method: "POST"
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password ?? "" })
       });
       return res.ok;
     } catch (e) {

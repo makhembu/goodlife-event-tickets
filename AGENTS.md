@@ -25,7 +25,7 @@ npm run clean   # removes .next/ and tsconfig.tsbuildinfo
 - **`.env.local` has no `PAYHERO_*` keys** — local "Pay with M-Pesa" fails with "PayHero not configured" until you add them (`.env.example` documents them). Production values live only in the Vercel dashboard, never in a file. Present keys are `DATABASE_URL`, legacy `DARAJA_CONSUMER_*`, `WHATSAPP_GATEWAY_*`, `PAYSTACK_*`, `APP_URL`, `OPERATOR_WHATSAPP_NUMBERS`.
 - `/api/mpesa/*` is dead Daraja code (superseded by PayHero, and `README.md`/`CLAUDE.md` still describe it). Don't wire new work to it — note `lib/supabase-db.ts`'s *client* branch of `createPendingPayment` still posts to `/api/mpesa/stkpush`; the live PayHero routes call the server branch instead.
 - `TAB_SELF_PAY_SECRET` silently falls back to `PAYHERO_CALLBACK_TOKEN`, then `DATABASE_URL` (`lib/self-pay-token.ts`) — links keep working, but set it explicitly.
-- ~12 files in `scripts/` hardcode the production Neon URL **including the password**. `.gitignore` now excludes `scripts/` (untracked, so the leak doesn't spread further), but assume the credential is already burned; don't add more, and treat DB-touching scripts as dangerous.
+- ~12 files in `scripts/` hardcode the production Neon URL **including the password**. `scripts/`, `backups/`, `scan-qr.html`, and root debug files (`check.js`, `fix.js`, `test-checkout-cli.js`, `audit-shots/`, root `*.png`) are untracked from git and excluded in `.gitignore` so credentials and database dumps don't leak. Assume the credential is already burned; don't add more, and treat DB-touching scripts as dangerous.
 - `scripts/test-e2e-suite.js` is not a unit test: it connects to the live DB, INSERTs/UPDATEs tickets + waitlist rows for hardcoded event `2`, then deletes them. Don't run it casually.
 
 ## Data model (the thing most likely to be got wrong)
@@ -76,8 +76,8 @@ There is **one** function that decides which public page an event gets: `publicS
 
 ## Auth & middleware
 
-- Admin: hardcoded `admin@goodlife.com` / `GoodlifeAdmin2026!` → cookie `goodlife_admin_session=true` (1 day, httpOnly). No Supabase Auth. The same password is re-typed client-side to confirm permanent deletes in the dashboard trash.
-- Simulator/dev-panel toggle has its own password, `GoodlifeSim2026!` (`/api/admin/verify-simulator-password`), stored per event as `simulators_enabled`.
+- Admin: `admin@goodlife.com` / `<set in env: ADMIN_PASSWORD>` → cookie `goodlife_admin_session=true` (1 day, httpOnly). No Supabase Auth. The same password is re-typed to confirm permanent deletes in the dashboard trash (server-side verified with `timingSafeEqual`).
+- Simulator/dev-panel toggle has its own password, `<set in env: SIMULATOR_PASSWORD>` (`/api/admin/verify-simulator-password`), stored per event as `simulators_enabled`.
 - Vendor operator: 4-digit PIN → `goodlife_vendor_session` = base64 JSON (`vendorId`, `operatorId`, `role`, …), 12h. Decoded, not signed — treat every `vendorId` in a request body as untrusted.
 - **Gate scanner is a third session**, `goodlife_scanner_session` (also base64 JSON, `/api/scanner/auth`), and it accepts the admin password as a superuser bypass. `/scanner` + `/scanner/login` are its own route pair, and middleware redirects `/admin/scanner` → `/scanner` when a scanner session exists. Don't assume "protected by middleware" means "admin cookie".
 - `middleware.ts` protects `/admin/*`, `/scanner/*`, `/login`, `/vendor/*`, `/api/admin/*`, `/api/scanner/*`, `/api/vendor/*`, non-GET `/api/ticket-tiers`, `/api/event-details` PUT, and `/api/events/*` except public `GET /api/events/active`. **The `config.matcher` is an explicit allowlist**: a brand-new `/api/*` route is public until you add it there, and handlers should still call `requireAdmin()` (`lib/admin-auth.ts`) or re-check the cookie. `/api/hub/*` (gallery/radio writes) is currently unauthenticated.

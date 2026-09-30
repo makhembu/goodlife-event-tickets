@@ -1250,14 +1250,10 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
 
   const handleTrashPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (trashPassword !== "GoodlifeAdmin2026!") {
-      alert("Incorrect admin password. Access denied.");
-      return;
-    }
 
     try {
       if (trashActionType === "clear_all") {
-        await emptyTrash();
+        await emptyTrash(trashPassword);
         setSelectedTrashTicketIds([]);
         setSelectedTrashTierIds([]);
       } else if (trashActionType === "delete_selected") {
@@ -1310,14 +1306,19 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
       id: "GL-" + Math.random().toString(36).substring(2, 10).toUpperCase(),
       mpesa_receipt: "O" + Math.random().toString(36).substring(2, 11).toUpperCase(),
       phone_number: "2547",
-      ticket_type: firstTier?.id || "ADV 500",
-      amount_paid: firstTier?.price || 500,
+      ticket_type: firstTier?.id || "",
+      amount_paid: firstTier?.price ?? 0,
       is_scanned: false
     });
   };
 
   const handleSaveCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ticketFormState.ticket_type) {
+      alert("Please select a valid ticket tier before issuing.");
+      setSaving(null);
+      return;
+    }
     setSaving("create");
     try {
       const ticket = await createTicket({
@@ -4582,7 +4583,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                   required
                   value={trashPassword}
                   onChange={(e) => setTrashPassword(e.target.value)}
-                  placeholder="Enter GoodlifeAdmin2026!"
+                  placeholder="Enter admin password"
                   className="w-full border-2 border-[var(--brand-navy)] px-3 py-2 font-mono text-sm bg-[var(--brand-off-white)] focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
               </div>

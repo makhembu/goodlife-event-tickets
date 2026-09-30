@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -9,7 +10,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { email, password } = body;
 
-    if (email === "admin@goodlife.com" && password === "GoodlifeAdmin2026!") {
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+    if (!ADMIN_PASSWORD) {
+      return NextResponse.json({ success: false, message: "Server misconfiguration" }, { status: 500 });
+    }
+
+    const submitted = Buffer.from(password || "");
+    const expected = Buffer.from(ADMIN_PASSWORD);
+    const passwordMatch =
+      submitted.length === expected.length && timingSafeEqual(submitted, expected);
+
+    if (email === "admin@goodlife.com" && passwordMatch) {
       const response = NextResponse.json({ success: true, message: "Authenticated successfully" });
       
       // Set session cookie

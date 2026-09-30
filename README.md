@@ -45,7 +45,7 @@ See `.env.example`. Key ones:
 
 ```
 Email:    admin@goodlife.com
-Password: GoodlifeAdmin2026!
+Password: <set in env: ADMIN_PASSWORD>
 ```
 
 Login at `/login`.
