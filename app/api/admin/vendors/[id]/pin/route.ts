@@ -3,6 +3,39 @@ import { randomInt } from "crypto";
 import { getVendorById, fetchOperatorsForVendor, updateOperator, createOperator } from "@/lib/supabase-db";
 import { sendTextMessage } from "@/lib/whatsapp";
 
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
+  if (adminSession !== "true") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const vendorId = parseInt(id, 10);
+  if (isNaN(vendorId)) {
+    return NextResponse.json({ error: "Invalid vendor ID" }, { status: 400 });
+  }
+
+  try {
+    const operators = await fetchOperatorsForVendor(vendorId);
+    return NextResponse.json({
+      success: true,
+      vendorId,
+      operators: operators.map(op => ({
+        id: op.id,
+        name: op.name,
+        role: op.role,
+        pin: op.pin,
+        is_active: op.is_active
+      }))
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "Failed to fetch PINs" }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }

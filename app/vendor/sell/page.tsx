@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText } from "lucide-react";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2 } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export default function VendorSellPage() {
@@ -18,6 +18,13 @@ export default function VendorSellPage() {
   const [tabs, setTabs] = useState<any[]>([]);
   const [completedSale, setCompletedSale] = useState<any>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  // Customer & Tab Search state for Split Payment
+  const [eventCustomers, setEventCustomers] = useState<any[]>([]);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
+  const [isCreatingTabForCustomer, setIsCreatingTabForCustomer] = useState(false);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   
   // Custom new tab modal state
   const [showNewTabModal, setShowNewTabModal] = useState(false);
@@ -221,6 +228,87 @@ export default function VendorSellPage() {
     }
   };
 
+  const loadCustomers = (searchQuery = "") => {
+    setIsLoadingCustomers(true);
+    const q = searchQuery.trim() ? `?q=${encodeURIComponent(searchQuery.trim())}` : "";
+    fetch(`/api/vendor/customers${q}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.customers)) {
+          setEventCustomers(data.customers);
+        }
+      })
+      .catch(err => {
+        console.error("Error loading event customers:", err);
+      })
+      .finally(() => {
+        setIsLoadingCustomers(false);
+      });
+  };
+
+  const handleSelectCustomer = async (cust: any) => {
+    // Check if this customer already has an open tab
+    const cleanCustPhone = (cust.phone_number || "").replace(/\D/g, "");
+    const existingTab = tabs.find(t => {
+      const tabPhone = (t.customer_phone || "").replace(/\D/g, "");
+      if (cleanCustPhone && tabPhone && cleanCustPhone.length >= 9 && tabPhone.length >= 9) {
+        if (tabPhone.endsWith(cleanCustPhone.slice(-9)) || cleanCustPhone.endsWith(tabPhone.slice(-9))) {
+          return true;
+        }
+      }
+      return t.customer_name.trim().toLowerCase() === cust.buyer_name.trim().toLowerCase();
+    });
+
+    if (existingTab) {
+      handleTabSelect(existingTab.id.toString());
+      setCustomerSearchQuery("");
+      setIsSearchDropdownOpen(false);
+      return;
+    }
+
+    // Auto-create an open tab for this attendee
+    setIsCreatingTabForCustomer(true);
+    try {
+      const phoneToUse = cust.phone_number?.trim() || cust.whatsapp_number?.trim() || "";
+      const res = await fetch("/api/vendor/tabs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: cust.buyer_name.trim(),
+          customer_phone: phoneToUse,
+          credit_limit: 5000
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.tab) {
+        HapticFeedback.trigger("success");
+        const newTab = data.tab;
+        setTabs(prev => [newTab, ...prev]);
+        setTabId(newTab.id.toString());
+
+        // Auto-fill amount based on new tab's available credit limit
+        const unpaidDue = Math.max(0, total - (numCash + numMpesa));
+        const availableCredit = Number(newTab.credit_limit) - Number(newTab.balance || 0);
+        const fillAmount = Math.max(0, Math.min(unpaidDue, availableCredit));
+        setTabAmount(fillAmount > 0 ? fillAmount.toString() : "");
+
+        if (phoneToUse && !mpesaCustomerPhone) {
+          setMpesaCustomerPhone(phoneToUse);
+        }
+        setCustomerSearchQuery("");
+        setIsSearchDropdownOpen(false);
+      } else {
+        HapticFeedback.trigger("error");
+        alert(data.message || "Failed to open tab for attendee");
+      }
+    } catch {
+      HapticFeedback.trigger("error");
+      alert("Error creating tab for attendee");
+    } finally {
+      setIsCreatingTabForCustomer(false);
+    }
+  };
+
   useEffect(() => {
     fetch("/api/vendor/items")
       .then(res => res.json())
@@ -243,7 +331,30 @@ export default function VendorSellPage() {
       .catch(err => {
         console.error("Error loading vendor tabs:", err);
       });
+
+    loadCustomers();
   }, []);
+
+  // Debounced search for event customers
+  useEffect(() => {
+    if (!customerSearchQuery.trim()) return;
+    const timer = setTimeout(() => {
+      fetch(`/api/vendor/customers?q=${encodeURIComponent(customerSearchQuery.trim())}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.customers)) {
+            setEventCustomers(prev => {
+              const map = new Map();
+              prev.forEach(c => map.set(c.id, c));
+              data.customers.forEach((c: any) => map.set(c.id, c));
+              return Array.from(map.values());
+            });
+          }
+        })
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [customerSearchQuery]);
 
   const addToCart = (item: any) => {
     HapticFeedback.trigger("confirmation");
@@ -372,6 +483,7 @@ export default function VendorSellPage() {
         setShowCheckout(false);
         setCashAmount(""); setMpesaAmount(""); setTabAmount(""); setTabId("");
         setMpesaRef(""); setIsMpesaVerified(false); setMpesaCustomerPhone(""); setShowManualMpesa(false);
+        setCustomerSearchQuery(""); setIsSearchDropdownOpen(false);
       } else {
         HapticFeedback.trigger("error");
         alert(data.message || "Checkout failed");
@@ -383,6 +495,26 @@ export default function VendorSellPage() {
       setSubmittingSale(false);
     }
   };
+
+  const selectedTab = tabs.find(t => t.id === Number(tabId));
+  const query = customerSearchQuery.trim().toLowerCase();
+  const cleanQueryPhone = customerSearchQuery.replace(/\D/g, "");
+
+  const filteredTabs = tabs.filter(t => {
+    if (t.status !== 'open') return false;
+    if (!query) return true;
+    const nameMatch = t.customer_name?.toLowerCase().includes(query);
+    const phoneMatch = t.customer_phone?.toLowerCase().includes(query) || (cleanQueryPhone && (t.customer_phone || "").replace(/\D/g, "").includes(cleanQueryPhone));
+    return nameMatch || phoneMatch;
+  });
+
+  const filteredCustomers = eventCustomers.filter(c => {
+    if (!query) return false;
+    const nameMatch = c.buyer_name?.toLowerCase().includes(query);
+    const phoneMatch = c.phone_number?.toLowerCase().includes(query) || (c.whatsapp_number && c.whatsapp_number.toLowerCase().includes(query)) || (cleanQueryPhone && (c.phone_number || "").replace(/\D/g, "").includes(cleanQueryPhone));
+    const ticketMatch = c.id?.toLowerCase().includes(query) || c.ticket_type?.toLowerCase().includes(query);
+    return nameMatch || phoneMatch || ticketMatch;
+  });
 
   return (
     <div className="w-full h-full flex flex-col md:flex-row bg-brand-off-white">
@@ -755,37 +887,246 @@ export default function VendorSellPage() {
                     </button>
                   )}
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <select 
-                    value={tabId} 
-                    onChange={e => handleTabSelect(e.target.value)} 
-                    className="w-full flex-1 border-2 border-brand-navy p-2 bg-brand-off-white font-mono text-xs focus:ring-4 focus:ring-brand-accent outline-none"
-                  >
-                    <option value="">Select Staff / VIP Tab...</option>
-                    {tabs.map(t => {
-                      const avail = Number(t.credit_limit) - Number(t.balance);
-                      const phoneMask = t.customer_phone ? `...${t.customer_phone.slice(-4)}` : "No Phone";
-                      return (
-                        <option key={t.id} value={t.id}>
-                          {t.customer_name} ({phoneMask}) — KES {avail.toLocaleString()} left
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <input 
-                    type="number" 
-                    placeholder="0" 
-                    value={tabAmount} 
-                    onChange={e => setTabAmount(e.target.value)} 
-                    className="w-full sm:w-28 text-xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
-                  />
-                </div>
+                {/* Selected Tab Card or Search Input */}
+                {selectedTab ? (
+                  <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+                    <div className="flex-1 bg-brand-accent/15 border-2 border-brand-navy p-2.5 flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-display text-sm uppercase text-brand-navy truncate">
+                            {selectedTab.customer_name}
+                          </span>
+                          <span className="text-[10px] font-mono bg-brand-navy text-brand-accent px-1.5 py-0.5 font-bold uppercase">
+                            {selectedTab.customer_phone || "NO PHONE"}
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-brand-navy/80 mt-1 flex items-center gap-2">
+                          <span>
+                            AVAIL: <strong className="text-green-700">KES {(Number(selectedTab.credit_limit) - Number(selectedTab.balance)).toLocaleString()}</strong>
+                          </span>
+                          <span className="text-brand-navy/60">
+                            (LIMIT: KES {Number(selectedTab.credit_limit).toLocaleString()})
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTabId("");
+                          setTabAmount("");
+                          setCustomerSearchQuery("");
+                          setIsSearchDropdownOpen(false);
+                        }}
+                        className="text-xs font-bold text-brand-navy border-2 border-brand-navy px-2.5 py-1 bg-white uppercase hover:bg-brand-navy hover:text-white transition-colors shrink-0 shadow-(--shadow-brut-xs)"
+                      >
+                        Change
+                      </button>
+                    </div>
+                    <input 
+                      type="number" 
+                      placeholder="0" 
+                      value={tabAmount} 
+                      onChange={e => setTabAmount(e.target.value)} 
+                      className="w-full sm:w-28 text-xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
+                    />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    {/* Backdrop to dismiss search dropdown on click-away */}
+                    {isSearchDropdownOpen && (
+                      <div 
+                        className="fixed inset-0 z-20" 
+                        onClick={() => setIsSearchDropdownOpen(false)} 
+                      />
+                    )}
+
+                    <div className="relative z-30 flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 absolute left-3 top-3 text-brand-navy/50 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={customerSearchQuery}
+                          onChange={e => {
+                            setCustomerSearchQuery(e.target.value);
+                            setIsSearchDropdownOpen(true);
+                          }}
+                          onFocus={() => setIsSearchDropdownOpen(true)}
+                          placeholder="Search open tab or event customer (name/phone)..."
+                          className="w-full pl-9 pr-8 py-2 text-xs font-mono border-2 border-brand-navy bg-brand-off-white focus:bg-white focus:ring-2 focus:ring-brand-accent outline-none uppercase"
+                        />
+                        {customerSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerSearchQuery("");
+                              setIsSearchDropdownOpen(true);
+                            }}
+                            className="absolute right-2.5 top-2.5 text-brand-navy/60 hover:text-brand-navy p-0.5"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        disabled 
+                        value="" 
+                        title="Search and select a tab or attendee first"
+                        className="w-full sm:w-28 text-xl font-mono p-2 border-2 border-brand-navy bg-gray-100 text-gray-400 outline-none cursor-not-allowed" 
+                      />
+                    </div>
+
+                    {/* Autocomplete / Search Dropdown Menu */}
+                    {isSearchDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border-4 border-brand-navy shadow-(--shadow-brut-lg) max-h-64 overflow-y-auto">
+                        {isCreatingTabForCustomer && (
+                          <div className="p-3 bg-brand-accent/20 border-b-2 border-brand-navy flex items-center justify-center gap-2 text-xs font-bold text-brand-navy uppercase">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Opening tab for attendee...
+                          </div>
+                        )}
+
+                        {/* Active Open Tabs Section */}
+                        {filteredTabs.length > 0 && (
+                          <div>
+                            <div className="px-3 py-1.5 bg-brand-navy text-brand-accent text-[10px] font-mono font-bold uppercase tracking-wider flex justify-between items-center sticky top-0 z-10">
+                              <span>Open Tabs ({filteredTabs.length})</span>
+                              <span className="text-[9px] opacity-75">Active Tab</span>
+                            </div>
+                            <div className="divide-y divide-brand-navy/10">
+                              {filteredTabs.slice(0, 8).map(t => {
+                                const avail = Number(t.credit_limit) - Number(t.balance);
+                                return (
+                                  <button
+                                    key={`tab-${t.id}`}
+                                    type="button"
+                                    onClick={() => {
+                                      handleTabSelect(t.id.toString());
+                                      setCustomerSearchQuery("");
+                                      setIsSearchDropdownOpen(false);
+                                    }}
+                                    className="w-full p-2.5 text-left hover:bg-brand-accent/20 active:bg-brand-accent/30 transition-colors flex items-center justify-between gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-bold text-xs uppercase text-brand-navy truncate">
+                                          {t.customer_name}
+                                        </span>
+                                        <span className="text-[9px] font-mono bg-brand-navy text-brand-off-white px-1 py-0.2 font-bold uppercase">
+                                          TAB
+                                        </span>
+                                        {t.customer_phone && (
+                                          <span className="text-[10px] font-mono text-brand-navy/60">
+                                            {t.customer_phone}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <span className="font-mono text-xs font-bold text-green-700 block">
+                                        KES {avail.toLocaleString()} left
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Event Attendees Section (When user searches) */}
+                        {filteredCustomers.length > 0 && (
+                          <div className={filteredTabs.length > 0 ? "border-t-2 border-brand-navy" : ""}>
+                            <div className="px-3 py-1.5 bg-brand-accent text-brand-navy text-[10px] font-mono font-bold uppercase tracking-wider flex justify-between items-center sticky top-0 z-10">
+                              <span>Current Event Attendees ({filteredCustomers.length})</span>
+                              <span className="text-[9px] font-bold">Tap to Select / Open Tab</span>
+                            </div>
+                            <div className="divide-y divide-brand-navy/10">
+                              {filteredCustomers.slice(0, 10).map((cust, idx) => {
+                                const cleanCustPhone = (cust.phone_number || "").replace(/\D/g, "");
+                                const hasExistingTab = tabs.some(t => {
+                                  const tabPhone = (t.customer_phone || "").replace(/\D/g, "");
+                                  if (cleanCustPhone && tabPhone && cleanCustPhone.length >= 9 && tabPhone.length >= 9) {
+                                    return tabPhone.endsWith(cleanCustPhone.slice(-9)) || cleanCustPhone.endsWith(tabPhone.slice(-9));
+                                  }
+                                  return t.customer_name.trim().toLowerCase() === cust.buyer_name.trim().toLowerCase();
+                                });
+
+                                return (
+                                  <button
+                                    key={`cust-${cust.id}-${idx}`}
+                                    type="button"
+                                    onClick={() => handleSelectCustomer(cust)}
+                                    className="w-full p-2.5 text-left hover:bg-brand-accent/20 active:bg-brand-accent/30 transition-colors flex items-center justify-between gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <Ticket className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+                                        <span className="font-bold text-xs uppercase text-brand-navy truncate">
+                                          {cust.buyer_name}
+                                        </span>
+                                        <span className="text-[9px] font-mono bg-brand-navy/15 text-brand-navy px-1 py-0.2 font-bold uppercase border border-brand-navy/30">
+                                          {cust.ticket_type || "TICKET"}
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] font-mono text-brand-navy/70 mt-0.5">
+                                        {cust.phone_number || "No Phone"} {cust.ticket_count > 1 ? `(${cust.ticket_count} tickets)` : ""}
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <span className="text-[10px] font-mono font-bold text-brand-navy bg-brand-accent/30 border border-brand-navy/40 px-1.5 py-0.5 uppercase">
+                                        {hasExistingTab ? "Has Tab" : "+ Open Tab"}
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Hint when query is empty */}
+                        {!customerSearchQuery.trim() && (
+                          <div className="p-2.5 bg-brand-off-white border-t border-brand-navy/20 text-[10px] font-mono text-brand-navy/70 text-center flex items-center justify-center gap-1">
+                            <Search className="w-3 h-3 text-brand-navy/50" />
+                            Type name or phone to search all event ticket attendees
+                          </div>
+                        )}
+
+                        {/* Empty State */}
+                        {customerSearchQuery.trim() && filteredTabs.length === 0 && filteredCustomers.length === 0 && (
+                          <div className="p-4 text-center space-y-2">
+                            <p className="text-xs font-mono text-brand-navy/80">
+                              No open tabs or event attendees match "{customerSearchQuery}"
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowNewTabModal(true);
+                                setNewTabName(customerSearchQuery);
+                                setIsSearchDropdownOpen(false);
+                              }}
+                              className="px-3 py-1.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-bold text-xs uppercase hover:bg-brand-navy hover:text-brand-accent transition-colors shadow-(--shadow-brut-xs)"
+                            >
+                              + Open New Tab for "{customerSearchQuery}"
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="flex gap-4 mt-6">
               <button 
-                onClick={() => setShowCheckout(false)} 
+                onClick={() => {
+                  setShowCheckout(false);
+                  setIsSearchDropdownOpen(false);
+                  setCustomerSearchQuery("");
+                }} 
                 className="flex-1 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-lg transition-colors"
               >
                 Cancel

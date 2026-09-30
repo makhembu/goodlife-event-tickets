@@ -1,8 +1,8 @@
-import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket } from "./supabase-db-types";
+import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer } from "./supabase-db-types";
 import { getEventAvailability, type SchedulableEvent } from "./event-availability";
 
 // Re-export interface types so all existing pages compile unchanged
-export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket };
+export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer };
 
 // Safe import for server-side pg pool to avoid breaking client bundle builds
 export let neonQuery: any = null;
@@ -2730,6 +2730,52 @@ export async function fetchTabsForVendor(vendorId: number, eventId: number): Pro
     [vendorId, eventId]
   );
   return rows;
+}
+
+export async function fetchEventCustomers(eventId: number, search?: string): Promise<EventCustomer[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const q = search ? `&q=${encodeURIComponent(search)}` : "";
+      const res = await fetch(`/api/vendor/customers?eventId=${eventId}${q}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.customers || [];
+      }
+    } catch {}
+    return [];
+  }
+
+  let query = `
+    SELECT 
+      MIN(id) as id,
+      buyer_name,
+      phone_number,
+      COALESCE(MAX(whatsapp_number), '') as whatsapp_number,
+      string_agg(DISTINCT ticket_type, ', ') as ticket_type,
+      COUNT(*)::int as ticket_count,
+      BOOL_OR(is_scanned) as is_scanned
+    FROM tickets
+    WHERE deleted_at IS NULL AND event_id = $1
+  `;
+  const params: any[] = [eventId];
+
+  if (search && search.trim()) {
+    query += ` AND (buyer_name ILIKE $2 OR phone_number ILIKE $2 OR whatsapp_number ILIKE $2 OR id ILIKE $2)`;
+    params.push(`%${search.trim()}%`);
+  }
+
+  query += ` GROUP BY buyer_name, phone_number ORDER BY buyer_name ASC LIMIT 100`;
+
+  const { rows } = await neonQuery(query, params);
+  return (rows || []).map((r: any) => ({
+    id: r.id,
+    buyer_name: r.buyer_name || "Unknown Attendee",
+    phone_number: r.phone_number || "",
+    whatsapp_number: r.whatsapp_number || "",
+    ticket_type: r.ticket_type || "Standard",
+    ticket_count: Number(r.ticket_count) || 1,
+    is_scanned: !!r.is_scanned
+  }));
 }
 
 export async function payTab(tabId: number, amount: number, method: string, mpesaRef: string = "", operatorId?: number | null): Promise<boolean> {

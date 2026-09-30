@@ -1,18 +1,21 @@
 import { NextResponse } from 'next/server';
 import { fetchAllVendors, createVendor, assignVendorToEvent, createOperator, fetchOperatorsForVendor } from '@/lib/supabase-db';
+import { requireAdmin } from '@/lib/admin-auth';
 
 export async function GET() {
+  const unauthorized = await requireAdmin();
+  if (unauthorized) return unauthorized;
+
   try {
     const vendors = await fetchAllVendors();
     // Attach operators for each vendor so the admin UI can view and manage their credentials.
-    // PINs are masked in transit — the PIN reset endpoint returns the new PIN once at rotation time.
     const vendorsWithOperators = await Promise.all(
       vendors.map(async (v) => {
         try {
           const ops = await fetchOperatorsForVendor(v.id);
           return {
             ...v,
-            vendor_operators: ops.map((op) => ({ ...op, pin: "••••" })),
+            vendor_operators: ops,
           };
         } catch {
           return { ...v, vendor_operators: [] };

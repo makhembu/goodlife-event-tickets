@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminVendorsPage() {
@@ -9,6 +9,26 @@ export default function AdminVendorsPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({ name: "", contact_name: "", contact_phone: "" });
+
+  // PIN Visibility States
+  const [showPins, setShowPins] = useState<Record<number, boolean>>({});
+  const [showAllPins, setShowAllPins] = useState(false);
+  const [copiedPinId, setCopiedPinId] = useState<number | null>(null);
+
+  const togglePinVisibility = (opId: number) => {
+    setShowPins(prev => ({
+      ...prev,
+      [opId]: !(showAllPins || prev[opId])
+    }));
+  };
+
+  const copyPinToClipboard = (pin: string, opId: number) => {
+    if (typeof window !== "undefined" && navigator?.clipboard) {
+      navigator.clipboard.writeText(pin);
+      setCopiedPinId(opId);
+      setTimeout(() => setCopiedPinId(null), 2000);
+    }
+  };
 
   // PIN Reset Modal State
   const [pinModal, setPinModal] = useState<{
@@ -216,6 +236,15 @@ export default function AdminVendorsPage() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAllPins((prev) => !prev)}
+              className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs cursor-pointer select-none"
+              title={showAllPins ? "Mask all operator PINs" : "Reveal all operator PINs"}
+            >
+              {showAllPins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-brand-navy" />}
+              {showAllPins ? "Mask All PINs" : "View All PINs"}
+            </button>
             <Link
               href="/admin/settlements"
               className="border-2 border-brand-navy bg-brand-off-white px-3 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center gap-1.5 shadow-(--shadow-brut-xs) transition-colors text-xs"
@@ -262,26 +291,56 @@ export default function AdminVendorsPage() {
 
                     {v.vendor_operators && v.vendor_operators.length > 0 ? (
                       <div className="space-y-2">
-                        {v.vendor_operators.map((op: any) => (
-                          <div key={op.id} className="flex justify-between items-center text-xs py-1 px-2 bg-brand-off-white border border-brand-navy/30">
-                            <div>
-                              <span className="font-bold">{op.name}</span>
-                              <span className="text-[10px] opacity-60 ml-1 uppercase">({op.role})</span>
+                        {v.vendor_operators.map((op: any) => {
+                          const isRevealed = showAllPins || !!showPins[op.id];
+                          const pinDisplay = isRevealed ? (op.pin || "None") : "••••";
+
+                          return (
+                            <div key={op.id} className="flex justify-between items-center text-xs py-1.5 px-2 bg-brand-off-white border border-brand-navy/30">
+                              <div className="min-w-0 pr-2">
+                                <span className="font-bold truncate">{op.name}</span>
+                                <span className="text-[10px] opacity-60 ml-1 uppercase">({op.role})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePinVisibility(op.id)}
+                                  title={isRevealed ? "Click to mask PIN" : "Click to view PIN"}
+                                  className="font-mono bg-brand-accent/30 hover:bg-brand-accent px-1.5 py-0.5 border border-brand-navy/30 font-bold flex items-center gap-1.5 transition-colors cursor-pointer select-none text-[11px]"
+                                >
+                                  <span className="opacity-70 text-[10px]">PIN:</span>
+                                  <span className="font-mono font-black tracking-widest text-brand-navy">
+                                    {pinDisplay}
+                                  </span>
+                                  {isRevealed ? (
+                                    <EyeOff className="w-3 h-3 text-brand-navy/70 shrink-0" />
+                                  ) : (
+                                    <Eye className="w-3 h-3 text-brand-navy/70 shrink-0" />
+                                  )}
+                                </button>
+
+                                {isRevealed && op.pin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyPinToClipboard(op.pin, op.id)}
+                                    title="Copy PIN to clipboard"
+                                    className="border border-brand-navy bg-white hover:bg-brand-accent p-1 text-xs font-bold uppercase transition-colors shrink-0"
+                                  >
+                                    {copiedPinId === op.id ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => openResetPinModal(v, op)}
+                                  title="Reset Operator PIN"
+                                  className="border border-brand-navy bg-white hover:bg-brand-accent p-1 text-xs font-bold uppercase transition-colors shrink-0"
+                                >
+                                  <Key className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono bg-brand-accent/30 px-1 py-0.5 border border-brand-navy/30 font-bold">
-                                PIN: ••••
-                              </span>
-                              <button
-                                onClick={() => openResetPinModal(v, op)}
-                                title="Reset Operator PIN"
-                                className="border border-brand-navy bg-white hover:bg-brand-accent p-1 text-xs font-bold uppercase transition-colors"
-                              >
-                                <Key className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="flex items-center justify-between py-1">
@@ -381,9 +440,16 @@ export default function AdminVendorsPage() {
 
                   <div>
                     <label className="block text-xs font-bold uppercase mb-1">Target Operator</label>
-                    <div className="p-2 border-2 border-brand-navy bg-white text-sm font-bold">
+                    <div className="p-2 border-2 border-brand-navy bg-white text-sm font-bold flex justify-between items-center">
                       {pinModal.operator ? (
-                        <span>{pinModal.operator.name} ({pinModal.operator.role})</span>
+                        <>
+                          <span>{pinModal.operator.name} ({pinModal.operator.role})</span>
+                          {pinModal.operator.pin && (
+                            <span className="font-mono bg-brand-accent/40 px-2 py-0.5 border border-brand-navy text-xs">
+                              CURRENT PIN: <span className="font-black text-brand-navy">{pinModal.operator.pin}</span>
+                            </span>
+                          )}
+                        </>
                       ) : (
                         <span className="opacity-70">Primary Vendor Operator</span>
                       )}

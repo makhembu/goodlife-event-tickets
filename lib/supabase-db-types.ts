@@ -154,3 +154,14 @@ export interface EventWaitlistEntry {
   notified_at: string | null;
   created_at: string;
 }
+
+export interface EventCustomer {
+  id: string;
+  buyer_name: string;
+  phone_number: string;
+  whatsapp_number?: string;
+  ticket_type: string;
+  ticket_count: number;
+  is_scanned: boolean;
+}
+
