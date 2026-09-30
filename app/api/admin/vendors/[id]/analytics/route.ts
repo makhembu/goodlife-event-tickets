@@ -23,7 +23,7 @@ export async function GET(
   try {
     // 1. Vendor Details
     const { rows: vendorRows } = await neonQuery(
-      `SELECT id, name, contact_name, contact_phone, default_commission_rate, logo_url, status, created_at
+      `SELECT id, name, contact_name, contact_phone, logo_url, created_at
        FROM vendors
        WHERE id = $1 AND deleted_at IS NULL
        LIMIT 1`,
@@ -158,9 +158,13 @@ export async function GET(
     } else if (assignmentRows.length > 0) {
       commissionRate = Number(assignmentRows[0].commission_rate) || 10.0;
       settledAmount = assignmentRows.reduce((sum: number, a: any) => sum + Number(a.settled_amount || 0), 0);
-    } else if (vendor.default_commission_rate) {
-      commissionRate = Number(vendor.default_commission_rate) || 10.0;
     }
+
+    const resolvedVendor = {
+      ...vendor,
+      status: assignmentRows[0]?.status || "active",
+      default_commission_rate: commissionRate
+    };
 
     const commissionOwed = Math.round((totalGross * commissionRate) / 100);
     const outstandingDue = Math.max(0, commissionOwed - settledAmount);
@@ -177,7 +181,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      vendor,
+      vendor: resolvedVendor,
       assignments: assignmentRows,
       operators: operatorRows,
       summary: {

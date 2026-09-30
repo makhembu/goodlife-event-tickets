@@ -194,7 +194,7 @@ export default function VendorSalesPage() {
   };
 
   return (
-    <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6">
+    <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6 pb-36 md:pb-12">
       
       {/* HEADER & CONTROLS */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-brand-off-white border-4 border-brand-navy p-4 shadow-(--shadow-brut-md)">
@@ -340,8 +340,8 @@ export default function VendorSalesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs">
+          <div className="overflow-x-auto touch-pan-x">
+            <table className="w-full text-left font-mono text-xs min-w-[640px]">
               <thead className="bg-brand-navy text-brand-off-white uppercase border-b-3 border-brand-navy text-[11px] font-black tracking-wider">
                 <tr>
                   <th className="p-3 w-8"></th>
@@ -502,6 +502,9 @@ export default function VendorSalesPage() {
           </div>
         )}
       </div>
+
+      {/* Mobile Safe Area & Bottom Nav Clearance Spacer */}
+      <div className="h-16 md:hidden" aria-hidden="true" />
 
     </div>
   );

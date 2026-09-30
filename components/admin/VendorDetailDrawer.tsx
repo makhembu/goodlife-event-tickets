@@ -56,9 +56,12 @@ export default function VendorDetailDrawer({
 
     const query = eventId && eventId !== "all" && eventId !== "" ? `?eventId=${eventId}` : "";
     fetch(`/api/admin/vendors/${vendorId}/analytics${query}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load vendor data");
-        return res.json();
+      .then(async (res) => {
+        const resData = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(resData.error || `Failed to load vendor data (${res.status})`);
+        }
+        return resData;
       })
       .then((resData) => {
         if (resData.success) {
@@ -259,8 +262,30 @@ export default function VendorDetailDrawer({
               <p className="text-xs font-black uppercase text-[var(--brand-navy)]">Fetching vendor stock and sales records...</p>
             </div>
           ) : error ? (
-            <div className="p-4 bg-red-100 border-2 border-red-600 text-red-900 font-bold uppercase text-xs">
+            <div className="p-4 bg-red-100 border-2 border-red-600 text-red-900 font-bold uppercase text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <p>Error: {error}</p>
+              <button
+                onClick={() => {
+                  setLoading(true);
+                  setError(null);
+                  const query = eventId && eventId !== "all" && eventId !== "" ? `?eventId=${eventId}` : "";
+                  fetch(`/api/admin/vendors/${vendorId}/analytics${query}`)
+                    .then(async (res) => {
+                      const resData = await res.json().catch(() => ({}));
+                      if (!res.ok) throw new Error(resData.error || `Failed to load vendor data (${res.status})`);
+                      return resData;
+                    })
+                    .then((resData) => {
+                      if (resData.success) setData(resData);
+                      else setError(resData.error || "Failed to load vendor data");
+                    })
+                    .catch((err) => setError(err.message || "Network error loading vendor data"))
+                    .finally(() => setLoading(false));
+                }}
+                className="px-3 py-1.5 bg-red-600 text-white font-black hover:bg-black uppercase border border-red-900 transition-colors w-fit cursor-pointer"
+              >
+                RETRY
+              </button>
             </div>
           ) : (
             <>

@@ -165,7 +165,7 @@ export default function VendorMenuPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 bg-brand-off-white overflow-y-auto font-mono text-brand-navy">
+    <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 pb-36 md:pb-8 bg-brand-off-white overflow-y-auto font-mono text-brand-navy">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h1 className="font-display text-3xl uppercase tracking-wider">STALL CATALOG & INVENTORY</h1>
