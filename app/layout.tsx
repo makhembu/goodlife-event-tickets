@@ -63,8 +63,8 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [
         {
           url: absoluteImageUrl,
-          width: 1131,
-          height: 1600,
+          width: 896,
+          height: 1200,
           alt: `${title} - ${subtitle} Official Event Flyer`,
           type: 'image/png',
         },

@@ -40,3 +40,11 @@ tsconfig.tsbuildinfo
 # shape summary to stdout instead and no longer writes this file at all.
 webhook-logs.txt
 
+# Security audit findings. Names the location of every leaked credential, so
+# it must not be published while the repo is public.
+SECURITY-AUDIT.md
+
+# 51 MB project backup. Tracked, and contains two .env.local copies with the
+# production Neon password. Untrack with: git rm --cached -r backups/
+backups/
+

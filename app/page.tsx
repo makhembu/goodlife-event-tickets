@@ -71,8 +71,8 @@ export async function generateMetadata(props: {
         images: [
           {
             url: image,
-            width: 1131,
-            height: 1600,
+            width: 896,
+            height: 1200,
             alt: `${title} official event flyer`,
             type: "image/png",
           },

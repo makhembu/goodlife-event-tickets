@@ -69,10 +69,10 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
     setCategory(cat);
     if (cat === "mini") {
       setTitle("SUNDAY PARK & CHILL #13");
-      setSubtitle("THE HUB GARDEN | EVERY SUNDAY");
+      setSubtitle("RIVERFRONT GARDEN, MARARA CAMP | EVERY SUNDAY");
       setTag("GOODLIFE MINI SESSIONS");
-      setVenue("THE HUB GARDEN, NAIROBI");
-      setMapsUrl("https://www.google.com/maps/search/?api=1&query=The+Hub+Karen+Nairobi");
+      setVenue("RIVERFRONT GARDEN, MARARA CAMP, THIKA");
+      setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
       setFlyerUrl("/flyer-park-chill.png");
       setMaxTentInventory(0);
       setMaxSharedBeds(0);

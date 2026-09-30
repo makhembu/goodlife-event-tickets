@@ -40,8 +40,8 @@ export async function generateMetadata(props: {
         images: [
           {
             url: image,
-            width: 1131,
-            height: 1600,
+            width: 896,
+            height: 1200,
             alt: `${title} official event flyer`,
             type: 'image/png',
           },
@@ -77,7 +77,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
     <div className="min-h-screen bg-brand-off-white font-mono text-brand-navy p-6 md:p-12 flex items-center justify-center">
       <div className="max-w-2xl w-full border-4 border-brand-navy bg-white p-6 md:p-10 shadow-(--shadow-brut-xl-strong)">
         {flyer && (
-          <div className="relative w-full aspect-[1131/1600] max-h-96 mb-6 border-2 border-brand-navy overflow-hidden bg-brand-navy/5">
+          <div className="relative w-full aspect-[3/4] max-h-[480px] mb-6 border-2 border-brand-navy overflow-hidden bg-brand-navy/5">
             <Image
               src={flyer}
               alt={event.title}
