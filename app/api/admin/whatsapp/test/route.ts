@@ -1,51 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-auth";
+import { sendWahaText } from "@/lib/waha";
 
+export const dynamic = "force-dynamic";
+
+/** Kenyan mobile numbers: 07…, 2547…, 7…, or 0012547… */
+function normalizeKenyanPhone(input: string): string | null {
+  let digits = input.replace(/[^0-9]/g, "");
+
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = `254${digits.slice(1)}`;
+  else if (digits.length === 9) digits = `254${digits}`;
+
+  return /^2547\d{8}$/.test(digits) ? digits : null;
+}
+
+/** Dispatch a test message through the paired WhatsApp session. */
 export async function POST(request: NextRequest) {
-  const url = process.env.WHATSAPP_GATEWAY_URL || "https://waha.darajadigital.com";
-  const apiKey = process.env.WHATSAPP_API_KEY || "goodlife_waha_secret_2026";
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const unauthorized = await requireAdmin();
+  if (unauthorized) return unauthorized;
+
+  let phoneNumber = "";
+  let message = "";
 
   try {
-    const { phoneNumber, message } = await request.json();
-    if (!phoneNumber) {
-      return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
-    }
-
-    let formattedPhone = phoneNumber.replace(/[^0-9]/g, "");
-    if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
-    if (formattedPhone.length === 9) formattedPhone = "254" + formattedPhone;
-
-    const baseUrl = url.replace(/\/+$/, "");
-    const testText = message || `🎉 GOODLIFE FESTIVAL — WhatsApp Gateway Test\n\nYour WhatsApp gateway is LIVE and operational on session: ${sessionId}.\nTimestamp: ${new Date().toISOString()}`;
-
-    const res = await fetch(`${baseUrl}/api/sendText`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Api-Key": apiKey
-      },
-      body: JSON.stringify({
-        session: sessionId,
-        chatId: `${formattedPhone}@c.us`,
-        text: testText
-      }),
-      signal: AbortSignal.timeout(10000)
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return NextResponse.json({
-        success: false,
-        error: data.message || `WhatsApp Gateway returned HTTP ${res.status}`
-      }, { status: res.status });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: `Test message dispatched to ${formattedPhone}`,
-      data
-    });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    const body = await request.json();
+    phoneNumber = typeof body?.phoneNumber === "string" ? body.phoneNumber : "";
+    message = typeof body?.message === "string" ? body.message.slice(0, 1000) : "";
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
+
+  const normalized = normalizeKenyanPhone(phoneNumber);
+  if (!normalized) {
+    return NextResponse.json(
+      { error: "Enter a valid Kenyan mobile number, for example 0712813284" },
+      { status: 400 }
+    );
+  }
+
+  const text =
+    message.trim() ||
+    "GOODLIFE FESTIVAL - WhatsApp gateway test. Your ticket delivery line is live.";
+
+  const result = await sendWahaText(`${normalized}@c.us`, text);
+
+  return NextResponse.json(
+    {
+      success: result.success,
+      message: result.success
+        ? `Test message dispatched to ${normalized}.`
+        : result.message,
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

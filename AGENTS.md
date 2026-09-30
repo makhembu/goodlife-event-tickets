@@ -59,6 +59,14 @@ Two overlapping "event" models — mixing them breaks checkout, tiers, and gate 
 - `middleware.ts` protects `/admin/*`, `/login`, `/vendor/*`, `/api/admin/*`, non-GET `/api/ticket-tiers`, `/api/event-details` PUT, and `/api/events/*` except public `GET /api/events/active`. **The `config.matcher` is an explicit allowlist**: a brand-new `/api/*` route is public until you add it there, and handlers should still call `requireAdmin()` (`lib/admin-auth.ts`) or re-check the cookie. `/api/hub/*` (gallery/radio writes) is currently unauthenticated.
 - `lib/rate-limit.ts` is per-instance in-memory: it resets on cold start and is useless across replicas. It is already wired onto the login, vendor-auth, and payment-init POSTs — follow that pattern for new sensitive routes.
 
+## WhatsApp gateway console (WAHA)
+
+- **Admin:** `/admin/whatsapp` — pairing QR + test-message console for the WAHA engine. Polling is **event-driven, not timer-based**: fetch on mount, then `setInterval` at 5s for `SCAN_QR_CODE`/`STARTING`, 10s for `OFFLINE`, and **stop entirely at `CONNECTED`** (the interval is rebuilt from `status`, so teardown is automatic). Polling is also skipped while `document.hidden`.
+- **`lib/waha.ts` is the only egress point to WAHA and is server-only** (it throws if imported in the browser). Everything WAHA returns is parsed, then discarded — the base URL, `X-Api-Key`, engine version payloads and WAHA's own prose errors (e.g. *"The headless Chromium session is booting up"*) never reach a client. Callers get only `WahaStatus` (`STARTING | SCAN_QR_CODE | CONNECTED | OFFLINE`), a normalized `me`, and short allow-listed messages.
+- `app/api/admin/whatsapp/{qr,status,test}/route.ts` all call `requireAdmin()` and **always answer HTTP 200** for a reachable gateway (401 when unauthenticated), so the client never has to interpret an error body. `/qr` returns `{ status, me, qrRaw, qrDataUrl, sessionId, checkedAt }` — `qrRaw` is the pairing payload the page renders with the `qrcode` package, `qrDataUrl` is an inlined PNG fallback for WAHA builds that ignore `?format=raw`.
+- **Never add a route that forwards a WAHA body, or the gateway URL/credentials, to the client.** An earlier version of this page printed the WAHA dashboard URL *and* its admin password in the UI; that card is now a sanitized "Gateway health" readout.
+- Env: `WAHA_BASE_URL` / `WAHA_API_KEY` / `WAHA_SESSION_ID`, falling back to `WHATSAPP_GATEWAY_URL` / `WHATSAPP_API_KEY` / `WHATSAPP_SESSION_ID`, then hardcoded defaults (`https://waha.darajadigital.com`, session `default`). The `WAHA_*` names take priority so the console can be pointed at a different engine without disturbing the ticket dispatcher in `lib/whatsapp.ts`, which keeps using `WHATSAPP_GATEWAY_*`.
+
 ## Tickets & gate scanning
 
 - Ticket id **is** the merchant reference: `GL-XXXX`, and for multi-ticket orders `GL-XXXX-1`, `-2`, … (see `lib/payhero-fulfill.ts`). The PDF QR encodes `${APP_URL}/admin/scanner?ticket=<id>`; the scanner also accepts a raw id and `/admin/scan/<id>`.
@@ -68,7 +76,7 @@ Two overlapping "event" models — mixing them breaks checkout, tiers, and gate 
 ## Route map (non-obvious parts only)
 
 - Public: `/` (checkout; `closed` **and** `scheduled` events render `ClosedEventClientPage`), `/events`, `/events/[id]`, `/gallery`, `/radio`, `/pay/tab/[id]`, `/login`, `/vendor/*`.
-- Admin: `/admin/dashboard` (a ~180 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/scanner`, `/admin/vendors`, `/admin/gallery`, `/admin/settlements`.
+- Admin: `/admin/dashboard` (a ~180 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/scanner`, `/admin/vendors`, `/admin/gallery`, `/admin/settlements`, `/admin/whatsapp` (WAHA pairing console).
 - Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell`, `/vendor/tabs` — per-event vendor assignments with commission, split payments, and customer tabs.
 - `components/EventSelector.tsx` is how users switch events (`/?event=<id>`); the root page always anchors to the flagship event without that param.
 

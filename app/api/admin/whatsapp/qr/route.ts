@@ -1,64 +1,47 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-auth";
+import { getWahaQr, getWahaSession, wahaSessionId } from "@/lib/waha";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * Pairing QR for the admin gateway console.
+ *
+ * Always answers HTTP 200 with a normalized `{ status, me, qrRaw, qrDataUrl }`
+ * body (401 when unauthenticated). WAHA statuses are collapsed into STARTING /
+ * SCAN_QR_CODE / CONNECTED / OFFLINE, and WAHA's own error text is never
+ * forwarded — the base URL, API key and engine messages stay server side.
+ */
 export async function GET() {
-  const url = process.env.WHATSAPP_GATEWAY_URL || "https://waha.darajadigital.com";
-  const apiKey = process.env.WHATSAPP_API_KEY || "goodlife_waha_secret_2026";
-  const sessionId = process.env.WHATSAPP_SESSION_ID || "default";
+  const unauthorized = await requireAdmin();
+  if (unauthorized) return unauthorized;
 
-  try {
-    const baseUrl = url.replace(/\/+$/, "");
+  const session = await getWahaSession();
 
-    // Check session status first
-    const sRes = await fetch(`${baseUrl}/api/sessions/${sessionId}`, {
-      headers: { "X-Api-Key": apiKey },
-      signal: AbortSignal.timeout(6000)
-    });
+  let status = session.status;
+  let qrRaw: string | null = null;
+  let qrDataUrl: string | null = null;
 
-    if (!sRes.ok) {
-      return NextResponse.json({
-        status: "NOT_FOUND",
-        message: `Session '${sessionId}' is not active or starting up.`
-      }, { status: 502 });
-    }
+  if (session.status === "SCAN_QR_CODE") {
+    const qr = await getWahaQr();
+    qrRaw = qr.raw;
+    qrDataUrl = qr.dataUrl;
 
-    const sessionData = await sRes.json();
-    if (sessionData.status === "WORKING" || sessionData.status === "CONNECTED" || sessionData.me) {
-      return NextResponse.json({
-        status: "CONNECTED",
-        me: sessionData.me,
-        sessionId
-      });
-    }
-
-    // Fetch live QR code (raw format)
-    const qrRes = await fetch(`${baseUrl}/api/${sessionId}/auth/qr?format=raw`, {
-      headers: { "X-Api-Key": apiKey },
-      signal: AbortSignal.timeout(6000)
-    });
-
-    if (!qrRes.ok) {
-      return NextResponse.json({
-        status: sessionData.status || "SCAN_QR_CODE",
-        qrRaw: null,
-        message: "Waiting for QR generation from WhatsApp engine..."
-      });
-    }
-
-    const qrData = await qrRes.json();
-
-    return NextResponse.json({
-      status: "SCAN_QR_CODE",
-      qrRaw: qrData.value || null,
-      sessionId,
-      timestamp: Date.now()
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        status: "ERROR",
-        error: error.message
-      },
-      { status: 500 }
-    );
+    // WAHA reports SCAN_QR_CODE a moment before the code is actually
+    // rendered. Treat a missing payload as still booting so the UI shows the
+    // warming state rather than an empty frame.
+    if (!qrRaw && !qrDataUrl) status = "STARTING";
   }
+
+  return NextResponse.json(
+    {
+      status,
+      me: session.me,
+      qrRaw,
+      qrDataUrl,
+      sessionId: wahaSessionId(),
+      checkedAt: Date.now(),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

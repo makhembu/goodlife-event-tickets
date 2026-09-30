@@ -366,7 +366,44 @@ export default function AdminSettlementsPage() {
             <p className="text-xs text-brand-navy/60">Assign vendors in Staff & POS to start tracking commissions.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto border-4 border-brand-navy bg-white shadow-(--shadow-brut-md)">
+          <>
+            {/* MOBILE CARD LAYOUT (< lg) */}
+            <div className="flex flex-col gap-4 lg:hidden">
+              {settlements.map((s) => {
+                const m = getSettlementMetrics(s);
+                const vendorName = s.vendor_name || s.vendors?.name || `Vendor #${s.vendor_id}`;
+                return (
+                  <div key={s.id || `v-${s.vendor_id}-${s.event_id}`} className="bg-white border-4 border-brand-navy p-4 shadow-(--shadow-brut-md) space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <button type="button" onClick={() => setSelectedDrawerVendorId(s.vendor_id)} className="font-black text-base text-brand-navy underline decoration-2 underline-offset-2 text-left">{vendorName}</button>
+                        {s.contact_name && <div className="text-[10px] text-brand-navy/70 mt-0.5">{s.contact_name} {s.contact_phone ? `(${s.contact_phone})` : ""}</div>}
+                        {s.event_title && <div className="text-[10px] text-brand-navy/50">{s.event_title}</div>}
+                      </div>
+                      {m.isFullyCleared ? (<span className="bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-emerald-700 shrink-0">CLEARED</span>) : m.settledAmount > 0 ? (<span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-blue-700 shrink-0">PARTIAL</span>) : (<span className="bg-stone-200 text-stone-800 text-[9px] font-black uppercase px-2 py-1 border border-stone-400 shrink-0">UNSETTLED</span>)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs border-t-2 border-dashed border-brand-navy pt-3">
+                      <div><div className="font-bold text-brand-navy/60 uppercase text-[10px]">Gross Sales</div><div className="font-mono font-black text-brand-navy">KES {m.grossSales.toLocaleString()}</div><div className="text-[10px] text-brand-navy/50">{m.orderCount} orders</div></div>
+                      <div><div className="font-bold text-brand-navy/60 uppercase text-[10px]">Commission ({m.commRate}%)</div><div className="font-mono font-black text-brand-navy">KES {m.commissionCut.toLocaleString()}</div><div className="font-mono text-emerald-700 text-[10px]">Net: KES {m.vendorNetShare.toLocaleString()}</div></div>
+                      <div><div className="font-bold text-blue-700 uppercase text-[10px] flex items-center gap-1"><Smartphone className="w-3 h-3" /> Digital (Goodlife)</div><div className="font-mono font-black text-blue-900">KES {m.digitalHeld.toLocaleString()}</div><div className="text-[10px] text-blue-700/70">M-Pesa: {m.mpesaCollected.toLocaleString()} � Tab: {m.tabCollected.toLocaleString()}</div></div>
+                      <div><div className="font-bold text-amber-700 uppercase text-[10px] flex items-center gap-1"><Banknote className="w-3 h-3" /> Cash (Vendor)</div><div className="font-mono font-black text-amber-900">KES {m.cashCollected.toLocaleString()}</div></div>
+                    </div>
+                    <div className="border-t-2 border-dashed border-brand-navy pt-3">
+                      {m.direction === "organizer_pays_vendor" ? (<div className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 border border-emerald-500 text-[10px] font-black uppercase px-2 py-0.5"><ArrowDownLeft className="w-3 h-3 text-emerald-700" /> GOODLIFE OWES VENDOR</span><span className="font-mono font-black text-emerald-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span></div>) : m.direction === "vendor_pays_organizer" ? (<div className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-500 text-[10px] font-black uppercase px-2 py-0.5"><ArrowUpRight className="w-3 h-3 text-amber-700" /> VENDOR OWES GOODLIFE</span><span className="font-mono font-black text-amber-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span></div>) : (<div className="flex items-center gap-2 text-gray-600 text-[10px] font-bold uppercase"><CheckCircle2 className="w-4 h-4" /> FULLY BALANCED</div>)}
+                      <div className="text-[10px] text-brand-navy/60 mt-1">Settled: <span className="font-mono font-bold text-emerald-700">KES {m.settledAmount.toLocaleString()}</span></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 border-t-2 border-dashed border-brand-navy pt-3">
+                      <button type="button" onClick={() => { setShowSettleModal(s); setSettleAmount(m.pendingDue > 0 ? m.pendingDue.toString() : ""); setSettleMode("add"); setSettleNote(""); }} className={`py-2 text-xs uppercase font-black border-2 border-brand-navy shadow-(--shadow-brut-xs) cursor-pointer ${m.direction === "organizer_pays_vendor" ? "bg-emerald-400 text-brand-navy" : m.direction === "vendor_pays_organizer" ? "bg-amber-400 text-brand-navy" : "bg-white text-brand-navy"}`}>{m.direction === "organizer_pays_vendor" ? "RECORD PAYOUT" : m.direction === "vendor_pays_organizer" ? "COLLECT COMM" : "SETTLE"}</button>
+                      <button type="button" onClick={() => setSelectedDrawerVendorId(s.vendor_id)} className="py-2 bg-white text-brand-navy border-2 border-brand-navy text-xs font-bold uppercase hover:bg-yellow-300 shadow-(--shadow-brut-xs) flex items-center justify-center gap-1 cursor-pointer"><TrendingUp className="w-3 h-3" /> AUDIT</button>
+                      <button type="button" onClick={() => handleQuickLoginAsVendor(s.vendor_id)} disabled={takingOverVendorId === s.vendor_id} className="col-span-2 py-1.5 bg-brand-navy text-brand-accent text-[10px] font-black uppercase border border-brand-navy flex items-center justify-center gap-1 hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"><Store className="w-3 h-3" /> {takingOverVendorId === s.vendor_id ? "TAKING OVER..." : "POS TAKEOVER"}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* DESKTOP TABLE (lg+) */}
+            <div className="hidden lg:block overflow-x-auto border-4 border-brand-navy bg-white shadow-(--shadow-brut-md)">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-brand-navy text-brand-off-white uppercase text-xs tracking-wider">
@@ -583,7 +620,8 @@ export default function AdminSettlementsPage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
 
         {/* Enhanced Settle / Record Payout Modal */}
