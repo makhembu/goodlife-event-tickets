@@ -81,6 +81,6 @@ export async function POST(request: NextRequest) {
     }
   } catch (error: any) {
     console.error("Vendor checkout POST error:", error);
-    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || "Failed to process sale" }, { status: 400 });
   }
 }

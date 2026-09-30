@@ -10,6 +10,7 @@ export default function VendorSellPage() {
   const [cart, setCart] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
   // Recent Sales Drawer state
   const [showRecentSalesDrawer, setShowRecentSalesDrawer] = useState(false);
@@ -381,9 +382,24 @@ export default function VendorSellPage() {
   }, [customerSearchQuery]);
 
   const addToCart = (item: any) => {
+    const hasCountedStock = item.stock_qty !== null && item.stock_qty !== undefined;
+    const available = hasCountedStock ? Number(item.stock_qty) : Infinity;
+
+    if (hasCountedStock && available <= 0) {
+      HapticFeedback.trigger("error");
+      alert(`"${item.name}" is OUT OF STOCK.`);
+      return;
+    }
+
+    const existing = cart.find(i => i.id === item.id);
+    if (existing && hasCountedStock && (existing.quantity + 1 > available)) {
+      HapticFeedback.trigger("error");
+      alert(`Cannot add more. Only ${available} units available in stock for "${item.name}".`);
+      return;
+    }
+
     HapticFeedback.trigger("confirmation");
     setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
       if (existing) {
         return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
       }
@@ -392,6 +408,18 @@ export default function VendorSellPage() {
   };
 
   const updateQuantity = (id: number, delta: number) => {
+    const itemInCatalog = items.find(i => i.id === id);
+    const existing = cart.find(i => i.id === id);
+    if (delta > 0 && itemInCatalog && existing) {
+      const hasCountedStock = itemInCatalog.stock_qty !== null && itemInCatalog.stock_qty !== undefined;
+      const available = hasCountedStock ? Number(itemInCatalog.stock_qty) : Infinity;
+      if (hasCountedStock && existing.quantity + delta > available) {
+        HapticFeedback.trigger("error");
+        alert(`Cannot exceed available stock (${available} units).`);
+        return;
+      }
+    }
+
     HapticFeedback.trigger("confirmation");
     setCart(prev => {
       return prev.map(i => {
@@ -541,6 +569,11 @@ export default function VendorSellPage() {
     return nameMatch || phoneMatch || ticketMatch;
   });
 
+  const categories = Array.from(new Set(items.map((i: any) => i.category || "General").filter(Boolean))) as string[];
+  const filteredItems = selectedCategory === "ALL" 
+    ? items 
+    : items.filter((i: any) => (i.category || "General").toLowerCase() === selectedCategory.toLowerCase());
+
   return (
     <div className="w-full h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
@@ -556,18 +589,57 @@ export default function VendorSellPage() {
               loadRecentSales();
               setShowRecentSalesDrawer(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs)"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
           >
             <Receipt className="w-3.5 h-3.5 text-brand-navy" />
             <span>Recent Sales ({recentSalesList.length})</span>
           </button>
         </div>
 
+        {/* Category filter pills */}
+        {categories.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-2 custom-scrollbar items-center">
+            <button
+              onClick={() => {
+                HapticFeedback.trigger("confirmation");
+                setSelectedCategory("ALL");
+              }}
+              className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer ${
+                selectedCategory === "ALL"
+                  ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
+                  : "bg-white text-brand-navy hover:bg-stone-100"
+              }`}
+            >
+              ALL ({items.length})
+            </button>
+            {categories.map(cat => {
+              const count = items.filter((i: any) => (i.category || "General").toLowerCase() === cat.toLowerCase()).length;
+              const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+              return (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    HapticFeedback.trigger("confirmation");
+                    setSelectedCategory(isActive ? "ALL" : cat);
+                  }}
+                  className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
+                      : "bg-white text-brand-navy hover:bg-stone-100"
+                  }`}
+                >
+                  {cat} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading ? (
           <div className="animate-pulse font-bold uppercase text-brand-navy">Loading Menu...</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-32 md:pb-0">
-            {items.map(item => {
+            {filteredItems.map(item => {
               const hasCountedStock = item.stock_qty !== null && item.stock_qty !== undefined;
               const isOutOfStock = hasCountedStock && Number(item.stock_qty) <= 0;
               return (
@@ -682,7 +754,13 @@ export default function VendorSellPage() {
                 <div className="flex items-center gap-3 bg-brand-navy text-brand-off-white p-1">
                   <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-brand-accent"><Minus className="w-4 h-4"/></button>
                   <span className="font-mono font-bold w-6 text-center">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-brand-accent"><Plus className="w-4 h-4"/></button>
+                  <button 
+                    disabled={item.stock_qty !== null && item.stock_qty !== undefined && item.quantity >= Number(item.stock_qty)}
+                    onClick={() => updateQuantity(item.id, 1)} 
+                    className="p-1 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4"/>
+                  </button>
                 </div>
               </div>
             </div>

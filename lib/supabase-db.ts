@@ -2567,10 +2567,20 @@ export async function createPosSale(
         [sale.id, item.item_id, item.item_name, item.quantity, item.unit_price, JSON.stringify(item.modifiers || []), lineTotal]
       );
       if (item.item_id) {
-        await client.query(
-          `UPDATE vendor_items SET stock_qty = stock_qty - $2 WHERE id = $1 AND stock_qty IS NOT NULL`,
-          [item.item_id, item.quantity]
+        const { rows: stockRows } = await client.query(
+          `SELECT name, stock_qty FROM vendor_items WHERE id = $1 FOR UPDATE`,
+          [item.item_id]
         );
+        if (stockRows.length > 0 && stockRows[0].stock_qty !== null && stockRows[0].stock_qty !== undefined) {
+          const currentStock = Number(stockRows[0].stock_qty);
+          if (currentStock < item.quantity) {
+            throw new Error(`Insufficient stock for "${stockRows[0].name}". Available: ${currentStock}, requested: ${item.quantity}`);
+          }
+          await client.query(
+            `UPDATE vendor_items SET stock_qty = GREATEST(0, stock_qty - $2) WHERE id = $1`,
+            [item.item_id, item.quantity]
+          );
+        }
       }
     }
 

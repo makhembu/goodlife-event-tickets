@@ -100,12 +100,15 @@ export async function GET(
           SELECT COALESCE(json_agg(json_build_object(
             'method', psp.method,
             'amount', psp.amount,
-            'payer_name', psp.payer_name,
-            'payer_phone', psp.payer_phone,
+            'payer_name', COALESCE(NULLIF(psp.payer_name, ''), ct.customer_name, ''),
+            'payer_phone', COALESCE(NULLIF(psp.payer_phone, ''), ct.customer_phone, ''),
             'mpesa_ref', psp.mpesa_ref,
-            'tab_id', psp.tab_id
+            'tab_id', psp.tab_id,
+            'tab_customer_name', ct.customer_name,
+            'tab_customer_phone', ct.customer_phone
           )), '[]'::json)
           FROM pos_split_payments psp
+          LEFT JOIN customer_tabs ct ON psp.tab_id = ct.id
           WHERE psp.sale_id = ps.id
         ) as payments
        FROM pos_sales ps
@@ -118,17 +121,41 @@ export async function GET(
       [vendorId, eventId]
     );
 
-    // 6. Payment Methods Breakdown
-    const { rows: paymentMethodRows } = await neonQuery(
+    // 6. Detailed Payment Transactions with Customer & Item info
+    const { rows: paymentTransactions } = await neonQuery(
       `SELECT 
+        psp.id,
+        psp.sale_id,
         psp.method,
-        SUM(psp.amount)::numeric as total_amount,
-        COUNT(*)::int as count
+        psp.amount::numeric as amount,
+        COALESCE(NULLIF(psp.payer_name, ''), ct.customer_name, 'Walk-in Customer') as customer_name,
+        COALESCE(NULLIF(psp.payer_phone, ''), ct.customer_phone, '') as customer_phone,
+        psp.mpesa_ref,
+        psp.tab_id,
+        ct.customer_name as tab_customer_name,
+        ct.customer_phone as tab_customer_phone,
+        psp.created_at,
+        ps.created_at as sale_created_at,
+        ps.total as sale_total,
+        ps.payment_status,
+        COALESCE(vo.name, 'Till Operator') as operator_name,
+        (
+          SELECT COALESCE(json_agg(json_build_object(
+            'item_name', psi.item_name,
+            'quantity', psi.quantity,
+            'unit_price', psi.unit_price,
+            'line_total', psi.line_total
+          )), '[]'::json)
+          FROM pos_sale_items psi
+          WHERE psi.sale_id = ps.id
+        ) as items
        FROM pos_split_payments psp
        JOIN pos_sales ps ON psp.sale_id = ps.id
+       LEFT JOIN customer_tabs ct ON psp.tab_id = ct.id
+       LEFT JOIN vendor_operators vo ON ps.operator_id = vo.id
        WHERE ps.vendor_id = $1 AND ps.payment_status != 'voided'
          AND ($2::int IS NULL OR ps.event_id = $2)
-       GROUP BY psp.method`,
+       ORDER BY psp.created_at DESC`,
       [vendorId, eventId]
     );
 
@@ -179,6 +206,104 @@ export async function GET(
       percentage_of_sales: totalGross > 0 ? Math.round((Number(item.total_revenue) / totalGross) * 100) : 0
     }));
 
+    // Build Customer Intelligence Directory
+    const customerMap = new Map<string, any>();
+
+    for (const pt of paymentTransactions) {
+      const isWalkIn = pt.customer_name === "Walk-in Customer" && !pt.customer_phone;
+      const key = isWalkIn ? "walk-in" : (pt.customer_phone || pt.customer_name).toLowerCase().trim();
+
+      if (!customerMap.has(key)) {
+        customerMap.set(key, {
+          name: isWalkIn ? "Walk-in Customers" : pt.customer_name,
+          phone: pt.customer_phone || "",
+          isWalkIn,
+          totalSpent: 0,
+          orderCount: 0,
+          salesIds: new Set<string>(),
+          itemsBought: new Map<string, { name: string; quantity: number; revenue: number }>(),
+          paymentMethods: new Set<string>(),
+          lastOrderAt: pt.created_at,
+          transactions: []
+        });
+      }
+
+      const c = customerMap.get(key);
+      c.totalSpent += Number(pt.amount || 0);
+      c.paymentMethods.add(pt.method);
+      if (pt.sale_id && !c.salesIds.has(pt.sale_id)) {
+        c.salesIds.add(pt.sale_id);
+        c.orderCount++;
+      }
+      if (new Date(pt.created_at) > new Date(c.lastOrderAt)) {
+        c.lastOrderAt = pt.created_at;
+      }
+      for (const it of (pt.items || [])) {
+        const itemKey = (it.item_name || "").toLowerCase();
+        if (!c.itemsBought.has(itemKey)) {
+          c.itemsBought.set(itemKey, { name: it.item_name, quantity: 0, revenue: 0 });
+        }
+        const itemObj = c.itemsBought.get(itemKey);
+        itemObj.quantity += Number(it.quantity || 0);
+        itemObj.revenue += Number(it.line_total || 0);
+      }
+      c.transactions.push({
+        id: pt.id,
+        sale_id: pt.sale_id,
+        method: pt.method,
+        amount: Number(pt.amount),
+        mpesa_ref: pt.mpesa_ref,
+        tab_id: pt.tab_id,
+        created_at: pt.created_at,
+        items: pt.items
+      });
+    }
+
+    const customers = Array.from(customerMap.values())
+      .map(c => ({
+        name: c.name,
+        phone: c.phone,
+        isWalkIn: c.isWalkIn,
+        totalSpent: c.totalSpent,
+        orderCount: c.orderCount,
+        paymentMethods: Array.from(c.paymentMethods),
+        lastOrderAt: c.lastOrderAt,
+        itemsBought: (Array.from(c.itemsBought.values()) as any[]).sort((a: any, b: any) => b.quantity - a.quantity),
+        transactions: c.transactions
+      }))
+      .sort((a, b) => b.totalSpent - a.totalSpent);
+
+    // Group payment methods with their respective transactions
+    const methodsGrouped = new Map<string, { total_amount: number; count: number; transactions: any[] }>();
+    for (const pt of paymentTransactions) {
+      const m = pt.method || "other";
+      if (!methodsGrouped.has(m)) {
+        methodsGrouped.set(m, { total_amount: 0, count: 0, transactions: [] });
+      }
+      const grp = methodsGrouped.get(m)!;
+      grp.total_amount += Number(pt.amount || 0);
+      grp.count++;
+      grp.transactions.push({
+        id: pt.id,
+        sale_id: pt.sale_id,
+        amount: Number(pt.amount),
+        customer_name: pt.customer_name,
+        customer_phone: pt.customer_phone,
+        mpesa_ref: pt.mpesa_ref,
+        tab_id: pt.tab_id,
+        operator_name: pt.operator_name,
+        created_at: pt.created_at,
+        items: pt.items
+      });
+    }
+
+    const paymentBreakdown = Array.from(methodsGrouped.entries()).map(([method, data]) => ({
+      method,
+      amount: data.total_amount,
+      count: data.count,
+      transactions: data.transactions
+    }));
+
     return NextResponse.json({
       success: true,
       vendor: resolvedVendor,
@@ -194,11 +319,9 @@ export async function GET(
         outstandingDue,
         netPayout
       },
-      paymentBreakdown: paymentMethodRows.map((p: any) => ({
-        method: p.method,
-        amount: Number(p.total_amount),
-        count: Number(p.count)
-      })),
+      paymentBreakdown,
+      paymentTransactions,
+      customers,
       bestsellers,
       stock: stockRows.map((s: any) => ({
         ...s,
@@ -211,5 +334,50 @@ export async function GET(
   } catch (err: any) {
     console.error("Vendor analytics API error:", err);
     return NextResponse.json({ error: err.message || "Failed to load vendor analytics" }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
+  if (adminSession !== "true") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const vendorId = parseInt(id, 10);
+  if (isNaN(vendorId)) {
+    return NextResponse.json({ error: "Invalid vendor ID" }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const { contact_name, contact_phone, commission_rate, event_id } = body;
+
+    if (contact_name !== undefined || contact_phone !== undefined) {
+      await neonQuery(
+        `UPDATE vendors 
+         SET contact_name = COALESCE($1, contact_name),
+             contact_phone = COALESCE($2, contact_phone)
+         WHERE id = $3`,
+        [contact_name, contact_phone, vendorId]
+      );
+    }
+
+    if (commission_rate !== undefined && event_id) {
+      await neonQuery(
+        `UPDATE vendor_event_assignments
+         SET commission_rate = $1
+         WHERE vendor_id = $2 AND event_id = $3`,
+        [parseFloat(commission_rate), vendorId, Number(event_id)]
+      );
+    }
+
+    return NextResponse.json({ success: true, message: "Vendor profile updated successfully" });
+  } catch (err: any) {
+    console.error("Vendor analytics PATCH error:", err);
+    return NextResponse.json({ error: err.message || "Failed to update vendor" }, { status: 500 });
   }
 }
