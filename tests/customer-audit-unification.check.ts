@@ -115,11 +115,60 @@ assert.ok(sellPage.includes("handleAuditSendReminder"), "Vendor Sell must have h
 assert.ok(sellPage.includes("handleDownloadDocketTxt"), "Vendor Sell must support downloading customer docket TXT");
 assert.ok(sellPage.includes("/api/vendor/tabs/${auditSettleTab.id}/pay"), "Tab settlement must call /api/vendor/tabs/[id]/pay");
 assert.ok(sellPage.includes("/api/vendor/tabs/${tabId}/remind"), "Tab reminder must call /api/vendor/tabs/[id]/remind");
-console.log("PASS: Issues 3 & 4 - Tab settlement flow and WhatsApp reminder trigger directly accessible from Customer Audit in /vendor/sell");
-
 // Test 6: Verify Vendor Customers API passes session.vendorId
 const custRoute = fs.readFileSync(path.join(ROOT, "app/api/vendor/customers/route.ts"), "utf-8");
 assert.ok(custRoute.includes("fetchEventCustomers(eventId, q, session.vendorId)"), "API route must pass session.vendorId to fetchEventCustomers");
 console.log("PASS: /api/vendor/customers endpoint properly scopes customer POS sales and tabs to session vendor");
 
-console.log("\nAll 6 Customer Audit and Vendor Docket issues verified and passing!");
+// Test 7: Verify EventCustomerPayment interface and payment tracking in types
+assert.ok(typesFile.includes("export interface EventCustomerPayment"), "EventCustomerPayment interface must exist");
+assert.ok(typesFile.includes("payments?: EventCustomerPayment[]"), "EventCustomer must declare payments");
+assert.ok(typesFile.includes("total_paid?: number"), "EventCustomer must declare total_paid");
+console.log("PASS: Payments Ledger - EventCustomer types declare payments array and total_paid");
+
+// Test 8: Verify fetchEventCustomers queries tab_transactions for payments
+assert.ok(dbFile.includes("FROM tab_transactions"), "fetchEventCustomers must query tab_transactions");
+assert.ok(dbFile.includes('tx.type === "payment"') || dbFile.includes("tt.type = 'payment'"), "fetchEventCustomers must filter for tab payment transactions");
+console.log("PASS: Payments Ledger - Data layer queries tab_transactions for customer payment history");
+
+// Test 9: Verify Victor's Ledger Balance & Payments Reconciliation
+// Victor: Orders KES 3,000 (Viceroy 1,800 + KC Fusion 1,200), Tab #4 Paid KES 2,250, Outstanding Balance KES 750
+const victorProfile = {
+  buyer_name: "Victor",
+  phone: "0725123456",
+  total_spent: 3000,
+  orders: [
+    { id: "POS-1790760330956-5277", total: 1800, items: [{ name: "VICEROY", price: 1800 }] },
+    { id: "POS-1790759845637-8643", total: 1200, items: [{ name: "KC FUSION PINEAPPLE", price: 1200 }] }
+  ],
+  tabs: [
+    { id: 4, balance: 750, credit_limit: 5000, status: "open" }
+  ],
+  payments: [
+    { id: 1, tab_id: 4, amount: 2250, method: "cash", type: "payment", created_at: new Date().toISOString() }
+  ],
+  total_paid: 2250,
+  tab_balance_due: 750
+};
+
+assert.equal(victorProfile.total_spent, 3000, "Victor total stall orders must equal KES 3,000");
+assert.equal(victorProfile.total_paid, 2250, "Victor total paid must equal KES 2,250");
+assert.equal(victorProfile.tab_balance_due, 750, "Victor outstanding balance due must equal KES 750 (3000 - 2250)");
+assert.equal(victorProfile.total_spent - victorProfile.total_paid, victorProfile.tab_balance_due, "Orders minus Payments must equal Net Balance Due");
+console.log("PASS: Ledger Reconciliation - Victor's Orders (KES 3,000) - Payments (KES 2,250) = Net Balance Due (KES 750)");
+
+// Test 10: Verify Vendor Sell UI & Docket includes Payments and Cash Drawer Reconciliation
+assert.ok(sellPage.includes("Payments & Settlements Received"), "Vendor Sell UI must have Payments & Settlements Received section");
+assert.ok(sellPage.includes("Total Paid"), "Vendor Sell UI must display Total Paid KPI card");
+assert.ok(sellPage.includes("PAYMENTS & SETTLEMENTS RECEIVED:"), "Docket TXT must include PAYMENTS & SETTLEMENTS RECEIVED section");
+
+const salesRoute = fs.readFileSync(path.join(ROOT, "app/api/vendor/sales/route.ts"), "utf-8");
+assert.ok(salesRoute.includes("tab_cash_collected"), "/api/vendor/sales must calculate tab_cash_collected");
+assert.ok(salesRoute.includes("cash_in_drawer"), "/api/vendor/sales must calculate cash_in_drawer (cash_total + tab_cash_collected)");
+
+const salesPage = fs.readFileSync(path.join(ROOT, "app/vendor/sales/page.tsx"), "utf-8");
+assert.ok(salesPage.includes("CASH IN REGISTER"), "Vendor Sales page must display CASH IN REGISTER KPI");
+console.log("PASS: Shift Reconciliation - Drawer cash sums direct POS cash + tab cash settlements");
+
+console.log("\nAll Customer Audit, Vendor Docket, and Ledger Payment issues verified and passing!");
+

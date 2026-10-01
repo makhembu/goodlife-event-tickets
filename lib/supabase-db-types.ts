@@ -197,6 +197,19 @@ export interface EventCustomerTab {
   settled_at?: string | null;
 }
 
+export interface EventCustomerPayment {
+  id: number;
+  tab_id: number;
+  sale_id?: number | null;
+  type: string; // 'payment' | 'charge'
+  amount: number;
+  method: string; // 'cash' | 'mpesa' | 'tab'
+  mpesa_ref?: string;
+  operator_id?: number | null;
+  operator_name?: string;
+  created_at: string;
+}
+
 export interface EventCustomer {
   id: string;
   buyer_name: string;
@@ -218,6 +231,8 @@ export interface EventCustomer {
   tab_balance_due?: number;
   has_open_tab?: boolean;
   tabs?: EventCustomerTab[];
+  payments?: EventCustomerPayment[];
+  total_paid?: number;
 
   // POS Stall Sales Information (Issues 1 & 2)
   total_spent?: number;

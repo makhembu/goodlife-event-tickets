@@ -59,6 +59,10 @@ interface SalesSummary {
   cash_total: number;
   mpesa_total: number;
   tab_total: number;
+  tab_cash_collected?: number;
+  tab_mpesa_collected?: number;
+  tab_payments_total?: number;
+  cash_in_drawer?: number;
   voided_count: number;
   items_sold_count: number;
 }
@@ -364,20 +368,20 @@ export default function VendorSalesPage() {
           <div className="bg-white p-3 md:p-4 border-3 border-brand-navy shadow-(--shadow-brut-sm)">
             <span className="text-[10px] md:text-xs font-black uppercase text-green-700 block mb-1">M-PESA RECEIVED</span>
             <div className="text-lg md:text-2xl font-black font-mono text-green-700">
-              KES {summary.mpesa_total.toLocaleString()}
+              KES {(summary.mpesa_total + (summary.tab_mpesa_collected || 0)).toLocaleString()}
             </div>
-            <span className="text-[10px] text-brand-navy/60 font-mono block mt-1">
-              Direct mobile money
+            <span className="text-[10px] text-brand-navy/70 font-mono block mt-1">
+              Direct: KES {summary.mpesa_total.toLocaleString()} {summary.tab_mpesa_collected ? `+ Tab: KES ${summary.tab_mpesa_collected.toLocaleString()}` : ""}
             </span>
           </div>
 
           <div className="bg-white p-3 md:p-4 border-3 border-brand-navy shadow-(--shadow-brut-sm)">
-            <span className="text-[10px] md:text-xs font-black uppercase text-blue-700 block mb-1">CASH RECEIVED</span>
+            <span className="text-[10px] md:text-xs font-black uppercase text-blue-700 block mb-1">CASH IN REGISTER</span>
             <div className="text-lg md:text-2xl font-black font-mono text-blue-700">
-              KES {summary.cash_total.toLocaleString()}
+              KES {(summary.cash_in_drawer ?? (summary.cash_total + (summary.tab_cash_collected || 0))).toLocaleString()}
             </div>
-            <span className="text-[10px] text-brand-navy/60 font-mono block mt-1">
-              Physical register till
+            <span className="text-[10px] text-brand-navy/70 font-mono block mt-1">
+              Direct: KES {summary.cash_total.toLocaleString()} {summary.tab_cash_collected ? `+ Tab: KES ${summary.tab_cash_collected.toLocaleString()}` : ""}
             </span>
           </div>
 

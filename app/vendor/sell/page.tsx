@@ -482,14 +482,20 @@ export default function VendorSellPage() {
       }
     }
     lines.push("----------------------------------------");
-    lines.push("CUSTOMER TABS:");
-    if ((cust.tabs || []).length === 0) {
-      lines.push("  (No tabs on record)");
+    lines.push("PAYMENTS & SETTLEMENTS RECEIVED:");
+    if ((cust.payments || []).length === 0) {
+      lines.push("  (No payments recorded yet)");
     } else {
-      for (const tab of cust.tabs) {
-        lines.push(`  Tab #${tab.id}: Balance KES ${Number(tab.balance || 0).toLocaleString()} / Limit KES ${Number(tab.credit_limit || 0).toLocaleString()} [${(tab.status || "open").toUpperCase()}]`);
+      for (const p of cust.payments) {
+        const refStr = p.mpesa_ref ? ` [ref: ${p.mpesa_ref}]` : "";
+        const opStr = p.operator_name ? ` (by ${p.operator_name})` : "";
+        lines.push(`  Payment #${p.id} - ${new Date(p.created_at).toLocaleString()} - PAID KES ${Number(p.amount).toLocaleString()} (${p.method.toUpperCase()}${refStr}${opStr}) -> Tab #${p.tab_id}`);
       }
     }
+    lines.push("----------------------------------------");
+    lines.push(`TOTAL ORDERS:       KES ${Number(cust.total_spent || 0).toLocaleString()}`);
+    lines.push(`TOTAL PAID:         KES ${Number(cust.total_paid || 0).toLocaleString()}`);
+    lines.push(`OUTSTANDING DUE:    KES ${Number(cust.tab_balance_due || 0).toLocaleString()}`);
     lines.push("========================================");
     lines.push("         THANK YOU FOR YOUR PATRONAGE   ");
     lines.push("========================================");
@@ -2149,7 +2155,7 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                     </div>
 
                     {/* KPI Metric Cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                       <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy">
                         <span className="text-[9px] font-mono font-bold uppercase text-brand-navy/60 block">Stall Spend</span>
                         <span className="text-base font-black text-brand-navy font-mono">
@@ -2157,6 +2163,28 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                         </span>
                         <span className="text-[9px] font-mono text-brand-navy/60 block">
                           {selectedCustomerAudit.order_count || (selectedCustomerAudit.orders || []).length} orders
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 bg-green-50 border-2 border-green-800">
+                        <span className="text-[9px] font-mono font-bold uppercase text-green-800 block">Total Paid</span>
+                        <span className="text-base font-black text-green-900 font-mono">
+                          KES {Number(selectedCustomerAudit.total_paid || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono text-green-700 block">
+                          {(selectedCustomerAudit.payments || []).length} settlements
+                        </span>
+                      </div>
+
+                      <div className={`p-2.5 border-2 border-brand-navy ${
+                        selectedCustomerAudit.tab_balance_due > 0 ? "bg-red-500 text-white" : "bg-green-100 text-green-950"
+                      }`}>
+                        <span className="text-[9px] font-mono font-bold uppercase block opacity-80">Balance Due</span>
+                        <span className="text-base font-black font-mono">
+                          KES {Number(selectedCustomerAudit.tab_balance_due || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono block opacity-80">
+                          {selectedCustomerAudit.tab_balance_due > 0 ? "Open Tabs" : "Fully Settled"}
                         </span>
                       </div>
 
@@ -2170,24 +2198,12 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                         </span>
                       </div>
 
-                      <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy">
+                      <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy col-span-2 sm:col-span-1">
                         <span className="text-[9px] font-mono font-bold uppercase text-brand-navy/60 block">Combined Total</span>
                         <span className="text-base font-black text-brand-navy font-mono">
                           KES {Number(selectedCustomerAudit.combined_spend || (Number(selectedCustomerAudit.total_spent || 0) + Number(selectedCustomerAudit.ticket_spend || 0))).toLocaleString()}
                         </span>
                         <span className="text-[9px] font-mono text-brand-navy/60 block">All Systems</span>
-                      </div>
-
-                      <div className={`p-2.5 border-2 border-brand-navy ${
-                        selectedCustomerAudit.tab_balance_due > 0 ? "bg-red-500 text-white" : "bg-green-100 text-green-950"
-                      }`}>
-                        <span className="text-[9px] font-mono font-bold uppercase block opacity-80">Balance Due</span>
-                        <span className="text-base font-black font-mono">
-                          KES {Number(selectedCustomerAudit.tab_balance_due || 0).toLocaleString()}
-                        </span>
-                        <span className="text-[9px] font-mono block opacity-80">
-                          {selectedCustomerAudit.tab_balance_due > 0 ? "Open Tabs" : "Fully Settled"}
-                        </span>
                       </div>
                     </div>
 
@@ -2288,6 +2304,66 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Customer Payments & Settlements Section */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center pb-1 border-b border-brand-navy/20">
+                        <span className="font-display text-sm uppercase tracking-wider text-brand-navy flex items-center gap-1.5">
+                          <Banknote className="w-4 h-4 text-green-700" />
+                          Payments & Settlements Received ({(selectedCustomerAudit.payments || []).length})
+                        </span>
+                        {Number(selectedCustomerAudit.total_paid || 0) > 0 && (
+                          <span className="text-xs font-mono font-black text-green-700">
+                            Total: KES {Number(selectedCustomerAudit.total_paid).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      {(selectedCustomerAudit.payments || []).length === 0 ? (
+                        <div className="p-3 text-center text-xs font-mono text-brand-navy/50 bg-brand-off-white border border-dashed border-brand-navy/30">
+                          No direct tab payments or cash settlements recorded yet.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {selectedCustomerAudit.payments.map((pm: any) => (
+                            <div
+                              key={pm.id}
+                              className="p-2.5 bg-green-50/60 border-2 border-green-800/40 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 uppercase border ${
+                                    pm.method === "cash"
+                                      ? "bg-amber-100 text-amber-900 border-amber-800"
+                                      : "bg-green-100 text-green-900 border-green-800"
+                                  }`}>
+                                    {pm.method}
+                                  </span>
+                                  <span className="font-mono text-[11px] font-bold text-brand-navy">
+                                    Tab #{pm.tab_id} Settlement
+                                  </span>
+                                  {pm.mpesa_ref && (
+                                    <span className="font-mono text-[10px] text-green-800 bg-white px-1 border border-green-300">
+                                      Ref: {pm.mpesa_ref}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] font-mono text-brand-navy/70">
+                                  {new Date(pm.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(pm.created_at).toLocaleDateString()}
+                                  {pm.operator_name && <span> • Received by {pm.operator_name}</span>}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="font-black font-mono text-green-800 text-sm block">
+                                  - KES {Number(pm.amount).toLocaleString()}
+                                </span>
+                                <span className="text-[9px] font-mono text-green-700 font-bold uppercase">Credited</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

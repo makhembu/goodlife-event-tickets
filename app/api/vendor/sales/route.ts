@@ -77,6 +77,10 @@ export async function GET(request: NextRequest) {
           cash_total: 0,
           mpesa_total: 0,
           tab_total: 0,
+          tab_cash_collected: 0,
+          tab_mpesa_collected: 0,
+          tab_payments_total: 0,
+          cash_in_drawer: 0,
           voided_count: 0,
           items_sold_count: 0
         }
@@ -175,6 +179,25 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Query tab settlements/payments for this vendor & event
+    const { rows: tabPaymentRows } = await neonQuery(
+      `SELECT 
+         COALESCE(SUM(CASE WHEN tt.method = 'cash' THEN tt.amount ELSE 0 END), 0) as tab_cash_collected,
+         COALESCE(SUM(CASE WHEN tt.method = 'mpesa' THEN tt.amount ELSE 0 END), 0) as tab_mpesa_collected,
+         COALESCE(SUM(tt.amount), 0) as tab_payments_total
+       FROM tab_transactions tt
+       JOIN customer_tabs ct ON ct.id = tt.tab_id
+       WHERE ct.vendor_id = $1
+         AND ($2::int IS NULL OR ct.event_id = $2)
+         AND tt.type = 'payment'`,
+      [vendorId, eventId]
+    );
+
+    const tabCashCollected = Number(tabPaymentRows[0]?.tab_cash_collected || 0);
+    const tabMpesaCollected = Number(tabPaymentRows[0]?.tab_mpesa_collected || 0);
+    const tabPaymentsTotal = Number(tabPaymentRows[0]?.tab_payments_total || 0);
+    const cashInDrawer = cashTotal + tabCashCollected;
+
     return NextResponse.json({
       success: true,
       sales: enrichedSales,
@@ -184,6 +207,10 @@ export async function GET(request: NextRequest) {
         cash_total: cashTotal,
         mpesa_total: mpesaTotal,
         tab_total: tabTotal,
+        tab_cash_collected: tabCashCollected,
+        tab_mpesa_collected: tabMpesaCollected,
+        tab_payments_total: tabPaymentsTotal,
+        cash_in_drawer: cashInDrawer,
         voided_count: voidedCount,
         items_sold_count: totalItemsSold
       }

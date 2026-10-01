@@ -3337,6 +3337,20 @@ export async function fetchEventCustomers(
     [eventId, vendorId || null]
   );
 
+  // 2.5 Fetch tab transactions (payments & settlements) for this event
+  const { rows: tabTxnRows } = await neonQuery(
+    `SELECT tt.id, tt.tab_id, tt.sale_id, tt.type, tt.amount, tt.method, tt.mpesa_ref, tt.operator_id, tt.created_at,
+            op.name as operator_name,
+            ct.customer_phone, ct.customer_name
+     FROM tab_transactions tt
+     JOIN customer_tabs ct ON ct.id = tt.tab_id
+     LEFT JOIN vendor_operators op ON op.id = tt.operator_id
+     WHERE ct.event_id = $1
+       AND ($2::int IS NULL OR ct.vendor_id = $2)
+     ORDER BY tt.created_at DESC`,
+    [eventId, vendorId || null]
+  );
+
   // 3. Fetch POS sales, payments & items for this event (optionally filtered by vendorId)
   const { rows: salesRows } = await neonQuery(
     `SELECT s.id, s.vendor_id, s.event_id, s.total, s.payment_status, s.created_at,
@@ -3403,6 +3417,8 @@ export async function fetchEventCustomers(
         tab_count: 0,
         tab_balance_due: 0,
         has_open_tab: false,
+        payments: [] as any[],
+        total_paid: 0,
         tickets: [] as any[],
         combined_spend: 0,
         total_due: 0,
@@ -3510,6 +3526,27 @@ export async function fetchEventCustomers(
     }
   }
 
+  // 2.6 Process Tab Payments (e.g. Victor paying down his tab)
+  for (const tx of tabTxnRows || []) {
+    if (tx.type === "payment") {
+      const c = upsertCustomer(tx.customer_phone, tx.customer_name);
+      const paidAmt = Number(tx.amount || 0);
+      c.total_paid += paidAmt;
+      c.payments.push({
+        id: Number(tx.id),
+        tab_id: Number(tx.tab_id),
+        sale_id: tx.sale_id ? Number(tx.sale_id) : null,
+        type: tx.type,
+        amount: paidAmt,
+        method: tx.method || "cash",
+        mpesa_ref: tx.mpesa_ref || "",
+        operator_id: tx.operator_id ? Number(tx.operator_id) : null,
+        operator_name: tx.operator_name || "Stall Staff",
+        created_at: tx.created_at,
+      });
+    }
+  }
+
   // C. Process Tickets
   for (const t of ticketRows || []) {
     const ticketPhone = t.phone_number || t.whatsapp_number;
@@ -3573,6 +3610,8 @@ export async function fetchEventCustomers(
       tab_balance_due: c.tab_balance_due,
       has_open_tab: c.has_open_tab,
       tabs: c.tabs,
+      payments: c.payments.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+      total_paid: c.total_paid,
       total_spent: c.total_spent,
       order_count: c.order_count,
       orders: c.orders.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -3596,7 +3635,8 @@ export async function fetchEventCustomers(
       const ticketMatch = cust.id.toLowerCase().includes(s) || cust.tickets?.some((t) => t.id.toLowerCase().includes(s) || t.ticket_type.toLowerCase().includes(s));
       const itemMatch = cust.items_bought?.some((i) => i.name.toLowerCase().includes(s));
       const tabMatch = cust.tabs?.some((t) => String(t.id).includes(s));
-      return nameMatch || phoneMatch || waMatch || ticketMatch || itemMatch || tabMatch;
+      const paymentMatch = cust.payments?.some((p) => (p.mpesa_ref && p.mpesa_ref.toLowerCase().includes(s)) || p.method.toLowerCase().includes(s));
+      return nameMatch || phoneMatch || waMatch || ticketMatch || itemMatch || tabMatch || paymentMatch;
     });
   }
 
