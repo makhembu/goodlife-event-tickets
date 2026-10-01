@@ -219,6 +219,11 @@ export default function TicketCheckoutPage({
     HapticFeedback.trigger(pattern);
   }, []);
 
+  const setError = useCallback((msg: string) => {
+    triggerHaptic("error");
+    setStatusMessage(msg);
+  }, [triggerHaptic]);
+
   // Fire confetti when a new ticket arrives.
   // A ref, not state: this is read only as "have we already celebrated this
   // ticket?" inside the effect below. Nothing renders from it, so state cost an
@@ -547,7 +552,7 @@ export default function TicketCheckoutPage({
   }, [TICKET_TIERS, safeSelectedTier, displayedTiers]);
 
   const totalPrice = useMemo(() => {
-    const price = selectedTierObj?.price ?? 500;
+    const price = selectedTierObj?.price ?? 0;
     return price * quantity;
   }, [selectedTierObj, quantity]);
 
@@ -620,6 +625,11 @@ export default function TicketCheckoutPage({
       setStatusMessage(
         "No passes are on sale for this session right now. Check back on the weekend, or join the waitlist."
       );
+      return;
+    }
+
+    if (!selectedTierObj || typeof selectedTierObj.price !== "number") {
+      setError("Please select a valid ticket tier.");
       return;
     }
 

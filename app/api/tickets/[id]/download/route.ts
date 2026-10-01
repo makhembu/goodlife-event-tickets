@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTicketById, fetchEventDetails, savePdfData } from "@/lib/supabase-db";
+import { getTicketById, getEventById, savePdfData } from "@/lib/supabase-db";
 import { generateTicketPdf } from "@/lib/ticket-generator";
 
 export async function GET(
@@ -25,8 +25,14 @@ export async function GET(
     } else {
       // First-ever download: generate, cache in DB, then serve
       const { origin } = new URL(request.url);
-      const eventDetails = await fetchEventDetails();
-      const pdfBuffer = await generateTicketPdf(ticket, origin, eventDetails);
+
+      // Fetch the ticket's actual event (not the site-wide singleton)
+      const event = ticket.event_id ? await getEventById(ticket.event_id) : null;
+      if (!event) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+
+      const pdfBuffer = await generateTicketPdf(ticket, origin, event);
       pdfArray = new Uint8Array(pdfBuffer);
 
       // Persist asynchronously – don't block the response

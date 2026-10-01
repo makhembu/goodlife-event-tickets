@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEventWaitlist, fetchActiveEvent } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const { searchParams } = new URL(request.url);
     const eventIdParam = searchParams.get("eventId");
@@ -13,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const waitlist = await fetchEventWaitlist(eventId);
     const total = waitlist.length;
-    const unnotified = waitlist.filter((w: any) => !w.notified).length;
+    const unnotified = waitlist.filter((w: any) => !w.notified);
 
     return NextResponse.json({
       success: true,

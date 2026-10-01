@@ -62,7 +62,11 @@ export async function GET(request: NextRequest) {
           const data = paystackData.data;
           const amountPaid = data.amount / 100;
           const metadata = data.metadata || {};
-          const ticketType = metadata.ticket_type || rows[0]?.ticket_type || "ADV 500";
+          const ticketType = metadata.ticket_type || rows[0]?.ticket_type;
+          if (!ticketType) {
+            console.error(`Paystack verify: Missing ticket_type for reference ${reference}`);
+            return NextResponse.json({ error: "Missing ticket tier specification" }, { status: 400 });
+          }
           const quantity = Number(metadata.quantity) || rows[0]?.quantity || 1;
           const buyerName = metadata.buyer_name || rows[0]?.buyer_name || data.customer?.email || "";
           const phoneNumber = metadata.phone_number || rows[0]?.phone_number || "";

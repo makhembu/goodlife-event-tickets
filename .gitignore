@@ -22,6 +22,7 @@ checkout-whatsapp-open.png
 /*.png
 !/public/**
 /research/
+audit-shots/
 
 .vercel
 
@@ -34,6 +35,10 @@ tsconfig.tsbuildinfo
 /replace.js
 /seed-for-screenshots.js
 /final_verification_report.md
+check.js
+fix.js
+test-checkout-cli.js
+scan-qr.html
 
 # Raw WhatsApp webhook payloads: inbound message bodies and phone numbers.
 # Was tracked with 49 real deliveries in it. The route now logs a redacted

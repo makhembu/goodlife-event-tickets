@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const body = await request.json().catch(() => ({}));
     const { buyerName, ticketType, quantity, amountPaid, reference } = body;

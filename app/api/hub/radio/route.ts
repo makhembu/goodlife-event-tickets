@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { fetchRadioSets, neonQuery } from '@/lib/supabase-db';
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const eventId = searchParams.get('eventId');
-    
+
     let radioSets;
     if (eventId) {
       radioSets = await fetchRadioSets(parseInt(eventId, 10));
@@ -21,10 +22,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const body = await req.json();
     const { title, dj_name, audio_url, cover_url, duration, genre, event_id } = body;
-    
+
     const query = `
       INSERT INTO radio_sets (title, dj_name, audio_url, cover_url, duration, genre, event_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -39,7 +42,7 @@ export async function POST(req: Request) {
       genre || 'Electronic',
       event_id || 1
     ];
-    
+
     const { rows } = await neonQuery(query, params);
     return NextResponse.json({ success: true, set: rows[0] });
   } catch (err: any) {

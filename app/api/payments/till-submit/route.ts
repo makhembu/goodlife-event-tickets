@@ -60,8 +60,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Look up the tier price and name
-    let tierPrice = 500;
-    let tierName = "Standard";
+    let tierPrice: number | null = null;
+    let tierName: string | null = null;
     try {
       const tierQuery = resolvedEventId 
         ? "SELECT price, name FROM ticket_tiers WHERE (id = $1 OR LOWER(TRIM(name)) = LOWER(TRIM($1))) AND event_id = $2 AND deleted_at IS NULL LIMIT 1"
@@ -76,6 +76,13 @@ export async function POST(request: NextRequest) {
       // fallback
     } finally {
       await pool.end();
+    }
+
+    if (tierPrice === null || isNaN(tierPrice)) {
+      return NextResponse.json(
+        { error: "Invalid ticket tier or tier not found for this event." },
+        { status: 400 }
+      );
     }
 
     const checkout_request_id = `TILL-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -94,7 +101,7 @@ export async function POST(request: NextRequest) {
       event_id: resolvedEventId
     });
 
-    notifyOperators(buyer_name, tierName, quantity, amount, mpesa_reference).catch(() => {});
+    notifyOperators(buyer_name, tierName || ticket_type, quantity, amount, mpesa_reference).catch(() => {});
 
     return NextResponse.json({
       success: true,

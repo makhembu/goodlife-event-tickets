@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEventWaitlist, markWaitlistNotified, getEventById, fetchActiveEvent } from "@/lib/supabase-db";
 import { sendTextMessage } from "@/lib/whatsapp";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const { eventId, customMessage } = await request.json();
 
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const appUrl = process.env.APP_URL || "https://goodlife.smwhr.space";
-    const defaultMsg = `🚨 *GOODLIFE EARLY-BIRD DROP IS LIVE!*\n\nTickets for *${targetEvent.title}* (${targetEvent.subtitle || ""}) have officially dropped!\n\nSecure your Early Bird & All-Inclusive Camping passes before they sell out:\n👉 ${appUrl}\n\nSee you at ${targetEvent.venue || "the arena"}!`;
+    const defaultMsg = `🚨 *GOODLIFE EARLY-BIRD DROP IS LIVE!*\\n\\nTickets for *${targetEvent.title}* (${targetEvent.subtitle || ""}) have officially dropped!\\n\\nSecure your Early Bird & All-Inclusive Camping passes before they sell out:\\n👉 ${appUrl}\\n\\nSee you at ${targetEvent.venue || "the arena"}!`;
     const message = customMessage?.trim() || defaultMsg;
 
     // Rate-controlled batch dispatch (10 messages per batch with 2.5s delay, Scenario S7)

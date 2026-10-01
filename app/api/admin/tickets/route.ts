@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllTickets, fetchDeletedTickets, createTicket } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const { searchParams } = new URL(request.url);
     if (searchParams.get("deleted") === "true") {
@@ -18,6 +21,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
   try {
     const body = await request.json().catch(() => ({}));
     const ticket = await createTicket(body);

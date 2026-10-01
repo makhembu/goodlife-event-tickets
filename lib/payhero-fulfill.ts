@@ -63,7 +63,10 @@ export async function fulfillPayheroPayment(
   const phoneNumber = pending.phone_number || "";
   const whatsappNumber = pending.whatsapp_number || "";
   const ticketType = pending.ticket_type || "";
-  const eventId = pending.event_id || (await fetchActiveEvent())?.id || 1;
+  const eventId = pending.event_id || (await fetchActiveEvent())?.id;
+  if (!eventId) {
+    return { fulfilled: false, ticketIds: [], reason: "Could not resolve valid event ID for fulfillment" };
+  }
   const amountPaid = Number(p.amountPaid) > 0 ? Number(p.amountPaid) : Number(pending.amount) || 0;
   const receipt = p.providerReference || p.reference;
 
