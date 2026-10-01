@@ -1,28 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { closeTab } from "@/lib/supabase-db";
-
-function getSession(request: NextRequest) {
-  const sessionCookie = request.cookies.get("goodlife_vendor_session");
-  if (!sessionCookie || !sessionCookie.value) return null;
-  try {
-    const raw = sessionCookie.value.includes(".") ? sessionCookie.value.split(".")[0] : sessionCookie.value;
-    try {
-      return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    } catch {
-      return JSON.parse(atob(raw));
-    }
-  } catch {
-    return null;
-  }
-}
+import { getTabActor, tabOwnershipGuard } from "@/lib/vendor-tab-auth";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSession(request);
-    if (!session) {
+    const actor = getTabActor(request);
+    if (!actor) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
@@ -42,15 +28,14 @@ export async function POST(
     const { settlementReason } = (body as any) || {};
 
     // Vendor-ownership guard: operators may only close tabs belonging to their
-    // own vendor account.
+    // own vendor account. An admin may close any tab.
     const { fetchTabWithTransactions } = await import("@/lib/supabase-db");
     const tab = await fetchTabWithTransactions(tabId);
     if (!tab) {
       return NextResponse.json({ success: false, message: "Tab not found" }, { status: 404 });
     }
-    if (tab.vendor_id && tab.vendor_id !== session.vendorId) {
-      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-    }
+    const forbidden = tabOwnershipGuard(tab.vendor_id, actor);
+    if (forbidden) return forbidden;
 
     // Mandatory write-off reason for closing a tab with an outstanding balance.
     if (Number(tab.balance) > 0 && !(settlementReason || "").trim()) {

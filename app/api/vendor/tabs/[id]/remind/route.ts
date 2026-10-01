@@ -2,29 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchTabWithTransactions, getVendorById, getEventById, fetchActiveEvent } from "@/lib/supabase-db";
 import { sendTabReminderWhatsApp } from "@/lib/whatsapp";
 import { buildSelfPayUrl } from "@/lib/self-pay-token";
-
-function getSession(request: NextRequest) {
-  const sessionCookie = request.cookies.get("goodlife_vendor_session");
-  if (!sessionCookie || !sessionCookie.value) return null;
-  try {
-    const raw = sessionCookie.value.includes(".") ? sessionCookie.value.split(".")[0] : sessionCookie.value;
-    try {
-      return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    } catch {
-      return JSON.parse(atob(raw));
-    }
-  } catch {
-    return null;
-  }
-}
+import { getTabActor, tabOwnershipGuard } from "@/lib/vendor-tab-auth";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSession(request);
-    if (!session) {
+    const actor = getTabActor(request);
+    if (!actor) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
@@ -39,10 +25,9 @@ export async function POST(
       return NextResponse.json({ success: false, message: "Tab not found" }, { status: 404 });
     }
 
-    // Ensure vendor matches
-    if (tab.vendor_id && tab.vendor_id !== session.vendorId) {
-      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-    }
+    // Ensure vendor matches (an admin may remind on any vendor's tab)
+    const forbidden = tabOwnershipGuard(tab.vendor_id, actor);
+    if (forbidden) return forbidden;
 
     const balance = Number(tab.balance);
     if (balance <= 0) {
@@ -59,7 +44,7 @@ export async function POST(
       }, { status: 400 });
     }
 
-    let vendorName = session.vendorName || "Festival Vendor";
+    let vendorName = "Festival Vendor";
     if (tab.vendor_id) {
       const vendor = await getVendorById(tab.vendor_id);
       if (vendor?.name) {

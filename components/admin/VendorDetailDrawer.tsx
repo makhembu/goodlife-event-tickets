@@ -35,9 +35,11 @@ import {
   UserPlus,
   Tags,
   Tag,
-  Settings2
+  Settings2,
+  Ticket
 } from "lucide-react";
 import { fmtDate, fmtTime } from "@/lib/utils";
+import { toWhatsAppNumber } from "@/lib/phone";
 
 const DEFAULT_SUGGESTED_CATEGORIES = [
   "Drinks",
@@ -95,6 +97,21 @@ export default function VendorDetailDrawer({
   // Receipt Modal State
   const [receiptModalItem, setReceiptModalItem] = useState<any | null>(null);
 
+  // --- Unified Customer Docket + Tab Actions (Customer Audit) --------------
+  //
+  // The customer DOCKET button used to call `setReceiptModalItem(cust.transactions[0])`,
+  // which opened a single thermal receipt for ONE tender line of ONE order. The
+  // API had already returned the customer's full `orders`/`tickets`/`tabs`; the
+  // UI discarded all of it. This state holds the whole customer record so the
+  // docket can render their complete history across both sales systems.
+  const [customerDocket, setCustomerDocket] = useState<any | null>(null);
+
+  // Tab actions operate per-tab, so the in-flight tab id is tracked rather than
+  // a single boolean — otherwise a slow reminder on one tab would disable the
+  // button on every other card in the grid.
+  const [tabBusyId, setTabBusyId] = useState<number | null>(null);
+  const [tabNotice, setTabNotice] = useState<{ tabId: number; ok: boolean; text: string } | null>(null);
+
   // Stock Management State
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
@@ -147,10 +164,14 @@ export default function VendorDetailDrawer({
   };
 
   // Refresh Analytics Data
-  const refreshData = () => {
-    if (!vendorId) return;
+  //
+  // Returns the fetch chain so callers can await a settled render. The tab
+  // actions in the Customer Audit depend on this: they must not report success
+  // until the balances on screen reflect the payment that was just recorded.
+  const refreshData = (): Promise<void> => {
+    if (!vendorId) return Promise.resolve();
     const query = eventId && eventId !== "all" && eventId !== "" ? `?eventId=${eventId}` : "";
-    fetch(`/api/admin/vendors/${vendorId}/analytics${query}`)
+    return fetch(`/api/admin/vendors/${vendorId}/analytics${query}`)
       .then(async (res) => {
         const resData = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(resData.error || `Failed to load vendor data (${res.status})`);
@@ -373,9 +394,88 @@ export default function VendorDetailDrawer({
     return (
       c.name?.toLowerCase().includes(q) ||
       c.phone?.includes(q) ||
-      c.itemsBought?.some((it: any) => it.name?.toLowerCase().includes(q))
+      c.phoneRaw?.toLowerCase().includes(q) ||
+      c.itemsBought?.some((it: any) => it.name?.toLowerCase().includes(q)) ||
+      // Tabs and tickets are searchable too: an operator chasing "who has an
+      // outstanding balance" searches the customer name and expects the tab
+      // state to narrow with it.
+      c.tabs?.some((t: any) => String(t.id) === q || t.status?.toLowerCase().includes(q)) ||
+      c.tickets?.some((t: any) => t.ticket_type?.toLowerCase().includes(q))
     );
   });
+
+  // --- Tab actions from the Customer Audit --------------------------------
+  //
+  // These hit the same `/api/vendor/tabs/*` endpoints the vendor's own tabs page
+  // uses. They accept the admin cookie (see middleware.ts + lib/vendor-tab-auth.ts),
+  // so an admin can settle or chase a balance from the dashboard instead of
+  // having to log into a stall operator's PIN.
+  //
+  // Every action re-fetches analytics afterwards. The balance shown on these
+  // cards is a denormalized copy of `customer_tabs.balance`, and a settle that
+  // succeeds server-side but leaves a stale card on screen is how an operator
+  // ends up asking a customer to pay a debt they have already cleared.
+  const runTabAction = async (
+    tabId: number,
+    action: "remind" | "pay" | "close",
+    payload?: Record<string, unknown>
+  ) => {
+    setTabBusyId(tabId);
+    setTabNotice(null);
+    try {
+      const res = await fetch(`/api/vendor/tabs/${tabId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        setTabNotice({
+          tabId,
+          ok: false,
+          text: data?.message || data?.error || `Request failed (HTTP ${res.status})`
+        });
+        return;
+      }
+      setTabNotice({
+        tabId,
+        ok: true,
+        text:
+          action === "remind"
+            ? "Reminder sent"
+            : action === "pay"
+              ? "Payment recorded"
+              : "Tab settled"
+      });
+      await refreshData();
+    } catch (err: any) {
+      setTabNotice({
+        tabId,
+        ok: false,
+        text: err?.message || "Could not reach the server. Nothing was changed — please retry."
+      });
+    } finally {
+      setTabBusyId(null);
+      // Auto-clear the confirmation so a stale success banner can't outlive the
+      // card it referred to.
+      setTimeout(() => setTabNotice(null), 6000);
+    }
+  };
+
+  /** Settle a tab in full via cash — the common festival-closeout case. */
+  const settleTabInFull = async (tab: any) => {
+    const due = Number(tab.amount_due || 0);
+    if (due <= 0) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Record a CASH payment of KES ${due.toLocaleString()} against tab #${tab.id} (${tab.customer_name})?\n\nThis reduces the outstanding balance to KES 0.`
+      )
+    ) {
+      return;
+    }
+    await runTabAction(tab.id, "pay", { amount: due, method: "cash" });
+  };
 
   // Stock Actions Handlers
   const handleQuickAdjustStock = async (itemId: number, delta: number) => {
@@ -1763,18 +1863,29 @@ export default function VendorDetailDrawer({
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {filteredCustomers.map((cust: any, idx: number) => {
-                          const cleanCustPhone = cust.phone?.replace(/\D/g, "") || "";
-                          const intlCustPhone = cleanCustPhone.startsWith("0") ? "254" + cleanCustPhone.slice(1) : cleanCustPhone;
+                          // Canonicalize before building the wa.me link. The old
+                          // inline `replace(/\D/g,"")` + `startsWith("0")` chain
+                          // produced `254712...` for "0712..." but a bare
+                          // `0712...` (no country code) for "+254 712..." — so
+                          // some customers got a dead WhatsApp link.
+                          const intlCustPhone = toWhatsAppNumber(cust.phone || cust.phoneRaw);
+                          const telPhone = cust.phoneRaw || cust.phone || "";
+                          const due = Number(cust.tab_balance_due || 0);
+                          const hasOpenTab = !!cust.has_open_tab;
 
                           return (
                             <div
                               key={idx}
-                              className="border-3 border-[var(--brand-navy)] bg-white p-4 shadow-(--shadow-brut-xs) flex flex-col justify-between space-y-3"
+                              className={`border-3 bg-white p-4 shadow-(--shadow-brut-xs) flex flex-col justify-between space-y-3 ${
+                                hasOpenTab
+                                  ? "border-amber-500 border-l-8"
+                                  : "border-[var(--brand-navy)]"
+                              }`}
                             >
                               <div>
                                 <div className="flex justify-between items-start gap-2">
                                   <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <h4 className="text-sm font-black uppercase text-[var(--brand-navy)]">
                                         {cust.name}
                                       </h4>
@@ -1783,49 +1894,181 @@ export default function VendorDetailDrawer({
                                           Cash / Walk-in
                                         </span>
                                       )}
+                                      {/* This is the indicator that was missing:
+                                          a customer carrying money the festival
+                                          is owed. */}
+                                      {hasOpenTab && (
+                                        <span className="text-[9px] font-mono font-black uppercase bg-amber-400 text-[var(--brand-navy)] px-1.5 py-0.5">
+                                          Open Tab
+                                        </span>
+                                      )}
+                                      {cust.ticket_count > 0 && (
+                                        <span className="text-[9px] font-mono font-black uppercase bg-blue-100 text-blue-800 px-1.5 py-0.5">
+                                          Attendee
+                                        </span>
+                                      )}
                                     </div>
-                                    {cust.phone && (
+                                    {telPhone && (
                                       <p className="text-xs font-mono font-bold text-stone-600 mt-0.5">
-                                        📞 {cust.phone}
+                                        📞 {telPhone}
                                       </p>
                                     )}
                                   </div>
 
                                   <div className="text-right">
                                     <span className="text-sm font-mono font-black text-emerald-700 block">
-                                      KES {cust.totalSpent.toLocaleString()}
+                                      KES {Number(cust.combined_spend ?? cust.totalSpent ?? 0).toLocaleString()}
                                     </span>
                                     <span className="text-[10px] font-mono text-stone-500 uppercase">
                                       {cust.orderCount} {cust.orderCount === 1 ? "order" : "orders"}
+                                      {cust.ticket_count > 0 ? ` · ${cust.ticket_count} ticket${cust.ticket_count === 1 ? "" : "s"}` : ""}
                                     </span>
                                   </div>
                                 </div>
 
-                                {/* Items Bought by this customer */}
-                                <div className="mt-3 pt-2 border-t border-dashed border-stone-200 space-y-1.5">
-                                  <span className="text-[10px] font-black uppercase text-stone-500 block">
-                                    ITEMS PURCHASED & QUANTITIES:
+                                {/* BALANCE DUE — sourced from customer_tabs,
+                                    summed only over tabs that are neither
+                                    settled nor written off and still carry a
+                                    positive balance. Previously this row simply
+                                    did not exist and the audit showed KES 0 for
+                                    customers with money outstanding. */}
+                                <div
+                                  className={`mt-3 border-2 px-2.5 py-2 flex items-center justify-between gap-2 ${
+                                    due > 0
+                                      ? "bg-amber-50 border-amber-500"
+                                      : "bg-stone-50 border-stone-200"
+                                  }`}
+                                >
+                                  <span className="text-[10px] font-black uppercase text-stone-600 flex items-center gap-1">
+                                    {due > 0 ? <AlertCircle className="w-3 h-3 text-amber-600" /> : <CheckCircle className="w-3 h-3 text-emerald-600" />}
+                                    Balance Due
                                   </span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {(cust.itemsBought || []).map((it: any, iIdx: number) => (
-                                      <span
-                                        key={iIdx}
-                                        className="text-[11px] font-mono font-bold bg-yellow-50 border border-yellow-300 text-[var(--brand-navy)] px-2 py-0.5"
-                                      >
-                                        <strong>{it.quantity}x</strong> {it.name}{" "}
-                                        <span className="text-stone-500 font-normal">
-                                          (KES {it.revenue.toLocaleString()})
-                                        </span>
-                                      </span>
-                                    ))}
-                                  </div>
+                                  <span
+                                    className={`text-sm font-mono font-black ${
+                                      due > 0 ? "text-amber-700" : "text-stone-400"
+                                    }`}
+                                  >
+                                    KES {due.toLocaleString()}
+                                  </span>
                                 </div>
+
+                                {/* Tab ledger + settlement / reminder actions */}
+                                {(cust.tabs || []).length > 0 && (
+                                  <div className="mt-2 space-y-1.5">
+                                    {(cust.tabs || []).map((tab: any) => {
+                                      const tabDue = Number(tab.amount_due || 0);
+                                      const busy = tabBusyId === tab.id;
+                                      const notice = tabNotice?.tabId === tab.id ? tabNotice : null;
+                                      return (
+                                        <div
+                                          key={tab.id}
+                                          className="border border-stone-300 bg-stone-50 px-2.5 py-2 text-[10px] font-mono"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-black text-[var(--brand-navy)] uppercase">
+                                              Tab #{tab.id}
+                                              <span
+                                                className={`ml-1.5 px-1 py-0.5 font-black uppercase ${
+                                                  tab.status === "settled"
+                                                    ? "bg-emerald-100 text-emerald-800"
+                                                    : tab.status === "written_off"
+                                                      ? "bg-stone-300 text-stone-700"
+                                                      : "bg-amber-200 text-amber-900"
+                                                }`}
+                                              >
+                                                {tab.status}
+                                              </span>
+                                            </span>
+                                            <span className="font-black">
+                                              {tabDue > 0 ? (
+                                                <span className="text-amber-700">KES {tabDue.toLocaleString()} due</span>
+                                              ) : (
+                                                <span className="text-emerald-700">Settled</span>
+                                              )}
+                                            </span>
+                                          </div>
+                                          <div className="text-stone-500 mt-0.5">
+                                            Limit KES {Number(tab.credit_limit || 0).toLocaleString()}
+                                            {tab.settled_at ? ` · Closed ${fmtDate(tab.settled_at)}` : ""}
+                                          </div>
+
+                                          {notice && (
+                                            <div
+                                              className={`mt-1.5 px-1.5 py-1 font-black uppercase ${
+                                                notice.ok
+                                                  ? "bg-emerald-100 text-emerald-800"
+                                                  : "bg-red-100 text-red-800"
+                                              }`}
+                                            >
+                                              {notice.text}
+                                            </div>
+                                          )}
+
+                                          {tabDue > 0 && (
+                                            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                              <button
+                                                onClick={() => settleTabInFull(tab)}
+                                                disabled={busy}
+                                                title={`Record a cash payment of KES ${tabDue.toLocaleString()} against this tab`}
+                                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[9px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                              >
+                                                <HandCoins className="w-3 h-3" />
+                                                {busy ? "..." : "Settle"}
+                                              </button>
+                                              <button
+                                                onClick={() => runTabAction(tab.id, "remind")}
+                                                disabled={busy}
+                                                title="Send this customer a WhatsApp reminder with an itemized ledger and a secure M-Pesa self-pay link"
+                                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[9px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                              >
+                                                <MessageSquare className="w-3 h-3" />
+                                                Remind
+                                              </button>
+                                              <button
+                                                onClick={() =>
+                                                  setCustomerDocket({ ...cust, __tabLedgerId: tab.id })
+                                                }
+                                                title="Open the full purchase history and itemized tab ledger"
+                                                className="px-2 py-1 bg-stone-200 hover:bg-stone-300 text-[var(--brand-navy)] border border-[var(--brand-navy)] font-black uppercase text-[9px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
+                                              >
+                                                <FileText className="w-3 h-3" />
+                                                Ledger
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* Items Bought by this customer */}
+                                {(cust.itemsBought || []).length > 0 && (
+                                  <div className="mt-3 pt-2 border-t border-dashed border-stone-200 space-y-1.5">
+                                    <span className="text-[10px] font-black uppercase text-stone-500 block">
+                                      ITEMS PURCHASED & QUANTITIES:
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {(cust.itemsBought || []).map((it: any, iIdx: number) => (
+                                        <span
+                                          key={iIdx}
+                                          className="text-[11px] font-mono font-bold bg-yellow-50 border border-yellow-300 text-[var(--brand-navy)] px-2 py-0.5"
+                                        >
+                                          <strong>{it.quantity}x</strong> {it.name}{" "}
+                                          <span className="text-stone-500 font-normal">
+                                            (KES {Number(it.revenue).toLocaleString()})
+                                          </span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Footer Actions: Contact & View Docket */}
                               <div className="flex items-center justify-between pt-2 border-t border-stone-200 text-[10px] font-mono">
                                 <span className="text-stone-500">
-                                  Tenders: {cust.paymentMethods.join(", ").toUpperCase()}
+                                  Tenders: {(cust.paymentMethods || []).join(", ").toUpperCase() || "—"}
                                 </span>
 
                                 <div className="flex items-center gap-1.5">
@@ -1840,24 +2083,27 @@ export default function VendorDetailDrawer({
                                       <MessageSquare className="w-3.5 h-3.5" />
                                     </a>
                                   )}
-                                  {cust.phone && (
+                                  {telPhone && (
                                     <a
-                                      href={`tel:${cust.phone}`}
+                                      href={`tel:${telPhone}`}
                                       className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white border border-[var(--brand-navy)] shadow-(--shadow-brut-xs)"
                                       title="Call Customer"
                                     >
                                       <Phone className="w-3.5 h-3.5" />
                                     </a>
                                   )}
-                                  {cust.transactions?.[0] && (
-                                    <button
-                                      onClick={() => setReceiptModalItem(cust.transactions[0])}
-                                      className="px-2 py-1 bg-yellow-300 hover:bg-[var(--brand-navy)] hover:text-white text-[var(--brand-navy)] border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
-                                      title="View Latest Docket"
-                                    >
-                                      <FileText className="w-3 h-3" /> DOCKET
-                                    </button>
-                                  )}
+                                  {/* Always available now, even for a customer
+                                      whose only activity is a tab or a ticket —
+                                      those previously rendered no DOCKET button
+                                      at all because it was gated on
+                                      `transactions[0]` existing. */}
+                                  <button
+                                    onClick={() => setCustomerDocket(cust)}
+                                    className="px-2 py-1 bg-yellow-300 hover:bg-[var(--brand-navy)] hover:text-white text-[var(--brand-navy)] border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
+                                    title="View full purchase history (orders, tickets & tab ledger)"
+                                  >
+                                    <FileText className="w-3 h-3" /> DOCKET
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -2060,6 +2306,243 @@ export default function VendorDetailDrawer({
             </button>
           </div>
         </div>
+
+        {/* UNIFIED CUSTOMER DOCKET — combined purchase history across the
+            ticket system and the vendor POS, plus the itemized tab ledger.
+
+            This replaces the old "DOCKET" button, which passed
+            `cust.transactions[0]` to the thermal-receipt modal and therefore
+            showed exactly one tender line from one order. The data for the full
+            history was already in the response; it simply had no view. */}
+        {customerDocket && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-2xl p-5 shadow-(--shadow-brut-xl) my-8 max-h-[90vh] overflow-y-auto space-y-4">
+              <div className="flex justify-between items-start border-b-2 border-[var(--brand-navy)] pb-2 sticky top-0 bg-[var(--brand-off-white)] z-10">
+                <div>
+                  <span className="text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5">
+                    CUSTOMER PURCHASE HISTORY
+                  </span>
+                  <h3 className="text-lg font-black uppercase text-[var(--brand-navy)] mt-1">
+                    {customerDocket.name}
+                  </h3>
+                  {customerDocket.phoneRaw || customerDocket.phone ? (
+                    <p className="text-[11px] font-mono text-stone-600">
+                      📞 {customerDocket.phoneRaw || customerDocket.phone}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  onClick={() => setCustomerDocket(null)}
+                  className="p-1 text-stone-600 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer"
+                  aria-label="Close customer docket"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Combined totals */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: "Stall Spend", value: Number(customerDocket.totalSpent || 0), tone: "text-emerald-700" },
+                  { label: "Ticket Spend", value: Number(customerDocket.ticket_spend || 0), tone: "text-blue-700" },
+                  { label: "Orders", value: Number(customerDocket.orderCount || 0), tone: "text-stone-700", raw: true },
+                  {
+                    label: "Balance Due",
+                    value: Number(customerDocket.tab_balance_due || 0),
+                    tone: Number(customerDocket.tab_balance_due || 0) > 0 ? "text-amber-700" : "text-stone-400"
+                  }
+                ].map((m) => (
+                  <div key={m.label} className="border-2 border-stone-300 bg-white px-2 py-1.5 text-center">
+                    <div className={`text-sm font-mono font-black ${m.tone}`}>
+                      {m.raw ? m.value : `KES ${m.value.toLocaleString()}`}
+                    </div>
+                    <div className="text-[9px] font-black uppercase text-stone-500">{m.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* POS ORDERS */}
+              <section className="space-y-2">
+                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
+                  <ShoppingBag className="w-3.5 h-3.5" /> Stall Orders ({customerDocket.orders?.length || 0})
+                </h4>
+                {(customerDocket.orders || []).length === 0 ? (
+                  <p className="text-[11px] font-mono text-stone-500 uppercase">No stall orders recorded.</p>
+                ) : (
+                  (customerDocket.orders || []).map((order: any, oIdx: number) => (
+                    <div key={oIdx} className="border-2 border-stone-300 bg-white p-3">
+                      <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-dashed border-stone-300">
+                        <span className="text-[11px] font-mono font-black text-[var(--brand-navy)]">
+                          {order.sale_id || "—"}
+                        </span>
+                        <span className="text-[10px] font-mono text-stone-500">
+                          {order.created_at ? `${fmtDate(order.created_at)} ${fmtTime(order.created_at)}` : ""}
+                        </span>
+                        <span className="text-[11px] font-mono font-black text-emerald-700">
+                          KES {Number(order.total_paid || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <ul className="mt-1.5 space-y-0.5">
+                        {(order.items || []).map((it: any, iIdx: number) => (
+                          <li key={iIdx} className="text-[11px] font-mono text-stone-700 flex justify-between">
+                            <span>
+                              {Number(it.quantity)}x {it.item_name}
+                            </span>
+                            <span className="text-stone-500">KES {Number(it.line_total || 0).toLocaleString()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {/* Every tender, not just the first — a split-payment
+                          order has one row per method. */}
+                      {(order.payments || []).length > 0 && (
+                        <div className="mt-1.5 pt-1.5 border-t border-dashed border-stone-300 flex flex-wrap gap-1.5">
+                          {(order.payments || []).map((p: any, pIdx: number) => (
+                            <span
+                              key={pIdx}
+                              className="text-[9px] font-mono font-black uppercase bg-stone-100 border border-stone-300 px-1.5 py-0.5"
+                            >
+                              {p.method} · KES {Number(p.amount || 0).toLocaleString()}
+                              {p.mpesa_ref ? ` · ${p.mpesa_ref}` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </section>
+
+              {/* EVENT TICKETS — the other half of the combined history */}
+              <section className="space-y-2">
+                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
+                  <Ticket className="w-3.5 h-3.5" /> Event Tickets ({customerDocket.tickets?.length || 0})
+                </h4>
+                {(customerDocket.tickets || []).length === 0 ? (
+                  <p className="text-[11px] font-mono text-stone-500 uppercase">
+                    No event tickets found for this customer.
+                  </p>
+                ) : (
+                  (customerDocket.tickets || []).map((t: any, tIdx: number) => (
+                    <div
+                      key={tIdx}
+                      className="border-2 border-stone-300 bg-white px-3 py-2 flex items-center justify-between gap-2 text-[11px] font-mono"
+                    >
+                      <div>
+                        <span className="font-black text-[var(--brand-navy)]">{t.id}</span>
+                        <span className="ml-2 font-bold">{t.ticket_type}</span>
+                        <div className="text-[10px] text-stone-500">
+                          {t.event_title}
+                          {t.purchase_time ? ` · ${fmtDate(t.purchase_time)}` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-blue-700">
+                          KES {Number(t.amount_paid || 0).toLocaleString()}
+                        </span>
+                        <div className="text-[9px] font-black uppercase text-stone-500">
+                          {t.is_scanned ? "Scanned" : "Not scanned"}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </section>
+
+              {/* TAB LEDGER */}
+              <section className="space-y-2">
+                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5" /> Customer Tabs ({customerDocket.tabs?.length || 0})
+                </h4>
+                {(customerDocket.tabs || []).length === 0 ? (
+                  <p className="text-[11px] font-mono text-stone-500 uppercase">No tabs on this account.</p>
+                ) : (
+                  (customerDocket.tabs || []).map((tab: any, tabIdx: number) => {
+                    const tabDue = Number(tab.amount_due || 0);
+                    const highlight = customerDocket.__tabLedgerId === tab.id;
+                    const busy = tabBusyId === tab.id;
+                    const notice = tabNotice?.tabId === tab.id ? tabNotice : null;
+                    return (
+                      <div
+                        key={tab.id}
+                        className={`border-2 bg-white p-3 ${
+                          highlight ? "border-amber-500" : "border-stone-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[11px] font-mono font-black text-[var(--brand-navy)]">
+                            TAB #{tab.id}
+                            <span
+                              className={`ml-1.5 px-1 py-0.5 font-black uppercase ${
+                                tab.status === "settled"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : tab.status === "written_off"
+                                    ? "bg-stone-300 text-stone-700"
+                                    : "bg-amber-200 text-amber-900"
+                              }`}
+                            >
+                              {tab.status}
+                            </span>
+                          </span>
+                          <span
+                            className={`text-[11px] font-mono font-black ${
+                              tabDue > 0 ? "text-amber-700" : "text-emerald-700"
+                            }`}
+                          >
+                            {tabDue > 0 ? `KES ${tabDue.toLocaleString()} DUE` : "SETTLED"}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-stone-600 mt-1">
+                          Credit limit KES {Number(tab.credit_limit || 0).toLocaleString()} · Opened{" "}
+                          {fmtDate(tab.created_at)}
+                          {tab.settled_at ? ` · Settled ${fmtDate(tab.settled_at)}` : ""}
+                        </div>
+                        {tab.settlement_reason ? (
+                          <div className="text-[10px] font-mono text-stone-500 mt-0.5">
+                            Reason: {tab.settlement_reason}
+                          </div>
+                        ) : null}
+
+                        {tabDue > 0 && (
+                          <>
+                            {notice && (
+                              <div
+                                className={`mt-2 px-2 py-1 text-[10px] font-black uppercase ${
+                                  notice.ok
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {notice.text}
+                              </div>
+                            )}
+                            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => settleTabInFull(tab)}
+                                disabled={busy}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <HandCoins className="w-3 h-3" />
+                                {busy ? "Working..." : `Settle KES ${tabDue.toLocaleString()}`}
+                              </button>
+                              <button
+                                onClick={() => runTabAction(tab.id, "remind")}
+                                disabled={busy}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                Send WhatsApp Reminder
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </section>
+            </div>
+          </div>
+        )}
 
         {/* 1. THERMAL POS RECEIPT DOCKET MODAL */}
         {receiptModalItem && currentReceipt && (

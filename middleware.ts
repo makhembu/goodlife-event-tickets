@@ -193,7 +193,23 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/vendor/logout" ||
       pathname === "/api/vendor/mpesa/status"; // read-only; TABPAY_ refs only (see route)
 
-    if (!isPublicRoute && !(await isValidVendorSession(vendorSession))) {
+    // Tab actions are reachable from the ADMIN customer-audit panel as well as
+    // from the vendor's own /vendor/tabs page, so the admin cookie is accepted
+    // here. Scoped to `/api/vendor/tabs/` on purpose: this does NOT let an
+    // admin cookie stand in for a vendor session on checkout, sales, metrics or
+    // the customer list, where `vendorId` in the body drives real money
+    // movement and those handlers still resolve the vendor from the session.
+    //
+    // The handlers re-check ownership via lib/vendor-tab-auth.ts — this is a
+    // gate, not the authorization.
+    const isAdminTabAction =
+      session === "true" && pathname.startsWith("/api/vendor/tabs/");
+
+    if (
+      !isPublicRoute &&
+      !isAdminTabAction &&
+      !(await isValidVendorSession(vendorSession))
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
