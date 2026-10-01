@@ -2925,6 +2925,87 @@ export async function adjustStock(itemId: number, quantityChange: number): Promi
   return rows.length > 0;
 }
 
+export interface VendorCategorySummary {
+  category: string;
+  count: number;
+}
+
+export async function fetchVendorCategories(vendorId: number): Promise<VendorCategorySummary[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/vendor/categories`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.categories || [];
+      }
+    } catch {}
+    return [];
+  }
+  const { rows } = await neonQuery(
+    `SELECT COALESCE(NULLIF(TRIM(category), ''), 'General') AS category, COUNT(*)::int AS count
+     FROM vendor_items
+     WHERE vendor_id = $1 AND deleted_at IS NULL
+     GROUP BY 1
+     ORDER BY 1 ASC`,
+    [vendorId]
+  );
+  return rows;
+}
+
+export async function renameVendorCategory(vendorId: number, oldCategory: string, newCategory: string): Promise<number> {
+  const cleanNew = (newCategory || "").trim();
+  const cleanOld = (oldCategory || "").trim();
+  if (!cleanNew || !cleanOld) return 0;
+
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/vendor/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldCategory: cleanOld, newCategory: cleanNew })
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.count || 0;
+  }
+
+  const { rowCount } = await neonQuery(
+    `UPDATE vendor_items
+     SET category = $1
+     WHERE vendor_id = $2
+       AND LOWER(TRIM(COALESCE(category, 'General'))) = LOWER(TRIM($3))
+       AND deleted_at IS NULL`,
+    [cleanNew, vendorId, cleanOld]
+  );
+  return rowCount || 0;
+}
+
+export async function deleteVendorCategory(vendorId: number, category: string, reassignTo: string = "General"): Promise<number> {
+  const cleanCat = (category || "").trim();
+  const cleanReassign = (reassignTo || "General").trim() || "General";
+  if (!cleanCat) return 0;
+
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/vendor/categories", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: cleanCat, reassignTo: cleanReassign })
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.count || 0;
+  }
+
+  const { rowCount } = await neonQuery(
+    `UPDATE vendor_items
+     SET category = $1
+     WHERE vendor_id = $2
+       AND LOWER(TRIM(COALESCE(category, 'General'))) = LOWER(TRIM($3))
+       AND deleted_at IS NULL`,
+    [cleanReassign, vendorId, cleanCat]
+  );
+  return rowCount || 0;
+}
+
 // ==================== TRANSACTIONAL POS ENGINE ====================
 
 export async function createPosSale(

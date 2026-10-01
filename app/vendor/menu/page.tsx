@@ -2,7 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { HapticFeedback } from '@/components/ui/haptic-feedback';
-import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle, Camera, Search, Upload } from 'lucide-react';
+import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle, Camera, Search, Upload, Tags, Tag, Settings2, Check, AlertCircle } from 'lucide-react';
+
+const DEFAULT_SUGGESTED_CATEGORIES = [
+  "Drinks",
+  "Kitchen",
+  "Cocktails",
+  "Snacks",
+  "Merchandise",
+  "VIP Bottles",
+  "Shisha & Smokes",
+  "Desserts",
+  "General"
+];
 
 function compressImageFile(file: File, maxDimension = 600, quality = 0.8): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,7 +68,16 @@ export default function VendorMenuPage() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   
+  // Category management modal state
+  const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
+  const [editingCategoryOldName, setEditingCategoryOldName] = useState<string | null>(null);
+  const [editingCategoryNewName, setEditingCategoryNewName] = useState('');
+  const [newCategoryNameInput, setNewCategoryNameInput] = useState('');
+  const [isSavingCategoryAction, setIsSavingCategoryAction] = useState(false);
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
+
   // Restock modal state
   const [restockModalItem, setRestockModalItem] = useState<CatalogItem | null>(null);
   const [restockAmount, setRestockAmount] = useState<string>('24');
@@ -67,6 +88,8 @@ export default function VendorMenuPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('Drinks');
+  const [newItemCustomCategory, setNewItemCustomCategory] = useState('');
+  const [isNewCategoryCustom, setIsNewCategoryCustom] = useState(false);
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemStock, setNewItemStock] = useState('50');
   const [newItemIsUncapped, setNewItemIsUncapped] = useState(false);
@@ -124,13 +147,25 @@ export default function VendorMenuPage() {
     image_url: '',
     is_available: true
   });
+  const [editCustomCategory, setEditCustomCategory] = useState('');
+  const [isEditCategoryCustom, setIsEditCategoryCustom] = useState(false);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   
-  // Extract unique categories from catalog
-  const categories = Array.from(
-    new Set(catalog.map(c => c.category || "General").filter(Boolean))
+  // Extract unique active categories from catalog
+  const catalogCategories = Array.from(
+    new Set(catalog.map(c => c.category?.trim() || "General").filter(Boolean))
   ) as string[];
+
+  // All categories (catalog + user added + suggestions)
+  const availableCategories = Array.from(
+    new Set([...catalogCategories, ...customCategories, ...DEFAULT_SUGGESTED_CATEGORIES])
+  );
+
+  // Categories shown in filter pills
+  const categories = Array.from(
+    new Set([...catalogCategories, ...customCategories])
+  ).filter(Boolean) as string[];
 
   const fetchItems = () => {
     fetch('/api/vendor/items')
@@ -212,6 +247,91 @@ export default function VendorMenuPage() {
     }
   };
 
+  const handleRenameCategory = async (oldCat: string, newCat: string) => {
+    const cleanOld = oldCat.trim();
+    const cleanNew = newCat.trim();
+    if (!cleanNew || cleanNew.toLowerCase() === cleanOld.toLowerCase()) {
+      setEditingCategoryOldName(null);
+      return;
+    }
+    setIsSavingCategoryAction(true);
+    try {
+      const res = await fetch('/api/vendor/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldCategory: cleanOld, newCategory: cleanNew })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        HapticFeedback.trigger('success');
+        setCategoryNotice(`Renamed "${cleanOld}" to "${cleanNew}" (${data.count} items updated)`);
+        setEditingCategoryOldName(null);
+        setEditingCategoryNewName('');
+        if (selectedCategory.toLowerCase() === cleanOld.toLowerCase()) {
+          setSelectedCategory(cleanNew);
+        }
+        setCustomCategories(prev => prev.map(c => c.toLowerCase() === cleanOld.toLowerCase() ? cleanNew : c));
+        fetchItems();
+      } else {
+        HapticFeedback.trigger('error');
+        alert(data.message || 'Failed to rename category');
+      }
+    } catch {
+      HapticFeedback.trigger('error');
+      alert('Error connecting to server to rename category');
+    } finally {
+      setIsSavingCategoryAction(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: string) => {
+    const cleanCat = cat.trim();
+    const count = catalog.filter(c => (c.category || 'General').toLowerCase() === cleanCat.toLowerCase()).length;
+    const confirmMsg = count > 0 
+      ? `Category "${cleanCat}" has ${count} product(s). Deleting it will reassign all these items to "General". Proceed?`
+      : `Delete category "${cleanCat}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingCategoryAction(true);
+    try {
+      const res = await fetch('/api/vendor/categories', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cleanCat, reassignTo: 'General' })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        HapticFeedback.trigger('success');
+        setCategoryNotice(`Deleted category "${cleanCat}" and reassigned items to "General"`);
+        if (selectedCategory.toLowerCase() === cleanCat.toLowerCase()) {
+          setSelectedCategory('ALL');
+        }
+        setCustomCategories(prev => prev.filter(c => c.toLowerCase() !== cleanCat.toLowerCase()));
+        fetchItems();
+      } else {
+        HapticFeedback.trigger('error');
+        alert(data.message || 'Failed to delete category');
+      }
+    } catch {
+      HapticFeedback.trigger('error');
+      alert('Error connecting to server to delete category');
+    } finally {
+      setIsSavingCategoryAction(false);
+    }
+  };
+
+  const handleAddNewCategory = (catName: string) => {
+    const clean = catName.trim();
+    if (!clean) return;
+    if (availableCategories.some(c => c.toLowerCase() === clean.toLowerCase())) {
+      alert(`Category "${clean}" already exists.`);
+      return;
+    }
+    setCustomCategories(prev => [...prev, clean]);
+    setNewCategoryNameInput('');
+    setCategoryNotice(`Category "${clean}" created! You can now assign items to it.`);
+  };
+
   const handleAddNewItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName || !newItemPrice) return;
@@ -219,9 +339,11 @@ export default function VendorMenuPage() {
     setIsSubmittingNew(true);
     HapticFeedback.trigger('confirmation');
 
+    const resolvedCategory = (isNewCategoryCustom ? newItemCustomCategory.trim() : newItemCategory.trim()) || 'General';
+
     const payload = {
       name: newItemName.trim(),
-      category: newItemCategory.trim() || 'General',
+      category: resolvedCategory,
       price: parseFloat(newItemPrice),
       stock_qty: newItemIsUncapped ? null : (parseInt(newItemStock, 10) || 0),
       image_url: newItemImage.trim(),
@@ -245,6 +367,9 @@ export default function VendorMenuPage() {
         setNewItemStock('50');
         setNewItemImage('');
         setNewItemIsUncapped(false);
+        setNewItemCategory(resolvedCategory);
+        setNewItemCustomCategory('');
+        setIsNewCategoryCustom(false);
       } else {
         HapticFeedback.trigger('error');
         alert(data.message || "Failed to create item");
@@ -270,6 +395,8 @@ export default function VendorMenuPage() {
       image_url: item.image_url || '',
       is_available: item.is_available
     });
+    setEditCustomCategory('');
+    setIsEditCategoryCustom(false);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -279,9 +406,11 @@ export default function VendorMenuPage() {
     setIsSubmittingEdit(true);
     HapticFeedback.trigger('confirmation');
 
+    const resolvedCategory = (isEditCategoryCustom ? editCustomCategory.trim() : editForm.category.trim()) || 'General';
+
     const payload = {
       name: editForm.name.trim(),
-      category: editForm.category.trim() || 'General',
+      category: resolvedCategory,
       price: parseFloat(editForm.price),
       stock_qty: editForm.isUncapped ? null : (parseInt(editForm.stock_qty, 10) || 0),
       low_stock_threshold: parseInt(editForm.low_stock_threshold, 10) || 5,
@@ -353,19 +482,34 @@ export default function VendorMenuPage() {
 
   return (
     <div className="flex-1 flex flex-col p-3 md:p-6 lg:p-8 pb-32 md:pb-8 bg-brand-off-white font-mono text-brand-navy">
-      {/* HEADER WITH COMPACT BUTTON ON MOBILE */}
+      {/* HEADER WITH ACTION BUTTONS */}
       <div className="flex flex-row justify-between items-center gap-2 mb-3 md:mb-6">
         <div>
           <h1 className="font-display text-xl md:text-3xl uppercase tracking-wider">STALL CATALOG</h1>
           <p className="hidden md:block text-xs uppercase font-bold opacity-60">Manage products, prices, categories, and mid-event stock replenishment</p>
         </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-3 py-2 md:px-5 md:py-3 bg-brand-accent text-brand-navy border-2 md:border-4 border-brand-navy font-display uppercase text-xs md:text-lg shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-brand-navy hover:text-brand-accent active:scale-95 transition-all cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4 md:w-5 md:h-5" />
-          <span>Add Item</span>
-        </button>
+        <div className="flex items-center gap-1.5 md:gap-2">
+          <button 
+            type="button"
+            onClick={() => {
+              HapticFeedback.trigger('confirmation');
+              setShowManageCategoriesModal(true);
+            }}
+            className="flex items-center gap-1 px-2.5 py-2 md:px-4 md:py-3 bg-white text-brand-navy border-2 md:border-4 border-brand-navy font-mono font-bold uppercase text-[11px] md:text-sm shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-stone-100 active:scale-95 transition-all cursor-pointer shrink-0"
+            title="Manage, Add or Rename Product Categories"
+          >
+            <Tags className="w-3.5 h-3.5 md:w-4 md:h-4 text-brand-navy" />
+            <span className="hidden sm:inline">Categories</span>
+            <span className="sm:hidden">Cats</span>
+          </button>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 md:px-5 md:py-3 bg-brand-accent text-brand-navy border-2 md:border-4 border-brand-navy font-display uppercase text-xs md:text-lg shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-brand-navy hover:text-brand-accent active:scale-95 transition-all cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4 md:w-5 md:h-5" />
+            <span>Add Item</span>
+          </button>
+        </div>
       </div>
 
       {/* SEARCH BAR */}
@@ -425,6 +569,19 @@ export default function VendorMenuPage() {
             </button>
           );
         })}
+
+        <button
+          type="button"
+          onClick={() => {
+            HapticFeedback.trigger('confirmation');
+            setShowManageCategoriesModal(true);
+          }}
+          className="px-2 py-1 border-2 border-dashed border-brand-navy/60 font-mono font-bold text-[10px] md:text-xs uppercase bg-yellow-50 text-brand-navy hover:bg-yellow-100 cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1"
+          title="Add or Edit Categories"
+        >
+          <Settings2 className="w-3 h-3" />
+          <span>EDIT CATS</span>
+        </button>
       </div>
 
       {loading ? (
@@ -567,21 +724,78 @@ export default function VendorMenuPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Category</label>
-                  <select 
-                    value={newItemCategory}
-                    onChange={e => setNewItemCategory(e.target.value)}
-                    className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-sm focus:outline-none focus:ring-4 focus:ring-brand-accent"
-                  >
-                    <option value="Drinks">Drinks</option>
-                    <option value="Kitchen">Kitchen</option>
-                    <option value="Cocktails">Cocktails</option>
-                    <option value="Snacks">Snacks</option>
-                    <option value="Merch">Merchandise</option>
-                    <option value="General">General</option>
-                  </select>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold uppercase">Category</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsNewCategoryCustom(!isNewCategoryCustom)}
+                      className="text-[10px] font-mono font-bold text-brand-navy underline hover:text-brand-accent cursor-pointer"
+                    >
+                      {isNewCategoryCustom ? "Choose from list" : "+ Custom category"}
+                    </button>
+                  </div>
+
+                  {isNewCategoryCustom ? (
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        required
+                        value={newItemCustomCategory}
+                        onChange={e => setNewItemCustomCategory(e.target.value)}
+                        placeholder="Type new category..."
+                        className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-xs font-bold uppercase focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsNewCategoryCustom(false)}
+                        className="p-2 border-2 border-brand-navy bg-stone-100 hover:bg-stone-200 cursor-pointer"
+                        title="Back to list"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <select 
+                      value={newItemCategory}
+                      onChange={e => {
+                        if (e.target.value === "__custom__") {
+                          setIsNewCategoryCustom(true);
+                        } else {
+                          setNewItemCategory(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-sm focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      <option value="__custom__">+ Add Custom Category...</option>
+                    </select>
+                  )}
+
+                  {/* Quick-pick category chips */}
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {availableCategories.slice(0, 5).map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setIsNewCategoryCustom(false);
+                          setNewItemCategory(cat);
+                        }}
+                        className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase border transition-colors cursor-pointer ${
+                          !isNewCategoryCustom && newItemCategory.toLowerCase() === cat.toLowerCase()
+                            ? "bg-brand-navy text-white border-brand-navy"
+                            : "bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Selling Price (KES) *</label>
@@ -725,21 +939,78 @@ export default function VendorMenuPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Category</label>
-                  <select 
-                    value={editForm.category}
-                    onChange={e => setEditForm({ ...editForm, category: e.target.value })}
-                    className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-sm focus:outline-none focus:ring-4 focus:ring-brand-accent"
-                  >
-                    <option value="Drinks">Drinks</option>
-                    <option value="Kitchen">Kitchen</option>
-                    <option value="Cocktails">Cocktails</option>
-                    <option value="Snacks">Snacks</option>
-                    <option value="Merch">Merchandise</option>
-                    <option value="General">General</option>
-                  </select>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold uppercase">Category</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditCategoryCustom(!isEditCategoryCustom)}
+                      className="text-[10px] font-mono font-bold text-brand-navy underline hover:text-brand-accent cursor-pointer"
+                    >
+                      {isEditCategoryCustom ? "Choose from list" : "+ Custom category"}
+                    </button>
+                  </div>
+
+                  {isEditCategoryCustom ? (
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        required
+                        value={editCustomCategory}
+                        onChange={e => setEditCustomCategory(e.target.value)}
+                        placeholder="Type new category..."
+                        className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-xs font-bold uppercase focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsEditCategoryCustom(false)}
+                        className="p-2 border-2 border-brand-navy bg-stone-100 hover:bg-stone-200 cursor-pointer"
+                        title="Back to list"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <select 
+                      value={editForm.category}
+                      onChange={e => {
+                        if (e.target.value === "__custom__") {
+                          setIsEditCategoryCustom(true);
+                        } else {
+                          setEditForm({ ...editForm, category: e.target.value });
+                        }
+                      }}
+                      className="w-full p-2.5 border-2 border-brand-navy bg-white font-mono text-sm focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      <option value="__custom__">+ Add Custom Category...</option>
+                    </select>
+                  )}
+
+                  {/* Quick-pick category chips */}
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {availableCategories.slice(0, 5).map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setIsEditCategoryCustom(false);
+                          setEditForm({ ...editForm, category: cat });
+                        }}
+                        className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase border transition-colors cursor-pointer ${
+                          !isEditCategoryCustom && editForm.category.toLowerCase() === cat.toLowerCase()
+                            ? "bg-brand-navy text-white border-brand-navy"
+                            : "bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Selling Price (KES) *</label>
@@ -959,6 +1230,171 @@ export default function VendorMenuPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE CATEGORIES MODAL */}
+      {showManageCategoriesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-xs">
+          <div className="bg-brand-off-white border-4 border-brand-navy p-5 md:p-6 w-full max-w-lg shadow-(--shadow-brut-lg) max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-3 border-b-2 border-brand-navy mb-4">
+              <div className="flex items-center gap-2">
+                <Tags className="w-5 h-5 text-brand-navy" />
+                <h3 className="font-display text-lg md:text-xl uppercase">Manage Categories</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowManageCategoriesModal(false);
+                  setEditingCategoryOldName(null);
+                  setCategoryNotice(null);
+                }}
+                className="p-1 hover:bg-brand-navy/15 border border-brand-navy cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {categoryNotice && (
+              <div className="mb-4 p-2.5 bg-yellow-100 border-2 border-brand-navy text-xs font-bold uppercase flex items-center justify-between gap-2">
+                <span>{categoryNotice}</span>
+                <button onClick={() => setCategoryNotice(null)} className="text-stone-500 hover:text-black">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* ADD NEW CATEGORY INPUT */}
+            <div className="mb-5 p-3 bg-white border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+              <label className="block text-xs font-black uppercase mb-1">Add New Category</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCategoryNameInput}
+                  onChange={(e) => setNewCategoryNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddNewCategory(newCategoryNameInput);
+                    }
+                  }}
+                  placeholder="e.g. Grills, VIP Bottles, Hookah..."
+                  className="flex-1 p-2 border-2 border-brand-navy bg-white font-mono text-xs font-bold uppercase focus:outline-none focus:ring-2 focus:ring-brand-accent"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddNewCategory(newCategoryNameInput)}
+                  className="px-4 py-2 bg-brand-navy text-white text-xs font-black uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border-2 border-brand-navy cursor-pointer shrink-0"
+                >
+                  Add
+                </button>
+              </div>
+              <p className="text-[10px] text-stone-500 mt-1">
+                New categories appear in product dropdowns and menu filters immediately.
+              </p>
+            </div>
+
+            {/* CURRENT CATEGORIES LIST WITH RENAME & DELETE */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-black uppercase text-brand-navy">Active Stall Categories</h4>
+              {categories.length === 0 ? (
+                <div className="p-4 text-center border-2 border-dashed border-stone-300 text-xs font-bold uppercase text-stone-500">
+                  No custom categories yet. Categories are created when you add products.
+                </div>
+              ) : (
+                <div className="divide-y-2 divide-brand-navy/15 border-2 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
+                  {categories.map((cat) => {
+                    const itemCount = catalog.filter(c => (c.category || "General").toLowerCase() === cat.toLowerCase()).length;
+                    const isEditingThis = editingCategoryOldName?.toLowerCase() === cat.toLowerCase();
+
+                    return (
+                      <div key={cat} className="p-3 flex items-center justify-between gap-2 hover:bg-stone-50 transition-colors">
+                        {isEditingThis ? (
+                          <div className="flex-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editingCategoryNewName}
+                              onChange={(e) => setEditingCategoryNewName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleRenameCategory(cat, editingCategoryNewName);
+                                }
+                              }}
+                              className="flex-1 p-1.5 border-2 border-brand-navy font-mono text-xs font-black uppercase focus:outline-none bg-yellow-50"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              disabled={isSavingCategoryAction}
+                              onClick={() => handleRenameCategory(cat, editingCategoryNewName)}
+                              className="px-2.5 py-1.5 bg-brand-navy text-white text-xs font-black uppercase hover:bg-brand-accent hover:text-brand-navy border border-brand-navy cursor-pointer disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingCategoryOldName(null)}
+                              className="px-2 py-1.5 bg-stone-100 text-stone-700 text-xs font-bold uppercase border border-stone-300 hover:bg-stone-200 cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <Tag className="w-3.5 h-3.5 text-brand-navy/60" />
+                              <span className="font-display text-sm uppercase text-brand-navy font-bold">{cat}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-stone-100 text-stone-600 border border-stone-300">
+                                {itemCount} {itemCount === 1 ? "item" : "items"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCategoryOldName(cat);
+                                  setEditingCategoryNewName(cat);
+                                }}
+                                className="px-2 py-1 bg-stone-100 hover:bg-yellow-200 border border-brand-navy text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Rename category across all items"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>Rename</span>
+                              </button>
+                              {cat.toLowerCase() !== "general" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCategory(cat)}
+                                  className="p-1 hover:bg-red-100 border border-stone-300 hover:border-red-600 text-stone-400 hover:text-red-700 cursor-pointer transition-colors"
+                                  title="Delete category (reassigns items to General)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 pt-3 border-t-2 border-brand-navy flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManageCategoriesModal(false);
+                  setEditingCategoryOldName(null);
+                  setCategoryNotice(null);
+                }}
+                className="w-full sm:w-auto px-5 py-2 bg-brand-navy text-white text-xs font-black uppercase hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy cursor-pointer transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

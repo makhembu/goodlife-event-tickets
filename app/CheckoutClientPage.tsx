@@ -504,7 +504,12 @@ export default function TicketCheckoutPage({
           return false;
         }
 
-        // If Early Bird is currently active: ONLY Early Bird shows under entry!
+        // Group & squad passes (admits_quantity > 1) remain available throughout pre-sale
+        if (Number(tier.admits_quantity) > 1 || tier.tier_category === 'group') {
+          return true;
+        }
+
+        // If Early Bird is currently active: ONLY Early Bird shows under single entry!
         if (isEarlyBirdActive) {
           return isThisEarlyBird;
         }

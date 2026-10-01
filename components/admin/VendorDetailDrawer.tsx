@@ -32,9 +32,24 @@ import {
   DollarSign,
   Store,
   KeyRound,
-  UserPlus
+  UserPlus,
+  Tags,
+  Tag,
+  Settings2
 } from "lucide-react";
 import { fmtDate, fmtTime } from "@/lib/utils";
+
+const DEFAULT_SUGGESTED_CATEGORIES = [
+  "Drinks",
+  "Kitchen",
+  "Cocktails",
+  "Snacks",
+  "Merchandise",
+  "VIP Bottles",
+  "Shisha & Smokes",
+  "Desserts",
+  "General"
+];
 
 interface VendorDetailDrawerProps {
   vendorId: number | null;
@@ -59,7 +74,18 @@ export default function VendorDetailDrawer({
   // Searches & Filters
   const [salesSearch, setSalesSearch] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
+  const [stockSearch, setStockSearch] = useState("");
+  const [selectedStockCategory, setSelectedStockCategory] = useState<string>("ALL");
   const [paymentTenderFilter, setPaymentTenderFilter] = useState<"all" | "mpesa" | "tab" | "cash">("all");
+
+  // Category Management State
+  const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
+  const [editingCategoryOldName, setEditingCategoryOldName] = useState<string | null>(null);
+  const [editingCategoryNewName, setEditingCategoryNewName] = useState("");
+  const [newCategoryNameInput, setNewCategoryNameInput] = useState("");
+  const [isSavingCategoryAction, setIsSavingCategoryAction] = useState(false);
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
 
   // Settlement Modal State
   const [showSettleModal, setShowSettleModal] = useState(false);
@@ -201,6 +227,113 @@ export default function VendorDetailDrawer({
   const paymentTransactions = data?.paymentTransactions || [];
   const customers = data?.customers || [];
   const operators = data?.operators || [];
+
+  // Extract categories from vendor stock
+  const stockCategories = Array.from(
+    new Set(stock.map((item: any) => item.category?.trim() || "General").filter(Boolean))
+  ) as string[];
+
+  const availableCategories = Array.from(
+    new Set([...stockCategories, ...customCategories, ...DEFAULT_SUGGESTED_CATEGORIES])
+  );
+
+  const filterCategories = Array.from(
+    new Set([...stockCategories, ...customCategories])
+  ).filter(Boolean) as string[];
+
+  // Filter stock for Tab 2
+  const filteredStock = stock.filter((item: any) => {
+    const matchesCategory =
+      selectedStockCategory === "ALL" ||
+      (item.category || "General").toLowerCase() === selectedStockCategory.toLowerCase();
+    const query = stockSearch.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      item.name.toLowerCase().includes(query) ||
+      (item.category && item.category.toLowerCase().includes(query));
+    return matchesCategory && matchesSearch;
+  });
+
+  const handleAdminRenameCategory = async (oldCat: string, newCat: string) => {
+    if (!vendorId) return;
+    const cleanOld = oldCat.trim();
+    const cleanNew = newCat.trim();
+    if (!cleanNew || cleanNew.toLowerCase() === cleanOld.toLowerCase()) {
+      setEditingCategoryOldName(null);
+      return;
+    }
+    setIsSavingCategoryAction(true);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/categories`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oldCategory: cleanOld, newCategory: cleanNew })
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setCategoryNotice(`Renamed "${cleanOld}" to "${cleanNew}" (${d.count} items updated)`);
+        setEditingCategoryOldName(null);
+        setEditingCategoryNewName("");
+        if (selectedStockCategory.toLowerCase() === cleanOld.toLowerCase()) {
+          setSelectedStockCategory(cleanNew);
+        }
+        setCustomCategories(prev => prev.map(c => c.toLowerCase() === cleanOld.toLowerCase() ? cleanNew : c));
+        refreshData();
+      } else {
+        alert(d.error || "Failed to rename category");
+      }
+    } catch {
+      alert("Error renaming category");
+    } finally {
+      setIsSavingCategoryAction(false);
+    }
+  };
+
+  const handleAdminDeleteCategory = async (cat: string) => {
+    if (!vendorId) return;
+    const cleanCat = cat.trim();
+    const count = stock.filter((i: any) => (i.category || "General").toLowerCase() === cleanCat.toLowerCase()).length;
+    const confirmMsg = count > 0
+      ? `Category "${cleanCat}" has ${count} product(s). Deleting it will reassign all these items to "General". Proceed?`
+      : `Delete category "${cleanCat}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingCategoryAction(true);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/categories`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: cleanCat, reassignTo: "General" })
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setCategoryNotice(`Deleted category "${cleanCat}" and reassigned items to "General"`);
+        if (selectedStockCategory.toLowerCase() === cleanCat.toLowerCase()) {
+          setSelectedStockCategory("ALL");
+        }
+        setCustomCategories(prev => prev.filter(c => c.toLowerCase() !== cleanCat.toLowerCase()));
+        refreshData();
+      } else {
+        alert(d.error || "Failed to delete category");
+      }
+    } catch {
+      alert("Error deleting category");
+    } finally {
+      setIsSavingCategoryAction(false);
+    }
+  };
+
+  const handleAdminAddNewCategory = (catName: string) => {
+    const clean = catName.trim();
+    if (!clean) return;
+    if (availableCategories.some(c => c.toLowerCase() === clean.toLowerCase())) {
+      alert(`Category "${clean}" already exists.`);
+      return;
+    }
+    setCustomCategories(prev => [...prev, clean]);
+    setNewCategoryNameInput("");
+    setCategoryNotice(`Category "${clean}" created! You can now assign items to it.`);
+  };
 
   // Filter sales for Tab 5
   const filteredSales = sales.filter((s: any) => {
@@ -702,30 +835,30 @@ export default function VendorDetailDrawer({
         <div className="w-full max-w-5xl bg-[var(--brand-off-white)] h-full overflow-y-auto border-l-4 border-[var(--brand-navy)] flex flex-col shadow-(--shadow-brut-xl)">
           
           {/* TOP APP HEADER */}
-          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 border-b-4 border-yellow-400 sticky top-0 z-20">
+          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-3 sm:p-5 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 border-b-4 border-yellow-400 sticky top-0 z-20">
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5">
-                  VENDOR INTELLIGENCE & AUDIT
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="text-[9px] sm:text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-1.5 sm:px-2 py-0.5">
+                  VENDOR INTELLIGENCE
                 </span>
-                <span className="text-[10px] font-mono uppercase bg-white/20 px-2 py-0.5">
-                  ID: #{vendorId}
+                <span className="text-[9px] sm:text-[10px] font-mono uppercase bg-white/20 px-1.5 sm:px-2 py-0.5">
+                  #{vendorId}
                 </span>
                 {vendor?.status && (
-                  <span className="text-[10px] font-black uppercase bg-emerald-500 text-white px-2 py-0.5">
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase bg-emerald-500 text-white px-1.5 sm:px-2 py-0.5">
                     {vendor.status}
                   </span>
                 )}
-                <span className="text-[10px] font-mono uppercase bg-white/10 px-2 py-0.5 text-stone-300">
+                <span className="text-[9px] sm:text-[10px] font-mono uppercase bg-white/10 px-1.5 sm:px-2 py-0.5 text-stone-300">
                   COMM: {summary.commissionRate ?? 10}%
                 </span>
               </div>
               
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-sans font-black uppercase tracking-tight text-white mt-1">
+              <h2 className="text-lg sm:text-2xl md:text-3xl font-sans font-black uppercase tracking-tight text-white mt-1 break-words">
                 {loading ? "LOADING VENDOR..." : vendor?.name || "VENDOR DATA"}
               </h2>
               
-              <div className="text-xs text-stone-300 font-bold uppercase mt-1 flex items-center gap-3 flex-wrap">
+              <div className="text-[11px] sm:text-xs text-stone-300 font-bold uppercase mt-1 flex items-center gap-2 sm:gap-3 flex-wrap">
                 {vendor?.contact_name && (
                   <span>Contact: <strong className="text-white">{vendor.contact_name}</strong></span>
                 )}
@@ -741,15 +874,15 @@ export default function VendorDetailDrawer({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={handleTakeoverPos}
                 disabled={takingOverPos}
-                className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50 text-center"
+                className="flex-1 sm:flex-none justify-center px-2.5 sm:px-3 py-1.5 sm:py-2 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-[11px] sm:text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50 text-center"
                 title="Log in to POS as this vendor to sell items if vendor has left"
               >
-                <Store className="w-4 h-4 text-[var(--brand-navy)] shrink-0" />
+                <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--brand-navy)] shrink-0" />
                 <span className="truncate">{takingOverPos ? "ENTERING POS..." : "POS TAKEOVER ↗"}</span>
               </button>
               {intlVendorPhone && (
@@ -757,7 +890,7 @@ export default function VendorDetailDrawer({
                   href={`https://wa.me/${intlVendorPhone}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
+                  className="p-1.5 sm:p-2 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
                   title="Message Vendor on WhatsApp"
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -766,7 +899,7 @@ export default function VendorDetailDrawer({
               {vendor?.contact_phone && (
                 <a
                   href={`tel:${vendor.contact_phone}`}
-                  className="p-2 bg-blue-600 hover:bg-blue-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
+                  className="p-1.5 sm:p-2 bg-blue-600 hover:bg-blue-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
                   title="Call Vendor"
                 >
                   <Phone className="w-4 h-4" />
@@ -774,10 +907,10 @@ export default function VendorDetailDrawer({
               )}
               <button
                 onClick={onClose}
-                className="p-2 border-2 border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer flex items-center justify-center shrink-0 min-w-[38px] min-h-[38px]"
+                className="p-1.5 sm:p-2 border-2 border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
                 title="Close Drawer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
           </div>
@@ -796,7 +929,7 @@ export default function VendorDetailDrawer({
           )}
 
           {/* BODY CONTAINER */}
-          <div className="p-4 sm:p-6 flex-1 space-y-6">
+          <div className="p-3 sm:p-6 flex-1 space-y-4 sm:space-y-6">
             {loading ? (
               <div className="py-20 text-center">
                 <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[var(--brand-navy)] mb-2" />
@@ -814,54 +947,54 @@ export default function VendorDetailDrawer({
               </div>
             ) : (
               <>
-                {/* FINANCIAL OVERVIEW KPIS */}
+                {/* FINANCIAL OVERVIEW KPIS (COMPACT ON MOBILE) */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Gross Sales</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Gross Sales</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.totalGross || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-[var(--brand-navy-light)] font-bold">{summary.orderCount || 0} orders</p>
+                    <p className="text-[8px] sm:text-[9px] text-[var(--brand-navy-light)] font-bold">{summary.orderCount || 0} orders</p>
                   </div>
 
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Avg Ticket</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Avg Ticket</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.avgOrderValue || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-[var(--brand-navy-light)] font-bold">per customer</p>
+                    <p className="text-[8px] sm:text-[9px] text-[var(--brand-navy-light)] font-bold">per customer</p>
                   </div>
 
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Commission ({summary.commissionRate ?? 10}%)</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-amber-700 mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Comm ({summary.commissionRate ?? 10}%)</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-amber-700 mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.commissionOwed || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-amber-800 font-bold">festival share</p>
+                    <p className="text-[8px] sm:text-[9px] text-amber-800 font-bold">festival share</p>
                   </div>
 
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Settled to Date</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-emerald-700 mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Settled</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-emerald-700 mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.settledAmount || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-emerald-800 font-bold">recorded paid</p>
+                    <p className="text-[8px] sm:text-[9px] text-emerald-800 font-bold">recorded paid</p>
                   </div>
 
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Balance Due</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-red-600 mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Balance Due</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-red-600 mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.outstandingDue || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-red-700 font-bold">unsettled</p>
+                    <p className="text-[8px] sm:text-[9px] text-red-700 font-bold">unsettled</p>
                   </div>
 
-                  <div className="border-3 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Net to Vendor</p>
-                    <p className="text-lg sm:text-xl font-mono font-black text-blue-700 mt-1">
+                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Net to Vendor</p>
+                    <p className="text-base sm:text-xl font-mono font-black text-blue-700 mt-0.5 sm:mt-1 truncate">
                       KES {Number(summary.netPayout || 0).toLocaleString()}
                     </p>
-                    <p className="text-[9px] text-blue-800 font-bold">after comms</p>
+                    <p className="text-[8px] sm:text-[9px] text-blue-800 font-bold">after comms</p>
                   </div>
                 </div>
 
@@ -903,15 +1036,15 @@ export default function VendorDetailDrawer({
                   </div>
                 </div>
 
-                {/* 6-TAB NAVIGATION BAR (SWIPEABLE HORIZONTAL LIST ON MOBILE) */}
+                {/* 6-TAB NAVIGATION BAR (TOUCH HORIZONTAL SCROLL ON MOBILE) */}
                 <div className="flex border-b-3 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto scrollbar-none pb-0.5 w-full">
                   {[
-                    { id: "velocity", label: "PRODUCTS MOVING MOST", icon: TrendingUp },
-                    { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, icon: Package },
-                    { id: "payments", label: `PAYMENT METHODS & AUDIT`, icon: CreditCard },
-                    { id: "customers", label: `CUSTOMER AUDIT (${customers.length})`, icon: Users },
-                    { id: "sales", label: `TIME OF SALES (${sales.length})`, icon: Clock },
-                    { id: "operators", label: `OPERATORS & PINs (${operators.length})`, icon: KeyRound }
+                    { id: "velocity", label: "PRODUCTS MOVING MOST", shortLabel: "VELOCITY", icon: TrendingUp },
+                    { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, shortLabel: `STOCK (${stock.length})`, icon: Package },
+                    { id: "payments", label: `PAYMENT METHODS & AUDIT`, shortLabel: "PAYMENTS", icon: CreditCard },
+                    { id: "customers", label: `CUSTOMER AUDIT (${customers.length})`, shortLabel: `CUSTOMERS (${customers.length})`, icon: Users },
+                    { id: "sales", label: `TIME OF SALES (${sales.length})`, shortLabel: `SALES (${sales.length})`, icon: Clock },
+                    { id: "operators", label: `OPERATORS & PINs (${operators.length})`, shortLabel: `STAFF (${operators.length})`, icon: KeyRound }
                   ].map((tab) => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -926,7 +1059,8 @@ export default function VendorDetailDrawer({
                         }`}
                       >
                         <Icon className="w-3.5 h-3.5 shrink-0" />
-                        {tab.label}
+                        <span className="hidden sm:inline">{tab.label}</span>
+                        <span className="inline sm:hidden">{tab.shortLabel}</span>
                       </button>
                     );
                   })}
@@ -1013,35 +1147,106 @@ export default function VendorDetailDrawer({
                   </div>
                 )}
 
-                {/* TAB 2: STOCK & INVENTORY (WITH FULL EDITING & CREATION) */}
+                {/* TAB 2: STOCK & INVENTORY (WITH FULL EDITING, CATEGORIES & MOBILE CARDS) */}
                 {activeTab === "stock" && (
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-3 border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+                  <div className="space-y-3 sm:space-y-4">
+                    {/* Category Action Banner */}
+                    {categoryNotice && (
+                      <div className="bg-yellow-100 border-2 border-yellow-500 px-3 py-2 flex items-center justify-between text-xs font-black uppercase text-stone-900 shadow-(--shadow-brut-xs)">
+                        <span className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-yellow-700 shrink-0" />
+                          {categoryNotice}
+                        </span>
+                        <button onClick={() => setCategoryNotice(null)} className="text-stone-500 hover:text-black">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Top Controls Toolbar */}
+                    <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 bg-white p-3 border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
                       <div>
                         <p className="text-xs font-black uppercase text-[var(--brand-navy)]">
                           Live Stock Management & Menu Catalog
                         </p>
                         <p className="text-[10px] font-mono text-stone-500">
-                          Adjust stock quantities in real time, toggle item availability, or add new items.
+                          Adjust stock quantities in real time, manage product categories, or add items.
                         </p>
                       </div>
-                      <button
-                        onClick={() => {
-                          setEditingItem(null);
-                          setProductForm({
-                            name: "",
-                            category: "Drinks",
-                            price: "",
-                            stock_qty: "50",
-                            low_stock_threshold: "5",
-                            is_available: true
-                          });
-                          setShowAddProductModal(true);
-                        }}
-                        className="px-3 py-1.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors border-2 border-[var(--brand-navy)] flex items-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> ADD NEW PRODUCT
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowManageCategoriesModal(true)}
+                          className="flex-1 sm:flex-none px-3 py-1.5 bg-white hover:bg-stone-100 text-[var(--brand-navy)] text-xs font-black uppercase border-2 border-[var(--brand-navy)] flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer"
+                          title="Manage product categories for this vendor"
+                        >
+                          <Tags className="w-3.5 h-3.5 text-yellow-600" /> CATEGORIES
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingItem(null);
+                            setProductForm({
+                              name: "",
+                              category: selectedStockCategory !== "ALL" ? selectedStockCategory : "Drinks",
+                              price: "",
+                              stock_qty: "50",
+                              low_stock_threshold: "5",
+                              is_available: true
+                            });
+                            setShowAddProductModal(true);
+                          }}
+                          className="flex-1 sm:flex-none px-3 py-1.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors border-2 border-[var(--brand-navy)] flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> ADD PRODUCT
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filter & Search Bar */}
+                    <div className="space-y-2 bg-white p-2.5 sm:p-3 border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+                      <div className="w-full">
+                        <input
+                          type="text"
+                          placeholder="Search product name or category..."
+                          value={stockSearch}
+                          onChange={(e) => setStockSearch(e.target.value)}
+                          className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 text-xs font-bold uppercase bg-white focus:outline-none placeholder:text-stone-400"
+                        />
+                      </div>
+
+                      {/* Category Pills (Touch Scrollable) */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 pt-0.5 w-full">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStockCategory("ALL")}
+                          className={`px-2.5 py-1 text-[10px] font-black uppercase whitespace-nowrap border transition-colors cursor-pointer shrink-0 ${
+                            selectedStockCategory === "ALL"
+                              ? "bg-[var(--brand-navy)] text-white border-[var(--brand-navy)]"
+                              : "bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200"
+                          }`}
+                        >
+                          ALL ({stock.length})
+                        </button>
+                        {filterCategories.map((cat) => {
+                          const count = stock.filter((i: any) => (i.category || "General").toLowerCase() === cat.toLowerCase()).length;
+                          const isSelected = selectedStockCategory.toLowerCase() === cat.toLowerCase();
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setSelectedStockCategory(cat)}
+                              className={`px-2.5 py-1 text-[10px] font-black uppercase whitespace-nowrap border transition-colors cursor-pointer shrink-0 ${
+                                isSelected
+                                  ? "bg-yellow-300 text-[var(--brand-navy)] border-[var(--brand-navy)] font-black"
+                                  : "bg-white text-stone-700 border-stone-300 hover:bg-stone-100"
+                              }`}
+                            >
+                              {cat} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {stock.length === 0 ? (
@@ -1058,146 +1263,292 @@ export default function VendorDetailDrawer({
                           CREATE FIRST PRODUCT
                         </button>
                       </div>
+                    ) : filteredStock.length === 0 ? (
+                      <div className="p-8 text-center border-2 border-dashed border-[var(--brand-navy)]/30 bg-white space-y-2">
+                        <p className="text-xs font-bold uppercase text-[var(--brand-navy-light)]">
+                          No products found matching "{stockSearch || selectedStockCategory}".
+                        </p>
+                        <button
+                          onClick={() => {
+                            setStockSearch("");
+                            setSelectedStockCategory("ALL");
+                          }}
+                          className="px-3 py-1 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-xs font-black uppercase cursor-pointer"
+                        >
+                          CLEAR FILTERS
+                        </button>
+                      </div>
                     ) : (
-                      <div className="overflow-x-auto border-3 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-[var(--brand-navy)] text-white text-[11px] font-black uppercase">
-                              <th className="p-3">Product Name & Category</th>
-                              <th className="p-3 text-right">Price</th>
-                              <th className="p-3 text-center">Current Stock</th>
-                              <th className="p-3 text-center">Quick Adjust</th>
-                              <th className="p-3 text-center">Status</th>
-                              <th className="p-3 text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[var(--brand-navy)]/10 text-xs">
-                            {stock.map((item: any) => {
-                              const isLowStock = item.stock_qty !== null && item.stock_qty <= (item.low_stock_threshold || 5);
-                              const isOutOfStock = item.stock_qty !== null && item.stock_qty <= 0;
-                              const isAdjusting = adjustingStockId === item.id;
+                      <>
+                        {/* MOBILE PRODUCT CARDS (BLOCK MD:HIDDEN) - HIGH ERGONOMIC TOUCH TARGETS */}
+                        <div className="block md:hidden space-y-2.5">
+                          {filteredStock.map((item: any) => {
+                            const isLowStock = item.stock_qty !== null && item.stock_qty <= (item.low_stock_threshold || 5);
+                            const isOutOfStock = item.stock_qty !== null && item.stock_qty <= 0;
+                            const isAdjusting = adjustingStockId === item.id;
 
-                              return (
-                                <tr key={item.id} className="hover:bg-yellow-50/50 transition-colors">
-                                  <td className="p-3 font-bold uppercase text-[var(--brand-navy)]">
-                                    <div className="font-black text-sm">{item.name}</div>
-                                    <div className="text-[10px] font-mono text-stone-500 uppercase">{item.category || "General"}</div>
-                                  </td>
-                                  
-                                  <td className="p-3 text-right font-mono font-black text-[var(--brand-navy)]">
-                                    KES {Number(item.price).toLocaleString()}
-                                  </td>
-
-                                  <td className="p-3 text-center font-mono">
-                                    {item.stock_qty === null ? (
-                                      <span className="text-[10px] font-bold text-stone-500 uppercase bg-stone-100 px-2 py-0.5 border border-stone-300">
-                                        Unlimited
+                            return (
+                              <div
+                                key={item.id}
+                                className="border-2 border-[var(--brand-navy)] bg-white p-3 shadow-(--shadow-brut-xs) space-y-2.5"
+                              >
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-[9px] font-mono font-black uppercase bg-stone-100 text-[var(--brand-navy)] border border-stone-300 px-1.5 py-0.5">
+                                        {item.category || "General"}
                                       </span>
-                                    ) : isOutOfStock ? (
-                                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-red-600 text-white">
-                                        0 (SOLD OUT)
-                                      </span>
-                                    ) : isLowStock ? (
-                                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-amber-400 text-black">
-                                        {item.stock_qty} (LOW STOCK)
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
-                                        {item.stock_qty} IN STOCK
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* Quick Stock Adjustment Buttons */}
-                                  <td className="p-3 text-center">
-                                    <div className="inline-flex items-center gap-1">
-                                      {item.stock_qty !== null && (
-                                        <button
-                                          disabled={isAdjusting || item.stock_qty <= 0}
-                                          onClick={() => handleQuickAdjustStock(item.id, -1)}
-                                          className="w-6 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[11px] hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-30 cursor-pointer"
-                                          title="Decrease 1"
-                                        >
-                                          -1
-                                        </button>
+                                      {item.stock_qty === null ? (
+                                        <span className="text-[9px] font-mono font-bold uppercase bg-stone-100 text-stone-600 px-1.5 py-0.5">
+                                          Unlimited
+                                        </span>
+                                      ) : isOutOfStock ? (
+                                        <span className="text-[9px] font-mono font-black uppercase bg-red-600 text-white px-1.5 py-0.5">
+                                          OUT OF STOCK
+                                        </span>
+                                      ) : isLowStock ? (
+                                        <span className="text-[9px] font-mono font-black uppercase bg-amber-400 text-black px-1.5 py-0.5">
+                                          {item.stock_qty} (LOW)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-mono font-bold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5">
+                                          {item.stock_qty} IN STOCK
+                                        </span>
                                       )}
-                                      <button
-                                        disabled={isAdjusting}
-                                        onClick={() => handleQuickAdjustStock(item.id, 6)}
-                                        className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
-                                        title="Add 6 units (half case)"
-                                      >
-                                        +6
-                                      </button>
-                                      <button
-                                        disabled={isAdjusting}
-                                        onClick={() => handleQuickAdjustStock(item.id, 12)}
-                                        className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
-                                        title="Add 12 units (1 case)"
-                                      >
-                                        +12
-                                      </button>
-                                      <button
-                                        disabled={isAdjusting}
-                                        onClick={() => handleQuickAdjustStock(item.id, 24)}
-                                        className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
-                                        title="Add 24 units (crate)"
-                                      >
-                                        +24
-                                      </button>
                                     </div>
-                                  </td>
+                                    <h4 className="text-sm font-black uppercase text-[var(--brand-navy)] mt-1 break-words">
+                                      {item.name}
+                                    </h4>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <span className="text-sm font-mono font-black text-[var(--brand-navy)]">
+                                      KES {Number(item.price).toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
 
-                                  <td className="p-3 text-center">
+                                {/* Quick Adjust & Status Bar */}
+                                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-dashed border-stone-200">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] font-black uppercase text-stone-400 mr-1">ADD:</span>
+                                    {item.stock_qty !== null && (
+                                      <button
+                                        disabled={isAdjusting || item.stock_qty <= 0}
+                                        onClick={() => handleQuickAdjustStock(item.id, -1)}
+                                        className="w-7 h-7 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-xs hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-30 flex items-center justify-center cursor-pointer"
+                                        title="Decrease 1"
+                                      >
+                                        -1
+                                      </button>
+                                    )}
                                     <button
                                       disabled={isAdjusting}
-                                      onClick={() => handleToggleItemStatus(item)}
-                                      className={`text-[10px] font-black uppercase px-2 py-0.5 border transition-colors cursor-pointer ${
-                                        item.is_available
-                                          ? "bg-emerald-100 text-emerald-800 border-emerald-400 hover:bg-stone-200"
-                                          : "bg-stone-100 text-stone-500 border-stone-300 hover:bg-emerald-100 hover:text-emerald-800"
-                                      }`}
-                                      title="Click to toggle availability"
+                                      onClick={() => handleQuickAdjustStock(item.id, 6)}
+                                      className="px-2 h-7 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[11px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 flex items-center justify-center cursor-pointer"
                                     >
-                                      {item.is_available ? "ACTIVE" : "PAUSED"}
+                                      +6
                                     </button>
-                                  </td>
+                                    <button
+                                      disabled={isAdjusting}
+                                      onClick={() => handleQuickAdjustStock(item.id, 12)}
+                                      className="px-2 h-7 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[11px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 flex items-center justify-center cursor-pointer"
+                                    >
+                                      +12
+                                    </button>
+                                    <button
+                                      disabled={isAdjusting}
+                                      onClick={() => handleQuickAdjustStock(item.id, 24)}
+                                      className="px-2 h-7 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[11px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 flex items-center justify-center cursor-pointer"
+                                    >
+                                      +24
+                                    </button>
+                                  </div>
 
-                                  <td className="p-3 text-right">
-                                    <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    disabled={isAdjusting}
+                                    onClick={() => handleToggleItemStatus(item)}
+                                    className={`text-[10px] font-black uppercase px-2.5 py-1 border transition-colors cursor-pointer shrink-0 ${
+                                      item.is_available
+                                        ? "bg-emerald-100 text-emerald-800 border-emerald-400 hover:bg-stone-200"
+                                        : "bg-stone-100 text-stone-500 border-stone-300 hover:bg-emerald-100 hover:text-emerald-800"
+                                    }`}
+                                  >
+                                    {item.is_available ? "ACTIVE" : "PAUSED"}
+                                  </button>
+                                </div>
+
+                                {/* Card actions: Edit / Delete */}
+                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-stone-100">
+                                  <button
+                                    onClick={() => {
+                                      setEditingItem(item);
+                                      setProductForm({
+                                        name: item.name,
+                                        category: item.category || "General",
+                                        price: String(item.price),
+                                        stock_qty: item.stock_qty !== null ? String(item.stock_qty) : "",
+                                        low_stock_threshold: String(item.low_stock_threshold || 5),
+                                        is_available: item.is_available
+                                      });
+                                      setShowAddProductModal(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-stone-100 hover:bg-yellow-300 text-[var(--brand-navy)] border border-stone-300 text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer transition-colors"
+                                  >
+                                    <Edit2 className="w-3 h-3" /> EDIT
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteItem(item.id, item.name)}
+                                    className="px-2.5 py-1 bg-stone-100 hover:bg-red-600 hover:text-white text-stone-600 border border-stone-300 text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" /> DELETE
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* DESKTOP VIEW (HIDDEN MD:BLOCK) - FULL TABLE */}
+                        <div className="hidden md:block overflow-x-auto border-3 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-[var(--brand-navy)] text-white text-[11px] font-black uppercase">
+                                <th className="p-3">Product Name & Category</th>
+                                <th className="p-3 text-right">Price</th>
+                                <th className="p-3 text-center">Current Stock</th>
+                                <th className="p-3 text-center">Quick Adjust</th>
+                                <th className="p-3 text-center">Status</th>
+                                <th className="p-3 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--brand-navy)]/10 text-xs">
+                              {filteredStock.map((item: any) => {
+                                const isLowStock = item.stock_qty !== null && item.stock_qty <= (item.low_stock_threshold || 5);
+                                const isOutOfStock = item.stock_qty !== null && item.stock_qty <= 0;
+                                const isAdjusting = adjustingStockId === item.id;
+
+                                return (
+                                  <tr key={item.id} className="hover:bg-yellow-50/50 transition-colors">
+                                    <td className="p-3 font-bold uppercase text-[var(--brand-navy)]">
+                                      <div className="font-black text-sm">{item.name}</div>
+                                      <div className="text-[10px] font-mono text-stone-500 uppercase">{item.category || "General"}</div>
+                                    </td>
+                                    
+                                    <td className="p-3 text-right font-mono font-black text-[var(--brand-navy)]">
+                                      KES {Number(item.price).toLocaleString()}
+                                    </td>
+
+                                    <td className="p-3 text-center font-mono">
+                                      {item.stock_qty === null ? (
+                                        <span className="text-[10px] font-bold text-stone-500 uppercase bg-stone-100 px-2 py-0.5 border border-stone-300">
+                                          Unlimited
+                                        </span>
+                                      ) : isOutOfStock ? (
+                                        <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-red-600 text-white">
+                                          0 (SOLD OUT)
+                                        </span>
+                                      ) : isLowStock ? (
+                                        <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-amber-400 text-black">
+                                          {item.stock_qty} (LOW STOCK)
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                                          {item.stock_qty} IN STOCK
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Quick Stock Adjustment Buttons */}
+                                    <td className="p-3 text-center">
+                                      <div className="inline-flex items-center gap-1">
+                                        {item.stock_qty !== null && (
+                                          <button
+                                            disabled={isAdjusting || item.stock_qty <= 0}
+                                            onClick={() => handleQuickAdjustStock(item.id, -1)}
+                                            className="w-6 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[11px] hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-30 cursor-pointer"
+                                            title="Decrease 1"
+                                          >
+                                            -1
+                                          </button>
+                                        )}
+                                        <button
+                                          disabled={isAdjusting}
+                                          onClick={() => handleQuickAdjustStock(item.id, 6)}
+                                          className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
+                                          title="Add 6 units (half case)"
+                                        >
+                                          +6
+                                        </button>
+                                        <button
+                                          disabled={isAdjusting}
+                                          onClick={() => handleQuickAdjustStock(item.id, 12)}
+                                          className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
+                                          title="Add 12 units (1 case)"
+                                        >
+                                          +12
+                                        </button>
+                                        <button
+                                          disabled={isAdjusting}
+                                          onClick={() => handleQuickAdjustStock(item.id, 24)}
+                                          className="px-1.5 h-6 bg-stone-100 border border-[var(--brand-navy)] font-mono font-black text-[10px] hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 cursor-pointer"
+                                          title="Add 24 units (crate)"
+                                        >
+                                          +24
+                                        </button>
+                                      </div>
+                                    </td>
+
+                                    <td className="p-3 text-center">
                                       <button
-                                        onClick={() => {
-                                          setEditingItem(item);
-                                          setProductForm({
-                                            name: item.name,
-                                            category: item.category || "Drinks",
-                                            price: String(item.price),
-                                            stock_qty: item.stock_qty !== null ? String(item.stock_qty) : "",
-                                            low_stock_threshold: String(item.low_stock_threshold || 5),
-                                            is_available: item.is_available
-                                          });
-                                          setShowAddProductModal(true);
-                                        }}
-                                        className="p-1 border border-stone-300 hover:border-[var(--brand-navy)] hover:bg-yellow-200 transition-colors cursor-pointer"
-                                        title="Edit Product Details"
+                                        disabled={isAdjusting}
+                                        onClick={() => handleToggleItemStatus(item)}
+                                        className={`text-[10px] font-black uppercase px-2 py-0.5 border transition-colors cursor-pointer ${
+                                          item.is_available
+                                            ? "bg-emerald-100 text-emerald-800 border-emerald-400 hover:bg-stone-200"
+                                            : "bg-stone-100 text-stone-500 border-stone-300 hover:bg-emerald-100 hover:text-emerald-800"
+                                        }`}
+                                        title="Click to toggle availability"
                                       >
-                                        <Edit2 className="w-3.5 h-3.5 text-[var(--brand-navy)]" />
+                                        {item.is_available ? "ACTIVE" : "PAUSED"}
                                       </button>
-                                      <button
-                                        onClick={() => handleDeleteItem(item.id, item.name)}
-                                        className="p-1 border border-stone-300 hover:border-red-600 hover:bg-red-100 text-stone-500 hover:text-red-700 transition-colors cursor-pointer"
-                                        title="Delete Item"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                                    </td>
+
+                                    <td className="p-3 text-right">
+                                      <div className="inline-flex items-center gap-1.5">
+                                        <button
+                                          onClick={() => {
+                                            setEditingItem(item);
+                                            setProductForm({
+                                              name: item.name,
+                                              category: item.category || "Drinks",
+                                              price: String(item.price),
+                                              stock_qty: item.stock_qty !== null ? String(item.stock_qty) : "",
+                                              low_stock_threshold: String(item.low_stock_threshold || 5),
+                                              is_available: item.is_available
+                                            });
+                                            setShowAddProductModal(true);
+                                          }}
+                                          className="p-1 border border-stone-300 hover:border-[var(--brand-navy)] hover:bg-yellow-200 transition-colors cursor-pointer"
+                                          title="Edit Product Details"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5 text-[var(--brand-navy)]" />
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteItem(item.id, item.name)}
+                                          className="p-1 border border-stone-300 hover:border-red-600 hover:bg-red-100 text-stone-500 hover:text-red-700 transition-colors cursor-pointer"
+                                          title="Delete Item"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -1899,11 +2250,17 @@ export default function VendorDetailDrawer({
                     <input
                       type="text"
                       required
+                      list="admin-catalog-categories"
                       value={productForm.category}
                       onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
                       placeholder="e.g. Drinks, Food, Cocktails"
                       className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 text-xs font-bold uppercase focus:outline-none bg-white"
                     />
+                    <datalist id="admin-catalog-categories">
+                      {availableCategories.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div>
@@ -1917,6 +2274,27 @@ export default function VendorDetailDrawer({
                       placeholder="e.g. 1200"
                       className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 font-mono text-xs font-bold focus:outline-none bg-white"
                     />
+                  </div>
+                </div>
+
+                {/* Quick Category Chips */}
+                <div>
+                  <span className="text-[9px] font-black uppercase text-stone-400 block mb-1">QUICK CATEGORY SELECT:</span>
+                  <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                    {availableCategories.slice(0, 10).map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setProductForm({ ...productForm, category: cat })}
+                        className={`text-[9px] font-bold uppercase px-2 py-0.5 border cursor-pointer transition-colors ${
+                          productForm.category.toLowerCase() === cat.toLowerCase()
+                            ? "bg-yellow-300 text-[var(--brand-navy)] border-[var(--brand-navy)] font-black"
+                            : "bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -2164,6 +2542,204 @@ export default function VendorDetailDrawer({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* 6. ADMIN MANAGE CATEGORIES MODAL */}
+        {showManageCategoriesModal && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-lg p-4 sm:p-5 shadow-(--shadow-brut-xl) max-h-[90vh] flex flex-col">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Tags className="w-5 h-5 text-yellow-600" />
+                  <h3 className="text-base sm:text-lg font-black uppercase">
+                    Manage Product Categories
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowManageCategoriesModal(false);
+                    setEditingCategoryOldName(null);
+                  }}
+                  className="text-stone-500 hover:text-black cursor-pointer p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                <p className="text-xs font-mono text-stone-600">
+                  Rename categories across all products for <strong>{vendor?.name}</strong>, delete unused categories, or create custom ones.
+                </p>
+
+                {/* Create New Category Input */}
+                <div className="bg-white border-2 border-[var(--brand-navy)] p-3 space-y-2 shadow-(--shadow-brut-xs)">
+                  <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">
+                    Create New Category
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. Cocktails, Platters, VIP..."
+                      value={newCategoryNameInput}
+                      onChange={(e) => setNewCategoryNameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAdminAddNewCategory(newCategoryNameInput);
+                        }
+                      }}
+                      className="flex-1 border-2 border-[var(--brand-navy)] px-3 py-1.5 text-xs font-bold uppercase bg-white focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAdminAddNewCategory(newCategoryNameInput)}
+                      disabled={!newCategoryNameInput.trim()}
+                      className="px-3 py-1.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase hover:bg-yellow-300 hover:text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] disabled:opacity-40 transition-colors cursor-pointer shrink-0"
+                    >
+                      ADD CAT
+                    </button>
+                  </div>
+                </div>
+
+                {/* Existing Vendor Categories List */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase text-stone-500 block">
+                    ACTIVE VENDOR CATEGORIES ({filterCategories.length})
+                  </span>
+
+                  {filterCategories.length === 0 ? (
+                    <div className="p-4 bg-white border border-stone-300 text-center text-xs text-stone-500 italic">
+                      No categories created yet. Items currently default to "General".
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filterCategories.map((cat) => {
+                        const count = stock.filter((i: any) => (i.category || "General").toLowerCase() === cat.toLowerCase()).length;
+                        const isEditingThis = editingCategoryOldName?.toLowerCase() === cat.toLowerCase();
+
+                        return (
+                          <div
+                            key={cat}
+                            className="bg-white border-2 border-[var(--brand-navy)] p-2.5 flex items-center justify-between gap-2 shadow-(--shadow-brut-xs)"
+                          >
+                            {isEditingThis ? (
+                              <div className="flex items-center gap-1.5 flex-1">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={editingCategoryNewName}
+                                  onChange={(e) => setEditingCategoryNewName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      handleAdminRenameCategory(cat, editingCategoryNewName);
+                                    } else if (e.key === "Escape") {
+                                      setEditingCategoryOldName(null);
+                                    }
+                                  }}
+                                  className="flex-1 border border-[var(--brand-navy)] px-2 py-1 text-xs font-black uppercase bg-yellow-50 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isSavingCategoryAction}
+                                  onClick={() => handleAdminRenameCategory(cat, editingCategoryNewName)}
+                                  className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
+                                >
+                                  SAVE
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCategoryOldName(null)}
+                                  className="px-2 py-1 bg-stone-200 text-stone-700 text-[10px] font-black uppercase hover:bg-stone-300 cursor-pointer"
+                                >
+                                  CANCEL
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Tag className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                                  <span className="text-xs font-black uppercase text-[var(--brand-navy)] truncate">
+                                    {cat}
+                                  </span>
+                                  <span className="text-[10px] font-mono font-bold bg-stone-100 text-stone-600 border border-stone-300 px-1.5 py-0.5 shrink-0">
+                                    {count} {count === 1 ? "product" : "products"}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCategoryOldName(cat);
+                                      setEditingCategoryNewName(cat);
+                                    }}
+                                    className="p-1.5 border border-stone-300 hover:border-[var(--brand-navy)] hover:bg-yellow-200 text-[var(--brand-navy)] transition-colors cursor-pointer"
+                                    title="Rename Category"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAdminDeleteCategory(cat)}
+                                    disabled={cat.toLowerCase() === "general"}
+                                    className="p-1.5 border border-stone-300 hover:border-red-600 hover:bg-red-50 text-stone-500 hover:text-red-700 transition-colors cursor-pointer disabled:opacity-20"
+                                    title={cat.toLowerCase() === "general" ? "General cannot be deleted" : "Delete category (reassigns items to General)"}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Suggested Quick Categories */}
+                <div className="pt-2 border-t border-stone-200">
+                  <span className="text-[10px] font-black uppercase text-stone-400 block mb-1">
+                    SUGGESTED EVENT CATEGORIES:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DEFAULT_SUGGESTED_CATEGORIES.map((sug) => {
+                      const exists = filterCategories.some((c) => c.toLowerCase() === sug.toLowerCase());
+                      return (
+                        <button
+                          key={sug}
+                          type="button"
+                          disabled={exists}
+                          onClick={() => handleAdminAddNewCategory(sug)}
+                          className={`text-[10px] font-bold uppercase px-2 py-0.5 border transition-colors ${
+                            exists
+                              ? "bg-stone-100 text-stone-400 border-stone-200 cursor-default"
+                              : "bg-white text-[var(--brand-navy)] border-stone-300 hover:bg-yellow-200 cursor-pointer"
+                          }`}
+                        >
+                          + {sug} {exists && "✓"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t-2 border-[var(--brand-navy)] mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManageCategoriesModal(false);
+                    setEditingCategoryOldName(null);
+                  }}
+                  className="px-4 py-1.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors border-2 border-[var(--brand-navy)] cursor-pointer"
+                >
+                  DONE
+                </button>
+              </div>
             </div>
           </div>
         )}
