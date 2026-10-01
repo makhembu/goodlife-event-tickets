@@ -119,6 +119,15 @@ export default function GateTerminalPage() {
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.add("bg-brand-off-white");
+    document.body.classList.add("bg-brand-off-white");
+    return () => {
+      document.documentElement.classList.remove("bg-brand-off-white");
+      document.body.classList.remove("bg-brand-off-white");
+    };
+  }, []);
+
   const scannerRef = useRef<any>(null);
   const verifyRef = useRef<((id: string, count?: number) => Promise<void>) | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -441,7 +450,7 @@ export default function GateTerminalPage() {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-brand-navy flex items-center justify-center text-brand-accent font-display text-2xl uppercase tracking-widest animate-pulse">
+      <div className="min-h-screen bg-brand-off-white flex items-center justify-center text-brand-navy font-display text-2xl uppercase tracking-widest animate-pulse">
         Initializing Gate Terminal...
       </div>
     );
@@ -452,10 +461,10 @@ export default function GateTerminalPage() {
     : 0;
 
   return (
-    <div className="h-[100dvh] w-full bg-brand-navy text-brand-off-white font-mono flex flex-col justify-between overflow-hidden select-none">
+    <div className="h-[100dvh] w-full bg-brand-off-white text-brand-navy font-mono flex flex-col justify-between overflow-hidden select-none">
       
       {/* 1. TOP STATUS BAR (COMPACT & HIGH CONTRAST) */}
-      <header className="h-14 bg-brand-navy border-b-3 border-brand-accent px-3 flex items-center justify-between shrink-0 z-20">
+      <header className="h-14 bg-white border-b-4 border-brand-navy px-3 flex items-center justify-between shrink-0 z-20 shadow-(--shadow-brut-xs)">
         <button
           type="button"
           onClick={() => {
@@ -464,22 +473,22 @@ export default function GateTerminalPage() {
             setSwitchStewardName(session.stewardName);
             setShowStationModal(true);
           }}
-          className="flex items-center gap-2 min-w-0 text-left hover:opacity-90 active:scale-[0.98] transition-all p-1 -m-1 border border-transparent hover:border-brand-accent/50 cursor-pointer"
+          className="flex items-center gap-2 min-w-0 text-left hover:opacity-90 active:scale-[0.98] transition-all p-1 -m-1 border border-transparent hover:border-brand-navy/30 cursor-pointer"
           title="Tap to switch Event (Goodlife / Park & Chill) or Change Gate"
         >
-          <div className="w-8 h-8 bg-brand-accent text-brand-navy border-2 border-brand-navy flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 bg-yellow-300 text-brand-navy border-2 border-brand-navy flex items-center justify-center shrink-0">
             <QrCode className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-display text-base uppercase tracking-wider truncate">
+              <span className="font-display text-base uppercase tracking-wider truncate text-brand-navy font-black">
                 {session.gateName}
               </span>
-              <span className="text-[9px] font-mono font-black uppercase px-1 py-0.2 bg-brand-accent text-brand-navy border border-brand-navy flex items-center gap-0.5">
+              <span className="text-[9px] font-mono font-black uppercase px-1 py-0.2 bg-yellow-300 text-brand-navy border border-brand-navy flex items-center gap-0.5">
                 SWITCH <ChevronDown className="w-2.5 h-2.5" />
               </span>
             </div>
-            <p className="text-[10px] text-brand-off-white/70 font-bold uppercase truncate">
+            <p className="text-[10px] text-brand-navy/70 font-bold uppercase truncate">
               {session.stewardName} • #{session.eventId} {session.eventTitle}
             </p>
           </div>
@@ -488,28 +497,28 @@ export default function GateTerminalPage() {
         {/* Live Counters & Quick Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Station tally chip */}
-          <div className="hidden sm:flex flex-col items-end px-2 py-0.5 bg-brand-accent/20 border border-brand-accent text-right">
-            <span className="text-[9px] font-black uppercase text-brand-accent">MY SHIFT</span>
-            <span className="text-xs font-black font-mono">{sessionScanCount} IN</span>
+          <div className="hidden sm:flex flex-col items-end px-2 py-0.5 bg-yellow-100 border-2 border-brand-navy text-right">
+            <span className="text-[9px] font-black uppercase text-brand-navy">MY SHIFT</span>
+            <span className="text-xs font-black font-mono text-brand-navy">{sessionScanCount} IN</span>
           </div>
 
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-2 border-2 border-brand-accent/40 bg-brand-navy hover:bg-brand-accent/20 text-brand-accent transition-colors"
+            className="p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
             title={soundEnabled ? "Mute audio" : "Enable audio"}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-red-400" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-brand-navy" /> : <VolumeX className="w-4 h-4 text-red-600" />}
           </button>
 
           {/* Torch Toggle if available */}
           {hasTorch && scannerActive && (
             <button
               onClick={toggleTorch}
-              className={`p-2 border-2 transition-colors ${
+              className={`p-2 border-2 border-brand-navy transition-colors cursor-pointer ${
                 torchOn 
-                  ? "bg-brand-accent text-brand-navy border-brand-navy" 
-                  : "bg-brand-navy text-brand-accent border-brand-accent/40"
+                  ? "bg-yellow-300 text-brand-navy" 
+                  : "bg-white text-brand-navy hover:bg-stone-200"
               }`}
               title="Toggle Flashlight"
             >
@@ -520,7 +529,7 @@ export default function GateTerminalPage() {
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="p-2 border-2 border-red-500 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+            className="p-2 border-2 border-brand-navy text-red-600 bg-white hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
             title="Log out from terminal"
           >
             <LogOut className="w-4 h-4" />
@@ -529,31 +538,31 @@ export default function GateTerminalPage() {
       </header>
 
       {/* 2. SUB-BAR: LIVE CAPACITY + TAB SWITCHER */}
-      <div className="bg-brand-navy/90 border-b-2 border-brand-navy-light/30 px-3 py-1.5 flex items-center justify-between shrink-0 gap-2">
+      <div className="bg-stone-100 border-b-2 border-brand-navy px-3 py-1.5 flex items-center justify-between shrink-0 gap-2">
         {/* Admitted counter bar */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-[10px] font-black uppercase text-brand-accent whitespace-nowrap">
+          <span className="text-[10px] font-black uppercase text-brand-navy whitespace-nowrap">
             GATE TALLY:
           </span>
-          <div className="flex-1 max-w-[140px] h-2.5 bg-brand-navy-light/40 border border-brand-accent/50 overflow-hidden">
+          <div className="flex-1 max-w-[140px] h-2.5 bg-white border border-brand-navy overflow-hidden">
             <div 
-              className="h-full bg-brand-accent transition-all duration-500" 
+              className="h-full bg-yellow-400 transition-all duration-500" 
               style={{ width: `${Math.min(100, admitPercent)}%` }} 
             />
           </div>
-          <span className="text-[10px] font-bold font-mono text-brand-off-white whitespace-nowrap">
+          <span className="text-[10px] font-bold font-mono text-brand-navy whitespace-nowrap">
             {stats.total_admitted_guests} / {stats.total_expected_guests} ({admitPercent}%)
           </span>
         </div>
 
         {/* Tab Buttons */}
-        <div className="flex border-2 border-brand-accent shrink-0">
+        <div className="flex border-2 border-brand-navy shrink-0 shadow-(--shadow-brut-2xs)">
           <button
             onClick={() => setActiveTab("camera")}
-            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 ${
+            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 cursor-pointer ${
               activeTab === "camera"
-                ? "bg-brand-accent text-brand-navy"
-                : "bg-brand-navy text-brand-off-white hover:bg-brand-accent/20"
+                ? "bg-brand-navy text-white"
+                : "bg-white text-brand-navy hover:bg-stone-200"
             }`}
           >
             <Camera className="w-3 h-3" />
@@ -564,10 +573,10 @@ export default function GateTerminalPage() {
               setActiveTab("search");
               stopCamera();
             }}
-            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 border-l-2 border-brand-accent ${
+            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 border-l-2 border-brand-navy cursor-pointer ${
               activeTab === "search"
-                ? "bg-brand-accent text-brand-navy"
-                : "bg-brand-navy text-brand-off-white hover:bg-brand-accent/20"
+                ? "bg-brand-navy text-white"
+                : "bg-white text-brand-navy hover:bg-stone-200"
             }`}
           >
             <Search className="w-3 h-3" />
@@ -579,10 +588,10 @@ export default function GateTerminalPage() {
               stopCamera();
               loadStats();
             }}
-            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 border-l-2 border-brand-accent ${
+            className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors flex items-center gap-1 border-l-2 border-brand-navy cursor-pointer ${
               activeTab === "log"
-                ? "bg-brand-accent text-brand-navy"
-                : "bg-brand-navy text-brand-off-white hover:bg-brand-accent/20"
+                ? "bg-brand-navy text-white"
+                : "bg-white text-brand-navy hover:bg-stone-200"
             }`}
           >
             <Clock className="w-3 h-3" />
@@ -599,32 +608,32 @@ export default function GateTerminalPage() {
           <div className="w-full h-full max-w-md flex flex-col justify-between items-center relative">
             
             {/* Camera Viewport Container */}
-            <div className="w-full flex-1 max-h-[70vh] aspect-square relative bg-black border-4 border-brand-accent shadow-(--shadow-brut-lg) overflow-hidden flex items-center justify-center">
+            <div className="w-full flex-1 max-h-[70vh] aspect-square relative bg-black border-4 border-brand-navy shadow-(--shadow-brut-lg) overflow-hidden flex items-center justify-center">
               
               {scannerActive ? (
                 <div className="w-full h-full relative">
                   <div id="gate-scanner-viewport" className="w-full h-full object-cover" />
                   
                   {/* Aiming Reticle Overlays */}
-                  <div className="absolute inset-8 border-2 border-dashed border-brand-accent/50 pointer-events-none rounded-lg" />
-                  <div className="absolute top-6 left-6 w-8 h-8 border-t-4 border-l-4 border-brand-accent pointer-events-none" />
-                  <div className="absolute top-6 right-6 w-8 h-8 border-t-4 border-r-4 border-brand-accent pointer-events-none" />
-                  <div className="absolute bottom-6 left-6 w-8 h-8 border-b-4 border-l-4 border-brand-accent pointer-events-none" />
-                  <div className="absolute bottom-6 right-6 w-8 h-8 border-b-4 border-r-4 border-brand-accent pointer-events-none" />
+                  <div className="absolute inset-8 border-2 border-dashed border-yellow-400/60 pointer-events-none rounded-lg" />
+                  <div className="absolute top-6 left-6 w-8 h-8 border-t-4 border-l-4 border-yellow-400 pointer-events-none" />
+                  <div className="absolute top-6 right-6 w-8 h-8 border-t-4 border-r-4 border-yellow-400 pointer-events-none" />
+                  <div className="absolute bottom-6 left-6 w-8 h-8 border-b-4 border-l-4 border-yellow-400 pointer-events-none" />
+                  <div className="absolute bottom-6 right-6 w-8 h-8 border-b-4 border-r-4 border-yellow-400 pointer-events-none" />
 
                   {/* Active radar scan line animation */}
-                  <div className="absolute inset-x-8 top-12 h-1 bg-brand-accent/80 shadow-[0_0_12px_#F5DF4D] animate-bounce pointer-events-none" />
+                  <div className="absolute inset-x-8 top-12 h-1 bg-yellow-400 shadow-[0_0_12px_#F5DF4D] animate-bounce pointer-events-none" />
                 </div>
               ) : (
                 <div className="p-6 text-center space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-brand-navy-light/40 border-2 border-brand-accent flex items-center justify-center mx-auto text-brand-accent animate-pulse">
+                  <div className="w-16 h-16 rounded-full bg-stone-900 border-2 border-yellow-400 flex items-center justify-center mx-auto text-yellow-400 animate-pulse">
                     <Camera className="w-8 h-8" />
                   </div>
                   <div>
-                    <h2 className="font-display text-xl uppercase tracking-wider text-brand-accent">
+                    <h2 className="font-display text-xl uppercase tracking-wider text-yellow-400">
                       Gate Camera Ready
                     </h2>
-                    <p className="text-xs text-brand-off-white/70 max-w-[240px] mx-auto uppercase mt-1">
+                    <p className="text-xs text-white/70 max-w-[240px] mx-auto uppercase mt-1">
                       Tap below to activate lens and verify incoming attendee passes
                     </p>
                   </div>
@@ -637,7 +646,7 @@ export default function GateTerminalPage() {
 
                   <button
                     onClick={startCamera}
-                    className="w-full py-3.5 bg-brand-accent text-brand-navy border-3 border-brand-navy font-display text-lg uppercase tracking-wider hover:bg-white transition-colors shadow-(--shadow-brut-sm) cursor-pointer"
+                    className="w-full py-3.5 bg-yellow-300 text-brand-navy border-3 border-brand-navy font-display text-lg uppercase tracking-wider hover:bg-yellow-400 transition-colors shadow-(--shadow-brut-sm) cursor-pointer font-black"
                   >
                     START CAMERA SCANNER
                   </button>
@@ -648,7 +657,7 @@ export default function GateTerminalPage() {
               {scannerActive && (
                 <button
                   onClick={stopCamera}
-                  className="absolute top-3 right-3 z-30 bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-black uppercase px-2.5 py-1 border border-white flex items-center gap-1 shadow-md"
+                  className="absolute top-3 right-3 z-30 bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-black uppercase px-2.5 py-1 border border-white flex items-center gap-1 shadow-md cursor-pointer"
                 >
                   <X className="w-3 h-3" /> PAUSE
                 </button>
@@ -672,12 +681,12 @@ export default function GateTerminalPage() {
                   name="quickId"
                   type="text"
                   placeholder="Enter Ticket GL-XXXX..."
-                  className="flex-1 px-3 py-2 bg-brand-off-white text-brand-navy border-3 border-brand-accent font-mono text-xs font-black uppercase focus:outline-none placeholder:text-brand-navy/50"
+                  className="flex-1 px-3 py-2 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-black uppercase focus:outline-none placeholder:text-brand-navy/50 shadow-(--shadow-brut-2xs)"
                 />
                 <button
                   type="submit"
                   disabled={loadingVerify}
-                  className="px-4 py-2 bg-brand-accent text-brand-navy border-3 border-brand-navy font-black text-xs uppercase hover:bg-white transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-yellow-300 text-brand-navy border-3 border-brand-navy font-black text-xs uppercase hover:bg-brand-navy hover:text-white transition-colors cursor-pointer shadow-(--shadow-brut-2xs)"
                 >
                   {loadingVerify ? "..." : "CHECK"}
                 </button>
@@ -698,12 +707,12 @@ export default function GateTerminalPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
                 placeholder="Search attendee name, phone, ticket ID, or receipt..."
-                className="w-full pl-9 pr-8 py-3 bg-brand-off-white text-brand-navy border-3 border-brand-accent font-mono text-xs font-bold uppercase focus:outline-none placeholder:normal-case"
+                className="w-full pl-9 pr-8 py-3 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-bold uppercase focus:outline-none placeholder:normal-case shadow-(--shadow-brut-xs)"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-navy hover:text-red-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-navy hover:text-red-600 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -712,13 +721,13 @@ export default function GateTerminalPage() {
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {searching ? (
-                <div className="p-8 text-center text-xs font-bold uppercase animate-pulse">Searching ticket database...</div>
+                <div className="p-8 text-center text-xs font-bold uppercase animate-pulse text-brand-navy">Searching ticket database...</div>
               ) : !searchQuery.trim() ? (
-                <div className="p-8 text-center text-xs text-brand-off-white/60 uppercase">
+                <div className="p-8 text-center text-xs text-brand-navy/60 uppercase">
                   Type an attendee name, phone number (e.g. 0712...), or ticket ID to pull up ticket immediately.
                 </div>
               ) : searchResults.length === 0 ? (
-                <div className="p-8 text-center text-xs text-brand-off-white/70 uppercase">
+                <div className="p-8 text-center text-xs text-brand-navy/70 uppercase">
                   No tickets found matching &quot;{searchQuery}&quot; for Event #{session.eventId}.
                 </div>
               ) : (
@@ -731,10 +740,10 @@ export default function GateTerminalPage() {
                       key={t.id}
                       className={`p-3 border-3 font-mono flex items-center justify-between gap-3 ${
                         isScanned
-                          ? "bg-red-950/40 border-red-500/70 text-red-200"
+                          ? "bg-red-50 border-red-500 text-red-950 shadow-(--shadow-brut-2xs)"
                           : isPartial
-                          ? "bg-amber-950/40 border-amber-400 text-amber-200"
-                          : "bg-brand-off-white text-brand-navy border-brand-accent shadow-(--shadow-brut-xs)"
+                          ? "bg-amber-50 border-amber-500 text-amber-950 shadow-(--shadow-brut-2xs)"
+                          : "bg-white text-brand-navy border-brand-navy shadow-(--shadow-brut-xs)"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
@@ -758,13 +767,13 @@ export default function GateTerminalPage() {
                         </div>
 
                         {t.is_camping && (
-                          <div className="text-[10px] text-brand-accent font-black uppercase mt-0.5 flex items-center gap-1">
+                          <div className="text-[10px] text-amber-700 font-black uppercase mt-0.5 flex items-center gap-1">
                             <Tent className="w-3 h-3" /> CAMPING BUNDLE PASS
                           </div>
                         )}
 
                         {t.guest_count > 1 && (
-                          <div className="text-[10px] font-bold text-brand-accent mt-0.5">
+                          <div className="text-[10px] font-bold text-brand-navy mt-0.5">
                             Admitted: {t.admitted_count || 0} / {t.guest_count} guests
                           </div>
                         )}
@@ -772,14 +781,14 @@ export default function GateTerminalPage() {
 
                       <div className="shrink-0">
                         {isScanned ? (
-                          <span className="text-[10px] font-black uppercase text-red-400 border border-red-500 px-2 py-1">
+                          <span className="text-[10px] font-black uppercase text-red-600 border border-red-500 px-2 py-1 bg-red-100">
                             FULL
                           </span>
                         ) : (
                           <button
                             onClick={() => verifyTicket(t.id, 1)}
                             disabled={loadingVerify}
-                            className="px-3 py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-black text-xs uppercase hover:bg-white transition-colors cursor-pointer"
+                            className="px-3 py-2 bg-yellow-300 text-brand-navy border-2 border-brand-navy font-black text-xs uppercase hover:bg-brand-navy hover:text-white transition-colors cursor-pointer shadow-(--shadow-brut-2xs)"
                           >
                             ADMIT
                           </button>
@@ -799,19 +808,19 @@ export default function GateTerminalPage() {
             
             {/* Metric KPI cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="bg-brand-off-white text-brand-navy p-2.5 border-3 border-brand-accent">
+              <div className="bg-white text-brand-navy p-2.5 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
                 <span className="text-[9px] font-black uppercase block text-brand-navy/60">MY GATE SHIFT</span>
                 <span className="text-xl font-black font-mono text-brand-navy">{sessionScanCount}</span>
                 <span className="text-[9px] block text-brand-navy/60">Scanned by you</span>
               </div>
 
-              <div className="bg-brand-off-white text-brand-navy p-2.5 border-3 border-brand-accent">
+              <div className="bg-white text-brand-navy p-2.5 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
                 <span className="text-[9px] font-black uppercase block text-brand-navy/60">EVENT ADMITTED</span>
                 <span className="text-xl font-black font-mono text-green-700">{stats.total_admitted_guests}</span>
                 <span className="text-[9px] block text-brand-navy/60">of {stats.total_expected_guests} total</span>
               </div>
 
-              <div className="bg-brand-off-white text-brand-navy p-2.5 border-3 border-brand-accent">
+              <div className="bg-white text-brand-navy p-2.5 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
                 <span className="text-[9px] font-black uppercase block text-brand-navy/60">REMAINING OUT</span>
                 <span className="text-xl font-black font-mono text-blue-700">
                   {Math.max(0, stats.total_expected_guests - stats.total_admitted_guests)}
@@ -819,7 +828,7 @@ export default function GateTerminalPage() {
                 <span className="text-[9px] block text-brand-navy/60">Attendees to arrive</span>
               </div>
 
-              <div className="bg-brand-off-white text-brand-navy p-2.5 border-3 border-brand-accent">
+              <div className="bg-white text-brand-navy p-2.5 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
                 <span className="text-[9px] font-black uppercase block text-brand-navy/60">CAMPING PASSES</span>
                 <span className="text-xl font-black font-mono text-purple-700">{stats.total_camping}</span>
                 <span className="text-[9px] block text-brand-navy/60">Tents & Dorm beds</span>
@@ -828,39 +837,39 @@ export default function GateTerminalPage() {
 
             {/* Recent Scan Stream */}
             <div className="space-y-2">
-              <div className="flex justify-between items-center border-b-2 border-brand-accent/40 pb-1">
-                <span className="text-xs font-black uppercase text-brand-accent flex items-center gap-1.5">
+              <div className="flex justify-between items-center border-b-2 border-brand-navy pb-1">
+                <span className="text-xs font-black uppercase text-brand-navy flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" /> RECENT GATE ADMISSIONS
                 </span>
                 <button
                   onClick={loadStats}
-                  className="text-[10px] font-bold text-brand-off-white/70 hover:text-white uppercase flex items-center gap-1"
+                  className="text-[10px] font-bold text-brand-navy/70 hover:text-brand-navy uppercase flex items-center gap-1 cursor-pointer"
                 >
                   <RefreshCw className="w-3 h-3" /> Refresh
                 </button>
               </div>
 
               {recentScans.length === 0 ? (
-                <div className="p-8 text-center text-xs text-brand-off-white/50 uppercase">
+                <div className="p-8 text-center text-xs text-brand-navy/50 uppercase">
                   No scan records yet for this event.
                 </div>
               ) : (
                 recentScans.map((s, idx) => (
                   <div
                     key={idx}
-                    className="p-2.5 bg-brand-off-white/10 border-l-4 border-l-brand-accent border border-brand-accent/30 text-xs flex justify-between items-center"
+                    className="p-2.5 bg-white border-l-4 border-l-brand-navy border-2 border-brand-navy text-xs flex justify-between items-center text-brand-navy shadow-(--shadow-brut-2xs)"
                   >
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <strong className="font-mono text-brand-accent">{s.id}</strong>
+                        <strong className="font-mono text-brand-navy">{s.id}</strong>
                         <span className="uppercase font-bold">{s.buyer_name}</span>
                       </div>
-                      <div className="text-[10px] text-brand-off-white/70 mt-0.5">
+                      <div className="text-[10px] text-brand-navy/70 mt-0.5">
                         Tier: {s.ticket_type} • By: {s.scanned_by || "Gate"}
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] font-mono text-brand-off-white/60 block">
+                      <span className="text-[10px] font-mono text-brand-navy/60 block">
                         {s.scanned_at ? new Date(s.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
                       </span>
                     </div>
@@ -1026,16 +1035,16 @@ export default function GateTerminalPage() {
       {/* 5. STATION & EVENT SWITCHER MODAL */}
       {showStationModal && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3 font-mono animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-brand-off-white text-brand-navy border-4 border-brand-accent p-5 shadow-(--shadow-brut-lg) space-y-4">
+          <div className="w-full max-w-md bg-brand-off-white text-brand-navy border-4 border-brand-navy p-5 shadow-(--shadow-brut-xl) space-y-4">
             
-            <div className="flex justify-between items-center border-b-2 border-brand-navy pb-2">
+            <div className="flex justify-between items-center border-b-3 border-brand-navy pb-2">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-brand-navy" />
-                <h3 className="font-display text-lg uppercase tracking-wider">CHANGE GATE & EVENT</h3>
+                <h3 className="font-display text-lg uppercase tracking-wider font-black">CHANGE GATE & EVENT</h3>
               </div>
               <button
                 onClick={() => setShowStationModal(false)}
-                className="p-1 border border-brand-navy hover:bg-red-500 hover:text-white transition-colors"
+                className="p-1 border border-brand-navy hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1054,15 +1063,15 @@ export default function GateTerminalPage() {
                       key={e.id}
                       type="button"
                       onClick={() => setSwitchEventId(e.id)}
-                      className={`w-full p-2 text-left border-2 text-xs font-bold uppercase transition-all flex items-center justify-between ${
+                      className={`w-full p-2 text-left border-2 text-xs font-bold uppercase transition-all flex items-center justify-between cursor-pointer ${
                         switchEventId === e.id
-                          ? "bg-brand-navy text-brand-accent border-brand-navy shadow-(--shadow-brut-xs)"
-                          : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/20"
+                          ? "bg-yellow-300 text-brand-navy border-brand-navy shadow-(--shadow-brut-xs)"
+                          : "bg-white text-brand-navy border-brand-navy hover:bg-stone-100"
                       }`}
                     >
                       <span className="truncate">#{e.id} {e.title}</span>
                       <span className={`text-[9px] px-1 py-0.2 border uppercase ${
-                        switchEventId === e.id ? "bg-brand-accent text-brand-navy border-brand-accent" : "bg-gray-100 border-gray-300"
+                        switchEventId === e.id ? "bg-brand-navy text-white border-brand-navy font-black" : "bg-stone-100 border-brand-navy"
                       }`}>
                         {e.status || "ACTIVE"}
                       </span>
@@ -1082,10 +1091,10 @@ export default function GateTerminalPage() {
                       key={preset}
                       type="button"
                       onClick={() => setSwitchGateName(preset)}
-                      className={`text-[10px] font-black uppercase px-2.5 py-1 border-2 transition-colors ${
+                      className={`text-[10px] font-black uppercase px-2.5 py-1 border-2 transition-colors cursor-pointer ${
                         switchGateName === preset
-                          ? "bg-brand-navy text-white border-brand-navy"
-                          : "bg-white text-brand-navy border-brand-navy hover:bg-brand-accent/30"
+                          ? "bg-yellow-300 text-brand-navy border-brand-navy shadow-(--shadow-brut-2xs)"
+                          : "bg-white text-brand-navy border-brand-navy hover:bg-stone-100"
                       }`}
                     >
                       {preset}
@@ -1119,14 +1128,14 @@ export default function GateTerminalPage() {
                 <button
                   type="button"
                   onClick={() => setShowStationModal(false)}
-                  className="flex-1 py-2.5 bg-white border-2 border-brand-navy font-black text-xs uppercase hover:bg-gray-100 transition-colors"
+                  className="flex-1 py-2.5 bg-white border-2 border-brand-navy font-black text-xs uppercase hover:bg-gray-100 transition-colors cursor-pointer"
                 >
                   CANCEL
                 </button>
                 <button
                   type="submit"
                   disabled={updatingStation}
-                  className="flex-1 py-2.5 bg-brand-navy text-brand-accent hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy font-black text-xs uppercase transition-colors shadow-(--shadow-brut-xs)"
+                  className="flex-1 py-2.5 bg-yellow-300 text-brand-navy hover:bg-brand-navy hover:text-white border-2 border-brand-navy font-black text-xs uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
                 >
                   {updatingStation ? "SWITCHING..." : "APPLY & SWITCH"}
                 </button>

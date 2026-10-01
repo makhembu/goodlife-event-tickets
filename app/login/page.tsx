@@ -16,6 +16,12 @@ export default function LoginPage() {
 
   useEffect(() => {
     fetchEventDetails().then(setEventDetails).catch(console.error);
+    document.documentElement.classList.add("bg-brand-off-white");
+    document.body.classList.add("bg-brand-off-white");
+    return () => {
+      document.documentElement.classList.remove("bg-brand-off-white");
+      document.body.classList.remove("bg-brand-off-white");
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -47,13 +53,13 @@ export default function LoginPage() {
   const title = eventDetails?.title || "GOODLIFE";
 
   return (
-    <div className="min-h-screen bg-[var(--brand-bg)] flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8 text-[var(--brand-navy)] font-sans selection:bg-[var(--brand-accent)] selection:text-[var(--brand-off-white)] relative overflow-x-clip">
+    <div className="min-h-screen bg-brand-off-white flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8 text-brand-navy font-sans selection:bg-brand-navy selection:text-white relative overflow-x-clip">
       
       {/* Decorative Grid Background */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-20"
            style={{ backgroundImage: 'radial-gradient(rgba(200,165,74,0.18) 1px, transparent 1px), radial-gradient(rgba(200,165,74,0.12) 1px, transparent 1px)', backgroundSize: '24px 24px, 48px 48px', backgroundPosition: '0 0, 12px 12px' }}></div>
 
-      <div className="relative z-10 max-w-md w-full space-y-8 border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-8 shadow-(--shadow-brut-xl-accent)">
+      <div className="relative z-10 max-w-md w-full space-y-8 border-4 border-brand-navy bg-white p-8 shadow-(--shadow-brut-xl)">
         
         {/* Torn Corner Decorative Element */}
         <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--brand-navy)] text-[var(--brand-off-white)] transform rotate-45 translate-x-10 -translate-y-10 flex items-end justify-center pb-2">
