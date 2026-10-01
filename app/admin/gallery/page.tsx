@@ -22,6 +22,9 @@ export default function AdminGalleryPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  // Separate from `uploadError`: this is "the picker has nothing to offer",
+  // which must not be confused with "your upload failed".
+  const [eventLoadError, setEventLoadError] = useState("");
 
   // form state
   const [eventId, setEventId] = useState("");
@@ -41,19 +44,59 @@ export default function AdminGalleryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // load gallery + events
+  //
+  // The events request used to target `/api/admin/events`, which does not exist
+  // — the only events endpoints are `/api/events`, `/api/events/active` and
+  // `/api/events/[id]`. So the request 404'd, `.catch(() => [])` swallowed it,
+  // and the Event picker rendered empty with no indication anything had failed.
+  // Every other admin page (settlements, dashboard, EventSelector) already uses
+  // `/api/events`; this was the sole outlier.
+  //
+  // `GET /api/events` returns a bare array of full event rows and is gated on
+  // the admin cookie, which this page already holds.
   const loadGallery = useCallback(async () => {
     try {
       const [galleryRes, eventsRes] = await Promise.all([
         fetch("/api/hub/gallery").then(r => r.json()).catch(() => []),
-        fetch("/api/admin/events").then(r => r.json()).catch(() => []),
+        fetch("/api/events")
+          .then(async (r) => {
+            const body = await r.json().catch(() => null);
+            if (!r.ok) {
+              // Report rather than degrade to "no events exist" — an empty
+              // picker reads as "this festival has no editions", which is a
+              // different and much more alarming claim than "the list failed".
+              throw new Error(
+                (body && (body.error || body.message)) || `Events request failed (HTTP ${r.status})`
+              );
+            }
+            return body;
+          }),
       ]);
+
       const imgs = Array.isArray(galleryRes) ? galleryRes : (galleryRes?.images || []);
-      const evts: Event[] = Array.isArray(eventsRes) ? eventsRes : (eventsRes?.events || []);
+      const evts: Event[] = Array.isArray(eventsRes)
+        ? eventsRes
+        : ((eventsRes as any)?.events || []);
+
       setImages(imgs);
       setEvents(evts);
-      if (evts.length > 0) setEventId(evts[0].id.toString());
-    } catch {
-      setImages([]); setEvents([]);
+      setEventLoadError("");
+
+      if (evts.length > 0) {
+        // Default to the HOMEPAGE event, not merely the first row. `fetchAllEvents`
+        // orders by created_at DESC, so `evts[0]` is the newest edition — which
+        // for an archived-then-reopened festival is not the event currently
+        // selling. This matches app/admin/settlements/page.tsx.
+        const preferred = evts.find((e: any) => e.is_active) || evts[0];
+        setEventId(String(preferred.id));
+      } else {
+        setEventId("");
+      }
+    } catch (err: any) {
+      setImages([]);
+      setEvents([]);
+      setEventId("");
+      setEventLoadError(err?.message || "Could not load the event list.");
     } finally {
       setLoading(false);
     }
@@ -103,11 +146,24 @@ export default function AdminGalleryPage() {
 
       if (!finalUrl) { setUploadError("Please pick a file or enter a URL."); setSaving(false); return; }
 
+      // Refuse to guess the event. This used to fall back to `event_id: 1`,
+      // which silently filed the image against whatever edition happens to
+      // hold id 1 — a poster for the wrong festival, with no error anywhere.
+      if (!eventId) {
+        setUploadError(
+          eventLoadError
+            ? "Could not load the event list, so there is nothing to file this under. Close the dialog and retry."
+            : "Please choose an event for this image."
+        );
+        setSaving(false);
+        return;
+      }
+
       const res = await fetch("/api/hub/gallery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          event_id: eventId ? parseInt(eventId) : 1,
+          event_id: parseInt(eventId),
           image_url: finalUrl,
           caption: caption.trim(),
           tag,
@@ -216,15 +272,36 @@ export default function AdminGalleryPage() {
               {/* Event picker */}
               <div>
                 <label className="block text-xs font-bold uppercase mb-2 tracking-widest">Event</label>
-                <select
-                  value={eventId}
-                  onChange={e => setEventId(e.target.value)}
-                  className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
-                >
-                  {events.map(ev => (
-                    <option key={ev.id} value={ev.id}>{ev.title}</option>
-                  ))}
-                </select>
+                {events.length === 0 ? (
+                  <>
+                    <select
+                      value=""
+                      disabled
+                      className="w-full p-3 border-4 border-brand-navy bg-stone-100 text-stone-500 font-bold text-sm cursor-not-allowed"
+                    >
+                      <option value="">No events available</option>
+                    </select>
+                    {eventLoadError ? (
+                      <p className="mt-2 text-xs font-bold uppercase text-red-700">
+                        Could not load events: {eventLoadError}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs font-bold uppercase text-stone-500">
+                        No events exist yet. Create an event in the dashboard first.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <select
+                    value={eventId}
+                    onChange={e => setEventId(e.target.value)}
+                    className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
+                  >
+                    {events.map(ev => (
+                      <option key={ev.id} value={ev.id}>{ev.title}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Upload / URL toggle */}

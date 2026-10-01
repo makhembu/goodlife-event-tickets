@@ -158,13 +158,78 @@ export interface EventWaitlistEntry {
   created_at: string;
 }
 
+export interface EventCustomerOrder {
+  id: number;
+  total: number;
+  created_at: string;
+  payment_method?: string;
+  payment_status?: string;
+  operator_name?: string;
+  items: Array<{
+    item_name: string;
+    quantity: number;
+    price: number;
+    line_total?: number;
+  }>;
+}
+
+export interface EventCustomerTicket {
+  id: string;
+  ticket_type: string;
+  amount_paid: number;
+  purchase_time: string;
+  is_scanned: boolean;
+  event_id?: number;
+  event_title?: string;
+}
+
+export interface EventCustomerTab {
+  id: number;
+  vendor_id?: number;
+  customer_name: string;
+  customer_phone: string;
+  credit_limit: number;
+  balance: number;
+  status: string;
+  outstanding: boolean;
+  amount_due: number;
+  created_at: string;
+  settled_at?: string | null;
+}
+
 export interface EventCustomer {
   id: string;
   buyer_name: string;
+  name?: string;
   phone_number: string;
+  phoneRaw?: string;
   whatsapp_number?: string;
   ticket_type: string;
   ticket_count: number;
+  ticket_spend?: number;
   is_scanned: boolean;
+
+  // Tab Information (Issues 5 & 6)
+  tab_id?: number | null;
+  tab_balance?: number;
+  tab_credit_limit?: number;
+  tab_status?: string;
+  tab_count?: number;
+  tab_balance_due?: number;
+  has_open_tab?: boolean;
+  tabs?: EventCustomerTab[];
+
+  // POS Stall Sales Information (Issues 1 & 2)
+  total_spent?: number;
+  order_count?: number;
+  orders?: EventCustomerOrder[];
+  items_bought?: Array<{ name: string; quantity: number; revenue: number }>;
+  payment_methods?: string[];
+  last_order_at?: string | null;
+
+  // Unified Overview
+  tickets?: EventCustomerTicket[];
+  combined_spend?: number;
+  total_due?: number;
 }
 

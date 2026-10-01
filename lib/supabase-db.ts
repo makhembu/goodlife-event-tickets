@@ -1,8 +1,9 @@
-import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer } from "./supabase-db-types";
+import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab } from "./supabase-db-types";
 import { getEventAvailability, type SchedulableEvent } from "./event-availability";
+import { phoneMatchKey } from "./phone";
 
 // Re-export interface types so all existing pages compile unchanged
-export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer };
+export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab };
 
 // Safe import for server-side pg pool to avoid breaking client bundle builds
 export let neonQuery: any = null;
@@ -3297,11 +3298,16 @@ export async function fetchTabsForVendor(vendorId: number, eventId: number): Pro
   return rows;
 }
 
-export async function fetchEventCustomers(eventId: number, search?: string): Promise<EventCustomer[]> {
+export async function fetchEventCustomers(
+  eventId: number,
+  search?: string,
+  vendorId?: number | null
+): Promise<EventCustomer[]> {
   if (typeof window !== "undefined") {
     try {
       const q = search ? `&q=${encodeURIComponent(search)}` : "";
-      const res = await fetch(`/api/vendor/customers?eventId=${eventId}${q}`);
+      const v = vendorId ? `&vendorId=${vendorId}` : "";
+      const res = await fetch(`/api/vendor/customers?eventId=${eventId}${v}${q}`);
       if (res.ok) {
         const data = await res.json();
         return data.customers || [];
@@ -3310,37 +3316,294 @@ export async function fetchEventCustomers(eventId: number, search?: string): Pro
     return [];
   }
 
-  let query = `
-    SELECT 
-      MIN(id) as id,
-      buyer_name,
-      phone_number,
-      COALESCE(MAX(whatsapp_number), '') as whatsapp_number,
-      string_agg(DISTINCT ticket_type, ', ') as ticket_type,
-      COUNT(*)::int as ticket_count,
-      BOOL_OR(is_scanned) as is_scanned
-    FROM tickets
-    WHERE deleted_at IS NULL AND event_id = $1
-  `;
-  const params: any[] = [eventId];
+  // 1. Fetch tickets for this event
+  const { rows: ticketRows } = await neonQuery(
+    `SELECT id, buyer_name, phone_number, whatsapp_number, ticket_type,
+            amount_paid, purchase_time, is_scanned, event_id
+     FROM tickets
+     WHERE deleted_at IS NULL AND event_id = $1
+     ORDER BY purchase_time DESC`,
+    [eventId]
+  );
 
-  if (search && search.trim()) {
-    query += ` AND (buyer_name ILIKE $2 OR phone_number ILIKE $2 OR whatsapp_number ILIKE $2 OR id ILIKE $2)`;
-    params.push(`%${search.trim()}%`);
+  // 2. Fetch customer tabs for this event (optionally filtered by vendorId)
+  const { rows: tabRows } = await neonQuery(
+    `SELECT id, vendor_id, customer_name, customer_phone, credit_limit, balance,
+            status, settlement_reason, created_at, settled_at, event_id
+     FROM customer_tabs
+     WHERE event_id = $1
+       AND ($2::int IS NULL OR vendor_id = $2)
+     ORDER BY created_at DESC`,
+    [eventId, vendorId || null]
+  );
+
+  // 3. Fetch POS sales, payments & items for this event (optionally filtered by vendorId)
+  const { rows: salesRows } = await neonQuery(
+    `SELECT s.id, s.vendor_id, s.event_id, s.total, s.payment_status, s.created_at,
+            COALESCE(
+              (SELECT json_agg(json_build_object(
+                'payment_method', p.payment_method,
+                'amount', p.amount,
+                'payer_name', p.payer_name,
+                'payer_phone', p.payer_phone,
+                'tab_id', p.tab_id
+              ))
+              FROM pos_split_payments p WHERE p.sale_id = s.id),
+              '[]'::json
+            ) as payments,
+            COALESCE(
+              (SELECT json_agg(json_build_object(
+                'item_name', i.item_name,
+                'quantity', i.quantity,
+                'unit_price', i.unit_price,
+                'line_total', i.line_total
+              ))
+              FROM pos_sale_items i WHERE i.sale_id = s.id),
+              '[]'::json
+            ) as items
+     FROM pos_sales s
+     WHERE s.event_id = $1
+       AND ($2::int IS NULL OR s.vendor_id = $2)
+       AND s.payment_status != 'voided'
+     ORDER BY s.created_at DESC`,
+    [eventId, vendorId || null]
+  );
+
+  // Unified Map keyed on canonical phone key (p:07XXXXXXXX) or name fallback (n:name)
+  const customerMap = new Map<string, any>();
+
+  const upsertCustomer = (phoneRaw?: string | null, nameRaw?: string | null): any => {
+    const phoneKey = phoneMatchKey(phoneRaw);
+    const nameFallback = (nameRaw || "").trim().toLowerCase();
+    const key = phoneKey ? `p:${phoneKey}` : `n:${nameFallback || `anon:${customerMap.size}`}`;
+
+    if (!customerMap.has(key)) {
+      customerMap.set(key, {
+        id: "",
+        buyer_name: (nameRaw || "").trim() || "Event Attendee",
+        name: (nameRaw || "").trim() || "Event Attendee",
+        phone_number: phoneKey || (phoneRaw || "").trim(),
+        phoneRaw: (phoneRaw || "").trim(),
+        whatsapp_number: "",
+        ticket_type: "",
+        ticket_count: 0,
+        ticket_spend: 0,
+        is_scanned: false,
+        total_spent: 0,
+        order_count: 0,
+        orders: [] as any[],
+        items_bought: new Map<string, { name: string; quantity: number; revenue: number }>(),
+        payment_methods: new Set<string>(),
+        last_order_at: null as string | null,
+        tabs: [] as any[],
+        tab_id: null as number | null,
+        tab_balance: 0,
+        tab_credit_limit: 0,
+        tab_status: "",
+        tab_count: 0,
+        tab_balance_due: 0,
+        has_open_tab: false,
+        tickets: [] as any[],
+        combined_spend: 0,
+        total_due: 0,
+      });
+    }
+
+    const c = customerMap.get(key);
+    const incomingName = (nameRaw || "").trim();
+    if (incomingName && incomingName !== "Walk-in Customer" && incomingName !== "Walk-in Customers" && (!c.buyer_name || c.buyer_name === "Event Attendee")) {
+      c.buyer_name = incomingName;
+      c.name = incomingName;
+    }
+    if (!c.phoneRaw && phoneRaw) {
+      c.phoneRaw = String(phoneRaw).trim();
+    }
+    return c;
+  };
+
+  // A. Process POS Sales (e.g. Victor's Viceroy, KC Fusion Pineapple)
+  for (const s of salesRows || []) {
+    const payments = Array.isArray(s.payments) ? s.payments : [];
+    const items = Array.isArray(s.items) ? s.items : [];
+    const saleTotal = Number(s.total || 0);
+
+    let payerPhone = "";
+    let payerName = "";
+    const paymentMethods: string[] = [];
+    for (const p of payments) {
+      if (p.payer_phone && !payerPhone) payerPhone = p.payer_phone;
+      if (p.payer_name && !payerName) payerName = p.payer_name;
+      if (p.payment_method) paymentMethods.push(p.payment_method);
+    }
+
+    const c = upsertCustomer(payerPhone, payerName);
+    if (!c.id) c.id = `pos-${s.id}`;
+    c.total_spent += saleTotal;
+    c.order_count += 1;
+    if (!c.last_order_at || new Date(s.created_at) > new Date(c.last_order_at)) {
+      c.last_order_at = s.created_at;
+    }
+    for (const pm of paymentMethods) {
+      c.payment_methods.add(pm);
+    }
+
+    // Accumulate items bought
+    for (const item of items) {
+      const itName = item.item_name || "Custom Item";
+      const qty = Number(item.quantity || 1);
+      const lineTotal = item.line_total !== undefined && item.line_total !== null ? Number(item.line_total) : (Number(item.unit_price || item.price || 0) * qty);
+      const rev = Number(lineTotal || 0);
+      const existing = c.items_bought.get(itName) || { name: itName, quantity: 0, revenue: 0 };
+      existing.quantity += qty;
+      existing.revenue += rev;
+      c.items_bought.set(itName, existing);
+    }
+
+    c.orders.push({
+      id: Number(s.id),
+      total: saleTotal,
+      created_at: s.created_at,
+      payment_method: paymentMethods.join(", ") || "POS",
+      payment_status: s.payment_status,
+      items: items.map((i: any) => ({
+        item_name: i.item_name,
+        quantity: Number(i.quantity || 1),
+        price: Number(i.unit_price || 0),
+        line_total: Number(i.line_total || 0),
+      })),
+    });
   }
 
-  query += ` GROUP BY buyer_name, phone_number ORDER BY buyer_name ASC LIMIT 100`;
+  // B. Process Customer Tabs
+  for (const t of tabRows || []) {
+    const c = upsertCustomer(t.customer_phone, t.customer_name);
+    if (!c.id) c.id = `tab-${t.id}`;
+    const outstanding = t.status !== "settled" && t.status !== "written_off" && Number(t.balance || 0) > 0;
+    const amountDue = outstanding ? Number(t.balance || 0) : 0;
 
-  const { rows } = await neonQuery(query, params);
-  return (rows || []).map((r: any) => ({
-    id: r.id,
-    buyer_name: r.buyer_name || "Unknown Attendee",
-    phone_number: r.phone_number || "",
-    whatsapp_number: r.whatsapp_number || "",
-    ticket_type: r.ticket_type || "Standard",
-    ticket_count: Number(r.ticket_count) || 1,
-    is_scanned: !!r.is_scanned
-  }));
+    const tabObj = {
+      id: Number(t.id),
+      vendor_id: t.vendor_id,
+      customer_name: t.customer_name,
+      customer_phone: t.customer_phone,
+      credit_limit: Number(t.credit_limit || 0),
+      balance: Number(t.balance || 0),
+      status: t.status || "open",
+      outstanding,
+      amount_due: amountDue,
+      created_at: t.created_at,
+      settled_at: t.settled_at || null,
+    };
+
+    c.tabs.push(tabObj);
+    c.tab_count = c.tabs.length;
+    if (outstanding) {
+      c.tab_balance_due += amountDue;
+      c.has_open_tab = true;
+    }
+    // Update active tab pointer if open
+    if (t.status === "open" && (!c.tab_id || outstanding)) {
+      c.tab_id = Number(t.id);
+      c.tab_balance = Number(t.balance || 0);
+      c.tab_credit_limit = Number(t.credit_limit || 0);
+      c.tab_status = t.status;
+    }
+  }
+
+  // C. Process Tickets
+  for (const t of ticketRows || []) {
+    const ticketPhone = t.phone_number || t.whatsapp_number;
+    const c = upsertCustomer(ticketPhone, t.buyer_name);
+    if (!c.id || c.id.startsWith("pos-") || c.id.startsWith("tab-")) {
+      c.id = t.id; // Ticket ID is official external merchant ref (GL-XXXX)
+    }
+    if (t.buyer_name && (!c.buyer_name || c.buyer_name === "Event Attendee")) {
+      c.buyer_name = t.buyer_name;
+      c.name = t.buyer_name;
+    }
+    if (t.whatsapp_number && !c.whatsapp_number) {
+      c.whatsapp_number = t.whatsapp_number;
+    }
+    c.ticket_count += 1;
+    c.ticket_spend += Number(t.amount_paid || 0);
+    if (t.is_scanned) c.is_scanned = true;
+
+    // Ticket types
+    if (!c.ticket_type) {
+      c.ticket_type = t.ticket_type;
+    } else if (!c.ticket_type.includes(t.ticket_type)) {
+      c.ticket_type += `, ${t.ticket_type}`;
+    }
+
+    c.tickets.push({
+      id: t.id,
+      ticket_type: t.ticket_type,
+      amount_paid: Number(t.amount_paid || 0),
+      purchase_time: t.purchase_time,
+      is_scanned: !!t.is_scanned,
+      event_id: t.event_id,
+    });
+  }
+
+  // D. Finalize Customers Array
+  let customers: EventCustomer[] = Array.from(customerMap.values()).map((c: any): EventCustomer => {
+    const rawItems = Array.from(c.items_bought.values()) as Array<{ name: string; quantity: number; revenue: number }>;
+    const itemsBought = rawItems.sort(
+      (a, b) => b.quantity - a.quantity
+    );
+    const combinedSpend = c.ticket_spend + c.total_spent;
+    const totalDue = c.tab_balance_due;
+
+    return {
+      id: c.id || `cust-${Math.random().toString(36).substring(2, 9)}`,
+      buyer_name: c.buyer_name || "Attendee",
+      name: c.buyer_name || "Attendee",
+      phone_number: c.phone_number || c.phoneRaw || "",
+      phoneRaw: c.phoneRaw,
+      whatsapp_number: c.whatsapp_number || "",
+      ticket_type: c.ticket_type || (c.ticket_count > 0 ? "Standard" : "Walk-in"),
+      ticket_count: c.ticket_count,
+      ticket_spend: c.ticket_spend,
+      is_scanned: c.is_scanned,
+      tab_id: c.tab_id,
+      tab_balance: c.tab_balance,
+      tab_credit_limit: c.tab_credit_limit,
+      tab_status: c.tab_status,
+      tab_count: c.tab_count,
+      tab_balance_due: c.tab_balance_due,
+      has_open_tab: c.has_open_tab,
+      tabs: c.tabs,
+      total_spent: c.total_spent,
+      order_count: c.order_count,
+      orders: c.orders.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+      items_bought: itemsBought,
+      payment_methods: Array.from(c.payment_methods),
+      last_order_at: c.last_order_at,
+      tickets: c.tickets.sort((a: any, b: any) => new Date(b.purchase_time).getTime() - new Date(a.purchase_time).getTime()),
+      combined_spend: combinedSpend,
+      total_due: totalDue,
+    };
+  });
+
+  // E. Search Filtering if query provided
+  if (search && search.trim()) {
+    const s = search.trim().toLowerCase();
+    const cleanS = s.replace(/\D/g, "");
+    customers = customers.filter((cust) => {
+      const nameMatch = cust.buyer_name.toLowerCase().includes(s);
+      const phoneMatch = cust.phone_number.toLowerCase().includes(s) || (cleanS && cust.phone_number.replace(/\D/g, "").includes(cleanS));
+      const waMatch = cust.whatsapp_number?.toLowerCase().includes(s);
+      const ticketMatch = cust.id.toLowerCase().includes(s) || cust.tickets?.some((t) => t.id.toLowerCase().includes(s) || t.ticket_type.toLowerCase().includes(s));
+      const itemMatch = cust.items_bought?.some((i) => i.name.toLowerCase().includes(s));
+      const tabMatch = cust.tabs?.some((t) => String(t.id).includes(s));
+      return nameMatch || phoneMatch || waMatch || ticketMatch || itemMatch || tabMatch;
+    });
+  }
+
+  // F. Sort: Highest outstanding balance first, then highest spenders
+  customers.sort((a, b) => (Number(b.tab_balance_due || 0) - Number(a.tab_balance_due || 0)) || (Number(b.combined_spend || 0) - Number(a.combined_spend || 0)));
+
+  return customers.slice(0, 200);
 }
 
 export async function payTab(tabId: number, amount: number, method: string, mpesaRef: string = "", operatorId?: number | null): Promise<boolean> {

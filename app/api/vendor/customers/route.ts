@@ -51,11 +51,12 @@ export async function GET(request: NextRequest) {
     }
 
     const q = searchParams.get("q") || "";
-    const customers = await fetchEventCustomers(eventId, q);
+    const customers = await fetchEventCustomers(eventId, q, session.vendorId);
 
     return NextResponse.json({
       success: true,
       eventId,
+      vendorId: session.vendorId,
       customers: customers || []
     });
   } catch (error: any) {

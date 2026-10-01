@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink } from "lucide-react";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export default function VendorSellPage() {
@@ -17,6 +17,17 @@ export default function VendorSellPage() {
   const [showRecentSalesDrawer, setShowRecentSalesDrawer] = useState(false);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
   const [loadingRecentSales, setLoadingRecentSales] = useState(false);
+
+  // Customer Audit & Unified Docket Drawer state
+  const [showCustomerAuditDrawer, setShowCustomerAuditDrawer] = useState(false);
+  const [selectedCustomerAudit, setSelectedCustomerAudit] = useState<any | null>(null);
+  const [customerDocketItem, setCustomerDocketItem] = useState<any | null>(null);
+  const [auditSearchQuery, setAuditSearchQuery] = useState("");
+  const [auditSettleTab, setAuditSettleTab] = useState<any | null>(null);
+  const [auditSettleAmount, setAuditSettleAmount] = useState<string>("");
+  const [auditSettleMethod, setAuditSettleMethod] = useState<"cash" | "mpesa">("cash");
+  const [isSettlingTab, setIsSettlingTab] = useState(false);
+  const [isRemindingTab, setIsRemindingTab] = useState<number | null>(null);
   
   // Split payment state
   const [cashAmount, setCashAmount] = useState("");
@@ -350,17 +361,7 @@ export default function VendorSellPage() {
 
   useEffect(() => {
     loadItems();
-    
-    fetch("/api/vendor/tabs")
-      .then(res => res.json())
-      .then(data => {
-        const rawTabs = Array.isArray(data) ? data : (data?.tabs || []);
-        setTabs(rawTabs.filter((t: any) => t.status === 'open'));
-      })
-      .catch(err => {
-        console.error("Error loading vendor tabs:", err);
-      });
-
+    loadTabs();
     loadCustomers();
     loadRecentSales();
 
@@ -372,6 +373,137 @@ export default function VendorSellPage() {
 
     return () => clearInterval(syncInterval);
   }, []);
+
+  const handleAuditSettleTab = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auditSettleTab) return;
+    const amt = Number(auditSettleAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid payment amount");
+      return;
+    }
+    setIsSettlingTab(true);
+    try {
+      const res = await fetch(`/api/vendor/tabs/${auditSettleTab.id}/pay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amt,
+          method: auditSettleMethod
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        HapticFeedback.trigger("success");
+        alert(data.message || "Tab payment recorded successfully!");
+        setAuditSettleTab(null);
+        setAuditSettleAmount("");
+        loadTabs();
+        loadCustomers();
+        if (selectedCustomerAudit) {
+          fetch(`/api/vendor/customers?q=${encodeURIComponent(selectedCustomerAudit.phone_number || selectedCustomerAudit.buyer_name)}`)
+            .then(r => r.json())
+            .then(d => {
+              if (d.success && d.customers?.[0]) setSelectedCustomerAudit(d.customers[0]);
+            })
+            .catch(() => {});
+        }
+      } else {
+        HapticFeedback.trigger("error");
+        alert(data.message || "Failed to record payment");
+      }
+    } catch {
+      HapticFeedback.trigger("error");
+      alert("Network error processing payment");
+    } finally {
+      setIsSettlingTab(false);
+    }
+  };
+
+  const handleAuditSendReminder = async (tabId: number, custPhone?: string) => {
+    if (!custPhone) {
+      alert("This customer has no phone number on record");
+      return;
+    }
+    setIsRemindingTab(tabId);
+    try {
+      const res = await fetch(`/api/vendor/tabs/${tabId}/remind`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        HapticFeedback.trigger("success");
+        alert(data.message || `WhatsApp statement and payment link sent to ${custPhone}!`);
+      } else {
+        HapticFeedback.trigger("error");
+        alert(data.message || "Failed to send WhatsApp reminder");
+      }
+    } catch {
+      HapticFeedback.trigger("error");
+      alert("Network error sending reminder");
+    } finally {
+      setIsRemindingTab(null);
+    }
+  };
+
+  const handleDownloadDocketTxt = (cust: any) => {
+    if (!cust) return;
+    const lines = [
+      "========================================",
+      "       GOODLIFE STALL CUSTOMER DOCKET   ",
+      "========================================",
+      `CUSTOMER: ${cust.buyer_name || cust.name || "Attendee"}`,
+      `PHONE:    ${cust.phone_number || cust.phoneRaw || "N/A"}`,
+      `DATE:     ${new Date().toLocaleString("en-KE")}`,
+      "----------------------------------------",
+      `TOTAL STALL SPEND:  KES ${Number(cust.total_spent || 0).toLocaleString()}`,
+      `TICKET SPEND:       KES ${Number(cust.ticket_spend || 0).toLocaleString()}`,
+      `OUTSTANDING TAB:    KES ${Number(cust.tab_balance_due || 0).toLocaleString()}`,
+      "----------------------------------------",
+      "STALL ORDERS BREAKDOWN:",
+    ];
+    if ((cust.orders || []).length === 0) {
+      lines.push("  (No stall orders recorded)");
+    } else {
+      for (const ord of cust.orders) {
+        lines.push(`  Order #${ord.id} - ${new Date(ord.created_at).toLocaleTimeString()} - KES ${Number(ord.total).toLocaleString()} (${ord.payment_method})`);
+        for (const it of ord.items || []) {
+          lines.push(`    - ${it.quantity}x ${it.item_name} @ KES ${Number(it.price || 0).toLocaleString()}`);
+        }
+      }
+    }
+    lines.push("----------------------------------------");
+    lines.push("EVENT TICKETS:");
+    if ((cust.tickets || []).length === 0) {
+      lines.push("  (No event tickets recorded)");
+    } else {
+      for (const t of cust.tickets) {
+        lines.push(`  Ticket ${t.id}: ${t.ticket_type} (KES ${Number(t.amount_paid || 0).toLocaleString()}) - ${t.is_scanned ? "SCANNED" : "UNSCANNED"}`);
+      }
+    }
+    lines.push("----------------------------------------");
+    lines.push("CUSTOMER TABS:");
+    if ((cust.tabs || []).length === 0) {
+      lines.push("  (No tabs on record)");
+    } else {
+      for (const tab of cust.tabs) {
+        lines.push(`  Tab #${tab.id}: Balance KES ${Number(tab.balance || 0).toLocaleString()} / Limit KES ${Number(tab.credit_limit || 0).toLocaleString()} [${(tab.status || "open").toUpperCase()}]`);
+      }
+    }
+    lines.push("========================================");
+    lines.push("         THANK YOU FOR YOUR PATRONAGE   ");
+    lines.push("========================================");
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `docket-${(cust.buyer_name || "customer").replace(/[^a-z0-9]/gi, "-").toLowerCase()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Debounced search for event customers
   useEffect(() => {
@@ -617,17 +749,30 @@ export default function VendorSellPage() {
             <h2 className="font-display text-lg uppercase tracking-wider text-brand-navy">Menu Catalog</h2>
             <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">Tap items to add to order</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              loadRecentSales();
-              setShowRecentSalesDrawer(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
-          >
-            <Receipt className="w-3.5 h-3.5 text-brand-navy" />
-            <span>Recent Sales ({recentSalesList.length})</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                loadCustomers();
+                setShowCustomerAuditDrawer(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+            >
+              <Users className="w-3.5 h-3.5 text-brand-navy" />
+              <span>Customer Audit ({eventCustomers.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                loadRecentSales();
+                setShowRecentSalesDrawer(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+            >
+              <Receipt className="w-3.5 h-3.5 text-brand-navy" />
+              <span>Recent Sales ({recentSalesList.length})</span>
+            </button>
+          </div>
         </div>
 
         {/* Search catalog items */}
@@ -1223,10 +1368,37 @@ export default function VendorSellPage() {
                                         )}
                                       </div>
                                     </div>
-                                    <div className="text-right shrink-0">
+                                    <div className="text-right shrink-0 flex items-center gap-1.5">
                                       <span className="font-mono text-xs font-bold text-green-700 block">
                                         KES {avail.toLocaleString()} left
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const matchingCust = eventCustomers.find(c => {
+                                            const cPhone = (c.phone_number || "").replace(/\D/g, "");
+                                            const tPhone = (t.customer_phone || "").replace(/\D/g, "");
+                                            return (cPhone && tPhone && cPhone.slice(-9) === tPhone.slice(-9)) || c.buyer_name.toLowerCase() === t.customer_name.toLowerCase();
+                                          });
+                                          setSelectedCustomerAudit(matchingCust || {
+                                            buyer_name: t.customer_name,
+                                            phone_number: t.customer_phone,
+                                            tab_id: t.id,
+                                            tab_balance_due: Number(t.balance || 0),
+                                            tabs: [t],
+                                            orders: [],
+                                            tickets: [],
+                                          });
+                                          setShowCustomerAuditDrawer(true);
+                                          setIsSearchDropdownOpen(false);
+                                        }}
+                                        className="p-1 hover:bg-brand-navy hover:text-white border border-brand-navy text-[10px] font-mono font-bold uppercase transition-colors shrink-0 flex items-center gap-1 bg-white cursor-pointer"
+                                        title="View Customer Audit Docket"
+                                      >
+                                        <FileText className="w-3 h-3" />
+                                        <span>Audit</span>
+                                      </button>
                                     </div>
                                   </button>
                                 );
@@ -1274,7 +1446,26 @@ export default function VendorSellPage() {
                                         {cust.phone_number || "No Phone"} {cust.ticket_count > 1 ? `(${cust.ticket_count} tickets)` : ""}
                                       </div>
                                     </div>
-                                    <div className="text-right shrink-0">
+                                    <div className="text-right shrink-0 flex items-center gap-1.5">
+                                      {cust.tab_balance_due > 0 && (
+                                        <span className="text-[9px] font-mono font-black bg-red-600 text-white px-1.5 py-0.5 uppercase">
+                                          DUE KES {Number(cust.tab_balance_due).toLocaleString()}
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedCustomerAudit(cust);
+                                          setShowCustomerAuditDrawer(true);
+                                          setIsSearchDropdownOpen(false);
+                                        }}
+                                        className="p-1 hover:bg-brand-navy hover:text-white border border-brand-navy text-[10px] font-mono font-bold uppercase transition-colors shrink-0 flex items-center gap-1 bg-white cursor-pointer"
+                                        title="View Customer Audit Docket"
+                                      >
+                                        <FileText className="w-3 h-3" />
+                                        <span>Audit</span>
+                                      </button>
                                       <span className="text-[10px] font-mono font-bold text-brand-navy bg-brand-accent/30 border border-brand-navy/40 px-1.5 py-0.5 uppercase">
                                         {hasExistingTab ? "Has Tab" : "+ Open Tab"}
                                       </span>
@@ -1782,6 +1973,500 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Audit Drawer */}
+      {showCustomerAuditDrawer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end">
+          <div className="w-full max-w-4xl bg-brand-off-white h-full border-l-4 border-brand-navy flex flex-col p-4 md:p-6 shadow-(--shadow-brut-xl) animate-in slide-in-from-right duration-200 overflow-hidden">
+            {/* Header */}
+            <div className="flex justify-between items-center pb-3 border-b-2 border-brand-navy">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-brand-navy" />
+                <div>
+                  <h3 className="font-display text-xl uppercase tracking-wider text-brand-navy">Customer Audit & Dockets</h3>
+                  <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">
+                    Unified attendee tickets, POS orders & credit tabs
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCustomerAuditDrawer(false)}
+                className="p-1.5 hover:bg-red-500 hover:text-white border-2 border-brand-navy bg-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Main content: Responsive Split Layout */}
+            <div className="flex-1 flex flex-col md:flex-row gap-4 pt-3 overflow-hidden">
+              {/* Left Pane: Customer List & Search */}
+              <div className={`w-full md:w-80 flex flex-col shrink-0 border-2 border-brand-navy bg-white p-3 shadow-(--shadow-brut-xs) ${selectedCustomerAudit ? "hidden md:flex" : "flex"}`}>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-brand-navy/50 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={auditSearchQuery}
+                    onChange={(e) => setAuditSearchQuery(e.target.value)}
+                    placeholder="Search attendee / phone..."
+                    className="w-full pl-8 pr-2 py-1.5 text-xs font-mono border-2 border-brand-navy bg-brand-off-white outline-none uppercase"
+                  />
+                </div>
+
+                <div className="text-[10px] font-mono text-brand-navy/70 font-bold mb-1 flex justify-between">
+                  <span>Attendees ({eventCustomers.length})</span>
+                  <span>Spend / Due</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-1.5 divide-y divide-brand-navy/10 pr-1">
+                  {eventCustomers
+                    .filter((c) => {
+                      if (!auditSearchQuery.trim()) return true;
+                      const q = auditSearchQuery.toLowerCase();
+                      return (
+                        (c.buyer_name || "").toLowerCase().includes(q) ||
+                        (c.phone_number || "").includes(q) ||
+                        (c.ticket_type || "").toLowerCase().includes(q)
+                      );
+                    })
+                    .map((c, i) => {
+                      const isSelected = selectedCustomerAudit?.phone_number === c.phone_number || selectedCustomerAudit?.id === c.id;
+                      return (
+                        <div
+                          key={c.id || i}
+                          onClick={() => setSelectedCustomerAudit(c)}
+                          className={`p-2 cursor-pointer transition-colors text-left flex justify-between items-center gap-2 border ${
+                            isSelected
+                              ? "bg-brand-accent/30 border-brand-navy shadow-(--shadow-brut-xs)"
+                              : "hover:bg-brand-navy/5 border-transparent"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-black text-xs uppercase text-brand-navy truncate">
+                              {c.buyer_name || c.name || "Attendee"}
+                            </div>
+                            <div className="text-[10px] font-mono text-brand-navy/70 truncate">
+                              {c.phone_number || c.phoneRaw || "No phone"}
+                            </div>
+                            <div className="flex gap-1 mt-0.5">
+                              {c.ticket_count > 0 && (
+                                <span className="text-[8px] font-mono font-bold bg-brand-navy/10 text-brand-navy px-1 py-0.2 uppercase">
+                                  {c.ticket_count} Tix
+                                </span>
+                              )}
+                              {(c.order_count || 0) > 0 && (
+                                <span className="text-[8px] font-mono font-bold bg-green-100 text-green-800 px-1 py-0.2 uppercase">
+                                  {c.order_count} Orders
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {c.tab_balance_due > 0 ? (
+                              <span className="text-[9px] font-mono font-black bg-red-600 text-white px-1.5 py-0.5 uppercase block">
+                                DUE KES {Number(c.tab_balance_due).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-mono font-black text-brand-navy block">
+                                KES {Number(c.combined_spend || 0).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Right Pane: Selected Customer Detailed Docket */}
+              <div className={`flex-1 flex flex-col border-2 border-brand-navy bg-white p-4 shadow-(--shadow-brut-xs) overflow-y-auto ${!selectedCustomerAudit ? "hidden md:flex items-center justify-center text-center" : "flex"}`}>
+                {!selectedCustomerAudit ? (
+                  <div className="text-center p-8 space-y-2">
+                    <FileText className="w-12 h-12 text-brand-navy/30 mx-auto" />
+                    <p className="font-display text-lg uppercase text-brand-navy/60">Select an attendee from the list</p>
+                    <p className="text-xs font-mono text-brand-navy/50 max-w-sm mx-auto">
+                      View full combined history: bar orders, drinks breakdown, tickets, and settle open tabs directly.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Back button on mobile */}
+                    <div className="md:hidden flex items-center justify-between pb-2 border-b border-brand-navy/20">
+                      <button
+                        onClick={() => setSelectedCustomerAudit(null)}
+                        className="flex items-center gap-1 text-xs font-black uppercase text-brand-navy py-1 px-2 border border-brand-navy bg-brand-off-white"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back to list</span>
+                      </button>
+                    </div>
+
+                    {/* Customer Profile Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b-2 border-brand-navy">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-display text-2xl uppercase tracking-wider text-brand-navy">
+                            {selectedCustomerAudit.buyer_name || selectedCustomerAudit.name || "Attendee"}
+                          </h4>
+                          {selectedCustomerAudit.is_scanned && (
+                            <span className="text-[9px] font-mono font-bold bg-green-600 text-white px-1.5 py-0.5 uppercase">
+                              ADMITTED
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs font-mono text-brand-navy/70 mt-0.5">
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5" />
+                            {selectedCustomerAudit.phone_number || selectedCustomerAudit.phoneRaw || "No phone"}
+                          </span>
+                          {selectedCustomerAudit.whatsapp_number && (
+                            <a
+                              href={`https://wa.me/${selectedCustomerAudit.whatsapp_number.replace(/\D/g, "")}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-700 hover:underline flex items-center gap-1 font-bold"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              WhatsApp
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadDocketTxt(selectedCustomerAudit)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-brand-off-white hover:bg-brand-navy hover:text-white border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Docket</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* KPI Metric Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy">
+                        <span className="text-[9px] font-mono font-bold uppercase text-brand-navy/60 block">Stall Spend</span>
+                        <span className="text-base font-black text-brand-navy font-mono">
+                          KES {Number(selectedCustomerAudit.total_spent || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono text-brand-navy/60 block">
+                          {selectedCustomerAudit.order_count || (selectedCustomerAudit.orders || []).length} orders
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy">
+                        <span className="text-[9px] font-mono font-bold uppercase text-brand-navy/60 block">Ticket Spend</span>
+                        <span className="text-base font-black text-brand-navy font-mono">
+                          KES {Number(selectedCustomerAudit.ticket_spend || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono text-brand-navy/60 block">
+                          {selectedCustomerAudit.ticket_count || (selectedCustomerAudit.tickets || []).length} passes
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy">
+                        <span className="text-[9px] font-mono font-bold uppercase text-brand-navy/60 block">Combined Total</span>
+                        <span className="text-base font-black text-brand-navy font-mono">
+                          KES {Number(selectedCustomerAudit.combined_spend || (Number(selectedCustomerAudit.total_spent || 0) + Number(selectedCustomerAudit.ticket_spend || 0))).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono text-brand-navy/60 block">All Systems</span>
+                      </div>
+
+                      <div className={`p-2.5 border-2 border-brand-navy ${
+                        selectedCustomerAudit.tab_balance_due > 0 ? "bg-red-500 text-white" : "bg-green-100 text-green-950"
+                      }`}>
+                        <span className="text-[9px] font-mono font-bold uppercase block opacity-80">Balance Due</span>
+                        <span className="text-base font-black font-mono">
+                          KES {Number(selectedCustomerAudit.tab_balance_due || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[9px] font-mono block opacity-80">
+                          {selectedCustomerAudit.tab_balance_due > 0 ? "Open Tabs" : "Fully Settled"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Items Bought Chips (Issue 1 & 2) */}
+                    {(selectedCustomerAudit.items_bought || []).length > 0 && (
+                      <div className="p-3 bg-brand-off-white border-2 border-brand-navy space-y-1.5">
+                        <span className="text-[10px] font-mono font-bold uppercase text-brand-navy/70 flex items-center gap-1">
+                          <ShoppingBag className="w-3 h-3" />
+                          Favorite Items Ordered at Stalls
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedCustomerAudit.items_bought.map((it: any, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-white border border-brand-navy text-[11px] font-mono font-bold text-brand-navy flex items-center gap-1 shadow-(--shadow-brut-xs)"
+                            >
+                              <span>{it.name}</span>
+                              <span className="bg-brand-navy text-white text-[9px] px-1 font-bold">x{it.quantity}</span>
+                              <span className="text-green-700 font-normal">KES {Number(it.revenue).toLocaleString()}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Customer Tabs Section with direct Settle & Remind (Issues 3, 4, 5) */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center pb-1 border-b border-brand-navy/20">
+                        <span className="font-display text-sm uppercase tracking-wider text-brand-navy flex items-center gap-1.5">
+                          <CreditCard className="w-4 h-4" />
+                          Customer Credit Tabs ({(selectedCustomerAudit.tabs || []).length})
+                        </span>
+                      </div>
+
+                      {(selectedCustomerAudit.tabs || []).length === 0 ? (
+                        <div className="p-3 text-center text-xs font-mono text-brand-navy/50 bg-brand-off-white border border-dashed border-brand-navy/30">
+                          No credit tabs opened for this customer.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedCustomerAudit.tabs.map((tab: any) => {
+                            const isOutstanding = tab.status !== "settled" && tab.status !== "written_off" && Number(tab.balance || 0) > 0;
+                            return (
+                              <div
+                                key={tab.id}
+                                className={`p-3 border-2 border-brand-navy flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                  isOutstanding ? "bg-red-50" : "bg-brand-off-white"
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-xs uppercase font-mono">Tab #{tab.id}</span>
+                                    <span className={`text-[9px] font-mono font-black px-1.5 py-0.2 uppercase border ${
+                                      tab.status === "open"
+                                        ? "bg-green-100 text-green-900 border-green-800"
+                                        : "bg-gray-200 text-gray-700 border-gray-400"
+                                    }`}>
+                                      {tab.status}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-mono mt-1 space-x-2">
+                                    <span>Balance: <strong className={Number(tab.balance) > 0 ? "text-red-600" : "text-green-700"}>KES {Number(tab.balance || 0).toLocaleString()}</strong></span>
+                                    <span className="text-brand-navy/50">|</span>
+                                    <span>Limit: KES {Number(tab.credit_limit || 0).toLocaleString()}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isOutstanding && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setAuditSettleTab(tab);
+                                          setAuditSettleAmount(String(tab.balance || ""));
+                                          setAuditSettleMethod("cash");
+                                        }}
+                                        className="px-2.5 py-1 bg-green-600 hover:bg-green-700 text-white border border-brand-navy text-xs font-mono font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+                                      >
+                                        Settle Tab
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isRemindingTab === tab.id}
+                                        onClick={() => handleAuditSendReminder(tab.id, selectedCustomerAudit.phone_number)}
+                                        className="px-2 py-1 bg-white hover:bg-brand-accent text-brand-navy border border-brand-navy text-xs font-mono font-bold uppercase transition-colors shadow-(--shadow-brut-xs) flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isRemindingTab === tab.id ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <MessageSquare className="w-3 h-3 text-green-700" />
+                                        )}
+                                        <span>Remind</span>
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* POS Stall Orders History (Issues 1 & 2) */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center pb-1 border-b border-brand-navy/20">
+                        <span className="font-display text-sm uppercase tracking-wider text-brand-navy flex items-center gap-1.5">
+                          <Receipt className="w-4 h-4" />
+                          Stall Orders & Bar History ({(selectedCustomerAudit.orders || []).length})
+                        </span>
+                      </div>
+
+                      {(selectedCustomerAudit.orders || []).length === 0 ? (
+                        <div className="p-3 text-center text-xs font-mono text-brand-navy/50 bg-brand-off-white border border-dashed border-brand-navy/30">
+                          No vendor stall sales recorded for this customer.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {selectedCustomerAudit.orders.map((ord: any) => (
+                            <div key={ord.id} className="p-2.5 bg-brand-off-white border-2 border-brand-navy text-xs space-y-1">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <span className="font-black font-mono">Order #{ord.id}</span>
+                                  <span className="text-[10px] font-mono text-brand-navy/60 ml-2">
+                                    {new Date(ord.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(ord.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <span className="font-black font-mono text-brand-navy">KES {Number(ord.total).toLocaleString()}</span>
+                              </div>
+                              <div className="text-[10px] font-mono text-brand-navy/70 flex items-center gap-1">
+                                <span className="bg-brand-navy/10 px-1 py-0.2 font-bold uppercase">{ord.payment_method || "POS"}</span>
+                              </div>
+                              <div className="pt-1 border-t border-brand-navy/10 space-y-0.5">
+                                {(ord.items || []).map((it: any, iIdx: number) => (
+                                  <div key={iIdx} className="flex justify-between text-[11px] font-mono">
+                                    <span>{it.quantity}x {it.item_name}</span>
+                                    <span className="text-brand-navy/70">KES {Number(it.line_total || it.price * it.quantity).toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Event Tickets Section */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center pb-1 border-b border-brand-navy/20">
+                        <span className="font-display text-sm uppercase tracking-wider text-brand-navy flex items-center gap-1.5">
+                          <Ticket className="w-4 h-4" />
+                          Event Tickets ({(selectedCustomerAudit.tickets || []).length})
+                        </span>
+                      </div>
+
+                      {(selectedCustomerAudit.tickets || []).length === 0 ? (
+                        <div className="p-3 text-center text-xs font-mono text-brand-navy/50 bg-brand-off-white border border-dashed border-brand-navy/30">
+                          No event admission tickets found.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {selectedCustomerAudit.tickets.map((t: any) => (
+                            <div key={t.id} className="p-2 bg-brand-off-white border border-brand-navy flex justify-between items-center text-xs font-mono">
+                              <div>
+                                <span className="font-black uppercase">{t.id}</span>
+                                <span className="ml-2 font-bold text-brand-navy/80">{t.ticket_type}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold">KES {Number(t.amount_paid).toLocaleString()}</span>
+                                <span className={`text-[9px] font-black px-1 py-0.2 uppercase border ${
+                                  t.is_scanned ? "bg-green-100 text-green-900 border-green-700" : "bg-brand-accent/20 text-brand-navy border-brand-navy/30"
+                                }`}>
+                                  {t.is_scanned ? "Scanned" : "Valid"}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settle Tab Modal */}
+      {auditSettleTab && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-brand-navy p-6 w-full max-w-md shadow-(--shadow-brut-xl) space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center pb-2 border-b-2 border-brand-navy">
+              <div>
+                <h3 className="font-display text-xl uppercase tracking-wider text-brand-navy">Settle Customer Tab</h3>
+                <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">
+                  Tab #{auditSettleTab.id} • {auditSettleTab.customer_name}
+                </p>
+              </div>
+              <button
+                onClick={() => setAuditSettleTab(null)}
+                className="p-1 hover:bg-red-500 hover:text-white border-2 border-brand-navy transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAuditSettleTab} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase text-brand-navy/70 mb-1">
+                  Outstanding Balance
+                </label>
+                <div className="text-2xl font-black font-mono text-red-600 bg-red-50 p-2.5 border-2 border-brand-navy">
+                  KES {Number(auditSettleTab.balance || 0).toLocaleString()}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase text-brand-navy/70 mb-1">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuditSettleMethod("cash")}
+                    className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                      auditSettleMethod === "cash" ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)" : "bg-white text-brand-navy"
+                    }`}
+                  >
+                    <Banknote className="w-4 h-4" />
+                    Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuditSettleMethod("mpesa")}
+                    className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                      auditSettleMethod === "mpesa" ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)" : "bg-white text-brand-navy"
+                    }`}
+                  >
+                    <Zap className="w-4 h-4" />
+                    M-Pesa
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold uppercase text-brand-navy/70 mb-1">
+                  Amount Received (KES)
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max={auditSettleTab.balance}
+                  value={auditSettleAmount}
+                  onChange={(e) => setAuditSettleAmount(e.target.value)}
+                  className="w-full p-2.5 border-2 border-brand-navy font-mono text-xl font-bold bg-brand-off-white outline-none focus:bg-white focus:ring-4 focus:ring-brand-accent"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAuditSettleTab(null)}
+                  className="flex-1 py-2.5 border-2 border-brand-navy font-mono text-xs font-bold uppercase hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSettlingTab}
+                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSettlingTab ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>Confirm Settlement</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
