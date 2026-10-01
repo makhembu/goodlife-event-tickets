@@ -15,6 +15,7 @@ export interface Event {
   sales_close_date?: string | null;
   next_event_title?: string;
   recap_video_url?: string;
+  video_url?: string | null;
   category?: 'flagship' | 'mini';
   recurrence_pattern?: 'none' | 'weekly' | 'biweekly' | 'monthly';
   recurrence_day?: string;
@@ -95,6 +96,7 @@ export interface EventDetails {
   sales_close_date?: string | null;
   next_event_title?: string;
   recap_video_url?: string;
+  video_url?: string | null;
   max_tent_inventory?: number;
   max_shared_beds?: number;
   maps_url?: string;

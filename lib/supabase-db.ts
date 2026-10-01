@@ -205,6 +205,13 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
     // to 'scheduled'. Losing the homepage slot must not cost you "live".
     const isScheduleOnly = event.status === 'scheduled' || event.is_active === false;
 
+    let schemaChecked = false;
+    try {
+      await neonQuery("ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT;");
+    } catch (e) {
+      // Ignore if table schema check already passed or insufficient privileges
+    }
+
     // Create new event
     const { rows } = await neonQuery(
       `INSERT INTO events (
@@ -212,9 +219,9 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         ticker_text, till_number, event_date, is_active, status, category,
         sales_open_date, sales_close_date, next_event_title, recap_video_url,
         max_tent_inventory, max_shared_beds, recurrence_pattern, recurrence_day,
-        recurrence_time, custom_schedule_text, maps_url
+        recurrence_time, custom_schedule_text, maps_url, video_url
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
        RETURNING *`,
       [
         event.title,
@@ -244,7 +251,8 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.recurrence_day || 'sunday',
         event.recurrence_time || '14:00',
         event.custom_schedule_text || '',
-        event.maps_url || ''
+        event.maps_url || '',
+        event.video_url || null
       ]
     );
     const newEvent = rows[0];
@@ -384,7 +392,7 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
     // `simulators_enabled` is deliberately absent: it lives on the
     // `event_details` singleton, not on `events`.
     const MUTABLE_EVENT_FIELDS = new Set<string>([
-      'title', 'subtitle', 'tag', 'venue', 'flyer_url', 'logo_url', 'regulations',
+      'title', 'subtitle', 'tag', 'venue', 'flyer_url', 'video_url', 'logo_url', 'regulations',
       'ticker_text', 'till_number', 'event_date', 'status', 'is_active',
       'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
       'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
@@ -1251,6 +1259,7 @@ let localEventDetails: EventDetails = {
   venue: "MARARA CAMP, THIKA",
   till_number: "",
   flyer_url: "/flyer.png",
+  video_url: "/videos/goodlife-hype.mp4",
   regulations: "Camp gate opens strictly at noon. Carry your dynamic physical PDF ticket or phone download for scanning validation. Absolute zero external beverage allowance at Marara. Access is limited strictly to 18+ and above, original ID documentation verified.",
   ticker_text: "NO ENTRY WITHOUT VALIDATION ✦ STRICTLY 18+ ✦",
   logo_url: "",
