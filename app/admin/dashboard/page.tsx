@@ -1189,6 +1189,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
             maps_url: eventFormState.maps_url,
             till_number: eventFormState.till_number,
             flyer_url: eventFormState.flyer_url,
+            video_url: (eventFormState as any).video_url || null,
             ticker_text: eventFormState.ticker_text,
             logo_url: eventFormState.logo_url,
             // The sales window and the recap/next-edition copy live on `events`,
@@ -1781,6 +1782,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                   maps_url: cur?.maps_url || eventDetails?.maps_url,
                   till_number: cur?.till_number || eventDetails?.till_number,
                   flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
+                  video_url: cur?.video_url ?? (eventDetails as any)?.video_url ?? "",
                   ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
                   logo_url: cur?.logo_url || eventDetails?.logo_url,
                   status: normalizeLifecycleStatus(cur?.status, cur?.is_active),
@@ -3645,15 +3647,28 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
                 </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase">Flyer Image or Video Path / URL</label>
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <label className="text-xs font-black uppercase">Poster Image Path / URL</label>
                   <input
                     type="text"
                     required
                     value={eventFormState.flyer_url || ""}
                     onChange={(e) => setEventFormState({ ...eventFormState, flyer_url: e.target.value })}
+                    placeholder="/flyer.png"
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
+                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70">Static high-res poster artwork</span>
+                </div>
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <label className="text-xs font-black uppercase">Hero Teaser Video URL</label>
+                  <input
+                    type="text"
+                    value={(eventFormState as any).video_url || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, video_url: e.target.value } as any)}
+                    placeholder="e.g. /videos/goodlife-hype.mp4"
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70">Autoplays in Story Deck after 3.5s</span>
                 </div>
                 <div className="space-y-1 col-span-2">
                   <label className="text-xs font-black uppercase">Scrolling Marquee Text (Ticker)</label>

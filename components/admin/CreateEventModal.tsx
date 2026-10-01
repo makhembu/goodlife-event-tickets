@@ -47,6 +47,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   const [mapsUrl, setMapsUrl] = useState("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
   const [tillNumber, setTillNumber] = useState("");
   const [flyerUrl, setFlyerUrl] = useState("/flyer.png");
+  const [videoUrl, setVideoUrl] = useState("/videos/goodlife-hype.mp4");
   const [eventDate, setEventDate] = useState("");
   const [status, setStatus] = useState<"live" | "scheduled">("scheduled");
   const [salesOpenDate, setSalesOpenDate] = useState("");
@@ -74,6 +75,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setVenue("RIVERFRONT GARDEN, MARARA CAMP, THIKA");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
       setFlyerUrl("/flyer-park-chill.png");
+      setVideoUrl("/videos/park-chill-speakers.mp4");
       setMaxTentInventory(0);
       setMaxSharedBeds(0);
       setRecurrencePattern("weekly");
@@ -88,6 +90,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setVenue("");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
       setFlyerUrl("/flyer.png");
+      setVideoUrl("/videos/goodlife-hype.mp4");
       setMaxTentInventory(30);
       setMaxSharedBeds(12);
       setRecurrencePattern("none");
@@ -136,6 +139,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
         sales_open_date: salesOpenDate ? new Date(salesOpenDate).toISOString() : null,
         sales_close_date: salesCloseDate ? new Date(salesCloseDate).toISOString() : null,
         recap_video_url: recapVideoUrl,
+        video_url: videoUrl.trim() || null,
         max_tent_inventory: Number(maxTentInventory),
         max_shared_beds: Number(maxSharedBeds),
         // INTENT ONLY - "a flagship that should be live", not "make this the
@@ -513,30 +517,46 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
             </div>
           )}
 
-          {/* Flyer & Video URL */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Media: Flyer Poster, Hero Teaser Video & Recap Video URL */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                FLYER IMAGE PATH
+                POSTER IMAGE PATH / URL
               </label>
               <input
                 type="text"
                 value={flyerUrl}
                 onChange={(e) => setFlyerUrl(e.target.value)}
+                placeholder="/flyer.png"
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
               />
+              <span className="text-[10px] text-brand-navy/60">Static high-res poster artwork</span>
             </div>
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                RECAP VIDEO URL
+                HERO TEASER VIDEO URL
+              </label>
+              <input
+                type="text"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="/videos/goodlife-hype.mp4"
+                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
+              />
+              <span className="text-[10px] text-brand-navy/60">Autoplays in Story Deck after 3.5s</span>
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
+                RECAP VIDEO URL (OPTIONAL)
               </label>
               <input
                 type="text"
                 value={recapVideoUrl}
                 onChange={(e) => setRecapVideoUrl(e.target.value)}
-                placeholder="/promo.mp4"
+                placeholder="/recap.mp4"
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
               />
+              <span className="text-[10px] text-brand-navy/60">Displayed on recap page when closed</span>
             </div>
           </div>
 
