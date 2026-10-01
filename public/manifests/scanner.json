@@ -1,0 +1,26 @@
+{
+  "id": "/scanner/",
+  "name": "GOODLIFE Gate Scanner",
+  "short_name": "GL Scanner",
+  "description": "Official Gate Admission & Ticket Verification Scanner for GOODLIFE Festivals",
+  "start_url": "/scanner",
+  "scope": "/scanner/",
+  "display": "standalone",
+  "background_color": "#142B4C",
+  "theme_color": "#142B4C",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

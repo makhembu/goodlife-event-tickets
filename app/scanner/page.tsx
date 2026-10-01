@@ -30,6 +30,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import TicketStamp from "@/components/TicketStamp";
 import { fmtDate } from "@/lib/utils";
+import PwaInstallButton from "@/components/ui/PwaInstallButton";
 
 interface ScannedResult {
   success: boolean;
@@ -496,6 +497,8 @@ export default function GateTerminalPage() {
 
         {/* Live Counters & Quick Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <PwaInstallButton appName="Scanner" />
+
           {/* Station tally chip */}
           <div className="hidden sm:flex flex-col items-end px-2 py-0.5 bg-yellow-100 border-2 border-brand-navy text-right">
             <span className="text-[9px] font-black uppercase text-brand-navy">MY SHIFT</span>

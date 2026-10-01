@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Store, Check, Delete, ArrowLeft, Shield } from "lucide-react";
 import Link from "next/link";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
+import PwaInstallButton from "@/components/ui/PwaInstallButton";
 
 export default function VendorLoginPage() {
   const [pin, setPin] = useState("");
@@ -70,7 +71,7 @@ export default function VendorLoginPage() {
   return (
     <div className="fixed inset-0 w-full h-[100dvh] max-h-[100dvh] flex flex-col justify-between p-3 sm:p-4 md:p-6 text-brand-navy font-mono bg-brand-off-white overflow-hidden overscroll-none select-none touch-manipulation">
       {/* Top Header Navigation */}
-      <header className="w-full max-w-4xl mx-auto flex items-center justify-between z-10 shrink-0">
+      <header className="w-full max-w-4xl mx-auto flex items-center justify-between gap-2 z-10 shrink-0">
         <Link 
           href="/" 
           className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-brand-navy bg-white text-brand-navy text-[11px] sm:text-xs font-bold uppercase hover:bg-yellow-300 transition-all shadow-(--shadow-brut-xs) active:translate-y-0.5"
@@ -79,13 +80,16 @@ export default function VendorLoginPage() {
           <span>Back to Event</span>
         </Link>
 
-        <Link 
-          href="/login" 
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-brand-navy bg-white text-brand-navy text-[11px] sm:text-xs font-bold uppercase hover:bg-yellow-300 transition-all shadow-(--shadow-brut-xs) active:translate-y-0.5"
-        >
-          <Shield className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Admin Login</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <PwaInstallButton appName="POS" />
+          <Link 
+            href="/login" 
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-brand-navy bg-white text-brand-navy text-[11px] sm:text-xs font-bold uppercase hover:bg-yellow-300 transition-all shadow-(--shadow-brut-xs) active:translate-y-0.5"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Admin Login</span>
+          </Link>
+        </div>
       </header>
 
       {/* Main Terminal Box */}

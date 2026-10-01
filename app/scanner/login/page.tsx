@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ShieldCheck, QrCode, ArrowLeft, ArrowRight, Lock, User, Layers, MapPin } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
+import PwaInstallButton from "@/components/ui/PwaInstallButton";
 
 export default function ScannerLoginPage() {
   const router = useRouter();
@@ -92,19 +93,20 @@ export default function ScannerLoginPage() {
     <div className="min-h-screen bg-brand-off-white flex flex-col justify-between p-4 md:p-8 font-mono text-brand-navy selection:bg-yellow-300 selection:text-brand-navy">
       
       {/* TOP HEADER */}
-      <header className="w-full max-w-md mx-auto flex items-center justify-between pb-4 border-b-3 border-brand-navy">
+      <header className="w-full max-w-md mx-auto flex items-center justify-between pb-4 border-b-3 border-brand-navy gap-2">
         <Link
           href="/"
           className="flex items-center gap-1.5 text-xs font-bold text-brand-navy hover:text-stone-600 uppercase transition-colors px-3 py-1.5 border-2 border-brand-navy bg-white shadow-(--shadow-brut-xs)"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Exit to Site</span>
+          <span>Exit</span>
         </Link>
+        <PwaInstallButton appName="Scanner" />
         <Link
           href="/login"
           className="flex items-center gap-1.5 text-xs font-bold text-brand-navy hover:bg-yellow-300 uppercase transition-colors px-3 py-1.5 border-2 border-brand-navy bg-white shadow-(--shadow-brut-xs)"
         >
-          <span>Admin Portal</span>
+          <span>Admin</span>
           <ArrowRight className="w-4 h-4" />
         </Link>
       </header>

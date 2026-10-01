@@ -65,6 +65,7 @@ import EventSelector from "@/components/EventSelector";
 // routes can never disagree about what a row's status means.
 import { canonicalStatus } from "@/lib/event-availability";
 import { useFeedback } from "@/components/ui/feedback";
+import PwaInstallButton from "@/components/ui/PwaInstallButton";
 
 /**
  * Two sales of the same tier on the same phone further apart than this are
@@ -1653,6 +1654,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <PwaInstallButton appName="Admin" />
             <Link 
               href="/" 
               className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 bg-white shadow-(--shadow-brut-xs)"
