@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     title: "GL POS",
   },
   icons: {
-    apple: "/icon.png",
+    apple: "/icons/vendor-192.png",
   },
 };
 

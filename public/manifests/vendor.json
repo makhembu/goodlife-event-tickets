@@ -1,26 +1,38 @@
 {
-  "id": "/vendor/",
+  "id": "/vendor",
   "name": "GOODLIFE Vendor POS",
   "short_name": "GL POS",
   "description": "High-speed Vendor Point of Sale & Inventory Terminal for GOODLIFE Festivals",
   "start_url": "/vendor/sell",
-  "scope": "/vendor/",
+  "scope": "/vendor",
   "display": "standalone",
   "background_color": "#142B4C",
   "theme_color": "#142B4C",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "/icons/vendor-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/vendor-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/vendor-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon.png",
+      "src": "/icons/vendor-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ]
 }

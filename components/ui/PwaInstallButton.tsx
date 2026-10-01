@@ -15,6 +15,13 @@ export default function PwaInstallButton({ appName, className = "" }: PwaInstall
   const [showIosGuide, setShowIosGuide] = useState(false);
 
   useEffect(() => {
+    // 0. Register Service Worker for PWA installability & offline resilience
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((err) => {
+        console.warn("Service worker registration:", err);
+      });
+    }
+
     // 1. Check if running in standalone mode (already installed)
     const isStandaloneMode =
       window.matchMedia("(display-mode: standalone)").matches ||

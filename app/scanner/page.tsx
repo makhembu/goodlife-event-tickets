@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Zap,
   ArrowRight,
+  ArrowLeft,
   Layers,
   ChevronDown
 } from "lucide-react";
@@ -497,6 +498,15 @@ export default function GateTerminalPage() {
 
         {/* Live Counters & Quick Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <Link
+            href="/"
+            className="flex items-center gap-1 px-2 py-1.5 border-2 border-brand-navy bg-white hover:bg-yellow-300 text-brand-navy text-[10px] md:text-xs font-bold uppercase transition-all shadow-(--shadow-brut-2xs) cursor-pointer"
+            title="Back to Checkout"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Checkout</span>
+          </Link>
+
           <PwaInstallButton appName="Scanner" />
 
           {/* Station tally chip */}

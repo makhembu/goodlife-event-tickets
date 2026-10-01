@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     title: "GL Scanner",
   },
   icons: {
-    apple: "/icon.png",
+    apple: "/icons/scanner-192.png",
   },
 };
 

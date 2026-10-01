@@ -96,10 +96,12 @@ export default function ScannerLoginPage() {
       <header className="w-full max-w-md mx-auto flex items-center justify-between pb-4 border-b-3 border-brand-navy gap-2">
         <Link
           href="/"
-          className="flex items-center gap-1.5 text-xs font-bold text-brand-navy hover:text-stone-600 uppercase transition-colors px-3 py-1.5 border-2 border-brand-navy bg-white shadow-(--shadow-brut-xs)"
+          className="flex items-center gap-1.5 text-xs font-bold text-brand-navy hover:bg-yellow-300 uppercase transition-colors px-3 py-1.5 border-2 border-brand-navy bg-white shadow-(--shadow-brut-xs)"
+          title="Back to Checkout"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Exit</span>
+          <span className="hidden sm:inline">Back to Checkout</span>
+          <span className="sm:hidden">Checkout</span>
         </Link>
         <PwaInstallButton appName="Scanner" />
         <Link

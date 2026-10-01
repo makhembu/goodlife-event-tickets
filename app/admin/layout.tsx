@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     title: "GL Admin",
   },
   icons: {
-    apple: "/icon.png",
+    apple: "/icons/admin-192.png",
   },
 };
 

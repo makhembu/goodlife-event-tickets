@@ -869,22 +869,25 @@ export default function TicketCheckoutPage({
         
         {/* HEADER NAVBAR */}
         {/* HEADER NAVBAR & UNIFIED BROADSHEET RIBBON */}
-        <header ref={headerRef} className="w-full border-b-4 border-brand-navy pb-3 mb-3 md:pb-5 md:mb-5 bg-brand-bg flex items-center justify-between gap-3 md:gap-6">
-          <div className="flex items-center gap-2 md:gap-4 shrink-0 min-w-0">
+        <header ref={headerRef} className="w-full border-b-4 border-brand-navy pb-3 mb-3 md:pb-5 md:mb-5 bg-brand-bg flex items-center justify-between gap-2 sm:gap-3 md:gap-6 min-w-0">
+          <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0 overflow-hidden">
             <button
               type="button"
-              className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left touch-manipulation active:scale-[0.98] transition-transform"
+              className="flex items-center gap-2 md:gap-3 min-w-0 max-w-full cursor-pointer select-none text-left touch-manipulation active:scale-[0.98] transition-transform"
               onClick={handleLogoTap}
               aria-label="Open staff access after five taps"
             >
-              <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) flex items-center justify-center">
+              <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) flex items-center justify-center shrink-0">
                 {eventDetails.logo_url ? (
                   <img src={eventDetails.logo_url} alt={`${eventDetails.title} logo`} className="w-5 h-5 md:w-6 md:h-6 object-contain" />
                 ) : (
                   <span className="font-display font-black text-xs md:text-sm tracking-tighter text-brand-navy">GL</span>
                 )}
               </div>
-              <h1 className="font-display text-2xl md:text-4xl lg:text-5xl tracking-wide uppercase text-brand-navy leading-none pt-1">
+              <h1 
+                className="font-display text-xl sm:text-2xl md:text-4xl lg:text-5xl tracking-wide uppercase text-brand-navy leading-none pt-1 truncate min-w-0"
+                title={eventDetails.title}
+              >
                 {eventDetails.title}
               </h1>
             </button>
@@ -910,7 +913,7 @@ export default function TicketCheckoutPage({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-4 shrink-0 justify-end">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 shrink-0 justify-end ml-1 sm:ml-2">
             {/* Desktop Editions Switcher inside Header */}
             {eventsList.length > 1 && (
               <div ref={editionsRef} className="relative hidden md:block">
