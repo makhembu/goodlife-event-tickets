@@ -97,6 +97,9 @@ export default function TicketCheckoutPage({
   
   // App Processing States
   const [loading, setLoading] = useState(false);
+  // Separate flag for event switching so we can dim the poster without
+  // affecting the payment button disabled-state (setLoading).
+  const [isSwitching, setIsSwitching] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [generatedTicketId, setGeneratedTicketId] = useState<string | null>(null);
   const [myTickets, setMyTickets] = useState<string[]>([]);
@@ -334,6 +337,7 @@ export default function TicketCheckoutPage({
   const handleSwitchEvent = async (targetEvent: Event) => {
     if (targetEvent.id === eventDetails.id) return;
     setLoading(true);
+    setIsSwitching(true);
     setStatusMessage("");
     try {
       const tiers = await fetchTicketTiers(targetEvent.id);
@@ -374,11 +378,14 @@ export default function TicketCheckoutPage({
       }
       if (typeof window !== "undefined") {
         window.history.pushState({}, "", `/?event=${targetEvent.id}`);
+        // Update the tab title so it reflects the new event without a hard reload.
+        document.title = `${targetEvent.title}${targetEvent.venue ? " – " + targetEvent.venue : ""}`;
       }
     } catch (e) {
       console.error("Failed to switch event:", e);
     } finally {
       setLoading(false);
+      setIsSwitching(false);
     }
   };
 
@@ -1133,13 +1140,20 @@ export default function TicketCheckoutPage({
 
         {/* MINI-FESTIVAL PROMO. Rendered here too, not just on the pages that
             are NOT selling: a customer who just bought a flagship pass is the
-            exact person most likely to come back for the cheap Sunday session. */}
-        <LiveMiniEventBanner events={liveMiniEvents} />
+            exact person most likely to come back for the cheap Sunday session.
+            Filter out the current event (don't advertise the page the user is
+            already on). Hidden on mobile — the slim wristband tape above
+            already handles cross-event promotion there. */}
+        <div className="hidden md:block">
+          <LiveMiniEventBanner
+            events={liveMiniEvents.filter(e => e.id !== eventDetails.id)}
+          />
+        </div>
 
         <main className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start mb-8">
 
           {/* LEFT COLUMN: HERO FLYER & ADVISORIES (5 cols on lg) */}
-          <section className="lg:col-span-5 space-y-4 md:space-y-6">
+          <section className={`lg:col-span-5 space-y-4 md:space-y-6 transition-opacity duration-200${isSwitching ? " opacity-40 pointer-events-none select-none" : ""}`}>
             
             {/* HERO FLYER MOTIF CARD
 
