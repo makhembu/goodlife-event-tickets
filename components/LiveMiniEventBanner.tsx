@@ -19,7 +19,14 @@ import {
  * but the coming-soon page, so that page is precisely where the one thing they
  * *can* buy should be advertised. It is now rendered on all three public pages.
  */
-export default function LiveMiniEventBanner({ events }: { events?: Event[] }) {
+export default function LiveMiniEventBanner({
+  events,
+  compact = false,
+}: {
+  events?: Event[];
+  /** Renders a slim single-row strip (used above the poster in the left column). */
+  compact?: boolean;
+}) {
   const list = (events ?? []).filter(Boolean);
   if (list.length === 0) return null;
 
@@ -44,6 +51,35 @@ export default function LiveMiniEventBanner({ events }: { events?: Event[] }) {
           ? `EVERY ${mini.recurrence_day?.toUpperCase()} | ${mini.recurrence_time}`
           : "GOODLIFE MINI SESSIONS";
 
+        if (compact) {
+          /* ── COMPACT: slim single-row strip above the poster card ── */
+          return (
+            <section
+              key={mini.id}
+              className="border-2 border-brand-navy bg-brand-accent px-3 py-2 shadow-(--shadow-brut-sm) flex flex-row items-center justify-between gap-3 animate-in fade-in duration-300"
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <span className="px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-off-white text-[9px] font-mono font-bold uppercase tracking-wider shrink-0">
+                  {occurrenceDay ? "ON TODAY" : "ON SALE"}
+                </span>
+                <span className="px-1.5 py-0.5 border border-brand-navy/60 bg-brand-off-white text-brand-navy text-[9px] font-mono font-bold uppercase shrink-0">
+                  {scheduleLine}
+                </span>
+                <h3 className="font-display text-sm uppercase tracking-wide text-brand-navy truncate">
+                  {mini.title}
+                </h3>
+              </div>
+              <Link
+                href={`/?event=${mini.id}`}
+                className="shrink-0 border-2 border-brand-navy bg-brand-navy text-brand-accent px-3 py-1.5 font-display text-xs uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] whitespace-nowrap"
+              >
+                → BOOK NOW
+              </Link>
+            </section>
+          );
+        }
+
+        /* ── FULL: original tall card (closed / coming-soon pages) ── */
         return (
           <section
             key={mini.id}

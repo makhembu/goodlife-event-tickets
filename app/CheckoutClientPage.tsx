@@ -1162,23 +1162,26 @@ export default function TicketCheckoutPage({
           )}
         </AnimatePresence>
 
-        {/* MINI-FESTIVAL PROMO. Rendered here too, not just on the pages that
-            are NOT selling: a customer who just bought a flagship pass is the
-            exact person most likely to come back for the cheap Sunday session.
-            Filter out the current event (don't advertise the page the user is
-            already on). Hidden on mobile — the slim wristband tape above
-            already handles cross-event promotion there. */}
-        <div className="hidden md:block">
-          <LiveMiniEventBanner
-            events={liveMiniEvents.filter(e => e.id !== eventDetails.id)}
-          />
-        </div>
+
 
         <main className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start mb-8">
 
           {/* LEFT COLUMN: HERO FLYER & ADVISORIES (5 cols on lg) */}
           <section className={`lg:col-span-5 space-y-4 md:space-y-6 transition-opacity duration-200${isSwitching ? " opacity-40 pointer-events-none select-none" : ""}`}>
-            
+
+            {/* MINI-FESTIVAL PROMO — compact strip above the poster.
+                Visible on desktop only (the wristband tape above already handles
+                mobile cross-event promotion). compact=true renders a slim
+                single-row strip that shares the poster's exact left edge and
+                does not compete with GET YOUR PASSES on the right. */}
+            <div className="hidden md:block">
+              <LiveMiniEventBanner
+                compact
+                events={liveMiniEvents.filter(e => e.id !== eventDetails.id)}
+              />
+            </div>
+
+
             {/* HERO FLYER MOTIF CARD
 
                 This card carries the fold cap, NOT the poster inside it. That is
