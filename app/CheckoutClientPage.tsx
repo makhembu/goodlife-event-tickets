@@ -37,6 +37,7 @@ import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 import { useEatToday } from "@/hooks/use-eat-today";
 import { isHiddenFromSite } from "@/lib/event-availability";
+import { resolveEventFlyer } from "@/lib/event-flyer";
 import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 
 interface CheckoutClientPageProps {
@@ -351,7 +352,7 @@ export default function TicketCheckoutPage({
         tag: targetEvent.tag,
         venue: targetEvent.venue,
         till_number: targetEvent.till_number,
-        flyer_url: targetEvent.flyer_url || "/flyer.png",
+        flyer_url: resolveEventFlyer(targetEvent),
         regulations: targetEvent.regulations || "",
         ticker_text: targetEvent.ticker_text || "",
         logo_url: targetEvent.logo_url,
@@ -1178,6 +1179,7 @@ export default function TicketCheckoutPage({
               <LiveMiniEventBanner
                 compact
                 events={liveMiniEvents.filter(e => e.id !== eventDetails.id)}
+                onSelectEvent={handleSwitchEvent}
               />
             </div>
 

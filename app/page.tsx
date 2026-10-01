@@ -232,6 +232,7 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
   // Sales open — show checkout
   return (
     <TicketCheckoutPage
+      key={targetEvent.id}
       initialEventDetails={eventDetails as any}
       initialTicketTiers={ticketTiers}
       availableEvents={availableEvents as any}

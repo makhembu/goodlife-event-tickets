@@ -22,10 +22,13 @@ import {
 export default function LiveMiniEventBanner({
   events,
   compact = false,
+  onSelectEvent,
 }: {
   events?: Event[];
   /** Renders a slim single-row strip (used above the poster in the left column). */
   compact?: boolean;
+  /** Optional handler to switch events instantly in-state without full page navigation/reload. */
+  onSelectEvent?: (event: Event) => void;
 }) {
   const list = (events ?? []).filter(Boolean);
   if (list.length === 0) return null;
@@ -56,7 +59,8 @@ export default function LiveMiniEventBanner({
           return (
             <section
               key={mini.id}
-              className="border-2 border-brand-navy bg-brand-accent px-3 py-2 shadow-(--shadow-brut-sm) flex flex-row items-center justify-between gap-3 animate-in fade-in duration-300"
+              onClick={() => onSelectEvent && onSelectEvent(mini)}
+              className="border-2 border-brand-navy bg-brand-accent px-3 py-2 shadow-(--shadow-brut-sm) flex flex-row items-center justify-between gap-3 animate-in fade-in duration-300 cursor-pointer"
             >
               <div className="flex items-center gap-2 min-w-0 flex-wrap">
                 <span className="px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-off-white text-[9px] font-mono font-bold uppercase tracking-wider shrink-0">
@@ -71,7 +75,14 @@ export default function LiveMiniEventBanner({
               </div>
               <Link
                 href={`/?event=${mini.id}`}
-                className="shrink-0 border-2 border-brand-navy bg-brand-navy text-brand-accent px-3 py-1.5 font-display text-xs uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] whitespace-nowrap"
+                onClick={(e) => {
+                  if (onSelectEvent) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelectEvent(mini);
+                  }
+                }}
+                className="shrink-0 border-2 border-brand-navy bg-brand-navy text-brand-accent px-3 py-1.5 font-display text-xs uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-xs) active:translate-x-[1px] active:translate-y-[1px] whitespace-nowrap cursor-pointer"
               >
                 → BOOK NOW
               </Link>
@@ -103,7 +114,13 @@ export default function LiveMiniEventBanner({
             </div>
             <Link
               href={`/?event=${mini.id}`}
-              className="w-full md:w-auto text-center border-2 md:border-[3px] border-brand-navy bg-brand-navy text-brand-accent px-4 py-2 md:py-2.5 font-display text-base md:text-lg uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-sm) active:translate-x-[2px] active:translate-y-[2px] whitespace-nowrap"
+              onClick={(e) => {
+                if (onSelectEvent) {
+                  e.preventDefault();
+                  onSelectEvent(mini);
+                }
+              }}
+              className="w-full md:w-auto text-center border-2 md:border-[3px] border-brand-navy bg-brand-navy text-brand-accent px-4 py-2 md:py-2.5 font-display text-base md:text-lg uppercase tracking-wider hover:bg-brand-off-white hover:text-brand-navy transition-all shadow-(--shadow-brut-sm) active:translate-x-[2px] active:translate-y-[2px] whitespace-nowrap cursor-pointer"
             >
               <span className="inline-flex items-center gap-1.5">
                 <Smartphone className="w-3.5 h-3.5" /> GET PASSES &amp; RSVP →
