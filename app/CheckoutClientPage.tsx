@@ -37,8 +37,9 @@ import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 import { useEatToday } from "@/hooks/use-eat-today";
 import { isHiddenFromSite } from "@/lib/event-availability";
-import { resolveEventFlyer } from "@/lib/event-flyer";
+import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
 import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
+import StoryDeckHero from "@/components/StoryDeckHero";
 
 interface CheckoutClientPageProps {
   initialEventDetails?: EventDetails;
@@ -109,6 +110,7 @@ export default function TicketCheckoutPage({
   
   // Flyer Lightbox State
   const [isFlyerExpanded, setIsFlyerExpanded] = useState(false);
+  const [flyerExpandMode, setFlyerExpandMode] = useState<"poster" | "video">("poster");
   
   // Manual M-Pesa till accordion. Collapsed by default: the till number is
   // already on the first screen in the venue/till strip, so this is the
@@ -353,6 +355,7 @@ export default function TicketCheckoutPage({
         venue: targetEvent.venue,
         till_number: targetEvent.till_number,
         flyer_url: resolveEventFlyer(targetEvent),
+        video_url: resolveEventVideo(targetEvent),
         regulations: targetEvent.regulations || "",
         ticker_text: targetEvent.ticker_text || "",
         logo_url: targetEvent.logo_url,
@@ -394,6 +397,7 @@ export default function TicketCheckoutPage({
   };
 
   const isVideoFlyer = eventDetails.flyer_url ? /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.flyer_url) || eventDetails.flyer_url.includes("video") : false;
+  const activeHeroVideo = eventDetails.video_url || resolveEventVideo(eventDetails);
 
   // "Now" in Kenya EAT, on a 60s heartbeat, re-rendering when the EAT day rolls
   // over so a tab left open overnight stops offering yesterday's tiers. Also
@@ -1285,56 +1289,16 @@ export default function TicketCheckoutPage({
                     frame it is given. Re-adding a cap here is what produced
                     the drifting cream margin - the poster must be allowed to
                     take the full interior or the frame stops being constant. */}
-                <div className="relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-off-white group mt-0 md:my-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsFlyerExpanded(true)}
-                    className="w-full h-full block relative text-left focus:outline-none focus:ring-4 focus:ring-brand-accent cursor-pointer"
-                    aria-label="Enlarge full poster"
-                  >
-                    {isVideoFlyer ? (
-                      <video 
-                        src={eventDetails.flyer_url} 
-                        autoPlay 
-                        muted 
-                        loop 
-                        playsInline 
-                        className="w-full h-full object-contain pointer-events-none"
-                      />
-                    ) : (
-                      <Image
-                        src={eventDetails.flyer_url}
-                        alt={`${eventDetails.title} Flyer`}
-                        fill
-                        priority
-                        className="object-contain transition-all duration-700"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    {/* REMOVED: the top gradient (absolute, h-24 md:h-32, from
-                        brand-off-white to transparent). It existed to fade the
-                        title card into the top of the artwork. With the card
-                        moved up into the identity bar it had nothing left to
-                        blend with, and was just a 128px cream veil over the
-                        top 30% of the poster - which is where the date and the
-                        top ticket name live. */}
-
-                    {/* Mobile zoom affordance. The poster itself is the button -
-                        this badge is decoration pointing at the whole thing, not a
-                        second control, so it stays a div (nesting a button inside
-                        the poster button would be invalid HTML) and stays
-                        aria-hidden because the button already announces itself.
-                        Icon-only now: the "FULL POSTER" words were a second,
-                        longer way of saying "tap me" about a 326px target. */}
-                    <div
-                      aria-hidden="true"
-                      className="absolute bottom-2 right-2 z-20 md:hidden w-9 h-9 bg-brand-navy text-brand-accent border-2 border-brand-accent flex items-center justify-center shadow-(--shadow-brut-xs)"
-                    >
-                      <Maximize2 className="w-4 h-4" />
-                    </div>
-
-                  </button>
-                </div>
+                <StoryDeckHero
+                  posterUrl={eventDetails.flyer_url}
+                  videoUrl={activeHeroVideo}
+                  eventTitle={eventDetails.title}
+                  className="mt-0 md:my-3"
+                  onExpand={(mode) => {
+                    setFlyerExpandMode(mode);
+                    setIsFlyerExpanded(true);
+                  }}
+                />
                 {/*
                   IDENTITY BAR - the title card used to sit ON TOP of the poster
                   as an absolutely positioned overlay, and the marquee ticker was
@@ -2178,29 +2142,58 @@ export default function TicketCheckoutPage({
             >
               {/* Header Bar */}
               <div className="flex items-center justify-between border-b-2 border-brand-navy bg-brand-accent p-2 md:p-3 shrink-0">
-                <span className="font-display text-sm md:text-lg uppercase text-brand-navy">
-                  {eventDetails.title} — OFFICIAL EVENT POSTER
-                </span>
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span className="font-display text-sm md:text-lg uppercase text-brand-navy truncate">
+                    {eventDetails.title} — {flyerExpandMode === "video" ? "HERO TEASER VIDEO" : "OFFICIAL EVENT POSTER"}
+                  </span>
+                  {activeHeroVideo && (
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setFlyerExpandMode("poster")}
+                        className={`px-2 py-0.5 text-xs font-black uppercase border border-brand-navy transition-all ${
+                          flyerExpandMode === "poster"
+                            ? "bg-brand-navy text-brand-off-white"
+                            : "bg-brand-off-white/80 text-brand-navy hover:bg-brand-off-white"
+                        }`}
+                      >
+                        🖼️ Poster
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFlyerExpandMode("video")}
+                        className={`px-2 py-0.5 text-xs font-black uppercase border border-brand-navy transition-all ${
+                          flyerExpandMode === "video"
+                            ? "bg-brand-navy text-brand-off-white"
+                            : "bg-brand-off-white/80 text-brand-navy hover:bg-brand-off-white"
+                        }`}
+                      >
+                        🎬 Video
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
-                  aria-label="Close poster"
-                  className="bg-brand-navy text-brand-off-white p-1 hover:bg-brand-off-white hover:text-brand-navy transition-colors border border-brand-navy"
+                  aria-label="Close modal"
+                  className="bg-brand-navy text-brand-off-white p-1 hover:bg-brand-off-white hover:text-brand-navy transition-colors border border-brand-navy shrink-0"
                   onClick={() => setIsFlyerExpanded(false)}
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Poster Content */}
-              <div className="relative flex-1 w-full bg-brand-navy overflow-auto">
-                {isVideoFlyer ? (
+              {/* Media Content */}
+              <div className="relative flex-1 w-full bg-brand-navy overflow-auto flex items-center justify-center">
+                {flyerExpandMode === "video" && activeHeroVideo ? (
                   <video 
-                    src={eventDetails.flyer_url} 
+                    key={activeHeroVideo}
+                    src={activeHeroVideo} 
                     autoPlay 
                     controls 
                     loop 
                     playsInline 
-                    className="w-full h-full object-contain"
+                    className="w-full h-full max-h-[85vh] object-contain"
                   />
                 ) : (
                   <Image 

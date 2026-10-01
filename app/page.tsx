@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
-import { resolveEventFlyer } from "@/lib/event-flyer";
+import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
 import ScheduledEventClientPage from "./ScheduledEventClientPage";
@@ -149,6 +149,7 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     venue: targetEvent.venue,
     till_number: targetEvent.till_number,
     flyer_url: resolveEventFlyer(targetEvent),
+    video_url: resolveEventVideo(targetEvent),
     regulations: targetEvent.regulations,
     ticker_text: targetEvent.ticker_text,
     logo_url: targetEvent.logo_url,

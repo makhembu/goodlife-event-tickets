@@ -261,8 +261,8 @@ export default function ScheduledEventClientPage({
         {/* HERO: COMING SOON */}
         <section className="border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-2xl) overflow-hidden relative">
           <div className="aspect-video w-full relative bg-black">
-            {isVideoFlyer ? (
-              <video src={eventDetails.flyer_url} autoPlay muted loop playsInline className="w-full h-full object-cover opacity-60" />
+            {eventDetails.video_url || isVideoFlyer ? (
+              <video src={eventDetails.video_url || eventDetails.flyer_url} autoPlay muted loop playsInline className="w-full h-full object-cover opacity-60" />
             ) : eventDetails.flyer_url ? (
               <Image src={eventDetails.flyer_url} alt={eventDetails.title} fill className="object-cover opacity-60" />
             ) : (
