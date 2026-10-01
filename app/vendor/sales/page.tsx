@@ -15,7 +15,9 @@ import {
   CheckCircle2, 
   XCircle,
   FileSpreadsheet,
-  ArrowUpDown
+  ArrowUpDown,
+  Printer,
+  FileText
 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
@@ -193,6 +195,121 @@ export default function VendorSalesPage() {
     document.body.removeChild(link);
   };
 
+  // Download printable docket slip
+  const handleDownloadDocket = (sale: PosSaleRecord) => {
+    const dateFormatted = new Date(sale.created_at).toLocaleString("en-KE", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+
+    const itemsRows = sale.items
+      .map(
+        (it) => `
+        <tr>
+          <td style="padding: 4px 0; border-bottom: 1px dashed #eee;">${it.quantity}x ${it.name}</td>
+          <td style="text-align: right; padding: 4px 0; border-bottom: 1px dashed #eee; font-weight: bold;">KES ${it.total.toLocaleString()}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    const paymentRows = sale.payments
+      .map(
+        (p) => `
+        <tr>
+          <td style="padding: 2px 0;">${p.method.toUpperCase()}${p.mpesa_ref ? ` (${p.mpesa_ref})` : ""}</td>
+          <td style="text-align: right; padding: 2px 0; font-weight: bold;">KES ${p.amount.toLocaleString()}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Docket ${sale.id}</title>
+  <style>
+    @media print {
+      @page { margin: 0; size: 80mm auto; }
+      body { margin: 8px; }
+    }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      color: #000;
+      background: #fff;
+      max-width: 320px;
+      margin: 15px auto;
+      padding: 16px;
+      border: 1px dashed #bbb;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .bold { font-weight: bold; }
+    .divider { border-top: 1px dashed #000; margin: 8px 0; }
+    .double-divider { border-top: 2px solid #000; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="text-center">
+    <h2 style="margin: 0; font-size: 17px; text-transform: uppercase;">GOODLIFE FESTIVAL</h2>
+    <p style="margin: 3px 0; font-size: 12px; font-weight: bold;">OFFICIAL POS RECEIPT</p>
+    <p style="margin: 2px 0; font-size: 11px;">Docket: <span class="bold">${sale.id}</span></p>
+    <p style="margin: 2px 0; font-size: 11px;">${dateFormatted}</p>
+    <p style="margin: 2px 0; font-size: 11px;">Operator: ${sale.operator_name}</p>
+  </div>
+  <div class="divider"></div>
+  <table>
+    <thead>
+      <tr style="border-bottom: 1px solid #000;">
+        <th style="text-align: left; padding-bottom: 4px;">ITEM</th>
+        <th style="text-align: right; padding-bottom: 4px;">AMOUNT</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr>
+      <td class="bold" style="font-size: 14px;">TOTAL</td>
+      <td class="text-right bold" style="font-size: 14px;">KES ${sale.total.toLocaleString()}</td>
+    </tr>
+  </table>
+  <div class="divider"></div>
+  <div class="bold" style="font-size: 10px; margin-bottom: 4px; text-transform: uppercase;">Payment Breakdown:</div>
+  <table>
+    ${paymentRows}
+  </table>
+  ${sale.notes ? `<div class="divider"></div><p style="font-size: 10px; margin: 4px 0;">Notes: ${sale.notes}</p>` : ""}
+  ${sale.payment_status === "voided" ? `<div class="divider"></div><p style="color: red; font-size: 11px; margin: 4px 0; font-weight: bold;">VOIDED: ${sale.void_reason || "No reason given"}</p>` : ""}
+  <div class="double-divider"></div>
+  <div class="text-center" style="font-size: 10px; margin-top: 8px;">
+    <p style="margin: 2px 0;">STATUS: <span class="bold">${sale.payment_status.toUpperCase()}</span></p>
+    <p style="margin: 6px 0 0 0;">THANK YOU FOR CELEBRATING WITH GOODLIFE</p>
+  </div>
+  <script>
+    window.onload = function() { window.print(); }
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `docket-${sale.id}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   return (
     <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6 pb-36 md:pb-12">
       
@@ -341,166 +458,314 @@ export default function VendorSalesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs min-w-[640px]">
-              <thead className="bg-brand-navy text-brand-off-white uppercase border-b-3 border-brand-navy text-[11px] font-black tracking-wider">
-                <tr>
-                  <th className="p-3 w-8"></th>
-                  <th className="p-3">RECEIPT / DATE</th>
-                  <th className="p-3">OPERATOR</th>
-                  <th className="p-3">ITEMS</th>
-                  <th className="p-3">PAYMENT</th>
-                  <th className="p-3 text-right">TOTAL</th>
-                  <th className="p-3 text-center">STATUS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-brand-navy/10">
-                {filteredSales.map((sale) => {
-                  const isExpanded = expandedSaleId === sale.id;
-                  const isCompleted = sale.payment_status === "completed";
+          <>
+            {/* MOBILE CARDS LIST (VISIBLE ON MOBILE ONLY) */}
+            <div className="md:hidden divide-y-2 divide-brand-navy/10">
+              {filteredSales.map((sale) => {
+                const isExpanded = expandedSaleId === sale.id;
+                const isCompleted = sale.payment_status === "completed";
 
-                  return (
-                    <React.Fragment key={sale.id}>
-                      <tr 
-                        onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                        className={`hover:bg-brand-accent/10 transition-colors cursor-pointer ${
-                          isExpanded ? "bg-brand-accent/15" : ""
+                return (
+                  <div key={sale.id} className="p-3 bg-white space-y-2.5">
+                    {/* Top: ID, Status, Date */}
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-brand-navy text-xs uppercase">{sale.id}</span>
+                        <span className="text-[10px] text-brand-navy/60 font-medium">· {fmtDate(sale.created_at)}</span>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 border uppercase ${
+                          isCompleted
+                            ? "bg-green-100 text-green-800 border-green-400"
+                            : "bg-red-100 text-red-800 border-red-400"
                         }`}
                       >
-                        <td className="p-3 text-center">
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4 text-brand-navy" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-brand-navy/50" />
-                          )}
-                        </td>
+                        {isCompleted ? <CheckCircle2 className="w-2.5 h-2.5" /> : <XCircle className="w-2.5 h-2.5" />}
+                        {sale.payment_status}
+                      </span>
+                    </div>
 
-                        <td className="p-3">
-                          <span className="font-black text-brand-navy block uppercase">{sale.id}</span>
-                          <span className="text-[10px] text-brand-navy/60 block">
-                            {fmtDate(sale.created_at)}
-                          </span>
-                        </td>
+                    {/* Middle: Items summary & Total Amount */}
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-brand-navy line-clamp-2">{sale.items_summary || "—"}</p>
+                        <p className="text-[10px] font-bold text-brand-navy/50 uppercase mt-0.5">Op: {sale.operator_name}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-black text-base text-brand-navy block">KES {sale.total.toLocaleString()}</span>
+                      </div>
+                    </div>
 
-                        <td className="p-3 font-bold uppercase text-brand-navy">
-                          {sale.operator_name}
-                        </td>
+                    {/* Payment badges */}
+                    <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                      {sale.payments.map((p, idx) => (
+                        <span
+                          key={idx}
+                          className={`text-[9px] font-black px-1.5 py-0.5 border uppercase ${
+                            p.method === "cash"
+                              ? "bg-blue-50 text-blue-800 border-blue-300"
+                              : p.method === "mpesa"
+                              ? "bg-green-50 text-green-800 border-green-300"
+                              : "bg-purple-50 text-purple-800 border-purple-300"
+                          }`}
+                        >
+                          {p.method}: KES {p.amount.toLocaleString()}
+                        </span>
+                      ))}
+                    </div>
 
-                        <td className="p-3 max-w-xs truncate font-medium">
-                          {sale.items_summary || "—"}
-                        </td>
+                    {/* Action Bar: Docket Download + Expand Itemized Breakdown */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-brand-navy/10">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadDocket(sale)}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-brand-accent text-brand-navy border border-brand-navy font-bold text-[10px] uppercase hover:bg-brand-navy hover:text-white transition-colors cursor-pointer active:scale-95"
+                      >
+                        <Printer className="w-3 h-3" /> Docket
+                      </button>
 
-                        <td className="p-3">
-                          <div className="flex flex-wrap gap-1">
-                            {sale.payments.map((p, idx) => (
-                              <span
-                                key={idx}
-                                className={`text-[10px] font-black px-1.5 py-0.5 border uppercase ${
-                                  p.method === "cash"
-                                    ? "bg-blue-50 text-blue-800 border-blue-300"
-                                    : p.method === "mpesa"
-                                    ? "bg-green-50 text-green-800 border-green-300"
-                                    : "bg-purple-50 text-purple-800 border-purple-300"
-                                }`}
-                              >
-                                {p.method}: KES {p.amount.toLocaleString()}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                        className="flex items-center gap-1 text-[11px] font-bold uppercase text-brand-navy/70 hover:text-brand-navy py-1 px-2 cursor-pointer"
+                      >
+                        <span>{isExpanded ? "Hide Details" : "View Breakdown"}</span>
+                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    {/* Expanded Docket Details on Mobile */}
+                    {isExpanded && (
+                      <div className="bg-brand-off-white border-2 border-brand-navy p-3 space-y-2.5 font-mono text-xs mt-2">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black uppercase text-brand-navy/60 block">ITEMS ORDERED:</span>
+                          {sale.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between text-xs py-0.5 border-b border-dashed border-brand-navy/20">
+                              <span>
+                                <strong>{it.quantity}x</strong> {it.name} <span className="text-gray-500">(@ KES {it.price})</span>
                               </span>
-                            ))}
+                              <span className="font-bold">KES {it.total.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="space-y-1 pt-1 border-t border-brand-navy/20">
+                          <span className="text-[10px] font-black uppercase text-brand-navy/60 block">PAYMENTS & REFS:</span>
+                          {sale.payments.map((p, idx) => (
+                            <div key={idx} className="text-[11px] flex justify-between items-center bg-white p-1 border border-brand-navy/20">
+                              <div>
+                                <span className="font-black uppercase">{p.method}</span>
+                                {p.mpesa_ref && <span className="ml-1 text-green-700 font-bold">({p.mpesa_ref})</span>}
+                              </div>
+                              <span className="font-black">KES {p.amount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {sale.notes && (
+                          <div className="text-[10px] bg-yellow-50 p-1.5 border border-yellow-200 text-yellow-900">
+                            <strong>Notes:</strong> {sale.notes}
                           </div>
-                        </td>
+                        )}
 
-                        <td className="p-3 text-right font-black text-sm text-brand-navy">
-                          KES {sale.total.toLocaleString()}
-                        </td>
+                        {sale.payment_status === "voided" && sale.void_reason && (
+                          <div className="text-[10px] bg-red-50 p-1.5 border border-red-200 text-red-900">
+                            <strong>Void Reason:</strong> {sale.void_reason}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-                        <td className="p-3 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 border uppercase ${
-                              isCompleted
-                                ? "bg-green-100 text-green-800 border-green-400"
-                                : "bg-red-100 text-red-800 border-red-400"
-                            }`}
-                          >
-                            {isCompleted ? (
-                              <CheckCircle2 className="w-3 h-3" />
+            {/* DESKTOP TABLE VIEW (VISIBLE ON MD+ SCREENS) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs min-w-[640px]">
+                <thead className="bg-brand-navy text-brand-off-white uppercase border-b-3 border-brand-navy text-[11px] font-black tracking-wider">
+                  <tr>
+                    <th className="p-3 w-8"></th>
+                    <th className="p-3">RECEIPT / DATE</th>
+                    <th className="p-3">OPERATOR</th>
+                    <th className="p-3">ITEMS</th>
+                    <th className="p-3">PAYMENT</th>
+                    <th className="p-3 text-right">TOTAL</th>
+                    <th className="p-3 text-center">STATUS</th>
+                    <th className="p-3 text-center">DOCKET</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-brand-navy/10">
+                  {filteredSales.map((sale) => {
+                    const isExpanded = expandedSaleId === sale.id;
+                    const isCompleted = sale.payment_status === "completed";
+
+                    return (
+                      <React.Fragment key={sale.id}>
+                        <tr 
+                          onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                          className={`hover:bg-brand-accent/10 transition-colors cursor-pointer ${
+                            isExpanded ? "bg-brand-accent/15" : ""
+                          }`}
+                        >
+                          <td className="p-3 text-center">
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-brand-navy" />
                             ) : (
-                              <XCircle className="w-3 h-3" />
+                              <ChevronDown className="w-4 h-4 text-brand-navy/50" />
                             )}
-                            {sale.payment_status}
-                          </span>
-                        </td>
-                      </tr>
+                          </td>
 
-                      {/* EXPANDED ITEM DETAIL DOCKET */}
-                      {isExpanded && (
-                        <tr className="bg-brand-off-white/80 border-y-2 border-brand-navy/20">
-                          <td colSpan={7} className="p-4">
-                            <div className="max-w-2xl bg-white border-2 border-brand-navy p-4 shadow-(--shadow-brut-xs) space-y-3 font-mono">
-                              <div className="flex justify-between items-center border-b border-brand-navy/20 pb-2">
-                                <span className="text-xs font-black uppercase text-brand-navy">
-                                  DOCKET BREAKDOWN — {sale.id}
+                          <td className="p-3">
+                            <span className="font-black text-brand-navy block uppercase">{sale.id}</span>
+                            <span className="text-[10px] text-brand-navy/60 block">
+                              {fmtDate(sale.created_at)}
+                            </span>
+                          </td>
+
+                          <td className="p-3 font-bold uppercase text-brand-navy">
+                            {sale.operator_name}
+                          </td>
+
+                          <td className="p-3 max-w-xs truncate font-medium">
+                            {sale.items_summary || "—"}
+                          </td>
+
+                          <td className="p-3">
+                            <div className="flex flex-wrap gap-1">
+                              {sale.payments.map((p, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`text-[10px] font-black px-1.5 py-0.5 border uppercase ${
+                                    p.method === "cash"
+                                      ? "bg-blue-50 text-blue-800 border-blue-300"
+                                      : p.method === "mpesa"
+                                      ? "bg-green-50 text-green-800 border-green-300"
+                                      : "bg-purple-50 text-purple-800 border-purple-300"
+                                  }`}
+                                >
+                                  {p.method}: KES {p.amount.toLocaleString()}
                                 </span>
-                                <span className="text-[10px] opacity-60">
-                                  Full Timestamp: {new Date(sale.created_at).toISOString()}
-                                </span>
-                              </div>
-
-                              {/* Items list */}
-                              <div className="space-y-1">
-                                <span className="text-[10px] font-black uppercase text-brand-navy/60 block">ITEMS:</span>
-                                {sale.items.map((it, idx) => (
-                                  <div key={idx} className="flex justify-between text-xs py-0.5 border-b border-dashed border-gray-200">
-                                    <span>
-                                      <strong>{it.quantity}x</strong> {it.name} <span className="text-gray-500">(@ KES {it.price})</span>
-                                    </span>
-                                    <span className="font-bold">KES {it.total.toLocaleString()}</span>
-                                  </div>
-                                ))}
-                              </div>
-
-                              {/* Payments breakdown */}
-                              <div className="space-y-1 pt-2 border-t border-brand-navy/20">
-                                <span className="text-[10px] font-black uppercase text-brand-navy/60 block">PAYMENTS & REFERENCES:</span>
-                                {sale.payments.map((p, idx) => (
-                                  <div key={idx} className="text-xs flex justify-between items-center bg-gray-50 p-1.5 border border-gray-200">
-                                    <div>
-                                      <span className="font-black uppercase">{p.method}</span>
-                                      {p.mpesa_ref && (
-                                        <span className="ml-2 text-green-700 font-bold">M-PESA REF: {p.mpesa_ref}</span>
-                                      )}
-                                      {p.payer_name && (
-                                        <span className="ml-2 text-gray-600">({p.payer_name})</span>
-                                      )}
-                                      {p.payer_phone && (
-                                        <span className="ml-2 text-gray-500">{p.payer_phone}</span>
-                                      )}
-                                    </div>
-                                    <span className="font-black">KES {p.amount.toLocaleString()}</span>
-                                  </div>
-                                ))}
-                              </div>
-
-                              {sale.notes && (
-                                <div className="text-[11px] bg-yellow-50 p-2 border border-yellow-200 text-yellow-900">
-                                  <strong>Notes:</strong> {sale.notes}
-                                </div>
-                              )}
-
-                              {sale.payment_status === "voided" && sale.void_reason && (
-                                <div className="text-[11px] bg-red-50 p-2 border border-red-200 text-red-900">
-                                  <strong>Void Reason:</strong> {sale.void_reason}
-                                </div>
-                              )}
+                              ))}
                             </div>
                           </td>
+
+                          <td className="p-3 text-right font-black text-sm text-brand-navy">
+                            KES {sale.total.toLocaleString()}
+                          </td>
+
+                          <td className="p-3 text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 border uppercase ${
+                                isCompleted
+                                  ? "bg-green-100 text-green-800 border-green-400"
+                                  : "bg-red-100 text-red-800 border-red-400"
+                              }`}
+                            >
+                              {isCompleted ? (
+                                <CheckCircle2 className="w-3 h-3" />
+                              ) : (
+                                <XCircle className="w-3 h-3" />
+                              )}
+                              {sale.payment_status}
+                            </span>
+                          </td>
+
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadDocket(sale);
+                              }}
+                              className="p-1.5 bg-brand-accent/30 hover:bg-brand-navy hover:text-white border border-brand-navy text-brand-navy transition-colors shadow-(--shadow-brut-xs) active:scale-95"
+                              title="Print or Download Docket"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+
+                        {/* EXPANDED ITEM DETAIL DOCKET */}
+                        {isExpanded && (
+                          <tr className="bg-brand-off-white/80 border-y-2 border-brand-navy/20">
+                            <td colSpan={8} className="p-4">
+                              <div className="max-w-2xl bg-white border-2 border-brand-navy p-4 shadow-(--shadow-brut-xs) space-y-3 font-mono">
+                                <div className="flex justify-between items-center border-b border-brand-navy/20 pb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black uppercase text-brand-navy">
+                                      DOCKET BREAKDOWN — {sale.id}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadDocket(sale)}
+                                      className="flex items-center gap-1 px-2 py-0.5 bg-brand-accent text-brand-navy border border-brand-navy font-bold text-[10px] uppercase hover:bg-brand-navy hover:text-white transition-colors cursor-pointer"
+                                    >
+                                      <Printer className="w-3 h-3" /> Print Docket
+                                    </button>
+                                  </div>
+                                  <span className="text-[10px] opacity-60">
+                                    Full Timestamp: {new Date(sale.created_at).toISOString()}
+                                  </span>
+                                </div>
+
+                                {/* Items list */}
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-black uppercase text-brand-navy/60 block">ITEMS:</span>
+                                  {sale.items.map((it, idx) => (
+                                    <div key={idx} className="flex justify-between text-xs py-0.5 border-b border-dashed border-gray-200">
+                                      <span>
+                                        <strong>{it.quantity}x</strong> {it.name} <span className="text-gray-500">(@ KES {it.price})</span>
+                                      </span>
+                                      <span className="font-bold">KES {it.total.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Payments breakdown */}
+                                <div className="space-y-1 pt-2 border-t border-brand-navy/20">
+                                  <span className="text-[10px] font-black uppercase text-brand-navy/60 block">PAYMENTS & REFERENCES:</span>
+                                  {sale.payments.map((p, idx) => (
+                                    <div key={idx} className="text-xs flex justify-between items-center bg-gray-50 p-1.5 border border-gray-200">
+                                      <div>
+                                        <span className="font-black uppercase">{p.method}</span>
+                                        {p.mpesa_ref && (
+                                          <span className="ml-2 text-green-700 font-bold">M-PESA REF: {p.mpesa_ref}</span>
+                                        )}
+                                        {p.payer_name && (
+                                          <span className="ml-2 text-gray-600">({p.payer_name})</span>
+                                        )}
+                                        {p.payer_phone && (
+                                          <span className="ml-2 text-gray-500">{p.payer_phone}</span>
+                                        )}
+                                      </div>
+                                      <span className="font-black">KES {p.amount.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {sale.notes && (
+                                  <div className="text-[11px] bg-yellow-50 p-2 border border-yellow-200 text-yellow-900">
+                                    <strong>Notes:</strong> {sale.notes}
+                                  </div>
+                                )}
+
+                                {sale.payment_status === "voided" && sale.void_reason && (
+                                  <div className="text-[11px] bg-red-50 p-2 border border-red-200 text-red-900">
+                                    <strong>Void Reason:</strong> {sale.void_reason}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

@@ -624,13 +624,13 @@ export default function VendorTabsPage() {
         </div>
       </div>
 
-      <div className="mb-6 relative">
+      <div className="mb-3 md:mb-6 relative">
         <input 
           type="text" 
           placeholder="SEARCH TABS BY CUSTOMER NAME OR PHONE..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full md:max-w-md p-4 bg-white border-4 border-brand-navy font-bold uppercase text-sm shadow-(--shadow-brut-md) focus:outline-none focus:ring-4 focus:ring-brand-accent"
+          className="w-full md:max-w-md p-3 md:p-4 bg-white border-2 md:border-4 border-brand-navy font-bold uppercase text-xs md:text-sm shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-md) focus:outline-none focus:ring-4 focus:ring-brand-accent"
         />
       </div>
 
@@ -647,20 +647,20 @@ export default function VendorTabsPage() {
         if (openTabsWithBalance.length === 0) return null;
 
         return (
-          <div className="mb-6 bg-brand-navy text-brand-off-white border-4 border-brand-navy p-4 md:p-6 shadow-(--shadow-brut-lg-accent) flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="bg-amber-400 text-brand-navy text-[11px] font-black px-2 py-0.5 uppercase tracking-wider">
-                  ⚠️ FESTIVAL AUDIT
+          <div className="mb-3 md:mb-6 bg-brand-navy text-brand-off-white border-2 md:border-4 border-brand-navy p-2.5 md:p-5 shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-lg-accent) flex flex-row items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 md:gap-2 mb-0.5 md:mb-1">
+                <span className="bg-amber-400 text-brand-navy text-[9px] md:text-[11px] font-black px-1.5 py-0.5 uppercase tracking-wider shrink-0">
+                  ⚠️ AUDIT
                 </span>
-                <span className="text-xs uppercase font-bold text-brand-accent tracking-wider">
-                  ACTION REQUIRED
+                <span className="text-[11px] md:text-xs uppercase font-bold text-brand-accent tracking-wider truncate">
+                  {openTabsWithBalance.length} Open Tabs · KES {totalBalanceOwed.toLocaleString()}
                 </span>
               </div>
-              <h2 className="font-display text-2xl uppercase tracking-wider text-brand-off-white">
-                FESTIVAL AUDIT: {openTabsWithBalance.length} Open Tabs totaling KES {totalBalanceOwed.toLocaleString()}. Settle tabs before festival end.
+              <h2 className="hidden md:block font-display text-xl uppercase tracking-wider text-brand-off-white">
+                FESTIVAL AUDIT: Settle tabs before festival end
               </h2>
-              <p className="text-xs opacity-75 uppercase">
+              <p className="hidden md:block text-xs opacity-75 uppercase">
                 Dispatch personalized itemized reminders &amp; remote M-Pesa self-pay links directly to all customers.
               </p>
             </div>
@@ -668,11 +668,11 @@ export default function VendorTabsPage() {
             <button
               onClick={openRemindAllModal}
               disabled={remindAllModal.submitting}
-              className="w-full md:w-auto px-5 py-3.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-lg uppercase tracking-wider hover:bg-white active:translate-y-1 active:shadow-none shadow-(--shadow-brut-xs) transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="px-3 py-1.5 md:px-5 md:py-3 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-xs md:text-base uppercase tracking-wider hover:bg-white active:scale-95 shadow-(--shadow-brut-xs) transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer whitespace-nowrap"
             >
               {remindAllModal.submitting
                 ? "📢 DISPATCHING..."
-                : `REMIND ALL (WhatsApp)`}
+                : `REMIND ALL (${openTabsWithBalance.length})`}
             </button>
           </div>
         );

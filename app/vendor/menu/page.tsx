@@ -1,8 +1,44 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HapticFeedback } from '@/components/ui/haptic-feedback';
-import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle } from 'lucide-react';
+import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle, Camera, Search, Upload } from 'lucide-react';
+
+function compressImageFile(file: File, maxDimension = 600, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 interface CatalogItem {
   id: number;
@@ -36,6 +72,45 @@ export default function VendorMenuPage() {
   const [newItemIsUncapped, setNewItemIsUncapped] = useState(false);
   const [newItemImage, setNewItemImage] = useState('');
   const [isSubmittingNew, setIsSubmittingNew] = useState(false);
+
+  // Search & Image upload state
+  const [searchQuery, setSearchQuery] = useState('');
+  const newFileInputRef = useRef<HTMLInputElement | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [compressingNewImage, setCompressingNewImage] = useState(false);
+  const [compressingEditImage, setCompressingEditImage] = useState(false);
+
+  const handleNewImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCompressingNewImage(true);
+      const dataUrl = await compressImageFile(file);
+      setNewItemImage(dataUrl);
+    } catch (err) {
+      console.error("Failed to compress image", err);
+      alert("Failed to process photo");
+    } finally {
+      setCompressingNewImage(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleEditImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setCompressingEditImage(true);
+      const dataUrl = await compressImageFile(file);
+      setEditForm(prev => ({ ...prev, image_url: dataUrl }));
+    } catch (err) {
+      console.error("Failed to compress image", err);
+      alert("Failed to process photo");
+    } finally {
+      setCompressingEditImage(false);
+      if (e.target) e.target.value = "";
+    }
+  };
 
   // Edit Item modal state
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
@@ -263,37 +338,65 @@ export default function VendorMenuPage() {
     }
   };
 
-  // Filter items by category
-  const filteredCatalog = selectedCategory === "ALL"
-    ? catalog
-    : catalog.filter(c => (c.category || "General").toLowerCase() === selectedCategory.toLowerCase());
+  // Filter items by category and search query
+  const filteredCatalog = catalog.filter((c) => {
+    const matchesCategory =
+      selectedCategory === "ALL" ||
+      (c.category || "General").toLowerCase() === selectedCategory.toLowerCase();
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      c.name.toLowerCase().includes(query) ||
+      (c.category && c.category.toLowerCase().includes(query));
+    return matchesCategory && matchesSearch;
+  });
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 pb-32 md:pb-8 bg-brand-off-white font-mono text-brand-navy">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+    <div className="flex-1 flex flex-col p-3 md:p-6 lg:p-8 pb-32 md:pb-8 bg-brand-off-white font-mono text-brand-navy">
+      {/* HEADER WITH COMPACT BUTTON ON MOBILE */}
+      <div className="flex flex-row justify-between items-center gap-2 mb-3 md:mb-6">
         <div>
-          <h1 className="font-display text-3xl uppercase tracking-wider">STALL CATALOG & INVENTORY</h1>
-          <p className="text-xs uppercase font-bold opacity-60">Manage products, prices, categories, and mid-event stock replenishment</p>
+          <h1 className="font-display text-xl md:text-3xl uppercase tracking-wider">STALL CATALOG</h1>
+          <p className="hidden md:block text-xs uppercase font-bold opacity-60">Manage products, prices, categories, and mid-event stock replenishment</p>
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-brand-accent text-brand-navy border-4 border-brand-navy px-5 py-3 font-display uppercase text-lg shadow-(--shadow-brut-sm) hover:bg-brand-navy hover:text-brand-accent active:translate-y-1 transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-2 md:px-5 md:py-3 bg-brand-accent text-brand-navy border-2 md:border-4 border-brand-navy font-display uppercase text-xs md:text-lg shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-brand-navy hover:text-brand-accent active:scale-95 transition-all cursor-pointer shrink-0"
         >
-          <Plus className="w-5 h-5" /> Add New Item / Stock
+          <Plus className="w-4 h-4 md:w-5 md:h-5" />
+          <span>Add Item</span>
         </button>
       </div>
 
-      {/* CATEGORY FILTER BUTTONS */}
-      <div className="mb-6 flex overflow-x-auto gap-2 custom-scrollbar pb-2 items-center">
-        <div className="font-bold uppercase text-xs flex items-center mr-2 opacity-70">Categories:</div>
-        
-        {/* ALL BUTTON */}
+      {/* SEARCH BAR */}
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-navy/50" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search products by name or category..."
+          className="w-full pl-9 pr-8 py-2 bg-white border-2 border-brand-navy text-xs font-mono font-bold focus:outline-none uppercase placeholder:normal-case shadow-(--shadow-brut-xs)"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-brand-navy/50 hover:text-brand-navy cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* CATEGORY FILTER PILLS (MOBILE FRIENDLY HORIZONTAL SCROLL) */}
+      <div className="mb-4 flex overflow-x-auto gap-1.5 custom-scrollbar pb-1.5 items-center">
         <button
           onClick={() => {
             HapticFeedback.trigger('confirmation');
             setSelectedCategory("ALL");
           }}
-          className={`px-3 py-1.5 border-2 border-brand-navy font-bold text-xs uppercase transition-colors cursor-pointer whitespace-nowrap ${
+          className={`px-2.5 py-1 border-2 border-brand-navy font-bold text-[11px] md:text-xs uppercase transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
             selectedCategory === "ALL"
               ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
               : "bg-white text-brand-navy hover:bg-stone-100"
@@ -302,7 +405,6 @@ export default function VendorMenuPage() {
           ALL ({catalog.length})
         </button>
 
-        {/* INDIVIDUAL CATEGORIES */}
         {categories.map(cat => {
           const count = catalog.filter(c => (c.category || "General").toLowerCase() === cat.toLowerCase()).length;
           const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
@@ -313,7 +415,7 @@ export default function VendorMenuPage() {
                 HapticFeedback.trigger('confirmation');
                 setSelectedCategory(isActive ? "ALL" : cat);
               }}
-              className={`px-3 py-1.5 border-2 border-brand-navy font-bold text-xs uppercase transition-colors cursor-pointer whitespace-nowrap ${
+              className={`px-2.5 py-1 border-2 border-brand-navy font-bold text-[11px] md:text-xs uppercase transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 isActive
                   ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                   : "bg-white text-brand-navy hover:bg-stone-100"
@@ -495,24 +597,56 @@ export default function VendorMenuPage() {
                 </div>
               </div>
 
-              {/* Image URL Input with instant preview */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Stock / Product Image URL (Optional)</label>
-                <div className="flex gap-2 items-center">
-                  <input 
-                    type="url" 
+              {/* Product Photo Upload / Camera Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase mb-1">Product Photo (Camera / Upload)</label>
+                <input
+                  ref={newFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleNewImageUpload}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => newFileInputRef.current?.click()}
+                    disabled={compressingNewImage}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy font-mono text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-4 h-4 text-brand-accent" />
+                    <span>{compressingNewImage ? "Processing..." : "Take Photo / Pick Image"}</span>
+                  </button>
+
+                  {newItemImage && (
+                    <button
+                      type="button"
+                      onClick={() => setNewItemImage("")}
+                      className="text-xs text-red-600 font-bold uppercase hover:underline py-1 px-2 cursor-pointer"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+
+                {newItemImage && (
+                  <div className="relative w-20 h-20 border-2 border-brand-navy bg-white overflow-hidden shadow-(--shadow-brut-xs) mt-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={newItemImage} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
+
+                <details className="text-[11px] font-mono text-brand-navy/70 pt-1">
+                  <summary className="cursor-pointer hover:underline uppercase font-bold">Or enter direct image URL</summary>
+                  <input
+                    type="url"
                     value={newItemImage}
                     onChange={e => setNewItemImage(e.target.value)}
                     placeholder="https://example.com/item.jpg"
-                    className="flex-1 p-2.5 border-2 border-brand-navy bg-white font-mono text-xs focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    className="w-full mt-1.5 p-2 border-2 border-brand-navy bg-white font-mono text-xs focus:outline-none focus:ring-4 focus:ring-brand-accent"
                   />
-                  {newItemImage && (
-                    <div className="w-10 h-10 border border-brand-navy shrink-0 overflow-hidden bg-white">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={newItemImage} alt="Preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
+                </details>
               </div>
 
               {/* Kitchen Uncapped vs Counted Initial Stock */}
@@ -621,24 +755,56 @@ export default function VendorMenuPage() {
                 </div>
               </div>
 
-              {/* Image URL Input */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Stock / Product Image URL (Optional)</label>
-                <div className="flex gap-2 items-center">
-                  <input 
-                    type="url" 
+              {/* Product Photo Upload / Camera Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase mb-1">Product Photo (Camera / Upload)</label>
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleEditImageUpload}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => editFileInputRef.current?.click()}
+                    disabled={compressingEditImage}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy font-mono text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-4 h-4 text-brand-accent" />
+                    <span>{compressingEditImage ? "Processing..." : "Take Photo / Pick Image"}</span>
+                  </button>
+
+                  {editForm.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(prev => ({ ...prev, image_url: "" }))}
+                      className="text-xs text-red-600 font-bold uppercase hover:underline py-1 px-2 cursor-pointer"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+
+                {editForm.image_url && (
+                  <div className="relative w-20 h-20 border-2 border-brand-navy bg-white overflow-hidden shadow-(--shadow-brut-xs) mt-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={editForm.image_url} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
+
+                <details className="text-[11px] font-mono text-brand-navy/70 pt-1">
+                  <summary className="cursor-pointer hover:underline uppercase font-bold">Or enter direct image URL</summary>
+                  <input
+                    type="url"
                     value={editForm.image_url}
                     onChange={e => setEditForm({ ...editForm, image_url: e.target.value })}
                     placeholder="https://example.com/item.jpg"
-                    className="flex-1 p-2.5 border-2 border-brand-navy bg-white font-mono text-xs focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    className="w-full mt-1.5 p-2 border-2 border-brand-navy bg-white font-mono text-xs focus:outline-none focus:ring-4 focus:ring-brand-accent"
                   />
-                  {editForm.image_url && (
-                    <div className="w-10 h-10 border border-brand-navy shrink-0 overflow-hidden bg-white">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={editForm.image_url} alt="Preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
+                </details>
               </div>
 
               {/* Stock settings */}

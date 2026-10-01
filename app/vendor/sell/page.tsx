@@ -11,6 +11,7 @@ export default function VendorSellPage() {
   const [loading, setLoading] = useState(true);
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState<string>("");
 
   // Recent Sales Drawer state
   const [showRecentSalesDrawer, setShowRecentSalesDrawer] = useState(false);
@@ -598,15 +599,20 @@ export default function VendorSellPage() {
   });
 
   const categories = Array.from(new Set(items.map((i: any) => i.category || "General").filter(Boolean))) as string[];
-  const filteredItems = selectedCategory === "ALL" 
-    ? items 
-    : items.filter((i: any) => (i.category || "General").toLowerCase() === selectedCategory.toLowerCase());
+  const filteredItems = items.filter((i: any) => {
+    const matchesCategory = selectedCategory === "ALL" || (i.category || "General").toLowerCase() === selectedCategory.toLowerCase();
+    const query = catalogSearchQuery.trim().toLowerCase();
+    const matchesSearch = !query ||
+      (i.name && i.name.toLowerCase().includes(query)) ||
+      (i.category && i.category.toLowerCase().includes(query));
+    return matchesCategory && matchesSearch;
+  });
 
   return (
     <div className="w-full min-h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
-      <div className="flex-1 p-4 md:p-6 pb-32 md:pb-6 md:overflow-y-auto">
-        <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-brand-navy/20">
+      <div className="flex-1 p-3 md:p-6 pb-32 md:pb-6 md:overflow-y-auto">
+        <div className="flex justify-between items-center mb-3 pb-2 border-b-2 border-brand-navy/20">
           <div>
             <h2 className="font-display text-lg uppercase tracking-wider text-brand-navy">Menu Catalog</h2>
             <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">Tap items to add to order</p>
@@ -624,6 +630,27 @@ export default function VendorSellPage() {
           </button>
         </div>
 
+        {/* Search catalog items */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-navy/50" />
+          <input
+            type="text"
+            value={catalogSearchQuery}
+            onChange={(e) => setCatalogSearchQuery(e.target.value)}
+            placeholder="Search menu (e.g. Tusker, Burger)..."
+            className="w-full pl-9 pr-8 py-2 bg-white border-2 border-brand-navy text-xs font-mono font-bold focus:outline-none uppercase placeholder:normal-case shadow-(--shadow-brut-xs)"
+          />
+          {catalogSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setCatalogSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-brand-navy/50 hover:text-brand-navy cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         {/* Category filter pills */}
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-3 mb-2 custom-scrollbar items-center">
@@ -632,7 +659,7 @@ export default function VendorSellPage() {
                 HapticFeedback.trigger("confirmation");
                 setSelectedCategory("ALL");
               }}
-              className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer ${
+              className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap ${
                 selectedCategory === "ALL"
                   ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                   : "bg-white text-brand-navy hover:bg-stone-100"
@@ -665,8 +692,12 @@ export default function VendorSellPage() {
 
         {loading ? (
           <div className="animate-pulse font-bold uppercase text-brand-navy">Loading Menu...</div>
+        ) : filteredItems.length === 0 ? (
+          <div className="p-8 text-center border-2 border-brand-navy bg-white font-mono text-xs uppercase font-bold text-brand-navy/60">
+            No matching items found. Try another search.
+          </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-32 md:pb-0">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-5 pb-32 md:pb-0">
             {filteredItems.map(item => {
               const hasCountedStock = item.stock_qty !== null && item.stock_qty !== undefined;
               const isOutOfStock = hasCountedStock && Number(item.stock_qty) <= 0;
@@ -675,23 +706,19 @@ export default function VendorSellPage() {
                   key={item.id}
                   disabled={isOutOfStock}
                   onClick={() => addToCart(item)}
-                  className={`flex flex-col items-start p-3 border-4 border-brand-navy text-left min-h-36 justify-between transition-all ${
+                  className={`flex flex-col items-start p-2.5 sm:p-3 border-2 sm:border-4 border-brand-navy text-left justify-between transition-all group overflow-hidden ${
                     isOutOfStock 
                       ? "bg-gray-100 opacity-60 cursor-not-allowed border-gray-400" 
-                      : "bg-white hover:bg-brand-accent/20 active:scale-[0.98] shadow-(--shadow-brut-sm)"
+                      : "bg-white hover:bg-brand-accent/20 active:scale-[0.98] shadow-(--shadow-brut-xs) sm:shadow-(--shadow-brut-sm)"
                   }`}
                 >
-                  <div className="w-full flex gap-2 items-start mb-2">
-                    {item.image_url && (
-                      <div className="w-12 h-12 border-2 border-brand-navy shrink-0 overflow-hidden bg-brand-navy/10">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                    <div className="flex-1 flex justify-between items-start gap-1">
-                      <span className="font-display text-base md:text-lg leading-tight uppercase line-clamp-2">{item.name}</span>
+                  {/* Prominent Product Image if present */}
+                  {item.image_url ? (
+                    <div className="w-full h-24 sm:h-28 border border-brand-navy overflow-hidden bg-brand-navy/5 mb-2 relative shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={item.image_url} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                       {hasCountedStock && (
-                        <span className={`text-[9px] font-mono px-1 py-0.5 border font-bold uppercase whitespace-nowrap shrink-0 ${
+                        <span className={`absolute top-1 right-1 text-[8px] sm:text-[9px] font-mono px-1 py-0.5 border font-black uppercase shadow-xs ${
                           Number(item.stock_qty) <= 0 
                             ? "bg-red-600 text-white border-red-700" 
                             : Number(item.stock_qty) <= (item.low_stock_threshold || 5)
@@ -702,8 +729,24 @@ export default function VendorSellPage() {
                         </span>
                       )}
                     </div>
+                  ) : null}
+
+                  <div className="w-full flex justify-between items-start gap-1 mb-2">
+                    <span className="font-display text-base md:text-lg leading-tight uppercase line-clamp-2">{item.name}</span>
+                    {!item.image_url && hasCountedStock && (
+                      <span className={`text-[8px] sm:text-[9px] font-mono px-1 py-0.5 border font-bold uppercase whitespace-nowrap shrink-0 ${
+                        Number(item.stock_qty) <= 0 
+                          ? "bg-red-600 text-white border-red-700" 
+                          : Number(item.stock_qty) <= (item.low_stock_threshold || 5)
+                            ? "bg-amber-400 text-brand-navy border-brand-navy"
+                            : "bg-brand-navy text-brand-off-white border-brand-navy"
+                      }`}>
+                        {Number(item.stock_qty) <= 0 ? "0 LEFT" : `${item.stock_qty} LEFT`}
+                      </span>
+                    )}
                   </div>
-                  <span className="font-mono font-bold text-base md:text-lg text-brand-accent bg-brand-navy px-2 py-1 shadow-(--shadow-brut-xs)">
+
+                  <span className="font-mono font-bold text-xs sm:text-base text-brand-accent bg-brand-navy px-2 py-0.5 sm:py-1 shadow-(--shadow-brut-xs)">
                     KES {Number(item.price).toLocaleString()}
                   </span>
                 </button>
@@ -773,9 +816,17 @@ export default function VendorSellPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[url('/noise.png')]">
           {cart.map(item => (
             <div key={item.id} className="flex flex-col border-b-2 border-dashed border-brand-navy/30 pb-2">
-              <div className="flex justify-between font-bold uppercase text-sm mb-2">
-                <span>{item.name}</span>
-                <span>KES {(item.price * item.quantity).toLocaleString()}</span>
+              <div className="flex items-center gap-2 mb-2">
+                {item.image_url && (
+                  <div className="w-9 h-9 border border-brand-navy shrink-0 overflow-hidden bg-white shadow-xs">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div className="flex justify-between items-start font-bold uppercase text-xs sm:text-sm flex-1">
+                  <span className="line-clamp-2">{item.name}</span>
+                  <span className="shrink-0 ml-1">KES {(item.price * item.quantity).toLocaleString()}</span>
+                </div>
               </div>
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs opacity-60">KES {Number(item.price).toLocaleString()} ea</span>
