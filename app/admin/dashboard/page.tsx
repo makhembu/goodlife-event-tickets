@@ -1849,6 +1849,13 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               <MessageSquare className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">WHATSAPP QR</span>
             </Link>
+            <Link
+              href="/admin/gallery"
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
+              title="Manage event gallery photos and posters"
+            >
+              <span className="truncate">📷 GALLERY</span>
+            </Link>
             {selectedEventId && selectedEventId > 0 && (() => {
               const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
               const isClosed = cur?.status === "closed" || cur?.is_active === false;
