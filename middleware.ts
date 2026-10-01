@@ -1,36 +1,77 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
 
-function isValidScannerSession(cookieValue: string | undefined): boolean {
-  if (!cookieValue || !cookieValue.includes(".")) return false;
-  const [payloadB64, sig] = cookieValue.split(".");
-  if (!payloadB64 || !sig) return false;
-  const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
-  const expectedSig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
-  if (expectedSig.length !== sig.length) return false;
-  if (!timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sig))) return false;
+function base64UrlToBytes(base64Url: string): Uint8Array | null {
   try {
-    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
-    return Boolean(parsed && parsed.role === "scanner");
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padLen = (4 - (base64.length % 4)) % 4;
+    const padded = base64 + "=".repeat(padLen);
+    const binaryStr = atob(padded);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function decodePayload(payloadB64Url: string): any {
+  const bytes = base64UrlToBytes(payloadB64Url);
+  if (!bytes) return null;
+  try {
+    const jsonStr = new TextDecoder().decode(bytes);
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
+async function verifyHmacSha256(data: string, signatureB64Url: string, secret: string): Promise<boolean> {
+  try {
+    const sigBytes = base64UrlToBytes(signatureB64Url);
+    if (!sigBytes) return false;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+
+    return await crypto.subtle.verify(
+      "HMAC",
+      key,
+      sigBytes as unknown as BufferSource,
+      encoder.encode(data) as unknown as BufferSource
+    );
   } catch {
     return false;
   }
 }
 
-function isValidVendorSession(cookieValue: string | undefined): boolean {
+async function isValidScannerSession(cookieValue: string | undefined): Promise<boolean> {
+  if (!cookieValue || !cookieValue.includes(".")) return false;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return false;
+  const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
+  const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
+  if (!isSigValid) return false;
+  const parsed = decodePayload(payloadB64);
+  return Boolean(parsed && parsed.role === "scanner");
+}
+
+async function isValidVendorSession(cookieValue: string | undefined): Promise<boolean> {
   if (!cookieValue || !cookieValue.includes(".")) return false;
   const [payloadB64, sig] = cookieValue.split(".");
   if (!payloadB64 || !sig) return false;
   const secret = process.env.VENDOR_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_vendor_secret_salt";
-  const expectedSig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
-  if (expectedSig.length !== sig.length) return false;
-  if (!timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sig))) return false;
-  try {
-    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
-    return Boolean(parsed && parsed.vendorId);
-  } catch {
-    return false;
-  }
+  const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
+  if (!isSigValid) return false;
+  const parsed = decodePayload(payloadB64);
+  return Boolean(parsed && parsed.vendorId);
 }
 
 export async function middleware(request: NextRequest) {
@@ -41,7 +82,7 @@ export async function middleware(request: NextRequest) {
 
   // Protect admin page routes
   if (pathname.startsWith("/admin")) {
-    if (pathname === "/admin/scanner" && isValidScannerSession(scannerSession)) {
+    if (pathname === "/admin/scanner" && (await isValidScannerSession(scannerSession))) {
       const url = request.nextUrl.clone();
       url.pathname = "/scanner";
       return NextResponse.redirect(url);
@@ -55,14 +96,15 @@ export async function middleware(request: NextRequest) {
 
   // Scanner page routes
   if (pathname.startsWith("/scanner") || pathname === "/scanner") {
+    const isScannerValid = await isValidScannerSession(scannerSession);
     if (pathname === "/scanner/login") {
-      if (isValidScannerSession(scannerSession) || session === "true") {
+      if (isScannerValid || session === "true") {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!isValidScannerSession(scannerSession) && session !== "true") {
+      if (!isScannerValid && session !== "true") {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner/login";
         return NextResponse.redirect(url);
@@ -77,7 +119,7 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/scanner/logout" ||
       pathname === "/api/scanner/session";
 
-    if (!isPublicScannerRoute && !isValidScannerSession(scannerSession) && session !== "true") {
+    if (!isPublicScannerRoute && !(await isValidScannerSession(scannerSession)) && session !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -99,7 +141,7 @@ export async function middleware(request: NextRequest) {
     
     // Gate scanners can call ticket scan verification API
     if (pathname.startsWith("/api/admin/scan")) {
-      if (session !== "true" && !isValidScannerSession(scannerSession)) {
+      if (session !== "true" && !(await isValidScannerSession(scannerSession))) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     } else if (!publicAdminRoutes.includes(pathname) && session !== "true") {
@@ -128,14 +170,15 @@ export async function middleware(request: NextRequest) {
 
   // Protect vendor page routes
   if (pathname.startsWith("/vendor/") || pathname === "/vendor") {
+    const isVendorValid = await isValidVendorSession(vendorSession);
     if (pathname === "/vendor/login") {
-      if (isValidVendorSession(vendorSession)) {
+      if (isVendorValid) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/sell";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!isValidVendorSession(vendorSession)) {
+      if (!isVendorValid) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/login";
         return NextResponse.redirect(url);
@@ -150,7 +193,7 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/vendor/logout" ||
       pathname === "/api/vendor/mpesa/status"; // read-only; TABPAY_ refs only (see route)
 
-    if (!isPublicRoute && !isValidVendorSession(vendorSession)) {
+    if (!isPublicRoute && !(await isValidVendorSession(vendorSession))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
