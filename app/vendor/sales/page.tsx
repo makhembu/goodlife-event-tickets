@@ -197,35 +197,36 @@ export default function VendorSalesPage() {
     <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6 pb-36 md:pb-12">
       
       {/* HEADER & CONTROLS */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-brand-off-white border-4 border-brand-navy p-4 shadow-(--shadow-brut-md)">
-        <div>
-          <div className="flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-brand-navy" />
-            <h1 className="font-display text-2xl uppercase tracking-wider">SALES & AUDIT LOG</h1>
+      <div className="flex items-center justify-between gap-2 bg-brand-off-white border-2 md:border-4 border-brand-navy p-2.5 md:p-4 shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-md)">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <Receipt className="w-4 h-4 md:w-6 md:h-6 text-brand-navy shrink-0" />
+            <h1 className="font-display text-lg md:text-2xl uppercase tracking-wider truncate">SALES & AUDIT LOG</h1>
           </div>
-          <p className="text-xs font-mono font-bold text-brand-navy/60 uppercase">
+          <p className="hidden md:block text-xs font-mono font-bold text-brand-navy/60 uppercase">
             Itemized point-of-sale transactions and real-time ledger
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <button
             onClick={fetchSales}
             disabled={loading}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-brand-navy bg-white hover:bg-brand-navy hover:text-white font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs)"
+            className="flex items-center justify-center gap-1 px-2.5 py-1.5 md:px-3 md:py-2 border-2 border-brand-navy bg-white hover:bg-brand-navy hover:text-white font-mono text-[11px] md:text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer"
             title="Refresh sales"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3 h-3 md:w-3.5 md:h-3.5 ${loading ? "animate-spin" : ""}`} />
             <span>SYNC</span>
           </button>
 
           <button
             onClick={handleExportCSV}
             disabled={filteredSales.length === 0}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 border-2 border-brand-navy bg-brand-accent text-brand-navy hover:bg-brand-navy hover:text-white font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-1 px-2.5 py-1.5 md:px-4 md:py-2 border-2 border-brand-navy bg-brand-accent text-brand-navy hover:bg-brand-navy hover:text-white font-mono text-[11px] md:text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Export CSV"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>EXPORT CSV ({filteredSales.length})</span>
+            <Download className="w-3 h-3 md:w-3.5 md:h-3.5" />
+            <span>EXPORT CSV <span className="hidden sm:inline">({filteredSales.length})</span></span>
           </button>
         </div>
       </div>
@@ -340,7 +341,7 @@ export default function VendorSalesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto touch-pan-x">
+          <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs min-w-[640px]">
               <thead className="bg-brand-navy text-brand-off-white uppercase border-b-3 border-brand-navy text-[11px] font-black tracking-wider">
                 <tr>

@@ -603,9 +603,9 @@ export default function VendorSellPage() {
     : items.filter((i: any) => (i.category || "General").toLowerCase() === selectedCategory.toLowerCase());
 
   return (
-    <div className="w-full h-full flex flex-col md:flex-row bg-brand-off-white">
+    <div className="w-full min-h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
-      <div className="flex-1 p-4 md:p-6 pb-36 md:pb-6 overflow-y-auto">
+      <div className="flex-1 p-4 md:p-6 pb-32 md:pb-6 md:overflow-y-auto">
         <div className="flex justify-between items-center mb-4 pb-2 border-b-2 border-brand-navy/20">
           <div>
             <h2 className="font-display text-lg uppercase tracking-wider text-brand-navy">Menu Catalog</h2>

@@ -133,9 +133,9 @@ export default function TicketCheckoutPage({
   const [stxReference, setStxReference] = useState<string | null>(null);
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
-  // Secret admin access (5x logo tap fallback when not logged in)
-  const [logoTapCount, setLogoTapCount] = useState(0);
+  // Secret admin access (5x logo tap fallback)
   const [showSecretMenu, setShowSecretMenu] = useState(false);
+  const logoTapCountRef = useRef(0);
   const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerRef = useRef<HTMLElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
@@ -181,15 +181,18 @@ export default function TicketCheckoutPage({
   }, []);
 
   function handleLogoTap() {
-    if (isAdmin) return;
-    const next = logoTapCount + 1;
-    setLogoTapCount(next);
+    HapticFeedback.trigger("confirmation");
+    logoTapCountRef.current += 1;
     if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
-    if (next >= 5) {
+
+    if (logoTapCountRef.current >= 5) {
+      HapticFeedback.trigger("success");
       setShowSecretMenu(true);
-      setLogoTapCount(0);
+      logoTapCountRef.current = 0;
     } else {
-      logoTapTimerRef.current = setTimeout(() => setLogoTapCount(0), 2000);
+      logoTapTimerRef.current = setTimeout(() => {
+        logoTapCountRef.current = 0;
+      }, 2500);
     }
   }
 
@@ -865,9 +868,9 @@ export default function TicketCheckoutPage({
           <div className="flex items-center gap-2 md:gap-4 shrink-0 min-w-0">
             <button
               type="button"
-              className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left"
+              className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer select-none text-left touch-manipulation active:scale-[0.98] transition-transform"
               onClick={handleLogoTap}
-              aria-label={isAdmin ? `${eventDetails.title} home` : "Open staff access after five taps"}
+              aria-label="Open staff access after five taps"
             >
               <div className="p-1 md:p-2 border-2 border-brand-navy bg-brand-accent shadow-(--shadow-brut-xs-strong) md:shadow-(--shadow-brut-sm-strong) flex items-center justify-center">
                 {eventDetails.logo_url ? (
@@ -1103,38 +1106,51 @@ export default function TicketCheckoutPage({
         {/* SECRET ADMIN MENU */}
         <AnimatePresence>
           {showSecretMenu && (
-            <motion.div
-              initial={{ opacity: 0, y: -16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="fixed top-4 right-4 z-50 border-4 border-brand-navy bg-brand-navy text-brand-off-white p-4 shadow-(--shadow-brut-xl-accent) flex flex-col gap-3 w-[90vw] max-w-[280px]"
-            >
-              <div className="flex items-center justify-between border-b-2 border-brand-off-white/20 pb-2 mb-1">
-                <span className="font-display text-lg uppercase tracking-widest text-brand-accent">Staff Only</span>
-                <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-brand-off-white text-xl leading-none">&times;</button>
-              </div>
-              <Link
-                href="/admin/dashboard"
+            <>
+              {/* Tap-outside dismiss backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 onClick={() => setShowSecretMenu(false)}
-                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-off-white/30 px-4 py-3 hover:bg-brand-off-white hover:text-brand-navy transition-colors flex items-center gap-2"
+                className="fixed inset-0 z-[95] bg-brand-navy/60 backdrop-blur-xs"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -16 }}
+                className="fixed top-4 right-4 z-[100] border-4 border-brand-navy bg-brand-navy text-brand-off-white p-4 shadow-(--shadow-brut-xl-accent) flex flex-col gap-3 w-[90vw] max-w-[280px]"
               >
-                <Settings className="w-4 h-4" /> Admin Console
-              </Link>
-              <Link
-                href="/admin/scanner"
-                onClick={() => setShowSecretMenu(false)}
-                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
-              >
-                <TicketIcon className="w-4 h-4" /> Gate Scanner
-              </Link>
-              <Link
-                href="/vendor/login"
-                onClick={() => setShowSecretMenu(false)}
-                className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
-              >
-                <Store className="w-4 h-4" /> Vendor POS Terminal
-              </Link>
-            </motion.div>
+                <div className="flex items-center justify-between border-b-2 border-brand-off-white/20 pb-2 mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
+                    <span className="font-display text-lg uppercase tracking-widest text-brand-accent">Staff Portal</span>
+                  </div>
+                  <button type="button" aria-label="Close staff menu" onClick={() => setShowSecretMenu(false)} className="text-brand-off-white/60 hover:text-brand-off-white text-xl leading-none cursor-pointer p-1">&times;</button>
+                </div>
+                <Link
+                  href="/admin/dashboard"
+                  onClick={() => setShowSecretMenu(false)}
+                  className="font-mono text-xs uppercase tracking-wider border-2 border-brand-off-white/30 px-4 py-3 hover:bg-brand-off-white hover:text-brand-navy transition-colors flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4 text-brand-accent" /> Admin Console
+                </Link>
+                <Link
+                  href="/scanner"
+                  onClick={() => setShowSecretMenu(false)}
+                  className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
+                >
+                  <TicketIcon className="w-4 h-4 text-brand-accent" /> Gate Scanner
+                </Link>
+                <Link
+                  href="/vendor/login"
+                  onClick={() => setShowSecretMenu(false)}
+                  className="font-mono text-xs uppercase tracking-wider border-2 border-brand-accent/60 bg-brand-accent/10 px-4 py-3 hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center gap-2"
+                >
+                  <Store className="w-4 h-4 text-brand-accent" /> Vendor POS Terminal
+                </Link>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 

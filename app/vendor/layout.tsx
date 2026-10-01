@@ -81,7 +81,7 @@ export default function VendorLayout({ children }: { children: React.ReactNode }
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full h-[calc(100dvh-4.25rem)] md:h-[100dvh] overflow-y-auto overscroll-y-contain">
+      <main className="flex-1 w-full min-w-0 pb-20 md:pb-0 md:h-[100dvh] md:overflow-y-auto">
         <header className="sticky top-0 z-40 bg-brand-off-white border-b-4 border-brand-navy p-3 md:p-4 flex justify-between items-center shadow-(--shadow-brut-xs)">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
