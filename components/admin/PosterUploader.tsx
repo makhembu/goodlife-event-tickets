@@ -4,8 +4,6 @@ import React, { useState, useRef } from "react";
 import Image from "next/image";
 import { Upload, Image as ImageIcon, Loader2, X, CheckCircle, ExternalLink } from "lucide-react";
 
-const IMGBB_API_KEY = "46a61350ab6bdc4e5ab0ef6e4e47e5be";
-
 interface PosterUploaderProps {
   value: string;
   onChange: (url: string) => void;
@@ -44,17 +42,17 @@ export default function PosterUploader({
       const formData = new FormData();
       formData.append("image", f);
 
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      const res = await fetch("/api/admin/upload-image", {
         method: "POST",
         body: formData,
       });
 
       const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.error?.message || "Failed to upload to ImgBB");
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Failed to upload image");
       }
 
-      const uploadedUrl = data.data.url as string;
+      const uploadedUrl = data.url as string;
       onChange(uploadedUrl);
     } catch (err: any) {
       console.error("Poster upload error:", err);

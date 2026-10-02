@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Image as ImageIcon, Plus, Upload, X, CheckCircle, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 
-const IMGBB_API_KEY = "46a61350ab6bdc4e5ab0ef6e4e47e5be"; // free public key — replace with your own from imgbb.com/api if needed
 const TAGS = ["POSTER", "PHOTO", "RECAP", "PROMO", "FLYER"];
 
 type GalleryImage = {
@@ -40,6 +39,7 @@ export default function AdminGalleryPage() {
   const [uploadError, setUploadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,16 +120,17 @@ export default function AdminGalleryPage() {
     if (f) handleFile(f);
   };
 
-  // upload to imgbb → get hosted URL
+  // upload image → get hosted URL
   const uploadToImgbb = async (f: File): Promise<string> => {
     const form = new FormData();
     form.append("image", f);
-    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-      method: "POST", body: form,
+    const res = await fetch("/api/admin/upload-image", {
+      method: "POST",
+      body: form,
     });
     const json = await res.json();
-    if (!json.success) throw new Error(json.error?.message || "imgbb upload failed");
-    return json.data.url as string;
+    if (!res.ok || !json.url) throw new Error(json.error || "Image upload failed");
+    return json.url as string;
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -184,11 +185,34 @@ export default function AdminGalleryPage() {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this image?")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/hub/gallery?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to delete image");
+      }
+      await loadGallery();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete image");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const openModal = () => {
     setFile(null); setPreview(null); setCaption(""); setImageUrl("");
     setTag("PHOTO"); setUploadError(""); setUrlMode(false); setUploading(false);
     setShowModal(true);
   };
+
+  const visibleImages = images.filter(
+    img => !img.image_url?.includes("photo-1540039155732") && !img.image_url?.includes("photo-1470229722913")
+  );
 
   return (
     <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-4 md:p-6 font-mono">
@@ -207,7 +231,7 @@ export default function AdminGalleryPage() {
               </h1>
             </div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-60">
-              {images.length} image{images.length !== 1 ? "s" : ""} · Upload posters &amp; recap photos
+              {visibleImages.length} image{visibleImages.length !== 1 ? "s" : ""} · Upload posters &amp; recap photos
             </p>
           </div>
           <button
@@ -225,25 +249,36 @@ export default function AdminGalleryPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {images
-              .filter(img => !img.image_url?.includes("photo-1540039155732") && !img.image_url?.includes("photo-1470229722913"))
-              .map(img => (
-                <div key={img.id} className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col">
-                  <div className="aspect-square bg-brand-navy/10 overflow-hidden">
-                    <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="p-3 flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-bold text-sm uppercase truncate">{img.caption || "No Caption"}</div>
-                      <div className="text-[10px] uppercase font-bold opacity-50 mt-0.5">
-                        {events.find(e => e.id === img.event_id)?.title || `Event ${img.event_id}`}
-                      </div>
-                    </div>
-                    <span className="bg-brand-navy text-brand-off-white text-[9px] font-bold px-2 py-1 uppercase shrink-0">{img.tag}</span>
-                  </div>
+            {visibleImages.map(img => (
+              <div key={img.id} className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col group relative">
+                <div className="aspect-square bg-brand-navy/10 overflow-hidden relative">
+                  <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(img.id)}
+                    disabled={deletingId === img.id}
+                    className="absolute top-2 right-2 bg-red-600 text-white p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+                    title="Delete image"
+                  >
+                    {deletingId === img.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
-              ))}
-            {images.length === 0 && (
+                <div className="p-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm uppercase truncate">{img.caption || "No Caption"}</div>
+                    <div className="text-[10px] uppercase font-bold opacity-50 mt-0.5">
+                      {events.find(e => e.id === img.event_id)?.title || `Event ${img.event_id}`}
+                    </div>
+                  </div>
+                  <span className="bg-brand-navy text-brand-off-white text-[9px] font-bold px-2 py-1 uppercase shrink-0">{img.tag}</span>
+                </div>
+              </div>
+            ))}
+            {visibleImages.length === 0 && (
               <div className="col-span-full py-16 text-center border-4 border-dashed border-brand-navy font-bold uppercase text-lg opacity-50">
                 No images yet — click Add Image to upload the first one.
               </div>

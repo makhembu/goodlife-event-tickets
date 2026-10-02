@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { fetchRadioSets, neonQuery } from '@/lib/supabase-db';
 import { requireAdmin } from "@/lib/admin-auth";
 
@@ -50,3 +50,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const authError = await requireAdmin();
+  if (authError) return authError;
+
+  try {
+    let id: number | null = null;
+    const { searchParams } = new URL(request.url);
+    const idParam = searchParams.get('id');
+    if (idParam) {
+      id = parseInt(idParam, 10);
+    } else {
+      const body = await request.json().catch(() => null);
+      if (body && body.id) {
+        id = parseInt(String(body.id), 10);
+      }
+    }
+
+    if (!id || isNaN(id)) {
+      return NextResponse.json({ error: 'Valid ID is required' }, { status: 400 });
+    }
+
+    await neonQuery('DELETE FROM radio_sets WHERE id = $1', [id]);
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error('Error deleting radio set:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+

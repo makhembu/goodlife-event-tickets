@@ -12,8 +12,8 @@ export function resolveEventFlyer(event?: {
   if (!event) return "/flyer.png";
 
   const custom = event.flyer_url?.trim();
-  // If the event has a specific external image (http) or custom path other than default /flyer.png
-  if (custom && custom !== "/flyer.png" && custom !== "") {
+  // If an event explicitly configured a flyer URL (including '/flyer.png'), use it directly
+  if (custom && custom !== "") {
     return custom;
   }
 

@@ -496,6 +496,14 @@ export function getEventAvailability(
   return { sellable: true, reason: null, nextOccurrence };
 }
 
+/**
+ * Convenience helper: whether an event can sell tickets right now.
+ * Wraps getEventAvailability(event, now).sellable.
+ */
+export function isEventSellable(event: SchedulableEvent, now: Date = new Date()): boolean {
+  return getEventAvailability(event, now).sellable;
+}
+
 const DEFAULT_MESSAGES: Record<UnavailabilityReason, string> = {
   not_live: "Ticket sales are not open for this event.",
   not_open_yet: "Ticket sales have not opened yet for this event.",

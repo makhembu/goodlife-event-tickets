@@ -14,12 +14,18 @@ interface ClosedEventClientPageProps {
   eventDetails: EventDetails;
   availableEvents?: Event[];
   liveMiniEvents?: Event[];
+  galleryPhotoCount?: number;
+  radioSetName?: string;
+  radioSetDuration?: string;
 }
 
 export default function ClosedEventClientPage({ 
   eventDetails, 
   availableEvents = [], 
-  liveMiniEvents = [] 
+  liveMiniEvents = [],
+  galleryPhotoCount,
+  radioSetName,
+  radioSetDuration,
 }: ClosedEventClientPageProps) {
   const [waNumber, setWaNumber] = useState("");
   const [subscribed, setSubscribed] = useState(false);
@@ -306,7 +312,9 @@ export default function ClosedEventClientPage({
             <div className="p-4 md:p-6 border-t-4 border-brand-navy bg-brand-accent group-hover:bg-brand-navy group-hover:text-brand-off-white transition-colors flex justify-between items-center">
               <div>
                 <h4 className="font-display text-xl uppercase tracking-wider">LATEST PHOTO DROP</h4>
-                <p className="font-mono text-xs mt-1 opacity-80">BROWSE ALL 140+ HIGH-RES PHOTOS</p>
+                <p className="font-mono text-xs mt-1 opacity-80">
+                  {galleryPhotoCount ? `BROWSE ALL ${galleryPhotoCount} HIGH-RES PHOTOS` : "BROWSE EVENT GALLERY"}
+                </p>
               </div>
               <ArrowRight className="w-6 h-6" />
             </div>
@@ -316,11 +324,13 @@ export default function ClosedEventClientPage({
             <div className="aspect-video w-full bg-brand-navy relative flex flex-col items-center justify-center p-6 text-center text-brand-off-white">
               <Radio className="w-12 h-12 text-brand-accent mb-4" />
               <div className="font-mono text-[10px] tracking-widest text-brand-accent uppercase">Now Playing</div>
-              <div className="font-display text-2xl uppercase mt-1">DJ SLICK LIVE AT SUNSET</div>
+              <div className="font-display text-2xl uppercase mt-1">
+                {radioSetName || "LIVE FESTIVAL DJ SET"}
+              </div>
             </div>
             <div className="p-4 md:p-6 border-t-4 border-brand-navy bg-brand-off-white flex justify-between items-center">
               <div className="flex items-center gap-2 font-bold text-sm uppercase text-brand-navy">
-                <Play className="w-5 h-5 fill-current" /> PLAY SET (1h 48m)
+                <Play className="w-5 h-5 fill-current" /> {radioSetDuration ? `PLAY SET (${radioSetDuration})` : "TAP TO LISTEN"}
               </div>
               <ArrowRight className="w-6 h-6" />
             </div>

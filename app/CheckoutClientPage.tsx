@@ -32,11 +32,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { fetchEventDetails, EventDetails, fetchTicketTiers, TicketTier, Event } from "@/lib/supabase-db";
 import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 import { useEatToday } from "@/hooks/use-eat-today";
-import { isHiddenFromSite } from "@/lib/event-availability";
+import { isHiddenFromSite, isEventSellable, canonicalStatus } from "@/lib/event-availability";
 import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
 import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 import StoryDeckHero from "@/components/StoryDeckHero";
@@ -59,6 +60,8 @@ export default function TicketCheckoutPage({
   liveMiniEvents = [],
   initialTierParam
 }: CheckoutClientPageProps) {
+  const router = useRouter();
+
   // Available Events list
   const [eventsList, setEventsList] = useState<Event[]>(availableEvents);
 
@@ -74,6 +77,21 @@ export default function TicketCheckoutPage({
     regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification.",
     maps_url: "https://www.google.com/maps/search/?api=1&query=MARARA+CAMP,+THIKA"
   });
+
+  const otherEvents = useMemo(
+    () => eventsList.filter(e => e.id !== eventDetails.id),
+    [eventsList, eventDetails.id]
+  );
+
+  const otherEventLabel = useMemo(() => {
+    if (otherEvents.length === 1) {
+      const other = otherEvents[0];
+      if (isEventSellable(other)) return "ALSO LIVE:";
+      if (canonicalStatus(other.status) === "scheduled") return "UPCOMING:";
+      return "RECAP:";
+    }
+    return "MORE EDITIONS:";
+  }, [otherEvents]);
 
   const directionsUrl = useMemo(() => {
     if (eventDetails.maps_url && eventDetails.maps_url.trim()) return eventDetails.maps_url.trim();
@@ -340,60 +358,10 @@ export default function TicketCheckoutPage({
   }, [myTickets, ticketDetailsMap]);
 
   // Handle Event Switching
-  const handleSwitchEvent = async (targetEvent: Event) => {
+  const handleSwitchEvent = (targetEvent: Event) => {
     if (targetEvent.id === eventDetails.id) return;
-    setLoading(true);
     setIsSwitching(true);
-    setStatusMessage("");
-    try {
-      const tiers = await fetchTicketTiers(targetEvent.id);
-      setEventDetails({
-        id: targetEvent.id,
-        title: targetEvent.title,
-        subtitle: targetEvent.subtitle,
-        tag: targetEvent.tag,
-        venue: targetEvent.venue,
-        till_number: targetEvent.till_number,
-        flyer_url: resolveEventFlyer(targetEvent),
-        video_url: resolveEventVideo(targetEvent),
-        regulations: targetEvent.regulations || "",
-        ticker_text: targetEvent.ticker_text || "",
-        logo_url: targetEvent.logo_url,
-        event_date: targetEvent.event_date,
-        status: targetEvent.status,
-        category: targetEvent.category,
-        sales_open_date: targetEvent.sales_open_date,
-        sales_close_date: targetEvent.sales_close_date,
-        next_event_title: targetEvent.next_event_title,
-        recap_video_url: targetEvent.recap_video_url,
-        max_tent_inventory: targetEvent.max_tent_inventory,
-        max_shared_beds: targetEvent.max_shared_beds,
-        recurrence_pattern: targetEvent.recurrence_pattern,
-        recurrence_day: targetEvent.recurrence_day,
-        recurrence_time: targetEvent.recurrence_time,
-        custom_schedule_text: targetEvent.custom_schedule_text,
-        maps_url: targetEvent.maps_url
-      });
-      setTicketTiers(tiers);
-      
-      const hasCamping = tiers.some(t => t.tier_category === 'camping' || t.is_camping_bundle || t.camping_type === 'shared_bed' || t.camping_type === 'private');
-      if (!hasCamping) {
-        setActivePackageTab("entry");
-      }
-      if (tiers.length > 0) {
-        setSelectedTier(tiers[0].id);
-      }
-      if (typeof window !== "undefined") {
-        window.history.pushState({}, "", `/?event=${targetEvent.id}`);
-        // Update the tab title so it reflects the new event without a hard reload.
-        document.title = `${targetEvent.title}${targetEvent.venue ? " – " + targetEvent.venue : ""}`;
-      }
-    } catch (e) {
-      console.error("Failed to switch event:", e);
-    } finally {
-      setLoading(false);
-      setIsSwitching(false);
-    }
+    router.push(`/?event=${targetEvent.id}`);
   };
 
   const isVideoFlyer = eventDetails.flyer_url ? /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.flyer_url) || eventDetails.flyer_url.includes("video") : false;
@@ -950,6 +918,7 @@ export default function TicketCheckoutPage({
                     >
                       {eventsList.map(evt => {
                         const isCurrent = evt.id === eventDetails.id;
+                        const status = canonicalStatus(evt.status);
                         return (
                           <button
                             key={evt.id}
@@ -972,6 +941,25 @@ export default function TicketCheckoutPage({
                             {evt.category === 'mini' && (
                               <span className="shrink-0 text-[9px] font-mono font-black uppercase px-1 py-0.5 border border-current">
                                 Mini
+                              </span>
+                            )}
+                            {status === 'live' ? (
+                              <span className={`shrink-0 text-[9px] font-mono font-bold px-1 py-0.5 border ${
+                                isCurrent ? "bg-brand-navy text-green-400 border-brand-navy" : "bg-green-500/20 text-green-400 border-green-500/40"
+                              }`}>
+                                LIVE
+                              </span>
+                            ) : status === "scheduled" ? (
+                              <span className={`shrink-0 text-[9px] font-mono font-bold px-1 py-0.5 border ${
+                                isCurrent ? "bg-brand-navy text-amber-300 border-brand-navy" : "bg-amber-400/20 text-amber-200 border-amber-400/40"
+                              }`}>
+                                SOON
+                              </span>
+                            ) : (
+                              <span className={`shrink-0 text-[9px] font-mono px-1 py-0.5 border ${
+                                isCurrent ? "bg-brand-navy/80 text-brand-off-white border-brand-navy" : "opacity-70 border-white/20"
+                              }`}>
+                                CLOSED
                               </span>
                             )}
                             {isCurrent && <Check className="w-4 h-4 ml-auto shrink-0" />}
@@ -1052,9 +1040,9 @@ export default function TicketCheckoutPage({
           <>
             <div
               onClick={() => {
-                const others = eventsList.filter(e => e.id !== eventDetails.id);
-                if (others.length === 1) {
-                  handleSwitchEvent(others[0]);
+                if (otherEvents.length === 1) {
+                  setEditionsOpen(false);
+                  handleSwitchEvent(otherEvents[0]);
                 } else {
                   setEditionsOpen(o => !o);
                 }
@@ -1063,15 +1051,15 @@ export default function TicketCheckoutPage({
             >
               <span className="font-mono text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 truncate">
                 <span>✦</span>
-                <span>ALSO LIVE:</span>
+                <span>{otherEventLabel}</span>
                 <strong className="underline underline-offset-2">
-                  {eventsList.length === 2
-                    ? (eventsList.find(e => e.id !== eventDetails.id)?.title || "MORE EDITIONS")
-                    : `${eventsList.length - 1} OTHER EDITIONS`}
+                  {otherEvents.length === 1
+                    ? (otherEvents[0]?.title || "MORE EDITIONS")
+                    : `${otherEvents.length} OTHER EDITIONS`}
                 </strong>
               </span>
               <span className="font-mono text-[9px] font-black uppercase tracking-wider bg-brand-navy text-brand-accent px-1.5 py-0.5 shrink-0 ml-2">
-                {eventsList.length === 2 ? "SWITCH →" : (editionsOpen ? "CLOSE ▲" : "VIEW ▼")}
+                {otherEvents.length === 1 ? "SWITCH →" : (editionsOpen ? "CLOSE ▲" : "VIEW ▼")}
               </span>
             </div>
 
@@ -1090,6 +1078,7 @@ export default function TicketCheckoutPage({
                   <div className="flex flex-col gap-1">
                     {eventsList.map(evt => {
                       const isCurrent = evt.id === eventDetails.id;
+                      const status = canonicalStatus(evt.status);
                       return (
                         <button
                           key={evt.id}
@@ -1104,7 +1093,22 @@ export default function TicketCheckoutPage({
                               : "bg-brand-navy text-brand-off-white hover:bg-brand-off-white/10"
                           }`}
                         >
-                          <span className="truncate">{evt.title}</span>
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="truncate">{evt.title}</span>
+                            {status === 'live' ? (
+                              <span className="shrink-0 text-[8px] font-mono font-bold px-1 py-0.2 border bg-green-500/20 text-green-400 border-green-500/40">
+                                LIVE
+                              </span>
+                            ) : status === "scheduled" ? (
+                              <span className="shrink-0 text-[8px] font-mono font-bold px-1 py-0.2 border bg-amber-400/20 text-amber-200 border-amber-400/40">
+                                SOON
+                              </span>
+                            ) : (
+                              <span className="shrink-0 text-[8px] font-mono px-1 py-0.2 border opacity-70 border-white/20">
+                                CLOSED
+                              </span>
+                            )}
+                          </div>
                           {isCurrent ? <span>CURRENT ✓</span> : <span>SWITCH →</span>}
                         </button>
                       );
