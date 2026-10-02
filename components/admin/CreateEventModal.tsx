@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Sparkles, Calendar, Layers, Tent, MapPin, Tag } from "lucide-react";
 import { Event } from "@/lib/supabase-db-types";
+import PosterUploader from "@/components/admin/PosterUploader";
 
 /** Must stay in sync with the patterns lib/event-availability.ts schedules. */
 type RecurrencePattern = "none" | "daily" | "weekly" | "biweekly";
@@ -517,21 +518,17 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
             </div>
           )}
 
-          {/* Media: Flyer Poster, Hero Teaser Video & Recap Video URL */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                POSTER IMAGE PATH / URL
-              </label>
-              <input
-                type="text"
-                value={flyerUrl}
-                onChange={(e) => setFlyerUrl(e.target.value)}
-                placeholder="/flyer.png"
-                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
-              />
-              <span className="text-[10px] text-brand-navy/60">Static high-res poster artwork</span>
-            </div>
+          {/* Media: Flyer Poster */}
+          <div>
+            <PosterUploader
+              value={flyerUrl}
+              onChange={setFlyerUrl}
+              label="POSTER IMAGE / ARTWORK"
+            />
+          </div>
+
+          {/* Media: Hero Teaser Video & Recap Video URL */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
                 HERO TEASER VIDEO URL

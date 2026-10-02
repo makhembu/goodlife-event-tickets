@@ -53,3 +53,7 @@ SECURITY-AUDIT.md
 # production Neon password. Untrack with: git rm --cached -r backups/
 backups/
 
+# Superpowers brainstorming sessions
+.superpowers/
+
+

@@ -3,13 +3,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { Volume2, VolumeX, Maximize2, Sparkles, Film, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Volume2, VolumeX, Maximize2, Sparkles, Film, Image as ImageIcon, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export interface StoryDeckHeroProps {
   posterUrl: string;
   videoUrl?: string | null;
   eventTitle: string;
+  tag?: string;
+  subtitle?: string;
+  scheduleText?: string;
   onExpand?: (mode: "poster" | "video") => void;
   isExpanded?: boolean;
   className?: string;
@@ -21,6 +24,9 @@ export default function StoryDeckHero({
   posterUrl,
   videoUrl,
   eventTitle,
+  tag,
+  subtitle,
+  scheduleText,
   onExpand,
   isExpanded = false,
   className = "",
@@ -258,7 +264,37 @@ export default function StoryDeckHero({
         )}
       </div>
 
-      {/* D. FLOATING CONTROLS (BOTTOM DOCK) */}
+      {/* D. LOWER-THIRD BROADCAST SCRIM (Smart Adaptive HUD - Option A) */}
+      <div
+        className={`absolute bottom-0 inset-x-0 z-25 pointer-events-none transition-opacity duration-300 md:hidden ${
+          activeIndex === 1 ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <div className="w-full bg-gradient-to-t from-black/95 via-black/60 to-transparent pt-16 pb-12 px-3 flex flex-col justify-end text-white">
+          {tag && (
+            <span className="text-[10px] font-black tracking-widest text-brand-navy uppercase bg-brand-accent px-1.5 py-0.5 w-fit rounded-[2px] shadow-xs mb-1">
+              {tag}
+            </span>
+          )}
+          <h2 className="text-xl sm:text-2xl font-display uppercase tracking-wide text-white leading-tight drop-shadow-md">
+            {eventTitle}
+          </h2>
+          {subtitle && (
+            <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/90 mt-0.5 flex items-center gap-1.5 drop-shadow-sm">
+              <span className="w-2 h-2 border border-brand-navy bg-brand-accent shrink-0 animate-pulse" />
+              <span className="truncate">{subtitle}</span>
+            </p>
+          )}
+          {scheduleText && (
+            <div className="mt-1.5 inline-flex w-fit items-center gap-1 px-1.5 py-0.5 bg-black/60 border border-white/20 text-brand-accent text-[9px] font-mono font-bold uppercase tracking-wider rounded-[2px] backdrop-blur-xs">
+              <Clock className="w-2.5 h-2.5 text-brand-accent shrink-0" />
+              <span>{scheduleText}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* E. FLOATING CONTROLS (BOTTOM DOCK) */}
       <div className="absolute bottom-2 inset-x-2 sm:bottom-2.5 sm:inset-x-2.5 z-30 flex items-center justify-between pointer-events-none gap-2">
         {/* Left: Media Switcher Pill (Poster / Teaser) */}
         {hasVideo ? (

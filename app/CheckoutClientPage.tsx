@@ -1293,6 +1293,14 @@ export default function TicketCheckoutPage({
                   posterUrl={eventDetails.flyer_url}
                   videoUrl={activeHeroVideo}
                   eventTitle={eventDetails.title}
+                  tag={eventDetails.tag}
+                  subtitle={eventDetails.subtitle}
+                  scheduleText={
+                    eventDetails.custom_schedule_text ||
+                    (eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none'
+                      ? `EVERY ${eventDetails.recurrence_day?.toUpperCase()} | ${eventDetails.recurrence_time}`
+                      : undefined)
+                  }
                   isExpanded={isFlyerExpanded}
                   className="mt-0 md:my-3"
                   onExpand={(mode) => {
@@ -1300,92 +1308,6 @@ export default function TicketCheckoutPage({
                     setIsFlyerExpanded(true);
                   }}
                 />
-                {/*
-                  IDENTITY BAR - the title card used to sit ON TOP of the poster
-                  as an absolutely positioned overlay, and the marquee ticker was
-                  pinned across the bottom 24px of the artwork, so a 420px-tall
-                  poster was covered top and bottom. A cream gradient was also
-                  veiling the top third. The poster is the reason anyone is on
-                  this page, so it now runs edge to edge with nothing on it, and
-                  these facts sit under it on desktop where they get their own
-                  space instead of stealing the image's.
-
-                  The LIVE EVENT / MINI EVENT badge is deliberately NOT counted
-                  here: it is positioned against this card's corner, outside the
-                  poster box, so it never covered the artwork.
-
-                  The title is kept (not dropped) because it is the h1, it comes
-                  from the database rather than the artwork, and the poster text
-                  is not selectable or translatable. It is simply no longer
-                  fighting the image for the same pixels.
-
-                  MOBILE KEEPS THE OLD OVERLAY, and that is deliberate. Stacking
-                  this bar above the poster on a phone cost 79px of height and
-                  pushed the first price from y=1039 to y=1118, because on mobile
-                  the poster is already capped at 52dvh and every pixel the
-                  title stops covering is a pixel of buy button pushed down.
-                  Desktop is where the poster was too small and too busy;
-                  mobile was accepted as-is, so max-md: puts this back on top of
-                  the artwork exactly as it was.
-
-                  WHY IT MOVED BELOW THE POSTER (desktop), when it had only just
-                  been moved above it. Sitting above, the bar cost 128px of the
-                  column before the artwork even started - nav 115 + EDITIONS 67
-                  + main 24 + card padding 24 + bar 100 + gap 8 - which is what
-                  made the whole poster need scrolling. The two options were:
-
-                    - move it into the right column, above the tier list
-                    - move it down, here, in the same column
-
-                  The right column was rejected because that section is
-                  `lg:sticky` and the booking panel inside it is itself an
-                  overflow-y-auto box capped at
-                  `calc(100dvh - headerBottom - 48px)`. Adding 100px above that
-                  box eats directly into the panel's own scroll area on
-                  exactly the short screens where the poster needs the help. It
-                  would have fixed the poster by making the checkout form worse.
-
-                  Dropping it below gets the same 128px back with none of that,
-                  and it puts the poster first - the hero is the artwork, and
-                  the title is metadata about it. The h1 stays first in DOM
-                  order in earlier revisions of this file's history but is now
-                  after the poster in source order, matching what is painted;
-                  CSS `order` was rejected because it desynchronises DOM order
-                  from visual order for screen readers.
-
-                  The mobile overlay survives the move without any extra work:
-                  the bar is max-md:absolute and its containing block is the
-                  parent `relative flex flex-col` div, not the poster. Absolute
-                  positioning lifts it out of flow wherever it sits in the DOM,
-                  and top-2/left-2 land it on the poster's top-left corner
-                  because the poster is that parent's first in-flow child. */}
-                <div className="relative z-10 flex flex-col gap-2 max-md:absolute max-md:top-2 max-md:left-2 max-md:w-fit max-md:max-w-[90%] max-md:bg-brand-off-white/95 max-md:backdrop-blur-sm max-md:border-2 max-md:border-brand-navy max-md:p-2 max-md:shadow-(--shadow-brut-sm) max-md:pointer-events-none md:hidden">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="text-[11px] md:text-xs font-black tracking-widest text-brand-navy uppercase block bg-brand-navy text-brand-off-white w-fit px-2 py-0.5 mb-1.5">
-                        {eventDetails.tag}
-                      </span>
-                      <h1 className="text-3xl sm:text-4xl md:text-5xl font-display uppercase text-brand-navy leading-none">
-                        {eventDetails.title}
-                      </h1>
-                      <p className="text-[11px] md:text-sm font-bold uppercase tracking-widest text-brand-navy mt-1.5 flex items-center gap-1.5 md:gap-2">
-                        <span className="w-2 h-2 md:w-3 md:h-3 border-2 border-brand-navy bg-brand-accent animate-pulse shrink-0" />
-                        <span className="truncate">{eventDetails.subtitle}</span>
-                      </p>
-                    </div>
-                  </div>
-                  {eventDetails.custom_schedule_text ? (
-                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
-                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
-                      <span>{eventDetails.custom_schedule_text}</span>
-                    </div>
-                  ) : eventDetails.recurrence_pattern && eventDetails.recurrence_pattern !== 'none' ? (
-                    <div className="inline-flex w-fit items-center gap-1.5 px-2 py-0.5 border border-brand-navy bg-brand-navy text-brand-accent text-[9px] md:text-[11px] font-mono font-bold uppercase tracking-wider">
-                      <Clock className="w-3 h-3 text-brand-accent shrink-0" />
-                      <span>EVERY {eventDetails.recurrence_day?.toUpperCase()} | {eventDetails.recurrence_time}</span>
-                    </div>
-                  ) : null}
-                </div>
 
                 {/* Ticker - hidden on desktop since the unified broadsheet ribbon owns the event facts */}
                 <div className="w-full h-6 bg-brand-accent border-2 border-brand-navy overflow-hidden hidden items-center">

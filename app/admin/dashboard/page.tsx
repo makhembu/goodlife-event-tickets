@@ -59,6 +59,7 @@ import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 import EventSelector from "@/components/EventSelector";
+import PosterUploader from "@/components/admin/PosterUploader";
 // `canonicalStatus` folds the legacy `'active'` spelling of "live". It lives in
 // lib/event-availability, a pure module, so it is safe in a client component -
 // and using it here means this badge, the lifecycle dropdown and the payment
@@ -3647,17 +3648,13 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
                 </div>
-                <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <label className="text-xs font-black uppercase">Poster Image Path / URL</label>
-                  <input
-                    type="text"
-                    required
+                <div className="col-span-2">
+                  <PosterUploader
                     value={eventFormState.flyer_url || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, flyer_url: e.target.value })}
-                    placeholder="/flyer.png"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    onChange={(url) => setEventFormState({ ...eventFormState, flyer_url: url })}
+                    label="Poster Image / Artwork"
+                    required
                   />
-                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70">Static high-res poster artwork</span>
                 </div>
                 <div className="space-y-1 col-span-2 sm:col-span-1">
                   <label className="text-xs font-black uppercase">Hero Teaser Video URL</label>
