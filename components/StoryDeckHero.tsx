@@ -259,45 +259,45 @@ export default function StoryDeckHero({
       </div>
 
       {/* D. FLOATING CONTROLS (BOTTOM DOCK) */}
-      <div className="absolute bottom-2.5 inset-x-2.5 z-30 flex items-center justify-between pointer-events-none gap-2">
+      <div className="absolute bottom-2 inset-x-2 sm:bottom-2.5 sm:inset-x-2.5 z-30 flex items-center justify-between pointer-events-none gap-2">
         {/* Left: Media Switcher Pill (Poster / Teaser) */}
         {hasVideo ? (
-          <div className="pointer-events-auto flex items-center bg-brand-navy/90 border border-brand-navy backdrop-blur-md p-0.5 shadow-(--shadow-brut-xs)">
+          <div className="pointer-events-auto flex items-center bg-black/60 border border-white/20 backdrop-blur-md p-0.5 shadow-sm rounded-sm">
             <button
               type="button"
               onClick={handleSelectPoster}
-              className={`px-2 py-1 text-[10px] font-mono font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+              className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer rounded-[2px] ${
                 activeIndex === 0
-                  ? "bg-brand-accent text-brand-navy shadow-xs"
-                  : "text-brand-off-white/70 hover:text-white"
+                  ? "bg-brand-accent text-brand-navy shadow-xs font-black"
+                  : "text-white/70 hover:text-white"
               }`}
               title="View Event Poster"
             >
-              <ImageIcon className="w-3 h-3" />
+              <ImageIcon className="w-2.5 h-2.5" />
               <span>POSTER</span>
             </button>
             <button
               type="button"
               onClick={handleSelectVideo}
-              className={`px-2 py-1 text-[10px] font-mono font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+              className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer rounded-[2px] ${
                 activeIndex === 1
-                  ? "bg-brand-accent text-brand-navy shadow-xs"
-                  : "text-brand-off-white/70 hover:text-white"
+                  ? "bg-brand-accent text-brand-navy shadow-xs font-black"
+                  : "text-white/70 hover:text-white"
               }`}
               title="Watch Video Teaser"
             >
-              <Film className="w-3 h-3" />
+              <Film className="w-2.5 h-2.5" />
               <span>TEASER</span>
             </button>
           </div>
         ) : (
-          <div className="pointer-events-auto bg-brand-navy/90 text-brand-off-white/80 border border-brand-navy px-2 py-1 text-[10px] font-mono font-black uppercase backdrop-blur-md shadow-(--shadow-brut-xs)">
+          <div className="pointer-events-auto bg-black/60 text-white/80 border border-white/20 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase backdrop-blur-md rounded-sm">
             POSTER
           </div>
         )}
 
         {/* Right: Audio and Fullscreen Icon Actions */}
-        <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
+        <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Sound Toggle (Only on Video slide) */}
           {hasVideo && activeIndex === 1 && (
             <button
@@ -305,16 +305,16 @@ export default function StoryDeckHero({
               onClick={handleToggleSound}
               aria-label={isMuted ? "Unmute audio" : "Mute audio"}
               title={isMuted ? "Unmute audio" : "Mute audio"}
-              className={`w-8 h-8 flex items-center justify-center border border-brand-navy backdrop-blur-md shadow-(--shadow-brut-xs) transition-all cursor-pointer ${
+              className={`w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center border backdrop-blur-md transition-all cursor-pointer rounded-sm ${
                 isMuted
-                  ? "bg-brand-navy/90 text-brand-off-white hover:bg-brand-accent hover:text-brand-navy"
-                  : "bg-brand-accent text-brand-navy ring-2 ring-brand-accent/50"
+                  ? "bg-black/60 text-white/90 border-white/20 hover:bg-black/80 hover:text-white"
+                  : "bg-brand-accent text-brand-navy border-brand-accent shadow-xs"
               }`}
             >
               {isMuted ? (
-                <VolumeX className="w-3.5 h-3.5" />
+                <VolumeX className="w-3 h-3" />
               ) : (
-                <Volume2 className="w-3.5 h-3.5" />
+                <Volume2 className="w-3 h-3" />
               )}
             </button>
           )}
@@ -325,9 +325,9 @@ export default function StoryDeckHero({
             onClick={handleTriggerExpand}
             aria-label="Open full screen view"
             title="Full View"
-            className="w-8 h-8 flex items-center justify-center bg-brand-navy/90 text-brand-off-white hover:bg-brand-accent hover:text-brand-navy border border-brand-navy backdrop-blur-md shadow-(--shadow-brut-xs) transition-all cursor-pointer"
+            className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center bg-black/60 text-white/90 hover:bg-black/80 hover:text-white border border-white/20 backdrop-blur-md transition-all cursor-pointer rounded-sm"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="w-3 h-3" />
           </button>
         </div>
       </div>
