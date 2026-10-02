@@ -1507,7 +1507,7 @@ export default function TicketCheckoutPage({
                             <div className="space-y-1">
                               {/* Urgency / Badge Text */}
                               {tier.badge_text && (
-                                <div className="text-[10px] font-mono font-black uppercase text-brand-navy bg-brand-navy/10 px-1.5 py-0.5 border border-brand-navy/20 w-fit">
+                                <div className="text-[10px] font-mono font-black uppercase bg-brand-navy text-brand-accent-vivid px-2 py-0.5 border border-brand-navy w-fit tracking-wider shadow-(--shadow-brut-2xs)">
                                   {tier.badge_text}
                                 </div>
                               )}
@@ -1540,7 +1540,14 @@ export default function TicketCheckoutPage({
                                     </>
                                   )}
                                 </div>
-                                <span className="text-[10px] px-1 py-0.2 font-bold uppercase border border-brand-navy bg-brand-navy text-brand-off-white whitespace-nowrap">
+                                <span className={`text-[10px] px-1.5 py-0.5 font-bold uppercase border border-brand-navy whitespace-nowrap inline-flex items-center gap-1 ${
+                                  tier.tag?.toUpperCase() === 'CAMPING'
+                                    ? "bg-[#25321E] text-brand-off-white"
+                                    : tier.tag?.toUpperCase() === 'GROUP'
+                                    ? "bg-brand-accent text-brand-navy font-black"
+                                    : "bg-brand-navy text-brand-off-white"
+                                }`}>
+                                  {tier.tag?.toUpperCase() === 'CAMPING' && <Tent className="w-3 h-3 text-brand-accent-vivid shrink-0" />}
                                   {tier.tag}
                                 </span>
                               </div>
