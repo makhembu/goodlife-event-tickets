@@ -1729,7 +1729,7 @@ export default function TicketCheckoutPage({
                     className={`w-full py-3 sm:py-3.5 md:py-4 border-4 border-brand-navy font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-2 cursor-pointer ${
                       loading 
                         ? "bg-brand-bg text-brand-navy/30 cursor-not-allowed shadow-none" 
-                        : "bg-brand-accent text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft) active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
+                        : "bg-brand-accent-vivid text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft) active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
                     }`}
                   >
                     {loading ? (
@@ -1835,36 +1835,55 @@ export default function TicketCheckoutPage({
                 </form>
 
                 {/* PAYMENT STATUS DISPLAY */}
-                {statusMessage && (
-                  <div ref={statusRef} role="status" aria-live="polite" className="mt-6 p-4 border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-sm-strong)">
-                    <span className="text-brand-accent font-display text-lg uppercase block mb-1">STATUS UPDATE</span>
-                    <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
+                {statusMessage && (() => {
+                  const msg = statusMessage.toLowerCase();
+                  const isSuccess = msg.includes("ticket") || msg.includes("confirmed") || msg.includes("sent") || msg.includes("you are in") || msg.includes("whatsapp") || msg.includes("pass issued");
+                  const isError = msg.includes("failed") || msg.includes("error") || msg.includes("declined") || msg.includes("cancelled") || msg.includes("insufficient");
+                  return (
+                    <div
+                      ref={statusRef}
+                      role="status"
+                      aria-live="polite"
+                      className={`mt-6 p-4 border-4 shadow-(--shadow-brut-sm-strong) ${
+                        isSuccess
+                          ? "bg-brand-success-bg border-brand-success"
+                          : isError
+                          ? "bg-brand-danger-bg border-brand-danger"
+                          : "bg-brand-off-white border-brand-navy"
+                      }`}
+                    >
+                      <span className={`font-display text-lg uppercase block mb-1 ${isSuccess ? "text-brand-success" : isError ? "text-brand-danger" : "text-brand-accent"}`}>
+                        {isSuccess ? "✓ PAYMENT CONFIRMED" : isError ? "✗ PAYMENT FAILED" : "STATUS UPDATE"}
+                      </span>
+                      <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
 
-                    {pollingTimedOut && stxReference && !generatedTicketId && (
-                      <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
-                        <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-accent" : "text-brand-navy-light"}`}>
-                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                          <p className="text-[10px] font-mono uppercase leading-relaxed">
-                            {statusMessage.toLowerCase().includes("failed")
-                              ? "Transaction was declined. Try again with sufficient M-Pesa balance."
-                              : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
-                          </p>
+                      {pollingTimedOut && stxReference && !generatedTicketId && (
+                        <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
+                          <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-danger" : "text-brand-navy-light"}`}>
+                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                            <p className="text-[10px] font-mono uppercase leading-relaxed">
+                              {statusMessage.toLowerCase().includes("failed")
+                                ? "Transaction was declined. Try again with sufficient M-Pesa balance."
+                                : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
+                            </p>
+                          </div>
+                          <button
+                            onClick={handleManualStatusCheck}
+                            disabled={loading}
+                            className="w-full py-2.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {loading ? (
+                              <>CHECKING...</>
+                            ) : (
+                              <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
+                            )}
+                          </button>
                         </div>
-                        <button
-                          onClick={handleManualStatusCheck}
-                          disabled={loading}
-                          className="w-full py-2.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          {loading ? (
-                            <>CHECKING...</>
-                          ) : (
-                            <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
+
 
                 {/* TICKET RETRIEVAL DOWNLOAD AREA */}
                 <AnimatePresence>
@@ -1874,7 +1893,7 @@ export default function TicketCheckoutPage({
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
-                      className="mt-6 p-4 md:p-6 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl-accent)"
+                      className="mt-6 p-4 md:p-6 border-4 border-brand-success bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl-accent)"
                     >
                       <button 
                         onClick={() => setIsVaultOpen(!isVaultOpen)}
