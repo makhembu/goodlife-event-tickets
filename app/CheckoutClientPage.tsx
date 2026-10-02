@@ -1498,10 +1498,10 @@ export default function TicketCheckoutPage({
                             role="radio"
                             aria-checked={isSelected}
                             onClick={() => setSelectedTier(tier.id)}
-                            className={`text-left p-2.5 md:p-3.5 border-4 transition-all duration-75 relative flex flex-col justify-between gap-1.5 cursor-pointer ${
+                            className={`text-left p-2.5 md:p-3.5 border-4 transition-all duration-100 relative flex flex-col justify-between gap-1.5 cursor-pointer select-none active:scale-[0.98] ${
                               isSelected 
-                                ? "border-brand-navy bg-brand-accent text-brand-navy shadow-(--shadow-brut-lg) translate-x-1 -translate-y-1 font-bold" 
-                                : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-bg shadow-(--shadow-brut-md) active:translate-x-1 active:-translate-y-1"
+                                ? "border-brand-navy bg-brand-accent text-brand-navy shadow-(--shadow-brut-lg) translate-x-1 -translate-y-1 font-bold active:translate-x-1.5 active:translate-y-0" 
+                                : "border-brand-navy bg-brand-off-white text-brand-navy hover:bg-brand-bg shadow-(--shadow-brut-md) hover:-translate-y-0.5 active:translate-x-1 active:translate-y-1 active:shadow-none"
                             }`}
                           >
                             <div className="space-y-1">
@@ -1578,27 +1578,31 @@ export default function TicketCheckoutPage({
                         <div id="quantity-label" className="bg-brand-navy text-brand-off-white inline-block px-2 py-0.5 font-bold text-[10px] md:text-xs uppercase tracking-widest">
                           03. HOW MANY PACKAGES?
                         </div>
-                        <div className="flex border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-xs) w-fit" role="group" aria-labelledby="quantity-label">
+                        <div className="flex border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-xs) w-fit select-none" role="group" aria-labelledby="quantity-label">
                           <button
                             type="button"
                             aria-label="Decrease quantity"
                             onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                            className="w-10 h-10 border-r-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center cursor-pointer"
+                            className="w-10 h-10 border-r-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy active:bg-brand-navy active:text-brand-off-white active:scale-95 transition-all flex items-center justify-center cursor-pointer"
                           >
                             -
                           </button>
-                          <span
-                            className="w-12 h-10 flex items-center justify-center font-display text-xl bg-brand-bg text-brand-navy"
+                          <motion.span
+                            key={quantity}
+                            initial={{ scale: 0.82, y: -2 }}
+                            animate={{ scale: 1, y: 0 }}
+                            transition={{ type: "spring", stiffness: 600, damping: 22 }}
+                            className="w-12 h-10 flex items-center justify-center font-display text-xl bg-brand-bg text-brand-navy select-none"
                             aria-live="polite"
                             aria-atomic="true"
                           >
                             {quantity}
-                          </span>
+                          </motion.span>
                           <button
                             type="button"
                             aria-label="Increase quantity"
                             onClick={() => setQuantity(Math.min(10, quantity + 1))}
-                            className="w-10 h-10 border-l-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy transition-colors flex items-center justify-center cursor-pointer"
+                            className="w-10 h-10 border-l-4 border-brand-navy font-display text-lg hover:bg-brand-accent hover:text-brand-navy active:bg-brand-navy active:text-brand-off-white active:scale-95 transition-all flex items-center justify-center cursor-pointer"
                           >
                             +
                           </button>
@@ -1835,54 +1839,61 @@ export default function TicketCheckoutPage({
                 </form>
 
                 {/* PAYMENT STATUS DISPLAY */}
-                {statusMessage && (() => {
-                  const msg = statusMessage.toLowerCase();
-                  const isSuccess = msg.includes("ticket") || msg.includes("confirmed") || msg.includes("sent") || msg.includes("you are in") || msg.includes("whatsapp") || msg.includes("pass issued");
-                  const isError = msg.includes("failed") || msg.includes("error") || msg.includes("declined") || msg.includes("cancelled") || msg.includes("insufficient");
-                  return (
-                    <div
-                      ref={statusRef}
-                      role="status"
-                      aria-live="polite"
-                      className={`mt-6 p-4 border-4 shadow-(--shadow-brut-sm-strong) ${
-                        isSuccess
-                          ? "bg-brand-success-bg border-brand-success"
-                          : isError
-                          ? "bg-brand-danger-bg border-brand-danger"
-                          : "bg-brand-off-white border-brand-navy"
-                      }`}
-                    >
-                      <span className={`font-display text-lg uppercase block mb-1 ${isSuccess ? "text-brand-success" : isError ? "text-brand-danger" : "text-brand-accent"}`}>
-                        {isSuccess ? "✓ PAYMENT CONFIRMED" : isError ? "✗ PAYMENT FAILED" : "STATUS UPDATE"}
-                      </span>
-                      <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
+                <AnimatePresence mode="wait">
+                  {statusMessage && (() => {
+                    const msg = statusMessage.toLowerCase();
+                    const isSuccess = msg.includes("ticket") || msg.includes("confirmed") || msg.includes("sent") || msg.includes("you are in") || msg.includes("whatsapp") || msg.includes("pass issued");
+                    const isError = msg.includes("failed") || msg.includes("error") || msg.includes("declined") || msg.includes("cancelled") || msg.includes("insufficient");
+                    return (
+                      <motion.div
+                        key={isSuccess ? "status-success" : isError ? "status-error" : "status-pending"}
+                        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                        ref={statusRef}
+                        role="status"
+                        aria-live="polite"
+                        className={`mt-6 p-4 border-4 shadow-(--shadow-brut-sm-strong) ${
+                          isSuccess
+                            ? "bg-brand-success-bg border-brand-success"
+                            : isError
+                            ? "bg-brand-danger-bg border-brand-danger"
+                            : "bg-brand-off-white border-brand-navy"
+                        }`}
+                      >
+                        <span className={`font-display text-lg uppercase block mb-1 ${isSuccess ? "text-brand-success" : isError ? "text-brand-danger" : "text-brand-accent"}`}>
+                          {isSuccess ? "✓ PAYMENT CONFIRMED" : isError ? "✗ PAYMENT FAILED" : "STATUS UPDATE"}
+                        </span>
+                        <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
 
-                      {pollingTimedOut && stxReference && !generatedTicketId && (
-                        <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
-                          <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-danger" : "text-brand-navy-light"}`}>
-                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                            <p className="text-[10px] font-mono uppercase leading-relaxed">
-                              {statusMessage.toLowerCase().includes("failed")
-                                ? "Transaction was declined. Try again with sufficient M-Pesa balance."
-                                : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
-                            </p>
+                        {pollingTimedOut && stxReference && !generatedTicketId && (
+                          <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
+                            <div className={`flex items-start gap-2 ${statusMessage.toLowerCase().includes("failed") ? "text-brand-danger" : "text-brand-navy-light"}`}>
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <p className="text-[10px] font-mono uppercase leading-relaxed">
+                                {statusMessage.toLowerCase().includes("failed")
+                                  ? "Transaction was declined. Try again with sufficient M-Pesa balance."
+                                  : "Still processing? If payment was deducted from your M-Pesa, click below to verify."}
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleManualStatusCheck}
+                              disabled={loading}
+                              className="w-full py-2.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              {loading ? (
+                                <>CHECKING...</>
+                              ) : (
+                                <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
+                              )}
+                            </button>
                           </div>
-                          <button
-                            onClick={handleManualStatusCheck}
-                            disabled={loading}
-                            className="w-full py-2.5 border-2 border-brand-navy bg-brand-navy text-brand-off-white font-bold text-xs font-mono uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                          >
-                            {loading ? (
-                              <>CHECKING...</>
-                            ) : (
-                              <><Activity className="w-4 h-4" /> CHECK PAYMENT STATUS</>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                        )}
+                      </motion.div>
+                    );
+                  })()}
+                </AnimatePresence>
 
 
                 {/* TICKET RETRIEVAL DOWNLOAD AREA */}
@@ -1904,17 +1915,22 @@ export default function TicketCheckoutPage({
                             YOU ARE IN!
                           </span>
                         </div>
-                        <div className="text-brand-accent">
-                          {isVaultOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                        </div>
+                        <motion.div 
+                          animate={{ rotate: isVaultOpen ? 180 : 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="text-brand-accent"
+                        >
+                          <ChevronDown className="w-5 h-5" />
+                        </motion.div>
                       </button>
                       
-                      <AnimatePresence>
+                      <AnimatePresence initial={false}>
                         {isVaultOpen && (
                           <motion.div 
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                             className="overflow-hidden"
                           >
                             <div className="space-y-4 pb-2">
