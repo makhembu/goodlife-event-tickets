@@ -205,6 +205,20 @@ export async function GET(
       [vendorId, eventId]
     );
 
+    // 8.5 Tab Transactions (Payments & Settlements)
+    const { rows: tabTxnRows } = await neonQuery(
+      `SELECT tt.id, tt.tab_id, tt.sale_id, tt.type, tt.amount, tt.method, tt.mpesa_ref, tt.operator_id, tt.created_at,
+              op.name as operator_name,
+              ct.customer_phone, ct.customer_name
+       FROM tab_transactions tt
+       JOIN customer_tabs ct ON ct.id = tt.tab_id
+       LEFT JOIN vendor_operators op ON op.id = tt.operator_id
+       WHERE ct.vendor_id = $1
+         AND ($2::int IS NULL OR ct.event_id = $2)
+       ORDER BY tt.created_at DESC`,
+      [vendorId, eventId]
+    );
+
     // 9. Ticket purchases are fetched LATER (see `fetchTicketsForCustomers`), once
     // the vendor's customer book is known. Querying every ticket in the event up
     // front would pull thousands of rows the panel cannot use — see the comment
@@ -311,7 +325,9 @@ export async function GET(
           transactions: [] as any[],
           orders: new Map<string, any>(),
           tabs: new Map<number, any>(),
-          tickets: [] as any[]
+          tickets: [] as any[],
+          payments: [] as any[],
+          total_paid: 0
         });
       }
 
@@ -337,6 +353,11 @@ export async function GET(
       const c = upsertCustomer(tab.customer_phone, tab.customer_name);
       const existing = c.tabs.get(Number(tab.id));
       const outstanding = isOutstandingTab(tab);
+      const tabPaid = (tabTxnRows || [])
+        .filter((tx: any) => Number(tx.tab_id) === Number(tab.id) && tx.type === "payment")
+        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      const tabTotalCharged = Number(tab.balance || 0) + tabPaid;
+
       const enriched = {
         id: Number(tab.id),
         customer_name: tab.customer_name,
@@ -352,7 +373,9 @@ export async function GET(
         // The amount actually collectable. `balance` alone is the wrong number
         // to act on: a settled tab retains its last balance value, so summing
         // raw balances is how an audit ends up billing someone who already paid.
-        amount_due: outstanding ? Number(tab.balance || 0) : 0
+        amount_due: outstanding ? Number(tab.balance || 0) : 0,
+        total_paid: tabPaid,
+        total_charged: tabTotalCharged
       };
       c.tabs.set(enriched.id, { ...(existing || {}), ...enriched });
       return c.tabs.get(enriched.id);
@@ -366,6 +389,27 @@ export async function GET(
       const unused = tab.status === "open" && Number(tab.balance || 0) <= 0;
       if (unused) continue;
       attachTab(tab);
+    }
+
+    // Process Tab Transactions (Payments & Settlements)
+    for (const tx of tabTxnRows || []) {
+      if (tx.type === "payment") {
+        const c = upsertCustomer(tx.customer_phone, tx.customer_name);
+        const paidAmt = Number(tx.amount || 0);
+        c.total_paid = (c.total_paid || 0) + paidAmt;
+        c.payments.push({
+          id: Number(tx.id),
+          tab_id: Number(tx.tab_id),
+          sale_id: tx.sale_id ? Number(tx.sale_id) : null,
+          type: tx.type,
+          amount: paidAmt,
+          method: tx.method || "cash",
+          mpesa_ref: tx.mpesa_ref || "",
+          operator_id: tx.operator_id ? Number(tx.operator_id) : null,
+          operator_name: tx.operator_name || "Stall Staff",
+          created_at: tx.created_at,
+        });
+      }
     }
 
     for (const pt of paymentTransactions) {
@@ -570,6 +614,10 @@ export async function GET(
             (max: number, t: any) => Math.max(max, Number(t.credit_limit || 0)),
             0
           ),
+
+          // --- Tab payments (debits & credits audit trail) ----------------
+          payments: c.payments || [],
+          total_paid: c.total_paid || 0,
 
           // --- Combined purchase history (issues 1 & 2) --------------------
           // One entry per POS order (tenders already grouped), plus the

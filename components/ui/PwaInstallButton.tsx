@@ -78,11 +78,12 @@ export default function PwaInstallButton({ appName, className = "" }: PwaInstall
       <button
         type="button"
         onClick={handleInstallClick}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-[11px] md:text-xs font-black uppercase tracking-wider shadow-(--shadow-brut-xs) hover:bg-brand-off-white hover:text-brand-navy transition-all cursor-pointer shrink-0 active:scale-95 ${className}`}
+        aria-label={`Install ${appName} on your home screen`}
+        className={`flex items-center justify-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-[11px] md:text-xs font-black uppercase tracking-wider shadow-(--shadow-brut-xs) hover:bg-brand-off-white hover:text-brand-navy transition-all cursor-pointer shrink-0 active:scale-95 ${className}`}
         title={`Install ${appName} on your home screen`}
       >
         <Download className="w-3.5 h-3.5" />
-        <span>Install {appName}</span>
+        <span className="hidden sm:inline">Install {appName}</span>
       </button>
 
       {/* iOS Safari Guided Add-to-Home-Screen Modal */}

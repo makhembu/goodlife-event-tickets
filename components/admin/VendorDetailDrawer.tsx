@@ -180,6 +180,14 @@ export default function VendorDetailDrawer({
       .then((resData) => {
         if (resData.success) {
           setData(resData);
+          setCustomerDocket((prev: any) => {
+            if (!prev) return null;
+            const updated = (resData.customers || []).find((c: any) =>
+              (prev.phone && c.phone === prev.phone) ||
+              (c.name && c.name === prev.name)
+            );
+            return updated || prev;
+          });
           if (resData.vendor) {
             const resolvedComm = resData.summary?.commissionRate ?? (resData.assignments?.[0]?.commission_rate !== undefined ? resData.assignments[0].commission_rate : 10);
             setVendorForm({
@@ -217,6 +225,14 @@ export default function VendorDetailDrawer({
       .then((resData) => {
         if (resData.success) {
           setData(resData);
+          setCustomerDocket((prev: any) => {
+            if (!prev) return null;
+            const updated = (resData.customers || []).find((c: any) =>
+              (prev.phone && c.phone === prev.phone) ||
+              (c.name && c.name === prev.name)
+            );
+            return updated || prev;
+          });
           if (resData.vendor) {
             const resolvedComm = resData.summary?.commissionRate ?? (resData.assignments?.[0]?.commission_rate !== undefined ? resData.assignments[0].commission_rate : 10);
             setVendorForm({
@@ -2314,235 +2330,373 @@ export default function VendorDetailDrawer({
             `cust.transactions[0]` to the thermal-receipt modal and therefore
             showed exactly one tender line from one order. The data for the full
             history was already in the response; it simply had no view. */}
-        {customerDocket && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-2xl p-5 shadow-(--shadow-brut-xl) my-8 max-h-[90vh] overflow-y-auto space-y-4">
-              <div className="flex justify-between items-start border-b-2 border-[var(--brand-navy)] pb-2 sticky top-0 bg-[var(--brand-off-white)] z-10">
-                <div>
-                  <span className="text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5">
-                    CUSTOMER PURCHASE HISTORY
-                  </span>
-                  <h3 className="text-lg font-black uppercase text-[var(--brand-navy)] mt-1">
-                    {customerDocket.name}
-                  </h3>
-                  {customerDocket.phoneRaw || customerDocket.phone ? (
-                    <p className="text-[11px] font-mono text-stone-600">
-                      📞 {customerDocket.phoneRaw || customerDocket.phone}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  onClick={() => setCustomerDocket(null)}
-                  className="p-1 text-stone-600 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer"
-                  aria-label="Close customer docket"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+        {customerDocket && (() => {
+          const fmtLedgerTime = (isoDate: string | null | undefined) => {
+            if (!isoDate) return "";
+            try {
+              const d = new Date(isoDate);
+              const day = d.toLocaleDateString("en-GB", { timeZone: "Africa/Nairobi", day: "2-digit", month: "2-digit" });
+              const time = d.toLocaleTimeString("en-GB", { timeZone: "Africa/Nairobi", hour: "2-digit", minute: "2-digit", hour12: false });
+              return `${day} ${time}`;
+            } catch {
+              return "";
+            }
+          };
 
-              {/* Combined totals */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { label: "Stall Spend", value: Number(customerDocket.totalSpent || 0), tone: "text-emerald-700" },
-                  { label: "Ticket Spend", value: Number(customerDocket.ticket_spend || 0), tone: "text-blue-700" },
-                  { label: "Orders", value: Number(customerDocket.orderCount || 0), tone: "text-stone-700", raw: true },
-                  {
-                    label: "Balance Due",
-                    value: Number(customerDocket.tab_balance_due || 0),
-                    tone: Number(customerDocket.tab_balance_due || 0) > 0 ? "text-amber-700" : "text-stone-400"
-                  }
-                ].map((m) => (
-                  <div key={m.label} className="border-2 border-stone-300 bg-white px-2 py-1.5 text-center">
-                    <div className={`text-sm font-mono font-black ${m.tone}`}>
-                      {m.raw ? m.value : `KES ${m.value.toLocaleString()}`}
-                    </div>
-                    <div className="text-[9px] font-black uppercase text-stone-500">{m.label}</div>
+          const ledgerEntries: any[] = [];
+
+          // Debits: POS Orders
+          for (const o of (customerDocket.orders || [])) {
+            const tabPayment = (o.payments || []).find((p: any) => p.tab_id);
+            const tabNum = tabPayment ? tabPayment.tab_id : (customerDocket.tabs?.[0]?.id || null);
+            ledgerEntries.push({
+              kind: "order",
+              key: `order-${o.sale_id}`,
+              time: o.created_at,
+              formattedTime: fmtLedgerTime(o.created_at),
+              saleId: o.sale_id,
+              amount: Number(o.sale_total || o.total_paid || 0),
+              tabId: tabNum,
+              items: o.items || [],
+              payments: o.payments || []
+            });
+          }
+
+          // Credits: Payments & Settlements
+          for (const p of (customerDocket.payments || [])) {
+            ledgerEntries.push({
+              kind: "payment",
+              key: `pay-${p.id}`,
+              time: p.created_at,
+              formattedTime: fmtLedgerTime(p.created_at),
+              amount: Number(p.amount || 0),
+              method: (p.method || "cash").toUpperCase(),
+              operator: p.operator_name || "Stall Staff",
+              tabId: p.tab_id,
+              mpesaRef: p.mpesa_ref || "",
+              status: Number(p.amount || 0) >= Number(customerDocket.totalSpent || customerDocket.total_spent || 0) ? "Settled full" : "Settled partial"
+            });
+          }
+
+          ledgerEntries.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+          const openTabs = (customerDocket.tabs || []).filter((t: any) => t.outstanding || Number(t.amount_due || t.balance || 0) > 0);
+
+          return (
+            <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
+              <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-2xl p-5 shadow-(--shadow-brut-xl) my-8 max-h-[90vh] overflow-y-auto space-y-4">
+                {/* Header */}
+                <div className="flex justify-between items-start border-b-2 border-[var(--brand-navy)] pb-3 sticky top-0 bg-[var(--brand-off-white)] z-10">
+                  <div>
+                    <span className="text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-2 py-0.5 border border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+                      CUSTOMER PURCHASE HISTORY & LEDGER
+                    </span>
+                    <h3 className="text-xl font-display uppercase tracking-wider text-[var(--brand-navy)] mt-1.5">
+                      {customerDocket.name} {customerDocket.phoneRaw || customerDocket.phone ? `(📞 ${customerDocket.phoneRaw || customerDocket.phone})` : ""}
+                    </h3>
                   </div>
-                ))}
-              </div>
+                  <button
+                    onClick={() => setCustomerDocket(null)}
+                    className="p-1.5 text-stone-700 hover:text-white hover:bg-red-600 border-2 border-[var(--brand-navy)] bg-white cursor-pointer transition-colors shadow-(--shadow-brut-xs)"
+                    aria-label="Close customer docket"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
 
-              {/* POS ORDERS */}
-              <section className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
-                  <ShoppingBag className="w-3.5 h-3.5" /> Stall Orders ({customerDocket.orders?.length || 0})
-                </h4>
-                {(customerDocket.orders || []).length === 0 ? (
-                  <p className="text-[11px] font-mono text-stone-500 uppercase">No stall orders recorded.</p>
-                ) : (
-                  (customerDocket.orders || []).map((order: any, oIdx: number) => (
-                    <div key={oIdx} className="border-2 border-stone-300 bg-white p-3">
-                      <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-dashed border-stone-300">
-                        <span className="text-[11px] font-mono font-black text-[var(--brand-navy)]">
-                          {order.sale_id || "—"}
-                        </span>
-                        <span className="text-[10px] font-mono text-stone-500">
-                          {order.created_at ? `${fmtDate(order.created_at)} ${fmtTime(order.created_at)}` : ""}
-                        </span>
-                        <span className="text-[11px] font-mono font-black text-emerald-700">
-                          KES {Number(order.total_paid || 0).toLocaleString()}
-                        </span>
-                      </div>
-                      <ul className="mt-1.5 space-y-0.5">
-                        {(order.items || []).map((it: any, iIdx: number) => (
-                          <li key={iIdx} className="text-[11px] font-mono text-stone-700 flex justify-between">
-                            <span>
-                              {Number(it.quantity)}x {it.item_name}
-                            </span>
-                            <span className="text-stone-500">KES {Number(it.line_total || 0).toLocaleString()}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {/* Every tender, not just the first — a split-payment
-                          order has one row per method. */}
-                      {(order.payments || []).length > 0 && (
-                        <div className="mt-1.5 pt-1.5 border-t border-dashed border-stone-300 flex flex-wrap gap-1.5">
-                          {(order.payments || []).map((p: any, pIdx: number) => (
-                            <span
-                              key={pIdx}
-                              className="text-[9px] font-mono font-black uppercase bg-stone-100 border border-stone-300 px-1.5 py-0.5"
-                            >
-                              {p.method} · KES {Number(p.amount || 0).toLocaleString()}
-                              {p.mpesa_ref ? ` · ${p.mpesa_ref}` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                {/* 4 KPI Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* STALL SPEND */}
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-3 text-center shadow-(--shadow-brut-xs)">
+                    <div className="text-[10px] font-mono font-black uppercase text-stone-500">[ STALL SPEND ]</div>
+                    <div className="text-lg font-mono font-black text-emerald-800 mt-0.5">
+                      KES {Number(customerDocket.totalSpent || customerDocket.total_spent || 0).toLocaleString()}
                     </div>
-                  ))
-                )}
-              </section>
-
-              {/* EVENT TICKETS — the other half of the combined history */}
-              <section className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
-                  <Ticket className="w-3.5 h-3.5" /> Event Tickets ({customerDocket.tickets?.length || 0})
-                </h4>
-                {(customerDocket.tickets || []).length === 0 ? (
-                  <p className="text-[11px] font-mono text-stone-500 uppercase">
-                    No event tickets found for this customer.
-                  </p>
-                ) : (
-                  (customerDocket.tickets || []).map((t: any, tIdx: number) => (
-                    <div
-                      key={tIdx}
-                      className="border-2 border-stone-300 bg-white px-3 py-2 flex items-center justify-between gap-2 text-[11px] font-mono"
-                    >
-                      <div>
-                        <span className="font-black text-[var(--brand-navy)]">{t.id}</span>
-                        <span className="ml-2 font-bold">{t.ticket_type}</span>
-                        <div className="text-[10px] text-stone-500">
-                          {t.event_title}
-                          {t.purchase_time ? ` · ${fmtDate(t.purchase_time)}` : ""}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-black text-blue-700">
-                          KES {Number(t.amount_paid || 0).toLocaleString()}
-                        </span>
-                        <div className="text-[9px] font-black uppercase text-stone-500">
-                          {t.is_scanned ? "Scanned" : "Not scanned"}
-                        </div>
-                      </div>
+                    <div className="text-[11px] font-mono text-stone-600 mt-0.5">
+                      ({customerDocket.orderCount || (customerDocket.orders || []).length} {(customerDocket.orderCount || (customerDocket.orders || []).length) === 1 ? "order" : "orders"})
                     </div>
-                  ))
-                )}
-              </section>
+                  </div>
 
-              {/* TAB LEDGER */}
-              <section className="space-y-2">
-                <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
-                  <CreditCard className="w-3.5 h-3.5" /> Customer Tabs ({customerDocket.tabs?.length || 0})
-                </h4>
-                {(customerDocket.tabs || []).length === 0 ? (
-                  <p className="text-[11px] font-mono text-stone-500 uppercase">No tabs on this account.</p>
-                ) : (
-                  (customerDocket.tabs || []).map((tab: any, tabIdx: number) => {
-                    const tabDue = Number(tab.amount_due || 0);
-                    const highlight = customerDocket.__tabLedgerId === tab.id;
-                    const busy = tabBusyId === tab.id;
-                    const notice = tabNotice?.tabId === tab.id ? tabNotice : null;
-                    return (
-                      <div
-                        key={tab.id}
-                        className={`border-2 bg-white p-3 ${
-                          highlight ? "border-amber-500" : "border-stone-300"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-[11px] font-mono font-black text-[var(--brand-navy)]">
-                            TAB #{tab.id}
-                            <span
-                              className={`ml-1.5 px-1 py-0.5 font-black uppercase ${
-                                tab.status === "settled"
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : tab.status === "written_off"
-                                    ? "bg-stone-300 text-stone-700"
-                                    : "bg-amber-200 text-amber-900"
-                              }`}
+                  {/* TOTAL PAID */}
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-3 text-center shadow-(--shadow-brut-xs)">
+                    <div className="text-[10px] font-mono font-black uppercase text-stone-500">[ TOTAL PAID ]</div>
+                    <div className="text-lg font-mono font-black text-green-700 mt-0.5">
+                      KES {Number(customerDocket.total_paid || 0).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] font-mono text-stone-600 mt-0.5">
+                      ({(customerDocket.payments || []).length} {(customerDocket.payments || []).length === 1 ? "settlement" : "settlements"})
+                    </div>
+                  </div>
+
+                  {/* BALANCE DUE */}
+                  <div className={`border-2 border-[var(--brand-navy)] p-3 text-center shadow-(--shadow-brut-xs) ${
+                    Number(customerDocket.tab_balance_due || 0) > 0 ? "bg-amber-50" : "bg-white"
+                  }`}>
+                    <div className="text-[10px] font-mono font-black uppercase text-stone-500">[ BALANCE DUE ]</div>
+                    <div className={`text-lg font-mono font-black mt-0.5 ${
+                      Number(customerDocket.tab_balance_due || 0) > 0 ? "text-amber-800" : "text-stone-500"
+                    }`}>
+                      KES {Number(customerDocket.tab_balance_due || 0).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] font-mono text-stone-600 mt-0.5">
+                      {openTabs.length > 0 ? `(Open Tab #${openTabs[0].id})` : "(Fully Settled)"}
+                    </div>
+                  </div>
+
+                  {/* TICKET SPEND */}
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-3 text-center shadow-(--shadow-brut-xs)">
+                    <div className="text-[10px] font-mono font-black uppercase text-stone-500">[ TICKET SPEND ]</div>
+                    <div className="text-lg font-mono font-black text-blue-800 mt-0.5">
+                      KES {Number(customerDocket.ticket_spend || 0).toLocaleString()}
+                    </div>
+                    <div className="text-[11px] font-mono text-stone-600 mt-0.5">
+                      ({customerDocket.ticket_count || (customerDocket.tickets || []).length} {(customerDocket.ticket_count || (customerDocket.tickets || []).length) === 1 ? "pass" : "passes"})
+                    </div>
+                  </div>
+                </div>
+
+                {/* TAB & PAYMENT AUDIT TRAIL (Debits & Credits) */}
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between border-b-2 border-[var(--brand-navy)] pb-1 pt-1">
+                    <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5 font-mono">
+                      <span>📋</span> TAB & PAYMENT AUDIT TRAIL (Debits & Credits)
+                    </h4>
+                    <span className="text-[10px] font-mono font-bold text-stone-500">
+                      {ledgerEntries.length} {ledgerEntries.length === 1 ? "entry" : "entries"}
+                    </span>
+                  </div>
+
+                  {ledgerEntries.length === 0 ? (
+                    <div className="p-4 text-center text-xs font-mono text-stone-500 bg-white border-2 border-dashed border-stone-300">
+                      No debits or credit transactions recorded for this customer.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 font-mono">
+                      {ledgerEntries.map((entry: any, eIdx: number) => {
+                        if (entry.kind === "payment") {
+                          return (
+                            <div
+                              key={entry.key || eIdx}
+                              className="border-2 border-emerald-600 bg-emerald-50/70 p-3 shadow-(--shadow-brut-xs)"
                             >
-                              {tab.status}
-                            </span>
-                          </span>
-                          <span
-                            className={`text-[11px] font-mono font-black ${
-                              tabDue > 0 ? "text-amber-700" : "text-emerald-700"
-                            }`}
+                              <div className="flex items-start justify-between gap-2 flex-wrap">
+                                <div className="text-xs font-black text-emerald-950">
+                                  [-] {entry.formattedTime} · PAYMENT ({entry.method}) ·{" "}
+                                  <span className="text-emerald-700">-KES {entry.amount.toLocaleString()}</span>
+                                </div>
+                                {entry.tabId ? (
+                                  <span className="text-[10px] font-black uppercase bg-emerald-200 text-emerald-900 border border-emerald-400 px-1.5 py-0.5">
+                                    [CREDITED TO TAB #{entry.tabId}]
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-black uppercase bg-stone-200 text-stone-800 border border-stone-300 px-1.5 py-0.5">
+                                    [DIRECT SETTLEMENT]
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-stone-600 mt-1 flex items-center gap-2 flex-wrap">
+                                <span>Received by: {entry.operator}</span>
+                                <span>·</span>
+                                <span>Status: {entry.status}</span>
+                                {entry.mpesaRef ? (
+                                  <>
+                                    <span>·</span>
+                                    <span className="font-bold text-stone-800">Ref: {entry.mpesaRef}</span>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // kind === "order"
+                        return (
+                          <div
+                            key={entry.key || eIdx}
+                            className="border-2 border-stone-300 bg-white p-3 shadow-(--shadow-brut-xs)"
                           >
-                            {tabDue > 0 ? `KES ${tabDue.toLocaleString()} DUE` : "SETTLED"}
-                          </span>
-                        </div>
-                        <div className="text-[10px] font-mono text-stone-600 mt-1">
-                          Credit limit KES {Number(tab.credit_limit || 0).toLocaleString()} · Opened{" "}
-                          {fmtDate(tab.created_at)}
-                          {tab.settled_at ? ` · Settled ${fmtDate(tab.settled_at)}` : ""}
-                        </div>
-                        {tab.settlement_reason ? (
-                          <div className="text-[10px] font-mono text-stone-500 mt-0.5">
-                            Reason: {tab.settlement_reason}
-                          </div>
-                        ) : null}
-
-                        {tabDue > 0 && (
-                          <>
-                            {notice && (
-                              <div
-                                className={`mt-2 px-2 py-1 text-[10px] font-black uppercase ${
-                                  notice.ok
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-red-100 text-red-800"
-                                }`}
-                              >
-                                {notice.text}
+                            <div className="flex items-start justify-between gap-2 flex-wrap">
+                              <div className="text-xs font-black text-[var(--brand-navy)]">
+                                [+] {entry.formattedTime} · ORDER #{entry.saleId} ·{" "}
+                                <span className="text-emerald-800">+KES {entry.amount.toLocaleString()}</span>
+                              </div>
+                            </div>
+                            {entry.items && entry.items.length > 0 && (
+                              <div className="mt-1.5 space-y-0.5">
+                                {entry.items.map((it: any, iIdx: number) => (
+                                  <div key={iIdx} className="text-[11px] text-stone-700 flex justify-between">
+                                    <span>
+                                      {Number(it.quantity)}x {it.item_name} {entry.tabId ? `(Tab #${entry.tabId})` : ""}
+                                    </span>
+                                    <span className="text-stone-500">
+                                      KES {Number(it.line_total || (Number(it.quantity) * Number(it.unit_price)) || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             )}
-                            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                            {entry.payments && entry.payments.length > 0 && (
+                              <div className="mt-1.5 pt-1.5 border-t border-dashed border-stone-300 flex flex-wrap gap-1.5">
+                                {entry.payments.map((p: any, pIdx: number) => (
+                                  <span
+                                    key={pIdx}
+                                    className="text-[9px] font-black uppercase bg-stone-100 border border-stone-300 px-1.5 py-0.5 text-stone-600"
+                                  >
+                                    {p.method} · KES {Number(p.amount || 0).toLocaleString()}
+                                    {p.mpesa_ref ? ` · ${p.mpesa_ref}` : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                {/* ACTIVE TABS */}
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between border-b-2 border-[var(--brand-navy)] pb-1">
+                    <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5 font-mono">
+                      <span>💳</span> ACTIVE TABS ({(customerDocket.tabs || []).length})
+                    </h4>
+                  </div>
+
+                  {(customerDocket.tabs || []).length === 0 ? (
+                    <p className="text-[11px] font-mono text-stone-500 uppercase bg-white border border-dashed border-stone-300 p-2.5 text-center">
+                      No tabs on this account.
+                    </p>
+                  ) : (
+                    (customerDocket.tabs || []).map((tab: any) => {
+                      const tabDue = Number(tab.amount_due || (tab.status === "open" ? tab.balance : 0) || 0);
+                      const isOutstanding = tab.status === "open" && tabDue > 0;
+                      const busy = tabBusyId === tab.id;
+                      const notice = tabNotice?.tabId === tab.id ? tabNotice : null;
+                      const totalPaid = Number(tab.total_paid || 0);
+                      const totalCharged = Number(tab.total_charged || (tabDue + totalPaid) || 0);
+
+                      return (
+                        <div
+                          key={tab.id}
+                          className={`border-2 bg-white p-3 font-mono shadow-(--shadow-brut-xs) ${
+                            isOutstanding ? "border-amber-500" : "border-stone-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="text-xs font-black text-[var(--brand-navy)] flex items-center gap-1.5">
+                              <span>TAB #{tab.id}</span>
+                              <span
+                                className={`px-1.5 py-0.5 text-[9px] font-black uppercase border ${
+                                  tab.status === "settled"
+                                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                    : tab.status === "written_off"
+                                      ? "bg-stone-200 text-stone-700 border-stone-300"
+                                      : "bg-amber-100 text-amber-900 border-amber-300"
+                                }`}
+                              >
+                                [{tab.status.toUpperCase()}]
+                              </span>
+                            </div>
+                            <div
+                              className={`text-xs font-black ${
+                                tabDue > 0 ? "text-amber-800" : "text-emerald-700"
+                              }`}
+                            >
+                              {tabDue > 0 ? `KES ${tabDue.toLocaleString()} OUTSTANDING` : "SETTLED"}
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-stone-600 mt-1">
+                            Credit Limit: KES {Number(tab.credit_limit || 0).toLocaleString()} · Total Charged: KES {totalCharged.toLocaleString()} · Total Paid: KES {totalPaid.toLocaleString()}
+                          </div>
+
+                          {tab.settlement_reason ? (
+                            <div className="text-[10px] text-stone-500 mt-0.5">
+                              Reason: {tab.settlement_reason}
+                            </div>
+                          ) : null}
+
+                          {notice && (
+                            <div
+                              className={`mt-2 px-2 py-1 text-[10px] font-black uppercase border ${
+                                notice.ok
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : "bg-red-100 text-red-800 border-red-300"
+                              }`}
+                            >
+                              {notice.text}
+                            </div>
+                          )}
+
+                          {tabDue > 0 && (
+                            <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                               <button
+                                type="button"
                                 onClick={() => settleTabInFull(tab)}
                                 disabled={busy}
-                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-2 border-[var(--brand-navy)] font-black uppercase text-xs flex items-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               >
-                                <HandCoins className="w-3 h-3" />
-                                {busy ? "Working..." : `Settle KES ${tabDue.toLocaleString()}`}
+                                <HandCoins className="w-3.5 h-3.5" />
+                                <span>{busy ? "Working..." : `💳 SETTLE KES ${tabDue.toLocaleString()}`}</span>
                               </button>
                               <button
+                                type="button"
                                 onClick={() => runTabAction(tab.id, "remind")}
                                 disabled={busy}
-                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white border border-[var(--brand-navy)] font-black uppercase text-[10px] flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 bg-white hover:bg-amber-100 text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] font-black uppercase text-xs flex items-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               >
-                                <MessageSquare className="w-3 h-3" />
-                                Send WhatsApp Reminder
+                                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>💬 SEND WHATSAPP STATEMENT</span>
                               </button>
                             </div>
-                          </>
-                        )}
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </section>
+
+                {/* EVENT TICKETS */}
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between border-b-2 border-[var(--brand-navy)] pb-1">
+                    <h4 className="text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5 font-mono">
+                      <Ticket className="w-3.5 h-3.5" /> Event Tickets ({(customerDocket.tickets || []).length})
+                    </h4>
+                  </div>
+                  {(customerDocket.tickets || []).length === 0 ? (
+                    <p className="text-[11px] font-mono text-stone-500 uppercase bg-white border border-dashed border-stone-300 p-2.5 text-center">
+                      No event tickets found for this customer.
+                    </p>
+                  ) : (
+                    (customerDocket.tickets || []).map((t: any, tIdx: number) => (
+                      <div
+                        key={tIdx}
+                        className="border-2 border-stone-300 bg-white px-3 py-2 flex items-center justify-between gap-2 text-[11px] font-mono shadow-(--shadow-brut-xs)"
+                      >
+                        <div>
+                          <span className="font-black text-[var(--brand-navy)]">{t.id}</span>
+                          <span className="ml-2 font-bold">{t.ticket_type}</span>
+                          <div className="text-[10px] text-stone-500">
+                            {t.event_title}
+                            {t.purchase_time ? ` · ${fmtDate(t.purchase_time)}` : ""}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-black text-blue-700">
+                            KES {Number(t.amount_paid || 0).toLocaleString()}
+                          </span>
+                          <div className="text-[9px] font-black uppercase text-stone-500">
+                            {t.is_scanned ? "Scanned" : "Not scanned"}
+                          </div>
+                        </div>
                       </div>
-                    );
-                  })
-                )}
-              </section>
+                    ))
+                  )}
+                </section>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 1. THERMAL POS RECEIPT DOCKET MODAL */}
         {receiptModalItem && currentReceipt && (

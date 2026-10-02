@@ -518,7 +518,7 @@ export default function GateTerminalPage() {
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
+            className="p-1.5 sm:p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
             title={soundEnabled ? "Mute audio" : "Enable audio"}
           >
             {soundEnabled ? <Volume2 className="w-4 h-4 text-brand-navy" /> : <VolumeX className="w-4 h-4 text-red-600" />}
@@ -528,7 +528,7 @@ export default function GateTerminalPage() {
           {hasTorch && scannerActive && (
             <button
               onClick={toggleTorch}
-              className={`p-2 border-2 border-brand-navy transition-colors cursor-pointer ${
+              className={`p-1.5 sm:p-2 border-2 border-brand-navy transition-colors cursor-pointer ${
                 torchOn 
                   ? "bg-yellow-300 text-brand-navy" 
                   : "bg-white text-brand-navy hover:bg-stone-200"
@@ -542,7 +542,7 @@ export default function GateTerminalPage() {
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="p-2 border-2 border-brand-navy text-red-600 bg-white hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 sm:p-2 border-2 border-brand-navy text-red-600 bg-white hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
             title="Log out from terminal"
           >
             <LogOut className="w-4 h-4" />

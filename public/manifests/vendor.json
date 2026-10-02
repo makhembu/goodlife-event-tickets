@@ -6,8 +6,8 @@
   "start_url": "/vendor/sell",
   "scope": "/vendor",
   "display": "standalone",
-  "background_color": "#142B4C",
-  "theme_color": "#142B4C",
+  "background_color": "#16181D",
+  "theme_color": "#DFBB7D",
   "orientation": "portrait",
   "icons": [
     {

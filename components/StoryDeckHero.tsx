@@ -11,6 +11,7 @@ export interface StoryDeckHeroProps {
   videoUrl?: string | null;
   eventTitle: string;
   onExpand?: (mode: "poster" | "video") => void;
+  isExpanded?: boolean;
   className?: string;
 }
 
@@ -21,6 +22,7 @@ export default function StoryDeckHero({
   videoUrl,
   eventTitle,
   onExpand,
+  isExpanded = false,
   className = "",
 }: StoryDeckHeroProps) {
   const hasVideo = Boolean(videoUrl && videoUrl.trim() !== "");
@@ -34,9 +36,9 @@ export default function StoryDeckHero({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  // 1. Story Countdown Timer on Poster
+  // 1. Story Countdown Timer on Poster (paused if lightbox is open)
   useEffect(() => {
-    if (!hasVideo || !autoAdvanceEnabled || activeIndex !== 0) {
+    if (!hasVideo || !autoAdvanceEnabled || activeIndex !== 0 || isExpanded) {
       setProgress(activeIndex === 1 ? 100 : 0);
       return;
     }
@@ -62,14 +64,19 @@ export default function StoryDeckHero({
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [hasVideo, autoAdvanceEnabled, activeIndex]);
+  }, [hasVideo, autoAdvanceEnabled, activeIndex, isExpanded]);
 
-  // 2. Play / Pause video based on active slide & viewport visibility
+  // 2. Play / Pause video based on active slide, lightbox expanded state & viewport visibility
   useEffect(() => {
     if (!hasVideo || !videoRef.current) return;
 
+    if (isExpanded) {
+      // Immediately pause and silence inline video while lightbox modal is active to prevent audio overlap
+      videoRef.current.pause();
+      return;
+    }
+
     if (activeIndex === 1) {
-      videoRef.current.currentTime = 0;
       videoRef.current.play().catch(() => {
         // Autoplay policy fallback: keep muted and retry
         if (videoRef.current) {
@@ -81,7 +88,7 @@ export default function StoryDeckHero({
     } else {
       videoRef.current.pause();
     }
-  }, [activeIndex, hasVideo]);
+  }, [activeIndex, hasVideo, isExpanded]);
 
   // 3. Viewport Visibility Observer (pause when attendee scrolls to tickets)
   useEffect(() => {
@@ -134,6 +141,9 @@ export default function StoryDeckHero({
 
   const handleTriggerExpand = () => {
     HapticFeedback.trigger("confirmation");
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
     if (onExpand) {
       onExpand(activeIndex === 0 ? "poster" : "video");
     }
@@ -146,11 +156,11 @@ export default function StoryDeckHero({
     >
       {/* A. STORY DECK SEGMENT PROGRESS BARS (TOP) */}
       {hasVideo && (
-        <div className="absolute top-2 inset-x-2.5 z-30 flex items-center gap-1.5 h-1.5 pointer-events-none">
+        <div className="absolute top-1.5 inset-x-2 z-30 flex items-center gap-1.5 h-1 pointer-events-none">
           {/* Segment 0: Poster */}
-          <div className="flex-1 h-full bg-white/30 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
+          <div className="flex-1 h-full bg-white/25 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
             <div
-              className="h-full bg-yellow-400 transition-none rounded-full"
+              className="h-full bg-brand-accent transition-none rounded-full"
               style={{
                 width: activeIndex === 0 ? `${progress}%` : "100%",
               }}
@@ -158,9 +168,9 @@ export default function StoryDeckHero({
           </div>
 
           {/* Segment 1: Teaser Video */}
-          <div className="flex-1 h-full bg-white/30 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
+          <div className="flex-1 h-full bg-white/25 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
             <div
-              className="h-full bg-yellow-400 transition-none rounded-full"
+              className="h-full bg-brand-accent transition-none rounded-full"
               style={{
                 width: activeIndex === 1 ? "100%" : "0%",
               }}
@@ -169,54 +179,10 @@ export default function StoryDeckHero({
         </div>
       )}
 
-      {/* B. TOP BADGE & QUICK SWITCHER PILLS */}
-      <div className="absolute top-5 inset-x-2.5 z-30 flex items-center justify-between pointer-events-auto">
-        {hasVideo ? (
-          <div className="flex items-center gap-1 bg-brand-navy/90 border-2 border-brand-navy p-0.5 shadow-(--shadow-brut-2xs)">
-            <button
-              type="button"
-              onClick={handleSelectPoster}
-              className={`px-2 py-0.5 text-[10px] font-black uppercase font-mono flex items-center gap-1 transition-all cursor-pointer ${
-                activeIndex === 0
-                  ? "bg-yellow-300 text-brand-navy border border-brand-navy shadow-xs"
-                  : "text-white/80 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <ImageIcon className="w-3 h-3" />
-              <span>POSTER</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSelectVideo}
-              className={`px-2 py-0.5 text-[10px] font-black uppercase font-mono flex items-center gap-1 transition-all cursor-pointer ${
-                activeIndex === 1
-                  ? "bg-yellow-300 text-brand-navy border border-brand-navy shadow-xs"
-                  : "text-white/80 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              <Film className="w-3 h-3" />
-              <span>TEASER</span>
-            </button>
-          </div>
-        ) : (
-          <div className="bg-brand-navy/90 text-white border-2 border-brand-navy px-2 py-0.5 text-[10px] font-mono font-black uppercase">
-            OFFICIAL POSTER
-          </div>
-        )}
-
-        {/* Story indicator icon */}
-        {hasVideo && (
-          <span className="hidden sm:flex items-center gap-1 text-[9px] font-mono font-black uppercase px-2 py-0.5 bg-yellow-300 text-brand-navy border-2 border-brand-navy shadow-(--shadow-brut-2xs)">
-            <Sparkles className="w-2.5 h-2.5" />
-            {activeIndex === 0 ? "3.5s PREVIEW" : "HYPE REEL"}
-          </span>
-        )}
-      </div>
-
-      {/* C. MAIN MEDIA VIEWPORT */}
+      {/* B. MAIN MEDIA VIEWPORT */}
       <div
         onClick={handleTriggerExpand}
-        className="w-full h-full relative cursor-pointer group/viewport"
+        className="w-full h-full relative cursor-pointer group/viewport overflow-hidden"
         title="Tap to enlarge full resolution"
       >
         {/* SLIDE 0: POSTER IMAGE */}
@@ -228,7 +194,7 @@ export default function StoryDeckHero({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="absolute inset-0 w-full h-full"
+              className="absolute inset-0 w-full h-full overflow-hidden"
             >
               <Image
                 src={posterUrl}
@@ -236,7 +202,7 @@ export default function StoryDeckHero({
                 fill
                 priority
                 sizes="(max-width: 768px) 100vw, 420px"
-                className="object-contain"
+                className="object-cover"
                 referrerPolicy="no-referrer"
               />
             </motion.div>
@@ -246,7 +212,7 @@ export default function StoryDeckHero({
         {/* SLIDE 1: TEASER VIDEO */}
         {hasVideo && (
           <div
-            className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${
+            className={`absolute inset-0 w-full h-full transition-opacity duration-500 overflow-hidden ${
               activeIndex === 1 ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
             }`}
           >
@@ -258,12 +224,12 @@ export default function StoryDeckHero({
               loop
               muted={isMuted}
               preload="metadata"
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-cover scale-[1.02] pointer-events-none"
             />
           </div>
         )}
 
-        {/* D. TOUCH TAP ZONES (LEFT 30% / RIGHT 70% QUICK SWITCH) */}
+        {/* C. TOUCH TAP ZONES (LEFT 30% / RIGHT 70% QUICK SWITCH) */}
         {hasVideo && (
           <div className="absolute inset-0 flex z-20 pointer-events-none">
             {/* Left Zone: Back to Poster */}
@@ -292,43 +258,78 @@ export default function StoryDeckHero({
         )}
       </div>
 
-      {/* E. FLOATING CONTROLS (BOTTOM) */}
-      <div className="absolute bottom-2.5 inset-x-2.5 z-30 flex items-center justify-between pointer-events-none">
-        {/* Fullscreen Expand Badge */}
-        <button
-          type="button"
-          onClick={handleTriggerExpand}
-          className="pointer-events-auto px-2.5 py-1 bg-brand-navy/90 hover:bg-yellow-300 hover:text-brand-navy text-white border-2 border-brand-navy text-[10px] font-mono font-black uppercase flex items-center gap-1.5 transition-all shadow-(--shadow-brut-xs) cursor-pointer"
-        >
-          <Maximize2 className="w-3 h-3" />
-          <span>FULL VIEW</span>
-        </button>
+      {/* D. FLOATING CONTROLS (BOTTOM DOCK) */}
+      <div className="absolute bottom-2.5 inset-x-2.5 z-30 flex items-center justify-between pointer-events-none gap-2">
+        {/* Left: Media Switcher Pill (Poster / Teaser) */}
+        {hasVideo ? (
+          <div className="pointer-events-auto flex items-center bg-brand-navy/90 border border-brand-navy backdrop-blur-md p-0.5 shadow-(--shadow-brut-xs)">
+            <button
+              type="button"
+              onClick={handleSelectPoster}
+              className={`px-2 py-1 text-[10px] font-mono font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                activeIndex === 0
+                  ? "bg-brand-accent text-brand-navy shadow-xs"
+                  : "text-brand-off-white/70 hover:text-white"
+              }`}
+              title="View Event Poster"
+            >
+              <ImageIcon className="w-3 h-3" />
+              <span>POSTER</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSelectVideo}
+              className={`px-2 py-1 text-[10px] font-mono font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
+                activeIndex === 1
+                  ? "bg-brand-accent text-brand-navy shadow-xs"
+                  : "text-brand-off-white/70 hover:text-white"
+              }`}
+              title="Watch Video Teaser"
+            >
+              <Film className="w-3 h-3" />
+              <span>TEASER</span>
+            </button>
+          </div>
+        ) : (
+          <div className="pointer-events-auto bg-brand-navy/90 text-brand-off-white/80 border border-brand-navy px-2 py-1 text-[10px] font-mono font-black uppercase backdrop-blur-md shadow-(--shadow-brut-xs)">
+            POSTER
+          </div>
+        )}
 
-        {/* Sound Toggle (Only on Video slide) */}
-        {hasVideo && activeIndex === 1 && (
+        {/* Right: Audio and Fullscreen Icon Actions */}
+        <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
+          {/* Sound Toggle (Only on Video slide) */}
+          {hasVideo && activeIndex === 1 && (
+            <button
+              type="button"
+              onClick={handleToggleSound}
+              aria-label={isMuted ? "Unmute audio" : "Mute audio"}
+              title={isMuted ? "Unmute audio" : "Mute audio"}
+              className={`w-8 h-8 flex items-center justify-center border border-brand-navy backdrop-blur-md shadow-(--shadow-brut-xs) transition-all cursor-pointer ${
+                isMuted
+                  ? "bg-brand-navy/90 text-brand-off-white hover:bg-brand-accent hover:text-brand-navy"
+                  : "bg-brand-accent text-brand-navy ring-2 ring-brand-accent/50"
+              }`}
+            >
+              {isMuted ? (
+                <VolumeX className="w-3.5 h-3.5" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
+
+          {/* Fullscreen Expand Icon Button */}
           <button
             type="button"
-            onClick={handleToggleSound}
-            className={`pointer-events-auto px-2.5 py-1 border-2 border-brand-navy text-[10px] font-mono font-black uppercase flex items-center gap-1.5 transition-all shadow-(--shadow-brut-xs) cursor-pointer ${
-              isMuted
-                ? "bg-yellow-300 text-brand-navy hover:bg-white"
-                : "bg-green-400 text-brand-navy hover:bg-green-300 animate-pulse"
-            }`}
-            title={isMuted ? "Click to turn on sound" : "Click to mute"}
+            onClick={handleTriggerExpand}
+            aria-label="Open full screen view"
+            title="Full View"
+            className="w-8 h-8 flex items-center justify-center bg-brand-navy/90 text-brand-off-white hover:bg-brand-accent hover:text-brand-navy border border-brand-navy backdrop-blur-md shadow-(--shadow-brut-xs) transition-all cursor-pointer"
           >
-            {isMuted ? (
-              <>
-                <VolumeX className="w-3.5 h-3.5" />
-                <span>UNMUTE AUDIO</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-3.5 h-3.5" />
-                <span>SOUND ON</span>
-              </>
-            )}
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

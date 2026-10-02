@@ -6,8 +6,8 @@
   "start_url": "/scanner",
   "scope": "/scanner",
   "display": "standalone",
-  "background_color": "#142B4C",
-  "theme_color": "#142B4C",
+  "background_color": "#16181D",
+  "theme_color": "#FACC15",
   "orientation": "portrait",
   "icons": [
     {

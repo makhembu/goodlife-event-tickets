@@ -1293,6 +1293,7 @@ export default function TicketCheckoutPage({
                   posterUrl={eventDetails.flyer_url}
                   videoUrl={activeHeroVideo}
                   eventTitle={eventDetails.title}
+                  isExpanded={isFlyerExpanded}
                   className="mt-0 md:my-3"
                   onExpand={(mode) => {
                     setFlyerExpandMode(mode);
