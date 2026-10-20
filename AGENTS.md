@@ -26,8 +26,15 @@ npx tsx tests/<name>.check.ts   # the only verification suite (see below)
 Each file is a standalone `tsx` script that prints `PASS`/`FAIL` lines and exits non-zero on failure. Run them all:
 
 ```powershell
-Get-ChildItem tests -File | ForEach-Object { npx tsx $_.FullName; if ($LASTEXITCODE) { "FAILED: $($_.Name)" } }
+Get-ChildItem tests -Filter *.check.ts | ForEach-Object {
+  $n = $_.Name
+  & ".\node_modules\.bin\tsx.cmd" "tests/$n" *> "$env:TEMP\chk.log"
+  if ($LASTEXITCODE) { "FAILED: $n"; Get-Content "$env:TEMP\chk.log" | Select-String "FAIL" }
+  else { "OK: $n" }
+}
 ```
+
+Use the **local** `tsx.cmd`, not `npx tsx`: inside a `ForEach-Object` block `npx` fails with `could not determine executable to run` (npm 11 on this machine) and every suite looks broken when none of them are.
 
 | File | Locks down |
 |---|---|
@@ -38,9 +45,11 @@ Get-ChildItem tests -File | ForEach-Object { npx tsx $_.FullName; if ($LASTEXITC
 | `customer-audit-unification.check.ts` | types + queries that join tickets, POS splits and tabs into one customer |
 | `manifests.check.ts` | the three scoped PWA manifests, `public/sw.js`, and that **no root `app/manifest.ts` exists** |
 | `event-media.check.ts` | `resolveEventFlyer` / `resolveEventVideo` defaults and custom-URL precedence |
-| `story-deck.check.ts` | `components/StoryDeckHero.tsx` contract (poster + teaser, `playsInline`) |
+| `story-deck.check.ts` | `components/StoryDeckHero.tsx` contract (poster + teaser, `playsInline`, tap-to-enlarge) |
+| `og-social.check.ts` | the social/SEO contract: 1200x630 banner **generated per event** from its own poster, no hardcoded `og-*.jpg`, canonical/site_name/locale/twitter/apple-icon/manifest present, JSON-LD emitted |
+| `video-upload.check.ts` | video teaser upload pipeline with Catbox tier 1, Pomf2 fallback 1, and Uguu fallback 2 (11) |
 
-All 8 passed on 2026-10-02. `public-state.check.ts --live` re-runs the same decisions read-only against the real database. **Add a case before changing routing, pricing, phone matching, session auth, or PWA scope.**
+All 10 passed on 2026-10-20. `public-state.check.ts --live` re-runs the same decisions read-only against the real database. **Add a case before changing routing, pricing, phone matching, session auth, PWA scope, or social metadata.**
 
 `tests/` is deliberately *outside* `scripts/`: `.gitignore` excludes `scripts/` because the ad-hoc DB scripts there hardcode the production Neon password, so a verification tool the codebase depends on must not live there. The one-off data repair (`scripts/repair-event-status.js`, writes to prod, dry-run by default) stays untracked in `scripts/` alongside its peers — recreate it from this file's description if you ever need it again.
 
@@ -106,14 +115,28 @@ There is **one** function that decides which public page an event gets: `publicS
 
 - `lib/event-flyer.ts` is the only place media URLs are decided: `resolveEventFlyer(event)` → `/flyer.png`, or `/flyer-park-chill.png` when `category === 'mini'` or the title/subtitle mentions chill/park & chill/sunday (a custom `flyer_url` other than `/flyer.png` always wins). `resolveEventVideo(event)` → `/videos/goodlife-hype.mp4` or `/videos/park-chill-speakers.mp4` by the same rule, with `events.video_url` winning. Both are wired in `app/page.tsx`'s `eventDetails` object, so adding an event column means adding it there too.
 - **`components/admin/PosterUploader.tsx` uploads straight from the browser to ImgBB with a hardcoded API key** (`api.imgbb.com/1/upload?key=…`). There is no server route and no auth in front of it. That is also why `i.ibb.co` is one of only two whitelisted `images.remotePatterns` hosts in `next.config.ts`. Don't assume posters land in the repo — they land in a third-party bucket.
-- `components/StoryDeckHero.tsx` is the Instagram-story-style hero on **both** checkout and coming-soon pages: 3.5s poster countdown → teaser autoplay, with poster/video expand lightboxes. `tests/story-deck.check.ts` guards the `playsInline` / Next `<Image>` contract.
+- `components/StoryDeckHero.tsx` is the Instagram-story-style hero on **both** checkout and coming-soon pages: 5s poster countdown → teaser autoplay, with poster/video expand lightboxes. Tapping the media expands whatever is on screen (it is the only path to the lightbox — there are no invisible tap zones), and the POSTER/TEASER pill is the sole slide switcher. `tests/story-deck.check.ts` guards that contract.
 - `public/` holds real production assets (`BebasNeue.ttf`, `flyer*.png`, `promo.mp4`, `videos/*.mp4` ~5.5–7.5 MB each). They are not build artifacts — don't gitignore or "clean" them.
+
+## Social cards (og:image) — generated, never a checked-in image
+
+- **Every og:image is a 1200x630 PNG rendered per event by `next/og`**, from that event's own poster via `resolveEventFlyer`. There is deliberately **no** `og-*.jpg` in `public/` and no `resolveEventOgImage`: the flyers are portrait (896x1200) and 2.8–3.3 MB, which LinkedIn rejects (too small a landscape), WhatsApp rejects (>500 KB) and every platform letterboxes. `tests/og-social.check.ts` fails if a static banner filename or an `openGraph.images` block creeps back in.
+  - `lib/og-image.tsx` — `renderEventOgImage(event)`: 1200x630, poster cropped to a 300x400 card, Bebas Neue from `public/BebasNeue.ttf`, ~350 KB output. Poster loading is guarded (bad `flyer_url`, missing file, dead ImgBB URL → text-only card, never a 500), and reads only inside `public/` so a `../../.env.local` value can't be leaked.
+  - `app/opengraph-image.tsx` — site-wide default, **file convention**, `revalidate = 3600`. Serves every route that doesn't declare its own image.
+  - `app/events/[id]/opengraph-image.tsx` — the same renderer for one edition, one segment deeper.
+  - `app/og/route.tsx` — `GET /og?event=<id>`, the only way to get a banner for `/?event=<id>` (a metadata file cannot read the query string). `s-maxage=3600`. Public by design; not in the middleware matcher.
+- **The rule that keeps them consistent:** a page must not declare `openGraph.images`/`twitter.images` unless it means to *override* the generated banner. Config beats file convention, so adding a portrait `images` entry silently undoes the whole fix.
+- **Canonical URLs are per route, never in `app/layout.tsx`.** A layout-level `alternates.canonical` is inherited by every route and would point `/events/3`, `/gallery` and `/radio` at the homepage.
+- Titles use `title: { absolute }` on any page overriding the layout, otherwise the layout template (`%s | <featured event>`) renders "GOODLIFE 4 - MARARA CAMP, THIKA | GOODLIFE 4".
+- `lib/seo.ts` owns the copy split: `description` (~150 chars, Google) vs `ogDescription` (≤124, previews truncate past ~125 without an ellipsis). `siteUrl()` **refuses** a localhost/ngrok `APP_URL` as a canonical identity — `.env.local` here points at an ngrok tunnel, which would otherwise publish itself as the canonical URL.
+- `components/SeoStructuredData.tsx` emits Event + WebSite JSON-LD, `cache()`-deduped against `generateMetadata`'s fetch. It carries no `price` on purpose: tiers live in the database and are chosen at checkout, so a hardcoded figure would be a lie in a rich result.
 
 ## Progressive Web Apps (scoped, deliberately)
 
-- There are **three** manifests — `public/manifests/{vendor,scanner,admin}.json` — referenced from `metadata.manifest` in `app/{vendor,scanner,admin}/layout.tsx`, each with its own `scope` and `start_url`. **There must be no root `app/manifest.ts`**; it would bleed the Vendor POS install prompt onto every public visitor's phone. `tests/manifests.check.ts` fails if one appears.
+- There are **three operational** manifests — `public/manifests/{vendor,scanner,admin}.json` — referenced from `metadata.manifest` in `app/{vendor,scanner,admin}/layout.tsx`, each with its own `scope` and `start_url`. **There must be no root `app/manifest.ts`**; it would bleed the Vendor POS install prompt onto every public visitor's phone. `tests/manifests.check.ts` fails if one appears.
+- The public site has a **fourth, non-operational** manifest, `public/site.webmanifest` (`display: minimal-ui`, start_url `/`), declared in `app/layout.tsx`. It exists for SEO/"Add to Home Screen" and uses public icons only, so it does **not** leak the POS. Consequence to know: the public checkout is now installable on Android, which it previously was not. To restore that, delete the `manifest:` line from `app/layout.tsx` and the file — nothing else depends on it.
 - `public/sw.js` is hand-written (no `serwist`/`next-pwa`): precaches only icons, serves network-first, and **skips every `/api/` request** — so it can never serve stale money or ticket state. It also returns a plain-text 503 "Terminal Offline - Reconnecting..." instead of failing the fetch.
-- `components/ui/PwaInstallButton.tsx` registers `/sw.js` in a `useEffect` and is the only registration site — the checkout page itself is not installable. It renders `null` unless Chrome fired `beforeinstallprompt` or the UA is iOS (which gets a manual Add-to-Home-Screen guide).
+- `components/ui/PwaInstallButton.tsx` registers `/sw.js` in a `useEffect` and is the only registration site. It renders `null` unless Chrome fired `beforeinstallprompt` or the UA is iOS (which gets a manual Add-to-Home-Screen guide).
 - Icons are per-surface (`public/icons/{vendor,scanner,admin}-*.png` plus maskable variants). Adding a surface means a new manifest, a layout `metadata` entry, and its icons.
 
 ## Auth & middleware

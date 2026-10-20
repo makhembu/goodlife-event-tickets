@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Sparkles, Calendar, Layers, Tent, MapPin, Tag } from "lucide-react";
 import { Event } from "@/lib/supabase-db-types";
 import PosterUploader from "@/components/admin/PosterUploader";
+import VideoUploader from "@/components/admin/VideoUploader";
 
 /** Must stay in sync with the patterns lib/event-availability.ts schedules. */
 type RecurrencePattern = "none" | "daily" | "weekly" | "biweekly";
@@ -528,20 +529,12 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
           </div>
 
           {/* Media: Hero Teaser Video & Recap Video URL */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
-                HERO TEASER VIDEO URL
-              </label>
-              <input
-                type="text"
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="/videos/goodlife-hype.mp4"
-                className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
-              />
-              <span className="text-[10px] text-brand-navy/60">Autoplays in Story Deck after 3.5s</span>
-            </div>
+          <div className="space-y-3">
+            <VideoUploader
+              value={videoUrl}
+              onChange={setVideoUrl}
+              label="HERO TEASER VIDEO"
+            />
             <div>
               <label className="text-xs font-bold uppercase text-brand-navy block mb-1">
                 RECAP VIDEO URL (OPTIONAL)
@@ -553,7 +546,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
                 placeholder="/recap.mp4"
                 className="w-full p-2 border-2 border-brand-navy bg-white text-xs font-mono focus:outline-none"
               />
-              <span className="text-[10px] text-brand-navy/60">Displayed on recap page when closed</span>
+              <span className="text-[10px] text-brand-navy/60">Displayed on recap page when event is closed</span>
             </div>
           </div>
 

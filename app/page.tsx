@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
 import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
+import { SITE_NAME, TWITTER_HANDLE, buildEventSeo, siteUrl } from "@/lib/seo";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
 import ScheduledEventClientPage from "./ScheduledEventClientPage";
@@ -50,39 +51,48 @@ export async function generateMetadata(props: {
     }
     if (!target) return {};
 
-    const baseUrl = process.env.APP_URL || "https://goodlife.smwhr.space";
-    const title = target.title;
-    const venue = target.venue || "MARARA CAMP, THIKA";
-    const description =
-      `Official tickets for ${title} at ${venue}. ` +
-      `Instant M-Pesa checkout and instant WhatsApp PDF ticket delivery.`;
+    const baseUrl = siteUrl();
+    const seo = buildEventSeo(target);
     const pageUrl = eventParam ? `${baseUrl}/?event=${target.id}` : baseUrl;
-    const flyer = resolveEventFlyer(target);
-    const image = flyer.startsWith("http") ? flyer : `${baseUrl}${flyer}`;
+
+    // The banner is generated per edition from this event's own poster, so a
+    // shared `/?event=` link shows the event it is actually selling. A metadata
+    // file cannot read the query string, hence the explicit route handler.
+    const ogImage = `${baseUrl}/og?event=${target.id}`;
 
     return {
-      title: `${title} - ${venue}`,
-      description,
+      // `absolute`, not a string: a string gets the layout template
+      // (`%s | <featured event>`) applied, which produced the doubled title
+      // "GOODLIFE 4 - MARARA CAMP, THIKA | GOODLIFE 4".
+      title: { absolute: seo.title },
+      description: seo.description,
+      alternates: {
+        canonical: pageUrl,
+      },
       openGraph: {
-        title: `${title} - ${venue}`,
-        description,
-        url: pageUrl,
         type: "website",
+        title: seo.ogTitle,
+        description: seo.ogDescription,
+        url: pageUrl,
+        siteName: SITE_NAME,
+        locale: "en_KE",
         images: [
           {
-            url: image,
-            width: 896,
-            height: 1200,
-            alt: `${title} official event flyer`,
+            url: ogImage,
+            width: 1200,
+            height: 630,
+            alt: `${target.title} official event banner`,
             type: "image/png",
           },
         ],
       },
       twitter: {
         card: "summary_large_image",
-        title: `${title} - ${venue}`,
-        description,
-        images: [image],
+        site: TWITTER_HANDLE,
+        creator: TWITTER_HANDLE,
+        title: seo.ogTitle,
+        description: seo.ogDescription,
+        images: [ogImage],
       },
     };
   } catch {

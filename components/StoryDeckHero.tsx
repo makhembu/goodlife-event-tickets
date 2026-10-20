@@ -18,7 +18,7 @@ export interface StoryDeckHeroProps {
   className?: string;
 }
 
-const POSTER_DURATION = 3500; // 3.5s auto-countdown on poster before teaser autoplay
+const POSTER_DURATION = 5000; // 5s auto-countdown on poster before teaser autoplay
 
 export default function StoryDeckHero({
   posterUrl,
@@ -185,10 +185,25 @@ export default function StoryDeckHero({
         </div>
       )}
 
-      {/* B. MAIN MEDIA VIEWPORT */}
+      {/* B. MAIN MEDIA VIEWPORT
+          One gesture, one meaning: tapping (or Enter/Space) anywhere on the media
+          opens the lightbox on whatever is currently on screen. This is the ONLY
+          path to `onExpand("poster")`, so it must never be intercepted by an
+          overlay. The removed 30/70 tap zones used to sit on top at z-20 and their
+          poster branch called handleSelectVideo instead of expanding, which made
+          the poster lightbox unreachable without going through the video first. */}
       <div
         onClick={handleTriggerExpand}
-        className="w-full h-full relative cursor-pointer group/viewport overflow-hidden"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleTriggerExpand();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open full view of ${activeIndex === 0 ? "the event poster" : "the teaser video"}`}
+        className="w-full h-full relative cursor-pointer group/viewport overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         title="Tap to enlarge full resolution"
       >
         {/* SLIDE 0: POSTER IMAGE */}
@@ -231,34 +246,6 @@ export default function StoryDeckHero({
               muted={isMuted}
               preload="metadata"
               className="w-full h-full object-cover scale-[1.02] pointer-events-none"
-            />
-          </div>
-        )}
-
-        {/* C. TOUCH TAP ZONES (LEFT 30% / RIGHT 70% QUICK SWITCH) */}
-        {hasVideo && (
-          <div className="absolute inset-0 flex z-20 pointer-events-none">
-            {/* Left Zone: Back to Poster */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSelectPoster(e);
-              }}
-              className="w-[30%] h-full pointer-events-auto cursor-pointer"
-              title="Tap left to view Poster"
-            />
-            {/* Right Zone: Advance to Video or Trigger Modal */}
-            <div
-              onClick={(e) => {
-                if (activeIndex === 0) {
-                  e.stopPropagation();
-                  handleSelectVideo(e);
-                } else {
-                  handleTriggerExpand();
-                }
-              }}
-              className="w-[70%] h-full pointer-events-auto cursor-pointer"
-              title={activeIndex === 0 ? "Tap right to watch Teaser" : "Tap to open cinema mode"}
             />
           </div>
         )}
@@ -341,7 +328,7 @@ export default function StoryDeckHero({
               onClick={handleToggleSound}
               aria-label={isMuted ? "Unmute audio" : "Mute audio"}
               title={isMuted ? "Unmute audio" : "Mute audio"}
-              className={`w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center border backdrop-blur-md transition-all cursor-pointer rounded-sm ${
+              className={`w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center border backdrop-blur-md transition-all cursor-pointer rounded-sm relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
                 isMuted
                   ? "bg-black/60 text-white/90 border-white/20 hover:bg-black/80 hover:text-white"
                   : "bg-brand-accent text-brand-navy border-brand-accent shadow-xs"
@@ -361,7 +348,7 @@ export default function StoryDeckHero({
             onClick={handleTriggerExpand}
             aria-label="Open full screen view"
             title="Full View"
-            className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center bg-black/60 text-white/90 hover:bg-black/80 hover:text-white border border-white/20 backdrop-blur-md transition-all cursor-pointer rounded-sm"
+            className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center bg-black/60 text-white/90 hover:bg-black/80 hover:text-white border border-white/20 backdrop-blur-md transition-all cursor-pointer rounded-sm relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             <Maximize2 className="w-3 h-3" />
           </button>

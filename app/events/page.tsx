@@ -1,7 +1,24 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Calendar, ArrowRight } from 'lucide-react';
 import { getDbPool } from '@/lib/neon-client';
+import { SITE_NAME, siteUrl } from '@/lib/seo';
+
+export const metadata: Metadata = {
+  title: 'Past & Future GOODLIFE Editions',
+  description:
+    'Every GOODLIFE edition past and future: dates, venues and official tickets for the festival and its Park & Chill sessions.',
+  alternates: { canonical: `${siteUrl()}/events` },
+  openGraph: {
+    type: 'website',
+    title: 'Past & Future GOODLIFE Editions | GOODLIFE Events',
+    description: 'Every GOODLIFE edition past and future, with official tickets.',
+    url: `${siteUrl()}/events`,
+    siteName: SITE_NAME,
+    locale: 'en_KE',
+  },
+};
 
 // Render on demand. Without this the archive is prerendered at build time, which
 // both makes `next build` depend on Neon being reachable AND freezes the event

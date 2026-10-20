@@ -60,6 +60,7 @@ import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 import EventSelector from "@/components/EventSelector";
 import PosterUploader from "@/components/admin/PosterUploader";
+import VideoUploader from "@/components/admin/VideoUploader";
 // `canonicalStatus` folds the legacy `'active'` spelling of "live". It lives in
 // lib/event-availability, a pure module, so it is safe in a client component -
 // and using it here means this badge, the lifecycle dropdown and the payment
@@ -3656,16 +3657,13 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     required
                   />
                 </div>
-                <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <label className="text-xs font-black uppercase">Hero Teaser Video URL</label>
-                  <input
-                    type="text"
+                <div className="col-span-2">
+                  <VideoUploader
                     value={(eventFormState as any).video_url || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, video_url: e.target.value } as any)}
-                    placeholder="e.g. /videos/goodlife-hype.mp4"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    onChange={(url) => setEventFormState({ ...eventFormState, video_url: url } as any)}
+                    label="Hero Teaser Video"
                   />
-                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70">Autoplays in Story Deck after 3.5s</span>
+                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70 block mt-1">Autoplays in Story Deck after 5s or when switched to teaser</span>
                 </div>
                 <div className="space-y-1 col-span-2">
                   <label className="text-xs font-black uppercase">Scrolling Marquee Text (Ticker)</label>

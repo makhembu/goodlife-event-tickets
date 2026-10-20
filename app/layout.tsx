@@ -24,7 +24,8 @@ const bebasNeue = Bebas_Neue({
 });
 
 import { fetchEventDetails } from '@/lib/supabase-db';
-import { resolveEventFlyer } from '@/lib/event-flyer';
+import { SITE_NAME, TWITTER_HANDLE, buildEventSeo, siteUrl } from '@/lib/seo';
+import SeoStructuredData from '@/components/SeoStructuredData';
 
 export async function generateMetadata(): Promise<Metadata> {
   // Must never throw. generateMetadata runs for every prerendered route, so an
@@ -33,49 +34,60 @@ export async function generateMetadata(): Promise<Metadata> {
   // instead. This is what made one Neon connection timeout break a build.
   const event = await fetchEventDetails().catch(() => null);
   const title = event?.title || 'GOODLIFE';
-  // Deliberately not a hardcoded date: that fallback is exactly how a stale
-  // "JULY 11" ended up contradicting the live event.
   const venue = event?.venue || 'MARARA CAMP, THIKA';
   const subtitle = event?.subtitle || venue;
-  const flyerUrl = resolveEventFlyer(event);
-  const description = `Get your official tickets for ${title} (${subtitle}) at ${venue}. Instant M-Pesa checkout & instant WhatsApp PDF ticket delivery.`;
 
-  const baseUrl = process.env.APP_URL || 'https://goodlife.smwhr.space';
-  const absoluteImageUrl = flyerUrl.startsWith('http') ? flyerUrl : `${baseUrl}${flyerUrl}`;
+  const seo = buildEventSeo(event);
+  const baseUrl = siteUrl();
 
   return {
     metadataBase: new URL(baseUrl),
+    // No `alternates.canonical` here on purpose. A layout-level canonical would
+    // be inherited by every route and point `/events/3`, `/gallery` and `/radio`
+    // back at the homepage - i.e. tell search engines the whole site is one page.
+    // Each route owns its own canonical instead.
     title: {
-      default: `${title} - ${subtitle} | Official Tickets`,
+      default: `${seo.title} | Official Tickets`,
       template: `%s | ${title}`,
     },
-    description,
+    description: seo.description,
     keywords: [title, 'Goodlife tickets', 'Kenya events', 'Thika events', 'M-Pesa tickets', 'Marara Camp', subtitle],
-    authors: [{ name: 'GOODLIFE Events' }],
-    creator: 'GOODLIFE',
-    publisher: 'GOODLIFE',
-    openGraph: {
-      title: `${title} - ${subtitle}`,
-      description,
-      url: baseUrl,
-      siteName: `${title} Event Tickets`,
-      locale: 'en_KE',
-      images: [
-        {
-          url: absoluteImageUrl,
-          width: 896,
-          height: 1200,
-          alt: `${title} - ${subtitle} Official Event Flyer`,
-          type: 'image/png',
-        },
+    authors: [{ name: SITE_NAME }],
+    creator: SITE_NAME,
+    publisher: SITE_NAME,
+    applicationName: SITE_NAME,
+    icons: {
+      icon: [
+        { url: '/favicon.svg', type: 'image/svg+xml' },
+        // `app/icon.tsx` renders the admin-uploaded logo at /icon; this is the
+        // static fallback for browsers that ignore the generated one.
+        { url: '/icon', sizes: '32x32', type: 'image/png' },
+        { url: '/icon.png', sizes: '32x32', type: 'image/png' },
       ],
+      apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+      other: [{ rel: 'mask-icon', url: '/favicon.svg', color: '#142B4C' }],
+    },
+    manifest: '/site.webmanifest',
+    openGraph: {
       type: 'website',
+      title: seo.ogTitle,
+      // Deliberately the ~124-character variant, not `seo.description`: social
+      // cards truncate past ~125 characters without an ellipsis.
+      description: seo.ogDescription,
+      url: baseUrl,
+      siteName: SITE_NAME,
+      locale: 'en_KE',
+      // `images` is intentionally absent: `app/opengraph-image.tsx` generates the
+      // 1200x630 banner from the current event's own poster. Declaring one here
+      // would override the file and hand crawlers a portrait flyer again.
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${title} - ${subtitle}`,
-      description,
-      images: [absoluteImageUrl],
+      site: TWITTER_HANDLE,
+      creator: TWITTER_HANDLE,
+      title: seo.ogTitle,
+      description: seo.ogDescription,
+      // No `images` here either - Next falls back to the generated opengraph-image.
     },
     robots: {
       index: true,
@@ -95,6 +107,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
       <body className="font-sans antialiased bg-brand-bg text-brand-black min-h-screen" suppressHydrationWarning>
+        <SeoStructuredData />
         {children}
       </body>
     </html>

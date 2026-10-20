@@ -29,7 +29,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    const key = process.env.IMGBB_API_KEY || "46a61350ab6bdc4e5ab0ef6e4e47e5be";
+    const key = process.env.IMGBB_API_KEY;
+    if (!key) {
+      return NextResponse.json(
+        { error: "IMGBB_API_KEY is not configured. Please add a valid IMGBB_API_KEY to your .env.local file or deployment environment." },
+        { status: 500 }
+      );
+    }
     const outgoingFormData = new FormData();
     outgoingFormData.append("image", image);
 

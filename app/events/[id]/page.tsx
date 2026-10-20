@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { getEventById } from '@/lib/supabase-db';
 import { resolveEventFlyer } from '@/lib/event-flyer';
+import { SITE_NAME, TWITTER_HANDLE, buildEventSeo, siteUrl } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,39 +20,35 @@ export async function generateMetadata(props: {
     const event = await getEventById(parsedId);
     if (!event) return {};
 
-    const baseUrl = process.env.APP_URL || 'https://goodlife.smwhr.space';
-    const title = event.title;
-    const venue = event.venue || 'MARARA CAMP, THIKA';
-    const description =
-      `Official tickets & event details for ${title} at ${venue}. ` +
-      `Instant M-Pesa checkout and instant WhatsApp PDF ticket delivery.`;
+    const baseUrl = siteUrl();
+    const seo = buildEventSeo(event);
     const pageUrl = `${baseUrl}/events/${event.id}`;
-    const flyer = resolveEventFlyer(event);
-    const image = flyer.startsWith('http') ? flyer : `${baseUrl}${flyer}`;
 
     return {
-      title: `${title} - ${venue}`,
-      description,
+      // `absolute` avoids the layout template appending the featured event's
+      // name: "GOODLIFE 4 - MARARA CAMP, THIKA | GOODLIFE 4".
+      title: { absolute: seo.title },
+      description: seo.description,
+      alternates: {
+        canonical: pageUrl,
+      },
       openGraph: {
-        title: `${title} - ${venue}`,
-        description,
-        url: pageUrl,
         type: 'website',
-        images: [
-          {
-            url: image,
-            width: 896,
-            height: 1200,
-            alt: `${title} official event flyer`,
-            type: 'image/png',
-          },
-        ],
+        title: seo.ogTitle,
+        description: seo.ogDescription,
+        url: pageUrl,
+        siteName: SITE_NAME,
+        locale: 'en_KE',
+        // No `images` key on purpose. The sibling `opengraph-image.tsx` renders a
+        // 1200x630 banner from this edition's own poster; declaring images here
+        // would override that file and put the 896x1200 portrait flyer back.
       },
       twitter: {
         card: 'summary_large_image',
-        title: `${title} - ${venue}`,
-        description,
-        images: [image],
+        site: TWITTER_HANDLE,
+        creator: TWITTER_HANDLE,
+        title: seo.ogTitle,
+        description: seo.ogDescription,
       },
     };
   } catch {
