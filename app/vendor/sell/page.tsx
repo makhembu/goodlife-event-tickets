@@ -1512,21 +1512,21 @@ export default function VendorSellPage() {
                       <label className="block text-[10px] font-mono font-bold uppercase text-brand-navy/70 mb-1">
                         How is customer sending M-Pesa?
                       </label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => {
                             setShowManualMpesa(true);
                             HapticFeedback.trigger("confirmation");
                           }}
-                          className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`p-3 border-2 border-brand-navy font-mono text-xs sm:text-sm font-black uppercase flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[46px] ${
                             showManualMpesa
                               ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs)"
                               : "bg-white text-brand-navy hover:bg-gray-100"
                           }`}
                         >
                           <Receipt className="w-4 h-4 shrink-0" />
-                          <span className="truncate">🧾 1. Paid to Till</span>
+                          <span>1. Paid to Till (SMS Ref)</span>
                         </button>
                         <button
                           type="button"
@@ -1534,14 +1534,14 @@ export default function VendorSellPage() {
                             setShowManualMpesa(false);
                             HapticFeedback.trigger("confirmation");
                           }}
-                          className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`p-3 border-2 border-brand-navy font-mono text-xs sm:text-sm font-black uppercase flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[46px] ${
                             !showManualMpesa
                               ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs)"
                               : "bg-white text-brand-navy hover:bg-gray-100"
                           }`}
                         >
                           <Zap className="w-4 h-4 shrink-0" />
-                          <span className="truncate">📲 2. Send STK Prompt</span>
+                          <span>2. Send STK Prompt (PIN)</span>
                         </button>
                       </div>
                     </div>
@@ -1647,23 +1647,23 @@ export default function VendorSellPage() {
                             <label className="block text-[11px] font-bold uppercase text-brand-navy">
                               Customer Phone Number (for M-Pesa STK Prompt):
                             </label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2">
                               <input
                                 type="tel"
                                 placeholder="07XXXXXXXX or 254..."
                                 value={mpesaCustomerPhone}
                                 onChange={e => setMpesaCustomerPhone(e.target.value)}
-                                className="flex-1 p-2 text-sm font-mono border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none font-bold"
+                                className="flex-1 p-2.5 text-base sm:text-sm font-mono border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none font-bold min-h-[44px]"
                               />
                               <button
                                 type="button"
                                 disabled={!isOnline || isTriggeringStk || !mpesaCustomerPhone.trim()}
                                 onClick={triggerStkPush}
                                 title={!isOnline ? "M-Pesa STK is disabled while offline" : ""}
-                                className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-3 py-2 font-display text-sm uppercase flex items-center gap-1 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs) cursor-pointer"
+                                className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-4 py-3 sm:py-2 font-display text-sm uppercase flex items-center justify-center gap-1.5 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs) cursor-pointer min-h-[44px]"
                               >
-                                <Zap className="w-4 h-4 fill-brand-navy" />
-                                {!isOnline ? "Offline" : isTriggeringStk ? "Sending..." : "Prompt Phone"}
+                                <Zap className="w-4 h-4 fill-brand-navy shrink-0" />
+                                <span>{!isOnline ? "Offline" : isTriggeringStk ? "Sending..." : "Prompt Phone"}</span>
                               </button>
                             </div>
                             <p className="text-[10px] text-brand-navy/60 font-mono">
@@ -1985,7 +1985,7 @@ export default function VendorSellPage() {
             </div>
 
             {/* Bottom Actions Bar */}
-            <div className="flex gap-3 pt-3 border-t-2 border-brand-navy shrink-0 bg-brand-off-white mt-2">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-3 border-t-2 border-brand-navy shrink-0 bg-brand-off-white mt-2">
               <button 
                 type="button"
                 onClick={() => {
@@ -1993,7 +1993,7 @@ export default function VendorSellPage() {
                   setIsSearchDropdownOpen(false);
                   setCustomerSearchQuery("");
                 }} 
-                className="w-1/3 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-sm sm:text-base transition-colors cursor-pointer"
+                className="w-full sm:w-1/3 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-sm sm:text-base transition-colors cursor-pointer min-h-[48px] flex items-center justify-center"
               >
                 Cancel
               </button>
@@ -2001,7 +2001,7 @@ export default function VendorSellPage() {
                 type="button"
                 disabled={submittingSale || remainingDue > 0}
                 onClick={handleCheckout} 
-                className={`w-2/3 border-4 border-brand-navy font-display uppercase p-3 text-base sm:text-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`w-full sm:w-2/3 border-4 border-brand-navy font-display uppercase p-3.5 sm:p-3 text-base sm:text-lg transition-all flex items-center justify-center gap-2 cursor-pointer min-h-[52px] ${
                   remainingDue > 0
                     ? "bg-gray-200 text-gray-400 border-gray-400 cursor-not-allowed opacity-70"
                     : "bg-green-600 hover:bg-green-700 text-white shadow-(--shadow-brut-md)"
