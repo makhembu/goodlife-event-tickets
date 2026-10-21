@@ -99,6 +99,7 @@ export default function AdminBudgetPage() {
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedVendorFilter, setSelectedVendorFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Bulk Selection & Operation State
@@ -122,6 +123,9 @@ export default function AdminBudgetPage() {
   const [eventVendors, setEventVendors] = useState<any[]>([]);
   const [vendorOperators, setVendorOperators] = useState<any[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
+
+  // Active Overview Tab ('overview' or 'vendors')
+  const [activeFinanceTab, setActiveFinanceTab] = useState<"overview" | "stalls">("overview");
 
   // Form State for Expense
   const [formData, setFormData] = useState({
@@ -248,16 +252,25 @@ export default function AdminBudgetPage() {
         if (selectedStatus === "planned" && item.status !== "planned" && item.status !== "quoted") return false;
         if (selectedStatus !== "quoted" && selectedStatus !== "planned" && item.status !== selectedStatus) return false;
       }
+      if (selectedVendorFilter !== "all") {
+        if (selectedVendorFilter === "overhead") {
+          if (item.vendor_id) return false;
+        } else {
+          if (!item.vendor_id || item.vendor_id.toString() !== selectedVendorFilter) return false;
+        }
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = item.title.toLowerCase().includes(q);
         const matchRecipient = (item.recipient || "").toLowerCase().includes(q);
         const matchNotes = (item.notes || "").toLowerCase().includes(q);
-        if (!matchTitle && !matchRecipient && !matchNotes) return false;
+        const matchVendor = (item.vendor_name || "").toLowerCase().includes(q);
+        const matchOperator = (item.operator_name || "").toLowerCase().includes(q);
+        if (!matchTitle && !matchRecipient && !matchNotes && !matchVendor && !matchOperator) return false;
       }
       return true;
     });
-  }, [expenses, selectedCategory, selectedStatus, searchQuery]);
+  }, [expenses, selectedCategory, selectedStatus, selectedVendorFilter, searchQuery]);
 
   // Total of filtered items
   const filteredTotal = useMemo(() => {
@@ -403,13 +416,31 @@ export default function AdminBudgetPage() {
       return;
     }
 
-    const headers = ["ID", "Event", "Date", "Category", "Title", "Recipient", "Amount (KES)", "Status", "Payment Method", "Notes", "Receipt URL"];
+    const headers = [
+      "ID", 
+      "Event", 
+      "Date", 
+      "Category", 
+      "Title", 
+      "Vendor / Department", 
+      "Classification", 
+      "Cashier / Operator", 
+      "Recipient / Payee", 
+      "Amount (KES)", 
+      "Status", 
+      "Payment Method", 
+      "Notes", 
+      "Receipt URL"
+    ];
     const rows = filteredExpenses.map((e) => [
       e.id,
       `"${(e.event_title || "").replace(/"/g, '""')}"`,
       e.paid_at ? e.paid_at.substring(0, 10) : "",
       `"${e.category}"`,
       `"${e.title.replace(/"/g, '""')}"`,
+      `"${(e.vendor_name || "Festival Overhead").replace(/"/g, '""')}"`,
+      `"${(e.expense_type || "overhead").replace(/"/g, '""')}"`,
+      `"${(e.operator_name || "").replace(/"/g, '""')}"`,
       `"${(e.recipient || "").replace(/"/g, '""')}"`,
       e.amount,
       e.status,
@@ -423,7 +454,7 @@ export default function AdminBudgetPage() {
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     const eventName = summary?.event_title ? summary.event_title.replace(/[^a-z0-9]/gi, "-").toLowerCase() : "event";
-    link.setAttribute("download", `goodlife-expenses-${eventName}-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `goodlife-finances-${eventName}-${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -777,6 +808,154 @@ export default function AdminBudgetPage() {
           </div>
         </div>
 
+        {/* View Mode Switcher: Event Overall vs Stall Unit Economics */}
+        <div className="flex border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
+          <button
+            type="button"
+            onClick={() => setActiveFinanceTab("overview")}
+            className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+              activeFinanceTab === "overview"
+                ? "bg-brand-navy text-brand-off-white"
+                : "bg-white text-brand-navy hover:bg-brand-accent/30"
+            }`}
+          >
+            <PieChart className="w-4 h-4" />
+            <span>Festival Overall Finances & P&L</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFinanceTab("stalls")}
+            className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 border-l-4 border-brand-navy transition-colors cursor-pointer ${
+              activeFinanceTab === "stalls"
+                ? "bg-brand-navy text-brand-off-white"
+                : "bg-white text-brand-navy hover:bg-brand-accent/30"
+            }`}
+          >
+            <Store className="w-4 h-4" />
+            <span>Commercial Stalls Unit Economics ({eventVendors.length})</span>
+          </button>
+        </div>
+
+        {/* Commercial Stalls Unit Economics View */}
+        {activeFinanceTab === "stalls" && (
+          <div className="border-4 border-brand-navy bg-white p-4 shadow-(--shadow-brut-sm) space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-brand-navy pb-3 gap-2">
+              <div>
+                <h2 className="text-base font-display uppercase flex items-center gap-2">
+                  <Store className="w-5 h-5 text-brand-navy" /> Vendor Stalls Profitability & COGS Audit
+                </h2>
+                <p className="text-xs text-brand-navy/60 font-bold uppercase mt-0.5">
+                  Direct Stall Supplies, POS Gross Revenue, Festival Commission & Net Margins
+                </p>
+              </div>
+              <Link
+                href="/admin/settlements"
+                className="px-2.5 py-1 text-xs font-black uppercase bg-brand-accent text-brand-navy border-2 border-brand-navy self-start sm:self-auto hover:bg-yellow-300 transition-colors shadow-(--shadow-brut-xs)"
+              >
+                Go to Settlements &rarr;
+              </Link>
+            </div>
+
+            {eventVendors.length === 0 ? (
+              <div className="p-8 text-center text-xs text-brand-navy/60 font-bold uppercase border-2 border-dashed border-brand-navy/30">
+                No vendors assigned to this event edition yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {eventVendors.map((vendor) => {
+                  const vendorExp = expenses.filter(
+                    (e) => e.vendor_id === vendor.id && e.status !== "cancelled"
+                  );
+                  const totalStallExpenses = vendorExp.reduce(
+                    (sum, e) => sum + (Number(e.amount) || 0),
+                    0
+                  );
+                  const totalGrossSales = Number(vendor.total_sales || 0);
+                  const commRate = Number(vendor.commission_rate || 10);
+                  const commissionOwed = Math.round((totalGrossSales * commRate) / 100);
+                  const vendorNetTakehome = totalGrossSales - commissionOwed - totalStallExpenses;
+
+                  return (
+                    <div
+                      key={vendor.id}
+                      className="border-2 border-brand-navy p-3 bg-brand-off-white shadow-(--shadow-brut-xs) flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 border-b border-brand-navy/20 pb-2">
+                          <div>
+                            <h3 className="font-bold text-sm text-brand-navy">{vendor.name}</h3>
+                            <p className="text-[10px] text-brand-navy/60 font-mono">
+                              Rate: {commRate}% Commission
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVendorFilter(vendor.id.toString());
+                              setActiveFinanceTab("overview");
+                            }}
+                            className="text-[9px] font-black uppercase px-1.5 py-0.5 border border-brand-navy bg-white hover:bg-brand-accent text-brand-navy cursor-pointer"
+                            title="Filter expenses for this vendor"
+                          >
+                            View Items &rarr;
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-1.5 text-xs font-mono">
+                          <div className="flex justify-between">
+                            <span className="text-[10px] uppercase font-bold text-brand-navy/70">Gross POS Revenue:</span>
+                            <span className="font-bold text-brand-navy">KES {totalGrossSales.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[10px] uppercase font-bold text-brand-navy/70">Festival Cut ({commRate}%):</span>
+                            <span className="font-bold text-brand-navy/80">KES {commissionOwed.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[10px] uppercase font-bold text-red-600">Stall Costs / Advances:</span>
+                            <span className="font-bold text-red-600">KES {totalStallExpenses.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between pt-1.5 border-t border-brand-navy/20 font-black">
+                            <span className="text-[10px] uppercase text-brand-navy">Net Margin:</span>
+                            <span
+                              className={`text-sm ${
+                                vendorNetTakehome >= 0 ? "text-emerald-700" : "text-red-600"
+                              }`}
+                            >
+                              {vendorNetTakehome >= 0 ? "+" : ""}KES {vendorNetTakehome.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-brand-navy/20 flex items-center justify-between text-[10px]">
+                        <span className="text-brand-navy/60 font-mono">
+                          {vendorExp.length} {vendorExp.length === 1 ? "expense" : "expenses"} logged
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              vendor_id: vendor.id.toString(),
+                              category: "inventory",
+                              expense_type: "vendor_cogs",
+                              title: `Supplies for ${vendor.name}`,
+                            });
+                            setShowAddModal(true);
+                          }}
+                          className="px-2 py-0.5 border border-brand-navy bg-brand-accent font-bold uppercase text-[9px] hover:bg-yellow-300 cursor-pointer"
+                        >
+                          + Log Expense
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* KPI Dashboard Cards: 3-Tier Budget Model & Dual P&L */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {/* Card 1: Initial Budget Cap & Earmarked */}
@@ -1004,6 +1183,24 @@ export default function AdminBudgetPage() {
               </select>
             </div>
 
+            {/* Vendor / Department Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase text-brand-navy/60 hidden sm:inline">Stall:</span>
+              <select
+                value={selectedVendorFilter}
+                onChange={(e) => setSelectedVendorFilter(e.target.value)}
+                className="p-1.5 border-2 border-brand-navy bg-brand-off-white text-xs font-bold uppercase outline-none cursor-pointer max-w-[150px] truncate"
+              >
+                <option value="all">All Allocations</option>
+                <option value="overhead">Festival Overhead Only</option>
+                {eventVendors.map((v) => (
+                  <option key={v.id} value={v.id.toString()}>
+                    Vendor: {v.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Category Dropdown */}
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-bold uppercase text-brand-navy/60 hidden sm:inline">Category:</span>
@@ -1033,9 +1230,15 @@ export default function AdminBudgetPage() {
           </div>
 
           {/* Active Filter Chips */}
-          {(selectedCategory !== "all" || selectedStatus !== "all" || searchQuery) && (
+          {(selectedCategory !== "all" || selectedStatus !== "all" || selectedVendorFilter !== "all" || searchQuery) && (
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-brand-navy/20 text-xs">
               <span className="text-[10px] font-bold uppercase text-brand-navy/60">Active Filters:</span>
+              {selectedVendorFilter !== "all" && (
+                <span className="px-2 py-0.5 border border-brand-navy bg-brand-accent font-bold text-[10px] uppercase flex items-center gap-1">
+                  Stall: {selectedVendorFilter === "overhead" ? "Festival Overhead" : eventVendors.find(v => v.id.toString() === selectedVendorFilter)?.name || "Vendor"}
+                  <button onClick={() => setSelectedVendorFilter("all")} className="cursor-pointer">&times;</button>
+                </span>
+              )}
               {selectedCategory !== "all" && (
                 <span className="px-2 py-0.5 border border-brand-navy bg-brand-accent font-bold text-[10px] uppercase flex items-center gap-1">
                   Category: {getCategoryMeta(selectedCategory).label}
@@ -1058,6 +1261,7 @@ export default function AdminBudgetPage() {
                 onClick={() => {
                   setSelectedCategory("all");
                   setSelectedStatus("all");
+                  setSelectedVendorFilter("all");
                   setSearchQuery("");
                 }}
                 className="text-[10px] underline font-bold uppercase text-red-600 hover:text-red-800 cursor-pointer ml-auto"
@@ -1519,9 +1723,9 @@ export default function AdminBudgetPage() {
 
       {/* MODAL: Log or Edit Expense */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-brand-navy/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border-4 border-brand-navy p-5 max-w-lg w-full shadow-(--shadow-brut-lg) space-y-4 my-8">
-            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
+        <div className="fixed inset-0 bg-brand-navy/80 backdrop-blur-xs z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white border-4 border-brand-navy p-4 sm:p-5 max-w-lg w-full shadow-(--shadow-brut-lg) space-y-4 my-2 sm:my-8 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3 shrink-0">
               <h3 className="font-display uppercase text-lg font-black flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-brand-navy" />
                 {editingExpense ? "Edit Expense Entry" : "Log New Event Expense"}
@@ -1538,7 +1742,7 @@ export default function AdminBudgetPage() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveExpense} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveExpense} className="space-y-3 text-xs overflow-y-auto pr-1">
               {/* Event Edition Selector */}
               <div>
                 <label className="font-bold uppercase block mb-1">
@@ -1875,9 +2079,9 @@ export default function AdminBudgetPage() {
 
       {/* MODAL: Fork / Clone Budget from Another Event */}
       {showForkModal && (
-        <div className="fixed inset-0 bg-brand-navy/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-brand-navy p-5 max-w-md w-full shadow-(--shadow-brut-lg) space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
+        <div className="fixed inset-0 bg-brand-navy/80 backdrop-blur-xs z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white border-4 border-brand-navy p-4 sm:p-5 max-w-md w-full shadow-(--shadow-brut-lg) space-y-4 my-2 sm:my-8 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3 shrink-0">
               <h3 className="font-display uppercase text-lg font-black flex items-center gap-2">
                 <Layers className="w-5 h-5 text-brand-navy" />
                 Fork Budget From Edition
@@ -1891,7 +2095,7 @@ export default function AdminBudgetPage() {
               </button>
             </div>
 
-            <form onSubmit={handleForkBudget} className="space-y-4 text-xs">
+            <form onSubmit={handleForkBudget} className="space-y-4 text-xs overflow-y-auto pr-1">
               <p className="text-brand-navy/80 leading-relaxed">
                 Clone departmental budget line-items (Venue, Artists, Sound, Marketing, etc.) from an existing event into <strong>{summary?.event_title || "this edition"}</strong>.
               </p>

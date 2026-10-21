@@ -2705,7 +2705,9 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
         COALESCE(sales_summary.tab_collected, 0) as tab_collected,
         (COALESCE(sales_summary.mpesa_collected, 0) + COALESCE(sales_summary.tab_collected, 0)) as digital_collected,
         ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
-        ROUND(COALESCE(sales_summary.total_sales, vea.total_sales, 0) - (COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share
+        ROUND(COALESCE(sales_summary.total_sales, vea.total_sales, 0) - (COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share,
+        COALESCE(advances_summary.advances_total, 0) as advances_total,
+        COALESCE(advances_summary.advances_count, 0) as advances_count
       FROM vendors v
       LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND vea.event_id = $1
       LEFT JOIN events e ON e.id = $1
@@ -2730,6 +2732,17 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
         WHERE ps.event_id = $1 AND ps.payment_status != 'voided'
         GROUP BY ps.vendor_id
       ) sales_summary ON sales_summary.vendor_id = v.id
+      LEFT JOIN (
+        SELECT 
+          ee.vendor_id,
+          COALESCE(SUM(ee.amount), 0) as advances_total,
+          COUNT(ee.id) as advances_count
+        FROM event_expenses ee
+        WHERE ee.event_id = $1 
+          AND ee.status != 'cancelled'
+          AND ee.expense_type IN ('vendor_advance', 'vendor_cogs')
+        GROUP BY ee.vendor_id
+      ) advances_summary ON advances_summary.vendor_id = v.id
       WHERE v.deleted_at IS NULL
         AND (vea.id IS NOT NULL OR sales_summary.total_sales IS NOT NULL)
       ORDER BY v.name ASC`,
@@ -2760,7 +2773,9 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
       COALESCE(ps.tab_collected, 0) as tab_collected,
       (COALESCE(ps.mpesa_collected, 0) + COALESCE(ps.tab_collected, 0)) as digital_collected,
       ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
-      ROUND(COALESCE(ps.total_sales, vea.total_sales, 0) - (COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share
+      ROUND(COALESCE(ps.total_sales, vea.total_sales, 0) - (COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share,
+      COALESCE(advances_summary.advances_total, 0) as advances_total,
+      COALESCE(advances_summary.advances_count, 0) as advances_count
     FROM vendors v
     LEFT JOIN (
       SELECT 
@@ -2784,6 +2799,17 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
       WHERE ps.payment_status != 'voided'
       GROUP BY ps.vendor_id, ps.event_id
     ) ps ON ps.vendor_id = v.id
+    LEFT JOIN (
+      SELECT 
+        ee.vendor_id,
+        ee.event_id,
+        COALESCE(SUM(ee.amount), 0) as advances_total,
+        COUNT(ee.id) as advances_count
+      FROM event_expenses ee
+      WHERE ee.status != 'cancelled'
+        AND ee.expense_type IN ('vendor_advance', 'vendor_cogs')
+      GROUP BY ee.vendor_id, ee.event_id
+    ) advances_summary ON advances_summary.vendor_id = v.id AND (advances_summary.event_id = ps.event_id OR ps.event_id IS NULL)
     LEFT JOIN vendor_event_assignments vea ON vea.vendor_id = v.id AND (vea.event_id = ps.event_id OR ps.event_id IS NULL)
     LEFT JOIN events e ON e.id = COALESCE(vea.event_id, ps.event_id)
     WHERE v.deleted_at IS NULL

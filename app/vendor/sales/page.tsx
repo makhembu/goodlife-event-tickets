@@ -70,6 +70,8 @@ interface SalesSummary {
 export default function VendorSalesPage() {
   const [sales, setSales] = useState<PosSaleRecord[]>([]);
   const [summary, setSummary] = useState<SalesSummary | null>(null);
+  const [vendorExpenses, setVendorExpenses] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"sales" | "expenses">("sales");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [methodFilter, setMethodFilter] = useState<string>("all");
@@ -79,12 +81,21 @@ export default function VendorSalesPage() {
   const fetchSales = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/vendor/sales");
-      if (res.ok) {
-        const data = await res.json();
+      const [salesRes, expRes] = await Promise.all([
+        fetch("/api/vendor/sales"),
+        fetch("/api/vendor/expenses").catch(() => null)
+      ]);
+      if (salesRes.ok) {
+        const data = await salesRes.json();
         if (data.success) {
           setSales(data.sales || []);
           setSummary(data.summary || null);
+        }
+      }
+      if (expRes && expRes.ok) {
+        const expData = await expRes.json();
+        if (expData.success) {
+          setVendorExpenses(expData.expenses || []);
         }
       }
     } catch (e) {
@@ -404,6 +415,99 @@ export default function VendorSalesPage() {
               Units across all orders
             </span>
           </div>
+        </div>
+      )}
+
+      {/* SALES / EXPENSES TAB SWITCHER */}
+      <div className="flex border-3 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
+        <button
+          type="button"
+          onClick={() => setActiveTab("sales")}
+          className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+            activeTab === "sales"
+              ? "bg-brand-navy text-brand-off-white"
+              : "bg-white text-brand-navy hover:bg-brand-accent/30"
+          }`}
+        >
+          <Receipt className="w-4 h-4" />
+          <span>Completed Orders ({sales.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("expenses")}
+          className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 border-l-3 border-brand-navy transition-colors cursor-pointer ${
+            activeTab === "expenses"
+              ? "bg-brand-navy text-brand-off-white"
+              : "bg-white text-brand-navy hover:bg-brand-accent/30"
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          <span>Stall Supplies & Advances ({vendorExpenses.length})</span>
+        </button>
+      </div>
+
+      {/* EXPENSES VIEW */}
+      {activeTab === "expenses" && (
+        <div className="bg-white border-3 border-brand-navy p-4 shadow-(--shadow-brut-sm) space-y-4">
+          <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
+            <div>
+              <h2 className="text-base font-black uppercase flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-brand-navy" /> Stall Stock, COGS & Advances
+              </h2>
+              <p className="text-xs text-brand-navy/60 font-mono mt-0.5">
+                Official supplies, inventory procurements and cash advances logged for your stall.
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] uppercase font-bold text-brand-navy/60 block">Total Deductions</span>
+              <span className="text-lg font-black font-mono text-red-600">
+                KES {vendorExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {vendorExpenses.length === 0 ? (
+            <div className="p-8 text-center text-xs text-brand-navy/60 font-mono border-2 border-dashed border-brand-navy/30">
+              No direct supplies or advances logged for this stall yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {vendorExpenses.map((exp) => (
+                <div
+                  key={exp.id}
+                  className="border-2 border-brand-navy p-3 bg-brand-off-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-brand-navy">{exp.title}</span>
+                      <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-white border border-brand-navy text-brand-navy">
+                        {exp.expense_type === "vendor_cogs" ? "Stock / COGS" : exp.expense_type === "vendor_advance" ? "Cash Advance" : exp.expense_type}
+                      </span>
+                      <span className={`px-1.5 py-0.5 text-[9px] font-black uppercase border ${
+                        exp.status === "paid" ? "bg-emerald-100 text-emerald-900 border-emerald-400" : "bg-amber-100 text-amber-900 border-amber-400"
+                      }`}>
+                        {exp.status}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-brand-navy/60 mt-1 flex items-center gap-2 flex-wrap">
+                      <span>Date: {exp.paid_at ? exp.paid_at.substring(0, 10) : "N/A"}</span>
+                      {exp.operator_name && <span>Attributed to: <strong>{exp.operator_name}</strong></span>}
+                      {exp.notes && <span className="italic">Notes: {exp.notes}</span>}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="font-black text-sm text-red-600 block">
+                      -KES {Number(exp.amount).toLocaleString()}
+                    </span>
+                    <span className="text-[9px] text-brand-navy/60 uppercase">
+                      Channel: {exp.payment_method}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

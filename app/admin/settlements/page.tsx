@@ -149,11 +149,12 @@ export default function AdminSettlementsPage() {
     const commissionCut = Number(s.commission_owed) || Math.round((grossSales * commRate) / 100);
     const vendorNetShare = Number(s.vendor_net_share) || (grossSales - commissionCut);
     const settledAmount = Number(s.settled_amount) || 0;
+    const advancesTotal = Number(s.advances_total) || 0;
 
-    // Gross Payout Due (before subtracting past settlements)
-    // Goodlife collected digitalHeld. Goodlife retains commissionCut.
-    // So Goodlife must pay vendor: digitalHeld - commissionCut
-    const grossPayoutDue = digitalHeld - commissionCut;
+    // Gross Payout Due (before subtracting past settlements and advances)
+    // Goodlife collected digitalHeld. Goodlife retains commissionCut and recoups advances.
+    // So Goodlife must pay vendor: digitalHeld - commissionCut - advancesTotal
+    const grossPayoutDue = digitalHeld - commissionCut - advancesTotal;
     
     // Remaining Net Balance:
     let pendingDue = 0;
@@ -186,6 +187,7 @@ export default function AdminSettlementsPage() {
       commissionCut,
       vendorNetShare,
       settledAmount,
+      advancesTotal,
       grossPayoutDue,
       pendingDue,
       direction,
@@ -514,6 +516,11 @@ export default function AdminSettlementsPage() {
                         <div className="text-[10px] text-brand-navy/60">
                           ({m.commRate}% commission)
                         </div>
+                        {m.advancesTotal > 0 && (
+                          <div className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1 py-0.5 mt-1 inline-block">
+                            Advance: -KES {m.advancesTotal.toLocaleString()}
+                          </div>
+                        )}
                         <div className="text-xs font-bold text-emerald-800 mt-1 pt-1 border-t border-brand-navy/10">
                           Net: KES {m.vendorNetShare.toLocaleString()}
                         </div>
@@ -673,6 +680,12 @@ export default function AdminSettlementsPage() {
                     <span className="text-brand-navy/60 font-bold uppercase">Festival Commission (10%):</span>
                     <span className="font-mono font-bold">KES {m.commissionCut.toLocaleString()}</span>
                   </div>
+                  {m.advancesTotal > 0 && (
+                    <div className="flex justify-between bg-red-50 p-1 border border-red-200">
+                      <span className="text-red-700 font-bold uppercase">Less Vendor Advances / COGS:</span>
+                      <span className="font-mono font-bold text-red-700">-KES {m.advancesTotal.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between pt-1 border-t border-brand-navy/10">
                     <span className="font-bold uppercase text-emerald-800">Vendor Net 90% Share:</span>
                     <span className="font-mono font-black text-emerald-800">KES {m.vendorNetShare.toLocaleString()}</span>
