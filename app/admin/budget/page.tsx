@@ -33,7 +33,9 @@ import {
   Truck,
   Beer,
   Box,
-  Image as ImageIcon
+  Image as ImageIcon,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import PosterUploader from "@/components/admin/PosterUploader";
 
@@ -44,7 +46,7 @@ export interface ExpenseItem {
   title: string;
   category: string;
   amount: number;
-  status: "paid" | "pending" | "planned";
+  status: "paid" | "pending" | "planned" | "quoted" | "cancelled" | string;
   payment_method: string;
   recipient?: string | null;
   receipt_url?: string | null;
@@ -90,6 +92,10 @@ export default function AdminBudgetPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  // Bulk Selection & Operation State
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<number[]>([]);
+  const [bulkOperating, setBulkOperating] = useState(false);
+
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null);
@@ -132,9 +138,10 @@ export default function AdminBudgetPage() {
     if (!target) return;
     setLoading(true);
 
+    const ts = Date.now();
     Promise.all([
-      fetch(`/api/admin/budget?eventId=${target}`).then((r) => r.json()),
-      fetch(`/api/admin/expenses?eventId=${target}`).then((r) => r.json()),
+      fetch(`/api/admin/budget?eventId=${target}&_t=${ts}`, { cache: "no-store" }).then((r) => r.json()),
+      fetch(`/api/admin/expenses?eventId=${target}&_t=${ts}`, { cache: "no-store" }).then((r) => r.json()),
     ])
       .then(([summaryData, expensesData]) => {
         if (summaryData && !summaryData.error) {
@@ -161,7 +168,11 @@ export default function AdminBudgetPage() {
   const filteredExpenses = useMemo(() => {
     return expenses.filter((item) => {
       if (selectedCategory !== "all" && item.category !== selectedCategory) return false;
-      if (selectedStatus !== "all" && item.status !== selectedStatus) return false;
+      if (selectedStatus !== "all") {
+        if (selectedStatus === "quoted" && item.status !== "quoted" && item.status !== "planned") return false;
+        if (selectedStatus === "planned" && item.status !== "planned" && item.status !== "quoted") return false;
+        if (selectedStatus !== "quoted" && selectedStatus !== "planned" && item.status !== selectedStatus) return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = item.title.toLowerCase().includes(q);
@@ -177,6 +188,138 @@ export default function AdminBudgetPage() {
   const filteredTotal = useMemo(() => {
     return filteredExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
   }, [filteredExpenses]);
+
+  // Total of selected items
+  const selectedTotal = useMemo(() => {
+    return expenses
+      .filter((e) => selectedExpenseIds.includes(e.id))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  }, [expenses, selectedExpenseIds]);
+
+  const isAllSelected = filteredExpenses.length > 0 && filteredExpenses.every((item) => selectedExpenseIds.includes(item.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedExpenseIds([]);
+    } else {
+      setSelectedExpenseIds(filteredExpenses.map((item) => item.id));
+    }
+  };
+
+  const toggleSelectRow = (id: number) => {
+    setSelectedExpenseIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  // Inline single-row status change
+  const handleInlineStatusChange = async (id: number, newStatus: string) => {
+    // Optimistic update
+    setExpenses((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
+    );
+
+    try {
+      const res = await fetch(`/api/admin/expenses/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        alert("Failed to update status");
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Network error updating status");
+      loadData();
+    }
+  };
+
+  // Bulk status update
+  const handleBulkStatus = async (status: string) => {
+    if (selectedExpenseIds.length === 0 || bulkOperating) return;
+    setBulkOperating(true);
+    try {
+      setExpenses((prev) =>
+        prev.map((e) => (selectedExpenseIds.includes(e.id) ? { ...e, status } : e))
+      );
+      const res = await fetch("/api/admin/expenses/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_status", ids: selectedExpenseIds, status }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || "Failed to update selected expenses");
+      } else {
+        setSelectedExpenseIds([]);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Network error updating bulk status");
+    } finally {
+      setBulkOperating(false);
+    }
+  };
+
+  // Bulk category update
+  const handleBulkCategory = async (category: string) => {
+    if (selectedExpenseIds.length === 0 || bulkOperating || !category) return;
+    setBulkOperating(true);
+    try {
+      setExpenses((prev) =>
+        prev.map((e) => (selectedExpenseIds.includes(e.id) ? { ...e, category } : e))
+      );
+      const res = await fetch("/api/admin/expenses/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_category", ids: selectedExpenseIds, category }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || "Failed to update category for selected expenses");
+      } else {
+        setSelectedExpenseIds([]);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Network error updating bulk category");
+    } finally {
+      setBulkOperating(false);
+    }
+  };
+
+  // Bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedExpenseIds.length === 0 || bulkOperating) return;
+    if (
+      !confirm(
+        `Are you sure you want to permanently delete ${selectedExpenseIds.length} expense records totaling KES ${selectedTotal.toLocaleString()}?`
+      )
+    ) {
+      return;
+    }
+    setBulkOperating(true);
+    try {
+      setExpenses((prev) => prev.filter((e) => !selectedExpenseIds.includes(e.id)));
+      const res = await fetch("/api/admin/expenses/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", ids: selectedExpenseIds }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || "Failed to delete selected expenses");
+      } else {
+        setSelectedExpenseIds([]);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || "Network error deleting selected expenses");
+    } finally {
+      setBulkOperating(false);
+    }
+  };
 
   // CSV Export
   const handleExportCSV = () => {
@@ -259,12 +402,14 @@ export default function AdminBudgetPage() {
 
     setSubmitting(true);
     try {
+      const resolvedEventId = editingExpense?.event_id || (selectedEventId && selectedEventId !== "all" ? Number(selectedEventId) : (events[0]?.id || 2));
+
       const payload = {
-        event_id: Number(selectedEventId),
+        event_id: resolvedEventId,
         title: formData.title.trim(),
         category: formData.category,
         amount: numAmount,
-        status: formData.status,
+        status: (formData.status || "paid").trim().toLowerCase(),
         payment_method: formData.payment_method,
         recipient: formData.recipient.trim() || null,
         notes: formData.notes.trim() || null,
@@ -288,6 +433,22 @@ export default function AdminBudgetPage() {
       }
 
       if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        const savedItem = json.expense || json;
+        if (savedItem && savedItem.id) {
+          setExpenses((prev) => {
+            const exists = prev.some((item) => item.id === savedItem.id);
+            if (exists) {
+              return prev.map((item) =>
+                item.id === savedItem.id
+                  ? { ...item, ...savedItem, amount: Number(savedItem.amount) }
+                  : item
+              );
+            } else {
+              return [savedItem, ...prev];
+            }
+          });
+        }
         setShowAddModal(false);
         setEditingExpense(null);
         resetForm();
@@ -661,6 +822,99 @@ export default function AdminBudgetPage() {
 
         {/* Expenses Ledger / Table */}
         <div className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-sm) overflow-hidden">
+          {/* Sticky Bulk Action Bar */}
+          {selectedExpenseIds.length > 0 && (
+            <div className="bg-brand-navy text-white p-3 border-b-2 border-brand-accent flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="flex items-center gap-2">
+                <span className="bg-brand-accent text-brand-navy font-mono font-black text-xs px-2 py-0.5 border border-brand-navy">
+                  ⚡ {selectedExpenseIds.length} SELECTED
+                </span>
+                <span className="text-xs font-mono font-bold text-brand-off-white">
+                  Total: KES {selectedTotal.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Quick Status Buttons */}
+                <div className="flex items-center gap-1 bg-white/10 p-1 border border-white/20">
+                  <span className="text-[10px] font-bold uppercase text-white/70 px-1">Status:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatus("paid")}
+                    disabled={bulkOperating}
+                    className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Paid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatus("pending")}
+                    disabled={bulkOperating}
+                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-brand-navy text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Pending
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatus("quoted")}
+                    disabled={bulkOperating}
+                    className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Quoted
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatus("cancelled")}
+                    disabled={bulkOperating}
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-[10px] font-black uppercase transition-colors cursor-pointer"
+                  >
+                    Cancelled
+                  </button>
+                </div>
+
+                {/* Quick Move Category */}
+                <select
+                  defaultValue=""
+                  disabled={bulkOperating}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkCategory(e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  className="px-2 py-1.5 bg-white text-brand-navy border border-brand-navy text-[10px] font-black uppercase cursor-pointer outline-none"
+                >
+                  <option value="" disabled>Reassign Category...</option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Bulk Delete Button */}
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkOperating}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white border border-red-700 text-[10px] font-black uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete ({selectedExpenseIds.length})</span>
+                </button>
+
+                {/* Deselect All */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedExpenseIds([])}
+                  className="text-[10px] font-mono text-white/70 hover:text-white underline cursor-pointer px-1"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="p-3 bg-brand-navy text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
@@ -698,6 +952,15 @@ export default function AdminBudgetPage() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b-2 border-brand-navy bg-brand-off-white text-[11px] font-bold uppercase">
+                    <th className="p-2.5 w-8 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all rows"
+                        className="w-4 h-4 cursor-pointer accent-brand-navy"
+                      />
+                    </th>
                     <th className="p-2.5">Date</th>
                     <th className="p-2.5">Category</th>
                     <th className="p-2.5">Expense Item / Payee</th>
@@ -711,8 +974,25 @@ export default function AdminBudgetPage() {
                 <tbody className="divide-y divide-brand-navy/20">
                   {filteredExpenses.map((item) => {
                     const cat = getCategoryMeta(item.category);
+                    const isSelected = selectedExpenseIds.includes(item.id);
                     return (
-                      <tr key={item.id} className="hover:bg-brand-navy/5 transition-colors">
+                      <tr
+                        key={item.id}
+                        className={`transition-colors ${
+                          isSelected ? "bg-brand-accent/20" : "hover:bg-brand-navy/5"
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <td className="p-2.5 w-8 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectRow(item.id)}
+                            aria-label={`Select expense ${item.title}`}
+                            className="w-4 h-4 cursor-pointer accent-brand-navy"
+                          />
+                        </td>
+
                         {/* Date */}
                         <td className="p-2.5 whitespace-nowrap text-[11px] font-mono">
                           {item.paid_at ? item.paid_at.substring(0, 10) : "—"}
@@ -741,19 +1021,28 @@ export default function AdminBudgetPage() {
                           </span>
                         </td>
 
-                        {/* Status */}
+                        {/* Status (Interactive Inline Dropdown) */}
                         <td className="p-2.5 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 border text-[10px] font-bold uppercase ${
+                          <select
+                            value={item.status}
+                            onChange={(e) => handleInlineStatusChange(item.id, e.target.value)}
+                            className={`px-1.5 py-0.5 border text-[10px] font-black uppercase rounded-none cursor-pointer outline-none transition-colors ${
                               item.status === "paid"
                                 ? "bg-green-100 text-green-900 border-green-800"
                                 : item.status === "pending"
                                 ? "bg-amber-100 text-amber-900 border-amber-800"
-                                : "bg-blue-100 text-blue-900 border-blue-800"
+                                : item.status === "quoted" || item.status === "planned"
+                                ? "bg-blue-100 text-blue-900 border-blue-800"
+                                : "bg-gray-100 text-gray-800 border-gray-600"
                             }`}
+                            title="Click to quickly change status"
                           >
-                            {item.status}
-                          </span>
+                            <option value="paid">PAID</option>
+                            <option value="pending">PENDING</option>
+                            <option value="quoted">QUOTED</option>
+                            <option value="planned">PLANNED</option>
+                            <option value="cancelled">CANCELLED</option>
+                          </select>
                         </td>
 
                         {/* Receipt */}
@@ -939,7 +1228,9 @@ export default function AdminBudgetPage() {
                   >
                     <option value="paid">Paid & Settled</option>
                     <option value="pending">Pending Approval / Payout</option>
-                    <option value="planned">Planned / Quoted</option>
+                    <option value="quoted">Quoted / Invoiced</option>
+                    <option value="planned">Planned / Budgeted</option>
+                    <option value="cancelled">Cancelled / Void</option>
                   </select>
                 </div>
               </div>
@@ -964,6 +1255,7 @@ export default function AdminBudgetPage() {
                   value={formData.receipt_url}
                   onChange={(url) => setFormData({ ...formData, receipt_url: url })}
                   label="Receipt Photo / Invoice (ImgBB)"
+                  dropzoneText="Click to Upload or Drag Receipt / Invoice Photo Here"
                 />
               </div>
 

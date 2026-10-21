@@ -4005,6 +4005,57 @@ export async function deleteEventExpense(id: number): Promise<boolean> {
   return true;
 }
 
+export async function bulkUpdateExpensesStatus(ids: number[], status: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/expenses/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update_status", ids, status })
+    });
+    return res.ok ? ids.length : 0;
+  }
+  const { rowCount } = await neonQuery(
+    "UPDATE event_expenses SET status = $1 WHERE id = ANY($2::int[])",
+    [status, ids]
+  );
+  return rowCount || 0;
+}
+
+export async function bulkUpdateExpensesCategory(ids: number[], category: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/expenses/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update_category", ids, category })
+    });
+    return res.ok ? ids.length : 0;
+  }
+  const { rowCount } = await neonQuery(
+    "UPDATE event_expenses SET category = $1 WHERE id = ANY($2::int[])",
+    [category, ids]
+  );
+  return rowCount || 0;
+}
+
+export async function bulkDeleteExpenses(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/expenses/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", ids })
+    });
+    return res.ok ? ids.length : 0;
+  }
+  const { rowCount } = await neonQuery(
+    "DELETE FROM event_expenses WHERE id = ANY($1::int[])",
+    [ids]
+  );
+  return rowCount || 0;
+}
+
 export async function updateEventBudget(eventId: number, budgetAllocated: number): Promise<boolean> {
   if (typeof window !== "undefined") {
     const res = await fetch("/api/admin/budget", {
@@ -4053,7 +4104,7 @@ export async function fetchEventBudgetSummary(eventId: number): Promise<EventBud
     totalExpenses += amt;
     if (r.status === 'paid') paidExpenses += amt;
     else if (r.status === 'pending') pendingExpenses += amt;
-    else if (r.status === 'planned') plannedExpenses += amt;
+    else if (r.status === 'planned' || r.status === 'quoted') plannedExpenses += amt;
 
     expensesByCategory[r.category] = (expensesByCategory[r.category] || 0) + amt;
   }

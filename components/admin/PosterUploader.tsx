@@ -10,6 +10,7 @@ interface PosterUploaderProps {
   label?: string;
   required?: boolean;
   className?: string;
+  dropzoneText?: string;
 }
 
 export default function PosterUploader({
@@ -18,6 +19,7 @@ export default function PosterUploader({
   label = "Poster Artwork / Flyer",
   required = false,
   className = "",
+  dropzoneText = "Click to Upload or Drag Poster Image Here",
 }: PosterUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -196,7 +198,7 @@ export default function PosterUploader({
                   <Upload className="w-4 h-4 text-brand-navy" />
                 </div>
                 <div className="text-xs font-bold uppercase">
-                  Click to Upload or Drag Poster Image Here
+                  {dropzoneText}
                 </div>
                 <div className="text-[10px] font-mono text-brand-navy/60">
                   PNG, JPG, WEBP up to 10 MB (Hosted on ImgBB)

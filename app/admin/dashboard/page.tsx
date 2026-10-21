@@ -1179,8 +1179,12 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
       const updated = await updateEventDetails(eventFormState);
       setEventDetails(updated);
 
-      if (selectedEventId && selectedEventId > 0) {
-        const res = await fetch(`/api/events/${selectedEventId}`, {
+      const targetEventId = (selectedEventId && selectedEventId > 0)
+        ? selectedEventId
+        : (metrics?.allEvents?.[0]?.id || 2);
+
+      if (targetEventId && targetEventId > 0) {
+        const res = await fetch(`/api/events/${targetEventId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

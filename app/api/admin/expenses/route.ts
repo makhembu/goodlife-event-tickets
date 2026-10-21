@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { fetchEventExpenses, createEventExpense } from "@/lib/supabase-db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   const authError = await requireAdmin(request);
   if (authError) return authError;
@@ -16,7 +19,11 @@ export async function GET(request: NextRequest) {
     }
 
     const expenses = await fetchEventExpenses(eventId);
-    return NextResponse.json(expenses);
+    return NextResponse.json(expenses, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    });
   } catch (err: any) {
     console.error("Expenses fetch error:", err);
     return NextResponse.json({ error: err.message || "Failed to fetch expenses" }, { status: 500 });
