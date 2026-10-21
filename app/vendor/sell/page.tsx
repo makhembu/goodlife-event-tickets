@@ -57,10 +57,13 @@ export default function VendorSellPage() {
   const [remainderTabId, setRemainderTabId] = useState("");
 
   // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
+  // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
+  const [eventTillNumber, setEventTillNumber] = useState("5761205");
+  const [eventTitle, setEventTitle] = useState("GOODLIFE 4");
   const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState("");
   const [mpesaRef, setMpesaRef] = useState("");
   const [isMpesaVerified, setIsMpesaVerified] = useState(false);
-  const [showManualMpesa, setShowManualMpesa] = useState(false);
+  const [showManualMpesa, setShowManualMpesa] = useState(true);
   const [showStkModal, setShowStkModal] = useState(false);
   const [stkReference, setStkReference] = useState("");
   const [stkTimeLeft, setStkTimeLeft] = useState(45);
@@ -365,6 +368,15 @@ export default function VendorSellPage() {
     loadCustomers();
     loadRecentSales();
 
+    // Fetch active event details & till number
+    fetch("/api/vendor/session")
+      .then(res => res.json())
+      .then(data => {
+        if (data?.event?.till_number) setEventTillNumber(data.event.till_number);
+        if (data?.event?.title) setEventTitle(data.event.title);
+      })
+      .catch(() => {});
+
     // Background sync every 10 seconds for real-time multi-cashier stock updates
     const syncInterval = setInterval(() => {
       loadItems();
@@ -596,8 +608,54 @@ export default function VendorSellPage() {
     HapticFeedback.trigger("confirmation");
     const diff = Math.max(0, total - (currentPaid - (type === 'cash' ? numCash : type === 'mpesa' ? numMpesa : numTab)));
     if (type === 'cash') setCashAmount(diff > 0 ? diff.toString() : "");
-    if (type === 'mpesa') setMpesaAmount(diff > 0 ? diff.toString() : "");
+    if (type === 'mpesa') {
+      setMpesaAmount(diff > 0 ? diff.toString() : "");
+      setShowManualMpesa(true);
+    }
     if (type === 'tab') setTabAmount(diff > 0 ? diff.toString() : "");
+  };
+
+  const selectQuickTender = (tender: 'cash' | 'till' | 'stk' | 'tab') => {
+    HapticFeedback.trigger("confirmation");
+    if (tender === 'cash') {
+      setCashAmount(total.toString());
+      setMpesaAmount("");
+      setTabAmount("");
+      setTabId("");
+    } else if (tender === 'till') {
+      setMpesaAmount(total.toString());
+      setShowManualMpesa(true);
+      setCashAmount("");
+      setTabAmount("");
+      setTabId("");
+    } else if (tender === 'stk') {
+      setMpesaAmount(total.toString());
+      setShowManualMpesa(false);
+      setCashAmount("");
+      setTabAmount("");
+      setTabId("");
+    } else if (tender === 'tab') {
+      setTabAmount(total.toString());
+      setCashAmount("");
+      setMpesaAmount("");
+    }
+  };
+
+  const getCashPresets = (billTotal: number) => {
+    if (billTotal <= 0) return [];
+    const presets = new Set<number>();
+    const denominations = [200, 500, 1000, 2000, 5000];
+    for (const d of denominations) {
+      if (d > billTotal && d <= billTotal * 3) {
+        presets.add(d);
+      }
+    }
+    const next500 = Math.ceil(billTotal / 500) * 500;
+    if (next500 > billTotal) presets.add(next500);
+    const next1000 = Math.ceil(billTotal / 1000) * 1000;
+    if (next1000 > billTotal) presets.add(next1000);
+
+    return Array.from(presets).sort((a, b) => a - b).slice(0, 3);
   };
 
   const handleTabSelect = (selectedId: string) => {
@@ -626,6 +684,11 @@ export default function VendorSellPage() {
     const splitPayments = [];
     if (Number(cashAmount) > 0) splitPayments.push({ method: "cash", amount: Number(cashAmount) });
     if (Number(mpesaAmount) > 0) {
+      if (showManualMpesa && !mpesaRef.trim()) {
+        HapticFeedback.trigger("error");
+        alert("Please enter the M-Pesa transaction code from the customer's SMS (or switch to STK Push)");
+        return;
+      }
       splitPayments.push({
         method: "mpesa",
         amount: Number(mpesaAmount),
@@ -1020,118 +1083,400 @@ export default function VendorSellPage() {
 
       {/* Checkout Modal */}
       {showCheckout && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-brand-off-white w-full max-w-lg border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) flex flex-col h-[90vh] md:h-auto overflow-y-auto">
-            <h2 className="font-display text-3xl uppercase mb-6 border-b-4 border-brand-navy pb-4 flex justify-between items-center">
-              Split Payment <span className="font-mono text-brand-accent bg-brand-navy px-3 py-1">KES {total.toLocaleString()}</span>
-            </h2>
-            
-            <div className="space-y-4 flex-1">
-              {/* Payment Summary Live Bar */}
-              <div className="p-3 border-2 border-brand-navy bg-brand-navy text-brand-off-white flex justify-between items-center text-xs font-mono">
-                <div>
-                  <span className="opacity-70">TOTAL DUE:</span>{" "}
-                  <span className="font-bold text-brand-accent">KES {total.toLocaleString()}</span>
+        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-brand-off-white w-full max-w-xl border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) flex flex-col max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-start border-b-4 border-brand-navy pb-3 mb-4">
+              <div>
+                <span className="text-[10px] font-mono font-black uppercase text-brand-navy/60 tracking-wider block">
+                  Point of Sale • Checkout Terminal
+                </span>
+                <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-wide text-brand-navy leading-none mt-1">
+                  Charge & Tender
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xl sm:text-2xl font-black text-brand-accent bg-brand-navy px-3 py-1 border-2 border-brand-navy inline-block shadow-(--shadow-brut-xs)">
+                  KES {total.toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCheckout(false);
+                    setIsSearchDropdownOpen(false);
+                    setCustomerSearchQuery("");
+                  }}
+                  className="border-2 border-brand-navy p-1 bg-white hover:bg-brand-accent transition-colors cursor-pointer"
+                  title="Close modal"
+                >
+                  <X className="w-5 h-5 text-brand-navy" />
+                </button>
+              </div>
+            </div>
+
+            {/* 1-Tap Quick Pay Row */}
+            <div className="mb-4 bg-brand-navy text-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[11px] font-mono font-black uppercase text-brand-accent flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 fill-brand-accent" />
+                  1-Tap Quick Tender (Full KES {total.toLocaleString()}):
+                </span>
+                {currentPaid > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCashAmount("");
+                      setMpesaAmount("");
+                      setTabAmount("");
+                      setTabId("");
+                      setMpesaRef("");
+                      setIsMpesaVerified(false);
+                    }}
+                    className="text-[10px] font-mono uppercase underline text-red-300 hover:text-white cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* 1. Cash Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => selectQuickTender('cash')}
+                  className={`p-2.5 border-2 border-brand-accent/50 font-mono text-xs font-black uppercase flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    numCash >= total && numMpesa === 0 && numTab === 0
+                      ? "bg-brand-accent text-brand-navy shadow-(--shadow-brut-xs) scale-[1.02]"
+                      : "bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <Banknote className="w-5 h-5 shrink-0" />
+                  <span>💵 100% Cash</span>
+                </button>
+
+                {/* 2. Paid to Till Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => selectQuickTender('till')}
+                  className={`p-2.5 border-2 border-brand-accent/50 font-mono text-xs font-black uppercase flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    numMpesa === total && showManualMpesa && numCash === 0 && numTab === 0
+                      ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs) scale-[1.02]"
+                      : "bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <Receipt className="w-5 h-5 shrink-0" />
+                  <span>🧾 Paid to Till</span>
+                </button>
+
+                {/* 3. STK Push Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => selectQuickTender('stk')}
+                  className={`p-2.5 border-2 border-brand-accent/50 font-mono text-xs font-black uppercase flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    numMpesa === total && !showManualMpesa && numCash === 0 && numTab === 0
+                      ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs) scale-[1.02]"
+                      : "bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <Zap className="w-5 h-5 shrink-0" />
+                  <span>📲 STK Prompt</span>
+                </button>
+
+                {/* 4. Tab Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => selectQuickTender('tab')}
+                  className={`p-2.5 border-2 border-brand-accent/50 font-mono text-xs font-black uppercase flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    numTab === total && numCash === 0 && numMpesa === 0
+                      ? "bg-amber-400 text-brand-navy shadow-(--shadow-brut-xs) scale-[1.02]"
+                      : "bg-white/10 text-white hover:bg-white/20"
+                  }`}
+                >
+                  <Users className="w-5 h-5 shrink-0" />
+                  <span>💳 VIP / Tab</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Payment Summary Live Bar */}
+            <div className="p-3 border-2 border-brand-navy bg-brand-navy text-brand-off-white flex justify-between items-center text-xs font-mono mb-4">
+              <div>
+                <span className="opacity-70">TOTAL:</span>{" "}
+                <span className="font-bold text-brand-accent">KES {total.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="opacity-70">PAID:</span>{" "}
+                <span className="font-bold">KES {currentPaid.toLocaleString()}</span>
+              </div>
+              <div>
+                {remainingDue > 0 ? (
+                  <span className="text-red-400 font-bold bg-red-950/80 px-2 py-0.5 border border-red-500">
+                    DUE: KES {remainingDue.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-green-300 font-bold bg-green-950/80 px-2 py-0.5 border border-green-500">
+                    ✓ COVERED {changeDue > 0 ? `(CHANGE: KES ${changeDue.toLocaleString()})` : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Change Due Callout Banner (when cash > total) */}
+            {changeDue > 0 && (
+              <div className="mb-4 bg-amber-300 border-3 border-amber-900 p-3 text-amber-950 font-mono shadow-(--shadow-brut-xs) flex items-center justify-between animate-pulse">
+                <div className="flex items-center gap-2">
+                  <Banknote className="w-6 h-6 text-amber-950 shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-black uppercase block tracking-wider">
+                      Cash Received Exceeds Bill
+                    </span>
+                    <span className="text-lg font-black tracking-wide">
+                      GIVE CHANGE: KES {changeDue.toLocaleString()}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="opacity-70">ENTERED:</span>{" "}
-                  <span className="font-bold">KES {currentPaid.toLocaleString()}</span>
-                </div>
-                <div>
-                  {remainingDue > 0 ? (
-                    <span className="text-red-400 font-bold">DUE: KES {remainingDue.toLocaleString()}</span>
-                  ) : (
-                    <span className="text-green-400 font-bold">READY {changeDue > 0 ? `(CHANGE: KES ${changeDue})` : ''}</span>
-                  )}
+                <div className="text-right text-[11px] font-bold opacity-80">
+                  Received KES {currentPaid.toLocaleString()}
                 </div>
               </div>
+            )}
 
-              {/* Cash Input */}
-              <div className="border-4 border-brand-navy p-4 bg-white relative">
+            <div className="space-y-4 flex-1">
+              {/* 1. Cash Input */}
+              <div className={`border-4 p-4 relative transition-colors ${numCash > 0 ? "border-brand-navy bg-amber-50/50" : "border-brand-navy bg-white"}`}>
                 <Banknote className="absolute -top-4 -left-4 w-8 h-8 bg-brand-accent border-2 border-brand-navy p-1 text-brand-navy" />
                 <div className="flex justify-between items-center mb-1 ml-4">
-                  <label className="text-xs font-bold uppercase">1. Cash</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider">1. Cash</label>
+                    <span className="text-[10px] font-mono bg-amber-100 text-amber-900 border border-amber-600 px-1.5 py-0.2 font-bold uppercase">
+                      Physical Money
+                    </span>
+                  </div>
                   {remainingDue > 0 && (
                     <button
                       type="button"
                       onClick={() => fillRemaining('cash')}
-                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy"
+                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy cursor-pointer"
                     >
-                      Fill Due (+{remainingDue})
+                      Fill Due (+KES {remainingDue.toLocaleString()})
                     </button>
                   )}
                 </div>
-                <input 
-                  type="number" 
-                  placeholder="0" 
-                  value={cashAmount} 
-                  onChange={e => setCashAmount(e.target.value)} 
-                  className="w-full text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
-                />
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input 
+                    type="number" 
+                    placeholder="0" 
+                    value={cashAmount} 
+                    onChange={e => setCashAmount(e.target.value)} 
+                    className="flex-1 text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none font-bold" 
+                  />
+                  {/* Cash Note Preset Chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setCashAmount(total.toString())}
+                      className="text-[11px] font-mono font-bold uppercase px-2 py-1.5 bg-brand-off-white border-2 border-brand-navy hover:bg-brand-accent transition-colors"
+                      title="Set exact total"
+                    >
+                      Exact
+                    </button>
+                    {getCashPresets(total).map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCashAmount(preset.toString())}
+                        className={`text-[11px] font-mono font-bold uppercase px-2 py-1.5 border-2 border-brand-navy transition-colors ${
+                          numCash === preset ? "bg-brand-navy text-brand-accent" : "bg-white hover:bg-brand-off-white"
+                        }`}
+                      >
+                        KES {preset.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* M-Pesa Input */}
-              <div className="border-4 border-brand-navy p-4 bg-white relative">
+              {/* 2. M-Pesa Input */}
+              <div className={`border-4 p-4 relative transition-colors ${numMpesa > 0 ? "border-[#25D366] bg-green-50/40" : "border-brand-navy bg-white"}`}>
                 <CreditCard className="absolute -top-4 -left-4 w-8 h-8 bg-[#25D366] border-2 border-brand-navy p-1 text-brand-navy" />
                 <div className="flex justify-between items-center mb-1 ml-4">
-                  <label className="text-xs font-bold uppercase">2. M-Pesa</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider">2. M-Pesa</label>
+                    <span className="text-[10px] font-mono bg-green-100 text-green-900 border border-green-700 px-1.5 py-0.2 font-bold uppercase">
+                      Till or STK
+                    </span>
+                  </div>
                   {remainingDue > 0 && (
                     <button
                       type="button"
                       onClick={() => fillRemaining('mpesa')}
-                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy"
+                      className="text-[10px] bg-brand-navy text-brand-accent px-2 py-0.5 font-bold uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors border border-brand-navy cursor-pointer"
                     >
-                      Fill Due (+{remainingDue})
+                      Fill Due (+KES {remainingDue.toLocaleString()})
                     </button>
                   )}
                 </div>
-                <input 
-                  type="number" 
-                  placeholder="0" 
-                  value={mpesaAmount} 
-                  onChange={e => {
-                    setMpesaAmount(e.target.value);
-                    if (Number(e.target.value) <= 0) {
-                      setIsMpesaVerified(false);
-                      setMpesaRef("");
-                    }
-                  }} 
-                  className="w-full text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none" 
-                />
+
+                <div className="flex gap-2">
+                  <input 
+                    type="number" 
+                    placeholder="0" 
+                    value={mpesaAmount} 
+                    onChange={e => {
+                      setMpesaAmount(e.target.value);
+                      if (Number(e.target.value) <= 0) {
+                        setIsMpesaVerified(false);
+                        setMpesaRef("");
+                      }
+                    }} 
+                    className="flex-1 text-2xl font-mono p-2 border-2 border-brand-navy bg-brand-off-white focus:ring-4 focus:ring-brand-accent outline-none font-bold" 
+                  />
+                  {numMpesa === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fillRemaining('mpesa');
+                        setShowManualMpesa(true);
+                      }}
+                      className="bg-brand-navy text-brand-accent px-3 py-1 font-mono text-xs font-bold uppercase border-2 border-brand-navy hover:bg-brand-accent hover:text-brand-navy transition-colors shrink-0 cursor-pointer"
+                    >
+                      Set Full KES {total.toLocaleString()}
+                    </button>
+                  )}
+                </div>
 
                 {/* Sub-section when M-Pesa amount is entered */}
                 {numMpesa > 0 && (
-                  <div className="mt-3 pt-3 border-t-2 border-dashed border-brand-navy/30 space-y-3">
-                    {/* Verified Green Banner */}
-                    {isMpesaVerified && mpesaRef ? (
-                      <div className="p-2.5 bg-green-100 border-2 border-green-700 text-green-900 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0" />
-                          <div className="text-xs font-bold">
-                            <span>✓ M-Pesa Verified </span>
-                            <span className="font-mono bg-white px-1.5 py-0.5 border border-green-700 ml-1">
-                              {mpesaRef}
-                            </span>
-                          </div>
-                        </div>
+                  <div className="mt-3 pt-3 border-t-2 border-brand-navy/30 space-y-3">
+                    {/* 2-Option Tabs: Direct Till vs STK Prompt */}
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold uppercase text-brand-navy/70 mb-1">
+                        How is customer sending M-Pesa?
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => {
-                            setIsMpesaVerified(false);
-                            setMpesaRef("");
+                            setShowManualMpesa(true);
+                            HapticFeedback.trigger("confirmation");
                           }}
-                          className="text-[10px] font-bold underline hover:text-red-700 uppercase"
+                          className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            showManualMpesa
+                              ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs)"
+                              : "bg-white text-brand-navy hover:bg-gray-100"
+                          }`}
                         >
-                          Change
+                          <Receipt className="w-4 h-4 shrink-0" />
+                          <span className="truncate">🧾 1. Paid to Till</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowManualMpesa(false);
+                            HapticFeedback.trigger("confirmation");
+                          }}
+                          className={`p-2.5 border-2 border-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            !showManualMpesa
+                              ? "bg-[#25D366] text-brand-navy shadow-(--shadow-brut-xs)"
+                              : "bg-white text-brand-navy hover:bg-gray-100"
+                          }`}
+                        >
+                          <Zap className="w-4 h-4 shrink-0" />
+                          <span className="truncate">📲 2. Send STK Prompt</span>
                         </button>
                       </div>
+                    </div>
+
+                    {/* When Direct Till is Active */}
+                    {showManualMpesa ? (
+                      <div className="space-y-2 bg-amber-50/90 p-3 border-2 border-amber-800">
+                        {/* Prominent Till Callout Badge */}
+                        <div className="flex justify-between items-start bg-white p-2.5 border border-amber-800 shadow-(--shadow-brut-xs)">
+                          <div>
+                            <span className="text-[10px] font-mono font-black uppercase text-amber-900 block">
+                              📍 Buy Goods Till Number:
+                            </span>
+                            <span className="text-2xl font-black font-mono tracking-widest text-brand-navy select-all">
+                              {eventTillNumber}
+                            </span>
+                            <span className="block text-[10px] font-mono text-amber-800">
+                              Store: <strong>GOODLIFE EVENTS</strong>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] font-mono text-gray-500 block uppercase">To Pay:</span>
+                            <span className="text-base font-black font-mono text-green-700">
+                              KES {numMpesa.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] font-bold uppercase text-brand-navy flex justify-between">
+                            <span>M-Pesa Receipt Code (from Safaricom SMS):</span>
+                            <span className="text-[10px] font-normal text-amber-900 font-mono">10 characters</span>
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="e.g. QKH71829XX"
+                              value={mpesaRef}
+                              maxLength={12}
+                              onChange={e => {
+                                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                                setMpesaRef(val);
+                                setIsMpesaVerified(val.trim().length >= 8);
+                              }}
+                              className="flex-1 p-2 text-base font-mono font-bold uppercase tracking-wider border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none"
+                            />
+                            {mpesaRef.trim().length >= 8 && (
+                              <div className="bg-green-600 text-white border-2 border-brand-navy px-3 py-2 font-black text-xs uppercase flex items-center gap-1 shadow-(--shadow-brut-xs)">
+                                <CheckCircle2 className="w-4 h-4 text-white" />
+                                <span>Verified</span>
+                              </div>
+                            )}
+                          </div>
+                          {mpesaRef.trim().length >= 8 ? (
+                            <p className="text-[10px] text-green-800 font-bold uppercase flex items-center gap-1 font-mono">
+                              <CheckCircle2 className="w-3 h-3" /> Code ready ({mpesaRef.trim().length} chars) — digital receipt will be stamped
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-amber-900 font-medium">
+                              Customer sends KES {numMpesa.toLocaleString()} to Till <strong>{eventTillNumber}</strong> and reads back code from their SMS.
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     ) : (
-                      <>
-                        {/* STK Push Area */}
-                        {!showManualMpesa ? (
-                          <div className="space-y-2 bg-brand-off-white p-2.5 border-2 border-brand-navy">
+                      /* When STK Prompt is Active */
+                      <div className="space-y-2 bg-brand-off-white p-3 border-2 border-brand-navy">
+                        {/* Verified Green Banner */}
+                        {isMpesaVerified && mpesaRef ? (
+                          <div className="p-2.5 bg-green-100 border-2 border-green-700 text-green-900 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-5 h-5 text-green-700 shrink-0" />
+                              <div className="text-xs font-bold">
+                                <span>✓ M-Pesa STK Verified </span>
+                                <span className="font-mono bg-white px-1.5 py-0.5 border border-green-700 ml-1">
+                                  {mpesaRef}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMpesaVerified(false);
+                                setMpesaRef("");
+                              }}
+                              className="text-[10px] font-bold underline hover:text-red-700 uppercase cursor-pointer"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <>
                             <label className="block text-[11px] font-bold uppercase text-brand-navy">
-                              Customer Phone (for STK Push)
+                              Customer Phone Number (for M-Pesa STK Prompt):
                             </label>
                             <div className="flex gap-2">
                               <input
@@ -1139,76 +1484,24 @@ export default function VendorSellPage() {
                                 placeholder="07XXXXXXXX or 254..."
                                 value={mpesaCustomerPhone}
                                 onChange={e => setMpesaCustomerPhone(e.target.value)}
-                                className="flex-1 p-2 text-sm font-mono border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none"
+                                className="flex-1 p-2 text-sm font-mono border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none font-bold"
                               />
                               <button
                                 type="button"
                                 disabled={isTriggeringStk || !mpesaCustomerPhone.trim()}
                                 onClick={triggerStkPush}
-                                className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-3 py-2 font-display text-sm uppercase flex items-center gap-1 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs)"
+                                className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-3 py-2 font-display text-sm uppercase flex items-center gap-1 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs) cursor-pointer"
                               >
                                 <Zap className="w-4 h-4 fill-brand-navy" />
                                 {isTriggeringStk ? "Sending..." : "Prompt Phone"}
                               </button>
                             </div>
-                            <div className="pt-1 flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setShowManualMpesa(true)}
-                                className="text-[10px] font-bold uppercase underline text-brand-navy hover:text-brand-accent transition-colors"
-                              >
-                                Or Customer Paid Till Directly? Enter Code Manually
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          /* Manual Till Fallback Area */
-                          <div className="space-y-2 bg-brand-off-white p-2.5 border-2 border-brand-navy">
-                            <div className="flex justify-between items-center">
-                              <label className="block text-[11px] font-bold uppercase text-brand-navy">
-                                M-Pesa Reference / Transaction Code
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => setShowManualMpesa(false)}
-                                className="text-[10px] font-bold uppercase underline text-brand-navy hover:text-brand-accent transition-colors"
-                              >
-                                Switch to STK Push
-                              </button>
-                            </div>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="e.g. QKH71829..."
-                                value={mpesaRef}
-                                onChange={e => {
-                                  const val = e.target.value.toUpperCase();
-                                  setMpesaRef(val);
-                                  setIsMpesaVerified(val.trim().length >= 8);
-                                }}
-                                className="flex-1 p-2 text-sm font-mono uppercase border-2 border-brand-navy bg-white focus:ring-2 focus:ring-brand-accent outline-none"
-                              />
-                              {mpesaRef.trim().length >= 8 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsMpesaVerified(true);
-                                    HapticFeedback.trigger("confirmation");
-                                  }}
-                                  className="bg-brand-navy text-brand-accent border-2 border-brand-navy px-3 py-2 font-bold text-xs uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors"
-                                >
-                                  Confirm
-                                </button>
-                              )}
-                            </div>
-                            {mpesaRef && mpesaRef.trim().length < 8 && (
-                              <p className="text-[10px] text-amber-700 font-bold uppercase">
-                                Format: Valid M-Pesa receipt code is typically 10 characters (e.g. QKH71829XX)
-                              </p>
-                            )}
-                          </div>
+                            <p className="text-[10px] text-brand-navy/60 font-mono">
+                              Pushes an instant PIN prompt for KES {numMpesa.toLocaleString()} to customer's handset.
+                            </p>
+                          </>
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1517,30 +1810,54 @@ export default function VendorSellPage() {
               </div>
             </div>
 
-            <div className="flex gap-4 mt-6">
+            
+
+            {/* Bottom Actions Bar */}
+            <div className="flex gap-3 mt-6 pt-4 border-t-2 border-brand-navy">
               <button 
+                type="button"
                 onClick={() => {
                   setShowCheckout(false);
                   setIsSearchDropdownOpen(false);
                   setCustomerSearchQuery("");
                 }} 
-                className="flex-1 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-lg transition-colors"
+                className="w-1/3 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-base transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
-                disabled={submittingSale}
+                type="button"
+                disabled={submittingSale || remainingDue > 0}
                 onClick={handleCheckout} 
-                className="flex-1 bg-brand-navy text-brand-accent border-4 border-brand-navy font-display uppercase p-3 hover:bg-brand-accent hover:text-brand-navy text-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`w-2/3 border-4 border-brand-navy font-display uppercase p-3 text-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  remainingDue > 0
+                    ? "bg-gray-200 text-gray-400 border-gray-400 cursor-not-allowed opacity-70"
+                    : "bg-green-600 hover:bg-green-700 text-white shadow-(--shadow-brut-md)"
+                }`}
               >
-                {submittingSale ? "Processing Sale..." : "Confirm & Pay"}
+                {submittingSale ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Processing Sale...</span>
+                  </>
+                ) : remainingDue > 0 ? (
+                  <span>⚠️ Enter KES {remainingDue.toLocaleString()} Due</span>
+                ) : changeDue > 0 ? (
+                  <span>✓ Complete & Return KES {changeDue.toLocaleString()} Change</span>
+                ) : numCash > 0 && numMpesa === 0 && numTab === 0 ? (
+                  <span>✓ Complete Cash Sale (KES {total.toLocaleString()})</span>
+                ) : numMpesa > 0 && numCash === 0 && numTab === 0 ? (
+                  <span>✓ Complete Till Sale ({mpesaRef.trim() || `KES ${total.toLocaleString()}`})</span>
+                ) : numTab > 0 && numCash === 0 && numMpesa === 0 ? (
+                  <span>✓ Charge to Tab (KES {total.toLocaleString()})</span>
+                ) : (
+                  <span>✓ Complete Split Sale (KES {total.toLocaleString()})</span>
+                )}
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Smart Unpaid Remainder Intercept Modal */}
+      )}{/* Smart Unpaid Remainder Intercept Modal */}
       {showRemainderModal && (
         <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">

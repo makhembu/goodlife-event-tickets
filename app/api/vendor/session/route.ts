@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchActiveEvent } from "@/lib/supabase-db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,9 +20,17 @@ export async function GET(request: NextRequest) {
       } catch {
         sessionData = JSON.parse(atob(raw));
       }
+
+      const activeEvent = await fetchActiveEvent().catch(() => null);
+
       return NextResponse.json({
         success: true,
-        session: sessionData
+        session: sessionData,
+        event: {
+          id: activeEvent?.id || 2,
+          title: activeEvent?.title || "GOODLIFE 4",
+          till_number: activeEvent?.till_number || "5761205"
+        }
       });
     } catch (e) {
       return NextResponse.json(
