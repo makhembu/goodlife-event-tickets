@@ -34,7 +34,7 @@ async function runTest() {
     scanned_by: null as string | null
   };
 
-  pg.Pool.prototype.query = async function (sql: string, params?: any[]) {
+  (pg.Pool.prototype as any).query = async function (sql: string, params?: any[]) {
     const s = sql.trim();
     if (s.includes("SELECT * FROM tickets WHERE id = $1")) {
       return { rows: [ { ...currentDbTicket } ] };
@@ -46,15 +46,20 @@ async function runTest() {
       const id = params![3];
 
       // Simulate conditional atomic UPDATE in Postgres:
-      // WHERE id = $4 AND deleted_at IS NULL AND is_scanned = FALSE AND (admitted_count + $1 <= guest_count)
+      // WHERE id = $4 AND deleted_at IS NULL AND COALESCE(is_scanned, FALSE) = FALSE AND (COALESCE(admitted_count, 0) + $1 <= COALESCE(guest_count, 1))
+      const effAdmitted = currentDbTicket.admitted_count ?? 0;
+      const effGuest = currentDbTicket.guest_count ?? 1;
+      const effScanned = currentDbTicket.is_scanned ?? false;
+
       if (
         currentDbTicket.id === id &&
         !currentDbTicket.deleted_at &&
-        !currentDbTicket.is_scanned &&
-        currentDbTicket.admitted_count + admitInc <= currentDbTicket.guest_count
+        !effScanned &&
+        effAdmitted + admitInc <= effGuest
       ) {
-        currentDbTicket.admitted_count += admitInc;
-        currentDbTicket.is_scanned = currentDbTicket.admitted_count >= currentDbTicket.guest_count;
+        currentDbTicket.admitted_count = effAdmitted + admitInc;
+        currentDbTicket.guest_count = effGuest;
+        currentDbTicket.is_scanned = currentDbTicket.admitted_count >= effGuest;
         currentDbTicket.scanned_at = scannedAt;
         currentDbTicket.scanned_by = scannedBy;
         return {
@@ -97,6 +102,28 @@ async function runTest() {
     );
     check("Database admitted_count equals exactly 1 (no over-admission)", currentDbTicket.admitted_count === 1);
     check("Database is_scanned is true", currentDbTicket.is_scanned === true);
+
+    // Test 2: Legacy ticket with NULL admitted_count, guest_count, is_scanned
+    const legacyTicket = {
+      id: "GL-LEGACY-NULL",
+      ticket_type: "Regular Pass",
+      event_id: 1,
+      guest_count: null as any,
+      admitted_count: null as any,
+      is_scanned: null as any,
+      deleted_at: null,
+      phone_number: "254700000000",
+      buyer_name: "Legacy Null Test",
+      scanned_at: null as string | null,
+      scanned_by: null as string | null
+    };
+
+    // Swap target to legacy
+    Object.assign(currentDbTicket, legacyTicket);
+    const legacyScan = await processTicketScan("GL-LEGACY-NULL", "Gate Alpha", 1, 1);
+    check("Legacy ticket with NULL columns successfully admits", legacyScan.success === true);
+    check("Legacy ticket admitted_count updated to 1", currentDbTicket.admitted_count === 1);
+    check("Legacy ticket is_scanned updated to true", currentDbTicket.is_scanned === true);
 
   } finally {
     pg.Pool.prototype.query = origQuery;

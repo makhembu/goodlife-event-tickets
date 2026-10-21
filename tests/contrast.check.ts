@@ -63,7 +63,7 @@ function runTest() {
 
   // File checks
   const checkoutCode = fs.readFileSync(path.join(__dirname, "../app/CheckoutClientPage.tsx"), "utf8");
-  check("CheckoutClientPage has placeholder-brand-navy/80", checkoutCode.includes("placeholder-brand-navy/80"));
+  check("CheckoutClientPage has placeholder:text-brand-navy/80", checkoutCode.includes("placeholder:text-brand-navy/80"));
 
   const globalsCss = fs.readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
   check("globals.css defines --color-brand-success: #15803d", globalsCss.includes("--color-brand-success: #15803d;"));

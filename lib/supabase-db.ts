@@ -1203,11 +1203,14 @@ export async function processTicketScan(
   try {
     const updateResult = await neonQuery(
       `UPDATE tickets 
-       SET is_scanned = (admitted_count + $1 >= guest_count), 
+       SET is_scanned = (COALESCE(admitted_count, 0) + $1 >= COALESCE(guest_count, 1)), 
            scanned_at = $2, 
            scanned_by = $3, 
-           admitted_count = admitted_count + $1 
-       WHERE id = $4 AND deleted_at IS NULL AND is_scanned = FALSE AND (admitted_count + $1 <= guest_count)
+           admitted_count = COALESCE(admitted_count, 0) + $1 
+       WHERE id = $4 
+         AND deleted_at IS NULL 
+         AND COALESCE(is_scanned, FALSE) = FALSE 
+         AND (COALESCE(admitted_count, 0) + $1 <= COALESCE(guest_count, 1))
        RETURNING admitted_count, guest_count, is_scanned, scanned_at, scanned_by`,
       [countToAdmit, scannedAt, scannerName, id]
     );

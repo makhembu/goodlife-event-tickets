@@ -22,7 +22,7 @@ function runTest() {
   check("Shared AudioContext ref is declared", scannerCode.includes("sharedAudioCtxRef = useRef<AudioContext | null>(null);"));
   check("initOrResumeAudio helper exists and handles suspended state", 
     scannerCode.includes("sharedAudioCtxRef.current.state === \"suspended\"") &&
-    scannerCode.includes("sharedAudioCtxRef.current.resume();")
+    scannerCode.includes("sharedAudioCtxRef.current.resume()")
   );
   check("Global touchstart and click listeners unlock audio on first interaction", 
     scannerCode.includes('window.addEventListener("touchstart", handleFirstTap') &&

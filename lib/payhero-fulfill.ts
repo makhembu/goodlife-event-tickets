@@ -87,7 +87,7 @@ export async function fulfillPayheroPayment(
   // Resolve tier to pass guest_count, is_camping and camping_type into createTicket
   let tierGuestCount: number | undefined;
   let tierIsCamping: boolean | undefined;
-  let tierCampingType: string | undefined;
+  let tierCampingType: "none" | "private" | "shared_bed" | undefined;
   try {
     const tiers = await fetchTicketTiers(eventId);
     const matched = tiers.find(
@@ -96,10 +96,14 @@ export async function fulfillPayheroPayment(
     if (matched) {
       if (matched.admits_quantity) tierGuestCount = Number(matched.admits_quantity);
       if (matched.is_camping_bundle != null) tierIsCamping = Boolean(matched.is_camping_bundle);
-      if (matched.camping_type) tierCampingType = matched.camping_type;
+      if (matched.camping_type === "none" || matched.camping_type === "private" || matched.camping_type === "shared_bed") {
+        tierCampingType = matched.camping_type;
+      }
+    } else {
+      console.warn(`[payhero-fulfill] No matching tier found for "${ticketType}" in event ${eventId}. Defaulting to single admission.`);
     }
   } catch (tierErr) {
-    console.error("Failed to resolve tier details during fulfillment:", tierErr);
+    console.error(`[payhero-fulfill] Failed to resolve tier details for event ${eventId}:`, tierErr);
   }
 
   for (let i = 1; i <= quantity; i++) {

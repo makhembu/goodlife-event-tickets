@@ -78,6 +78,7 @@ export default function GateTerminalPage() {
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [audioRunning, setAudioRunning] = useState(false);
 
   // Scan HUD state
   const [lastResult, setLastResult] = useState<ScannedResult | null>(null);
@@ -147,8 +148,14 @@ export default function GateTerminalPage() {
           sharedAudioCtxRef.current = new AudioCtx();
         }
       }
-      if (sharedAudioCtxRef.current && sharedAudioCtxRef.current.state === "suspended") {
-        sharedAudioCtxRef.current.resume();
+      if (sharedAudioCtxRef.current) {
+        if (sharedAudioCtxRef.current.state === "suspended") {
+          sharedAudioCtxRef.current.resume().then(() => {
+            setAudioRunning(sharedAudioCtxRef.current?.state === "running");
+          }).catch(() => {});
+        } else {
+          setAudioRunning(sharedAudioCtxRef.current.state === "running");
+        }
       }
     } catch {}
   }, []);
@@ -316,10 +323,14 @@ export default function GateTerminalPage() {
       ? `${session.stewardName} @ ${session.gateName}`
       : "Gate Steward";
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     try {
       const res = await fetch(`/api/admin/scan/${encodeURIComponent(cleanId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           scanned_by: scannerOperator,
           event_id: session?.eventId,
@@ -327,7 +338,19 @@ export default function GateTerminalPage() {
         })
       });
 
-      const data: ScannedResult = await res.json();
+      clearTimeout(timeoutId);
+
+      if (res.status >= 500) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      let data: ScannedResult;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        throw new Error("Invalid non-JSON response from gate server");
+      }
+
       setLastResult(data);
       triggerFeedback(data.success, data.alreadyScanned);
 
@@ -353,11 +376,14 @@ export default function GateTerminalPage() {
         setAutoDismissCountdown(null);
       }
     } catch (err: any) {
+      clearTimeout(timeoutId);
       setLastResult({
         success: false,
         networkError: true,
         failedTicketId: cleanId,
-        message: "Gate server unreachable. Verify terminal connectivity and retry."
+        message: err.name === "AbortError" 
+          ? "Scan timed out (8s limit). Gate server or cellular link unresponsive. Retry."
+          : "Gate server unreachable or offline. Verify terminal connectivity and retry."
       });
       // Do not trigger failure/rejection audio or vibrate on offline/network errors
     } finally {
@@ -558,17 +584,28 @@ export default function GateTerminalPage() {
           </div>
 
           {/* Sound Toggle */}
-          <button
-            onClick={() => {
-              const next = !soundEnabled;
-              setSoundEnabled(next);
-              if (next) initOrResumeAudio();
-            }}
-            className="p-1.5 sm:p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
-            title={soundEnabled ? "Mute audio" : "Enable audio"}
-          >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-brand-navy" /> : <VolumeX className="w-4 h-4 text-red-600" />}
-          </button>
+          <div className="flex items-center gap-1">
+            {!audioRunning && soundEnabled && (
+              <button
+                onClick={initOrResumeAudio}
+                className="hidden md:inline-flex items-center px-2 py-1 bg-amber-300 text-brand-navy border-2 border-brand-navy text-[10px] font-black uppercase shadow-(--shadow-brut-2xs) animate-pulse cursor-pointer"
+                title="Tap anywhere or click to enable scanner audio"
+              >
+                TAP TO ENABLE SOUND
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                if (next) initOrResumeAudio();
+              }}
+              className="p-1.5 sm:p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
+              title={soundEnabled ? "Mute audio" : "Enable audio"}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-brand-navy" /> : <VolumeX className="w-4 h-4 text-red-600" />}
+            </button>
+          </div>
 
           {/* Torch Toggle if available */}
           {hasTorch && scannerActive && (

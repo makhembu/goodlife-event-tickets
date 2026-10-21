@@ -59,7 +59,7 @@ async function runTest() {
     payment_logs: [] as any[]
   };
 
-  pg.Pool.prototype.query = async function (sql: string, params?: any[]) {
+  (pg.Pool.prototype as any).query = async function (sql: string, params?: any[]) {
     const s = sql.trim();
     if (s.includes("FROM pending_payments WHERE checkout_request_id = $1")) {
       const row = mockDb.pending_payments.find(p => p.checkout_request_id === params![0]);
@@ -109,7 +109,8 @@ async function runTest() {
       reference: "GL-TEST-SQUAD",
       providerReference: "MPESA123",
       amountPaid: 2600,
-      source: "callback"
+      source: "callback",
+      raw: {}
     });
 
     check("Fulfill returned fulfilled: true", res1.fulfilled === true);
@@ -122,7 +123,8 @@ async function runTest() {
       reference: "GL-TEST-SQUAD",
       providerReference: "MPESA123",
       amountPaid: 2600,
-      source: "callback"
+      source: "callback",
+      raw: {}
     });
     check("Replay returns already completed", replayRes.reason === "already completed");
     check("Replay does not insert duplicate tickets", mockDb.tickets.filter(t => t.id === "GL-TEST-SQUAD").length === 1);
@@ -132,7 +134,8 @@ async function runTest() {
       reference: "GL-TEST-SQUAD-QTY2",
       providerReference: "MPESA456",
       amountPaid: 5200,
-      source: "callback"
+      source: "callback",
+      raw: {}
     });
 
     check("Quantity 2 generated 2 tickets", res2.ticketIds.length === 2);

@@ -354,7 +354,7 @@ export default function TabSelfPayPage() {
         {/* State 1: TAB FULLY SETTLED CARD */}
         {isTabSettled ? (
           <div className="bg-emerald-50 border-4 border-brand-navy shadow-(--shadow-brut-md) p-6 text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-brand-success text-brand-navy rounded-full flex items-center justify-center mx-auto mb-4 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
+            <div className="w-16 h-16 bg-brand-success text-white rounded-full flex items-center justify-center mx-auto mb-4 border-3 border-brand-navy shadow-(--shadow-brut-xs)">
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h2 className="font-display text-3xl uppercase tracking-wider text-emerald-950 mb-1">
@@ -573,7 +573,7 @@ export default function TabSelfPayPage() {
 
             {pollStatus === "success" && (
               <>
-                <div className="w-16 h-16 bg-brand-success text-brand-navy border-4 border-brand-navy flex items-center justify-center mx-auto mb-4 shadow-(--shadow-brut-xs)">
+                <div className="w-16 h-16 bg-brand-success text-white border-4 border-brand-navy flex items-center justify-center mx-auto mb-4 shadow-(--shadow-brut-xs)">
                   <CheckCircle2 className="w-10 h-10" />
                 </div>
                 <h3 className="font-display text-3xl uppercase tracking-wider text-brand-navy mb-2">
