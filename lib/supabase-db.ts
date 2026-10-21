@@ -2943,7 +2943,18 @@ export async function fetchVendorItems(vendorId: number, eventId: number): Promi
     return [];
   }
   const { rows } = await neonQuery(
-    "SELECT * FROM vendor_items WHERE vendor_id = $1 AND event_id = $2 AND deleted_at IS NULL ORDER BY sort_order ASC, name ASC",
+    `SELECT vi.*, 
+            COALESCE(sales.units_sold, 0) as units_sold
+     FROM vendor_items vi
+     LEFT JOIN (
+       SELECT psi.item_id, SUM(psi.quantity) as units_sold
+       FROM pos_sale_items psi
+       JOIN pos_sales ps ON ps.id = psi.sale_id
+       WHERE ps.vendor_id = $1 AND ps.event_id = $2 AND ps.payment_status != 'voided'
+       GROUP BY psi.item_id
+     ) sales ON sales.item_id = vi.id
+     WHERE vi.vendor_id = $1 AND vi.event_id = $2 AND vi.deleted_at IS NULL
+     ORDER BY units_sold DESC, vi.sort_order ASC, vi.name ASC`,
     [vendorId, eventId]
   );
   return rows;
