@@ -64,6 +64,11 @@ export default function VendorSellPage() {
   const [mpesaRef, setMpesaRef] = useState("");
   const [isMpesaVerified, setIsMpesaVerified] = useState(false);
   const [showManualMpesa, setShowManualMpesa] = useState(true);
+
+  // M-Pesa Change Return state
+  const [changeMethod, setChangeMethod] = useState<"cash" | "mpesa">("cash");
+  const [changeMpesaPhone, setChangeMpesaPhone] = useState("");
+  const [changeMpesaRef, setChangeMpesaRef] = useState("");
   const [showStkModal, setShowStkModal] = useState(false);
   const [stkReference, setStkReference] = useState("");
   const [stkTimeLeft, setStkTimeLeft] = useState(45);
@@ -367,6 +372,11 @@ export default function VendorSellPage() {
     loadTabs();
     loadCustomers();
     loadRecentSales();
+
+    // Auto-fill change phone if mpesaCustomerPhone changes
+    if (mpesaCustomerPhone && !changeMpesaPhone) {
+      setChangeMpesaPhone(mpesaCustomerPhone);
+    }
 
     // Fetch active event details & till number
     fetch("/api/vendor/session")
@@ -718,12 +728,25 @@ export default function VendorSellPage() {
       }
     }
 
+    if (changeDue > 0 && changeMethod === "mpesa") {
+      if (!changeMpesaPhone.trim()) {
+        HapticFeedback.trigger("error");
+        alert("Please enter the customer phone number where you are sending the M-Pesa change");
+        return;
+      }
+    }
+
     setSubmittingSale(true);
     HapticFeedback.trigger("confirmation");
     try {
+      const changeNote = changeDue > 0 && changeMethod === "mpesa"
+        ? `Change KES ${changeDue} returned via M-Pesa to ${changeMpesaPhone.trim()}${changeMpesaRef.trim() ? ` (Ref: ${changeMpesaRef.trim()})` : ''}`
+        : "";
+
       const payload = {
         subtotal: total,
         total: totalPaid,
+        notes: changeNote,
         items: cart.map(i => ({ item_id: i.id, item_name: i.name, quantity: i.quantity, unit_price: i.price, line_total: i.price * i.quantity })),
         splitPayments
       };
@@ -760,12 +783,16 @@ export default function VendorSellPage() {
           total,
           totalPaid,
           changeDue,
+          changeMethod,
+          changeMpesaPhone: changeMpesaPhone.trim(),
+          changeMpesaRef: changeMpesaRef.trim(),
           payments: splitPayments
         });
         setCart([]);
         setShowCheckout(false);
         setCashAmount(""); setMpesaAmount(""); setTabAmount(""); setTabId("");
-        setMpesaRef(""); setIsMpesaVerified(false); setMpesaCustomerPhone(""); setShowManualMpesa(false);
+        setMpesaRef(""); setIsMpesaVerified(false); setMpesaCustomerPhone(""); setShowManualMpesa(true);
+        setChangeMethod("cash"); setChangeMpesaPhone(""); setChangeMpesaRef("");
         setCustomerSearchQuery(""); setIsSearchDropdownOpen(false);
       } else {
         HapticFeedback.trigger("error");
@@ -1222,21 +1249,107 @@ export default function VendorSellPage() {
 
             {/* Change Due Callout Banner (when cash > total) */}
             {changeDue > 0 && (
-              <div className="mb-4 bg-amber-300 border-3 border-amber-900 p-3 text-amber-950 font-mono shadow-(--shadow-brut-xs) flex items-center justify-between animate-pulse">
-                <div className="flex items-center gap-2">
-                  <Banknote className="w-6 h-6 text-amber-950 shrink-0" />
-                  <div>
-                    <span className="text-[10px] font-black uppercase block tracking-wider">
-                      Cash Received Exceeds Bill
-                    </span>
-                    <span className="text-lg font-black tracking-wide">
-                      GIVE CHANGE: KES {changeDue.toLocaleString()}
-                    </span>
+              <div className="mb-4 bg-amber-200 border-4 border-amber-950 p-3.5 text-amber-950 font-mono shadow-(--shadow-brut-sm) space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-6 h-6 text-amber-950 shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-black uppercase block tracking-wider opacity-75">
+                        Cash Received Exceeds Bill
+                      </span>
+                      <span className="text-xl font-black tracking-wide">
+                        CHANGE DUE: KES {changeDue.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] font-bold opacity-80">
+                    Received KES {currentPaid.toLocaleString()}
                   </div>
                 </div>
-                <div className="text-right text-[11px] font-bold opacity-80">
-                  Received KES {currentPaid.toLocaleString()}
+
+                {/* Change Method Selection */}
+                <div className="pt-2 border-t border-amber-950/20">
+                  <label className="block text-[10px] font-black uppercase text-amber-950/80 mb-1.5">
+                    Select how you are returning the KES {changeDue.toLocaleString()} change:
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChangeMethod("cash");
+                        HapticFeedback.trigger("confirmation");
+                      }}
+                      className={`p-2 border-2 border-amber-950 font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        changeMethod === "cash"
+                          ? "bg-amber-950 text-brand-accent shadow-(--shadow-brut-xs)"
+                          : "bg-white/80 text-amber-950 hover:bg-white"
+                      }`}
+                    >
+                      <Banknote className="w-4 h-4 shrink-0" />
+                      <span>💵 Physical Cash</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChangeMethod("mpesa");
+                        if (!changeMpesaPhone && mpesaCustomerPhone) {
+                          setChangeMpesaPhone(mpesaCustomerPhone);
+                        }
+                        HapticFeedback.trigger("confirmation");
+                      }}
+                      className={`p-2 border-2 border-amber-950 font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        changeMethod === "mpesa"
+                          ? "bg-green-700 text-white shadow-(--shadow-brut-xs)"
+                          : "bg-white/80 text-amber-950 hover:bg-white"
+                      }`}
+                    >
+                      <CreditCard className="w-4 h-4 shrink-0" />
+                      <span>📲 M-Pesa to Customer</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* When returning change via M-Pesa */}
+                {changeMethod === "mpesa" && (
+                  <div className="bg-white p-3 border-2 border-amber-950 space-y-2 mt-2">
+                    <div className="flex items-center gap-1.5 text-xs font-black uppercase text-green-800">
+                      <Zap className="w-4 h-4 fill-green-700" />
+                      <span>Return KES {changeDue.toLocaleString()} via M-Pesa:</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-brand-navy mb-0.5">
+                          Customer Phone Number *
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="07XXXXXXXX or 254..."
+                          value={changeMpesaPhone}
+                          onChange={e => setChangeMpesaPhone(e.target.value)}
+                          className="w-full p-2 text-xs font-mono font-bold border-2 border-brand-navy bg-brand-off-white focus:ring-2 focus:ring-brand-accent outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-brand-navy mb-0.5">
+                          M-Pesa Ref / Code (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. QKH71829XX"
+                          value={changeMpesaRef}
+                          maxLength={12}
+                          onChange={e => setChangeMpesaRef(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                          className="w-full p-2 text-xs font-mono font-bold uppercase border-2 border-brand-navy bg-brand-off-white focus:ring-2 focus:ring-brand-accent outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-brand-navy/70 font-mono">
+                      💡 Send <strong>KES {changeDue.toLocaleString()}</strong> to the customer's phone from your M-Pesa / Till. The phone number and transaction reference will be permanently stamped on their receipt!
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1843,7 +1956,7 @@ export default function VendorSellPage() {
                 ) : remainingDue > 0 ? (
                   <span>⚠️ Enter KES {remainingDue.toLocaleString()} Due</span>
                 ) : changeDue > 0 ? (
-                  <span>✓ Complete & Return KES {changeDue.toLocaleString()} Change</span>
+                  <span>✓ Complete & Return KES {changeDue.toLocaleString()} Change {changeMethod === 'mpesa' ? '(via M-Pesa)' : '(Cash)'}</span>
                 ) : numCash > 0 && numMpesa === 0 && numTab === 0 ? (
                   <span>✓ Complete Cash Sale (KES {total.toLocaleString()})</span>
                 ) : numMpesa > 0 && numCash === 0 && numTab === 0 ? (
@@ -2166,9 +2279,20 @@ export default function VendorSellPage() {
                 </div>
               ))}
               {completedSale.changeDue > 0 && (
-                <div className="flex justify-between text-xs font-bold text-green-700 pt-1">
-                  <span>CHANGE DUE:</span>
-                  <span>KES {completedSale.changeDue.toLocaleString()}</span>
+                <div className="space-y-0.5 pt-1 border-t border-dashed border-gray-300 mt-1">
+                  <div className="flex justify-between text-xs font-bold text-green-700">
+                    <span>
+                      {completedSale.changeMethod === 'mpesa' 
+                        ? `CHANGE (M-PESA to ${completedSale.changeMpesaPhone || 'customer'}):`
+                        : 'CHANGE DUE (CASH):'}
+                    </span>
+                    <span>KES {completedSale.changeDue.toLocaleString()}</span>
+                  </div>
+                  {completedSale.changeMethod === 'mpesa' && completedSale.changeMpesaRef && (
+                    <div className="text-[10px] text-green-800 font-mono pl-2">
+                      M-Pesa Change Ref: <strong>{completedSale.changeMpesaRef}</strong>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2189,7 +2313,11 @@ ITEMS PURCHASED:
 ${completedSale.items.map((i: any) => `${i.quantity}x ${i.name.padEnd(20)} KES ${(i.price * i.quantity).toLocaleString()}`).join('\n')}
 ----------------------------------------
 TOTAL CHARGED:      KES ${completedSale.total.toLocaleString()}
-${completedSale.changeDue > 0 ? `CHANGE DUE:         KES ${completedSale.changeDue.toLocaleString()}\n` : ''}
+${completedSale.changeDue > 0 
+  ? completedSale.changeMethod === 'mpesa'
+    ? `CHANGE (M-PESA):  KES ${completedSale.changeDue.toLocaleString()} (Sent to ${completedSale.changeMpesaPhone}${completedSale.changeMpesaRef ? `, Ref: ${completedSale.changeMpesaRef}` : ''})\n`
+    : `CHANGE (CASH):    KES ${completedSale.changeDue.toLocaleString()}\n`
+  : ''}
 PAYMENT BREAKDOWN:
 ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16)} KES ${Number(p.amount).toLocaleString()}${p.mpesa_ref ? ` (Ref: ${p.mpesa_ref})` : ''}`).join('\n')}
 ========================================
