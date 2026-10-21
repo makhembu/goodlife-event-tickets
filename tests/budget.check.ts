@@ -59,12 +59,19 @@ if (fs.existsSync(budgetPage)) {
   assert(code.includes("Spending by Department"), "/admin/budget includes department breakdown");
   assert(code.includes("PosterUploader"), "/admin/budget integrates receipt photo uploader");
   assert(code.includes("CATEGORIES"), "/admin/budget defines department categories");
+  assert(code.includes("handleForkBudget"), "/admin/budget includes handleForkBudget for event forking");
+  assert(code.includes("Fork Budget"), "/admin/budget includes Fork Budget UI trigger");
+  assert(code.includes("eventId"), "/admin/budget includes URL eventId query parameter synchronization");
 }
 
 // 3. API Routes Exist
 assert(fs.existsSync(path.resolve(process.cwd(), "app/api/admin/budget/route.ts")), "/api/admin/budget/route.ts exists");
 assert(fs.existsSync(path.resolve(process.cwd(), "app/api/admin/expenses/route.ts")), "/api/admin/expenses/route.ts exists");
 assert(fs.existsSync(path.resolve(process.cwd(), "app/api/admin/expenses/[id]/route.ts")), "/api/admin/expenses/[id]/route.ts exists");
+assert(fs.existsSync(path.resolve(process.cwd(), "app/api/admin/expenses/bulk/route.ts")), "/api/admin/expenses/bulk/route.ts exists");
+
+const bulkRouteCode = fs.readFileSync(path.resolve(process.cwd(), "app/api/admin/expenses/bulk/route.ts"), "utf-8");
+assert(bulkRouteCode.includes("clone_event"), "expenses/bulk route handles clone_event action");
 
 // 4. Data Layer Contract
 const dbCode = fs.readFileSync(path.resolve(process.cwd(), "lib/supabase-db.ts"), "utf-8");
@@ -74,6 +81,7 @@ assert(dbCode.includes("createEventExpense"), "lib/supabase-db.ts exports create
 assert(dbCode.includes("updateEventExpense"), "lib/supabase-db.ts exports updateEventExpense");
 assert(dbCode.includes("deleteEventExpense"), "lib/supabase-db.ts exports deleteEventExpense");
 assert(dbCode.includes("updateEventBudget"), "lib/supabase-db.ts exports updateEventBudget");
+assert(dbCode.includes("cloneEventExpenses"), "lib/supabase-db.ts exports cloneEventExpenses");
 
 if (failures > 0) {
   process.exit(1);

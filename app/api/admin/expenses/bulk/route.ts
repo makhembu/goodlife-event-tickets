@@ -4,6 +4,7 @@ import {
   bulkUpdateExpensesStatus,
   bulkUpdateExpensesCategory,
   bulkDeleteExpenses,
+  cloneEventExpenses,
 } from "@/lib/supabase-db";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { action, ids, status, category } = body;
 
+    let affectedCount = 0;
+
+    if (action === "clone_event") {
+      const fromEventId = parseInt(body.from_event_id, 10);
+      const toEventId = parseInt(body.to_event_id, 10);
+      if (isNaN(fromEventId) || isNaN(toEventId) || fromEventId === toEventId) {
+        return NextResponse.json({ error: "Valid from_event_id and to_event_id are required and cannot be identical" }, { status: 400 });
+      }
+      const cloned = await cloneEventExpenses(fromEventId, toEventId);
+      return NextResponse.json({ success: true, cloned_count: cloned });
+    }
+
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
         { error: "ids array is required and cannot be empty" },
@@ -28,8 +41,6 @@ export async function POST(request: NextRequest) {
     if (cleanIds.length === 0) {
       return NextResponse.json({ error: "No valid expense IDs provided" }, { status: 400 });
     }
-
-    let affectedCount = 0;
 
     if (action === "update_status") {
       if (!status || typeof status !== "string") {

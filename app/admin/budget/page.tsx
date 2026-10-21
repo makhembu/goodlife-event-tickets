@@ -103,8 +103,15 @@ export default function AdminBudgetPage() {
   const [budgetInput, setBudgetInput] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Fork / Clone Budget Modal State
+  const [showForkModal, setShowForkModal] = useState(false);
+  const [forkSourceEventId, setForkSourceEventId] = useState<string>("");
+  const [forkCopyBudgetCap, setForkCopyBudgetCap] = useState(true);
+  const [forking, setForking] = useState(false);
+
   // Form State for Expense
   const [formData, setFormData] = useState({
+    event_id: "",
     title: "",
     category: "venue",
     amount: "",
@@ -119,15 +126,43 @@ export default function AdminBudgetPage() {
   // Lightbox for receipt
   const [activeReceiptUrl, setActiveReceiptUrl] = useState<string | null>(null);
 
-  // Load events
+  // Select event handler with URL sync
+  const handleSelectEvent = (newId: string) => {
+    setSelectedEventId(newId);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("eventId", newId);
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
+  // Load events & sync initial event from URL
   useEffect(() => {
     fetch("/api/events")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setEvents(data);
-          const active = data.find((e: any) => e.is_active) || data[0];
-          if (active) setSelectedEventId(active.id.toString());
+          let targetId = "";
+          if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const qId = params.get("eventId") || params.get("event");
+            if (qId && data.some((e: any) => e.id.toString() === qId)) {
+              targetId = qId;
+            }
+          }
+          if (!targetId) {
+            const active = data.find((e: any) => e.is_active) || data[0];
+            if (active) targetId = active.id.toString();
+          }
+          if (targetId) {
+            setSelectedEventId(targetId);
+            if (typeof window !== "undefined") {
+              const url = new URL(window.location.href);
+              url.searchParams.set("eventId", targetId);
+              window.history.replaceState({}, "", url.toString());
+            }
+          }
         }
       })
       .catch((err) => console.error("Error loading events:", err));
@@ -402,7 +437,7 @@ export default function AdminBudgetPage() {
 
     setSubmitting(true);
     try {
-      const resolvedEventId = editingExpense?.event_id || (selectedEventId && selectedEventId !== "all" ? Number(selectedEventId) : (events[0]?.id || 2));
+      const resolvedEventId = Number(formData.event_id) || editingExpense?.event_id || (selectedEventId && selectedEventId !== "all" ? Number(selectedEventId) : (events[0]?.id || 2));
 
       const payload = {
         event_id: resolvedEventId,
@@ -464,6 +499,61 @@ export default function AdminBudgetPage() {
     }
   };
 
+  // Fork / Clone Budget from Another Event
+  const handleForkBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forkSourceEventId || !selectedEventId || forking) return;
+    if (forkSourceEventId === selectedEventId) {
+      alert("Source and destination event editions must be different.");
+      return;
+    }
+
+    setForking(true);
+    try {
+      const res = await fetch("/api/admin/expenses/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "clone_event",
+          from_event_id: Number(forkSourceEventId),
+          to_event_id: Number(selectedEventId),
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(json.error || "Failed to clone event budget");
+        return;
+      }
+
+      // If requested, also copy the initial budget target cap
+      if (forkCopyBudgetCap) {
+        const sourceBudgetRes = await fetch(`/api/admin/budget?eventId=${forkSourceEventId}`);
+        if (sourceBudgetRes.ok) {
+          const sourceBudgetData = await sourceBudgetRes.json();
+          if (sourceBudgetData && sourceBudgetData.budget_allocated > 0) {
+            await fetch("/api/admin/budget", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                eventId: Number(selectedEventId),
+                budgetAllocated: Number(sourceBudgetData.budget_allocated),
+              }),
+            });
+          }
+        }
+      }
+
+      setShowForkModal(false);
+      alert(`Fork complete! Copied ${json.cloned_count || 0} line items into this edition.`);
+      loadData(selectedEventId);
+    } catch (err: any) {
+      alert(err.message || "Network error while forking budget");
+    } finally {
+      setForking(false);
+    }
+  };
+
   // Delete expense
   const handleDeleteExpense = async (id: number) => {
     if (!confirm("Are you sure you want to delete this expense record?")) return;
@@ -482,6 +572,7 @@ export default function AdminBudgetPage() {
   const openEditModal = (item: ExpenseItem) => {
     setEditingExpense(item);
     setFormData({
+      event_id: (item.event_id || selectedEventId || (events[0]?.id ? events[0].id.toString() : "2")).toString(),
       title: item.title,
       category: item.category,
       amount: item.amount.toString(),
@@ -497,6 +588,7 @@ export default function AdminBudgetPage() {
 
   const resetForm = () => {
     setFormData({
+      event_id: selectedEventId || (events[0]?.id ? events[0].id.toString() : "2"),
       title: "",
       category: "venue",
       amount: "",
@@ -560,7 +652,7 @@ export default function AdminBudgetPage() {
                 <Calendar className="w-4 h-4 text-brand-navy/60" />
                 <select
                   value={selectedEventId}
-                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  onChange={(e) => handleSelectEvent(e.target.value)}
                   className="font-bold text-xs uppercase bg-transparent outline-none cursor-pointer"
                 >
                   {events.map((evt) => (
@@ -570,6 +662,22 @@ export default function AdminBudgetPage() {
                   ))}
                 </select>
               </div>
+            )}
+
+            {events.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const other = events.find((e) => e.id.toString() !== selectedEventId);
+                  if (other) setForkSourceEventId(other.id.toString());
+                  setShowForkModal(true);
+                }}
+                className="px-2.5 py-1.5 border-2 border-brand-navy bg-white hover:bg-brand-accent text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer flex items-center gap-1.5"
+                title="Fork / clone budget line items from a previous edition"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Fork Budget</span>
+              </button>
             )}
 
             <button
@@ -1121,6 +1229,27 @@ export default function AdminBudgetPage() {
             </div>
 
             <form onSubmit={handleSaveExpense} className="space-y-3 text-xs">
+              {/* Event Edition Selector */}
+              <div>
+                <label className="font-bold uppercase block mb-1">
+                  Event Edition *
+                </label>
+                <select
+                  value={formData.event_id}
+                  onChange={(e) => setFormData({ ...formData, event_id: e.target.value })}
+                  className="w-full p-2 border-2 border-brand-navy font-bold uppercase focus:outline-none bg-brand-off-white cursor-pointer"
+                >
+                  {events.map((evt) => (
+                    <option key={evt.id} value={evt.id.toString()}>
+                      {evt.title} {evt.is_active ? "(LIVE)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-brand-navy/60 font-medium mt-1">
+                  {editingExpense ? "Re-assign this expense to any event edition if needed." : "Event edition this expense belongs to."}
+                </p>
+              </div>
+
               {/* Title */}
               <div>
                 <label className="font-bold uppercase block mb-1">
@@ -1339,6 +1468,96 @@ export default function AdminBudgetPage() {
                   className="px-4 py-1.5 border-2 border-brand-navy bg-brand-accent hover:bg-brand-accent/80 font-bold uppercase shadow-(--shadow-brut-xs) cursor-pointer"
                 >
                   {submitting ? "Saving..." : "Save Budget"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Fork / Clone Budget from Another Event */}
+      {showForkModal && (
+        <div className="fixed inset-0 bg-brand-navy/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-brand-navy p-5 max-w-md w-full shadow-(--shadow-brut-lg) space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
+              <h3 className="font-display uppercase text-lg font-black flex items-center gap-2">
+                <Layers className="w-5 h-5 text-brand-navy" />
+                Fork Budget From Edition
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowForkModal(false)}
+                className="text-brand-navy hover:bg-brand-navy hover:text-white p-1 border border-brand-navy font-bold cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleForkBudget} className="space-y-4 text-xs">
+              <p className="text-brand-navy/80 leading-relaxed">
+                Clone departmental budget line-items (Venue, Artists, Sound, Marketing, etc.) from an existing event into <strong>{summary?.event_title || "this edition"}</strong>.
+              </p>
+
+              <div>
+                <label className="font-bold uppercase block mb-1">
+                  Source Event Edition *
+                </label>
+                <select
+                  value={forkSourceEventId}
+                  onChange={(e) => setForkSourceEventId(e.target.value)}
+                  className="w-full p-2 border-2 border-brand-navy font-bold uppercase focus:outline-none bg-brand-off-white cursor-pointer"
+                >
+                  {events
+                    .filter((e) => e.id.toString() !== selectedEventId)
+                    .map((evt) => (
+                      <option key={evt.id} value={evt.id.toString()}>
+                        {evt.title} {evt.is_active ? "(LIVE)" : ""}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-brand-navy/60 font-medium mt-1">
+                  All copied line-items will be marked as "PLANNED / BUDGETED" so past payment records are clean.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-2 border-2 border-brand-navy/40 p-2.5 bg-brand-off-white">
+                <input
+                  type="checkbox"
+                  id="copyBudgetCap"
+                  checked={forkCopyBudgetCap}
+                  onChange={(e) => setForkCopyBudgetCap(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 cursor-pointer accent-brand-navy"
+                />
+                <label htmlFor="copyBudgetCap" className="font-bold uppercase cursor-pointer select-none">
+                  Also copy Target Budget Cap (KES allocation) from source edition
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t-2 border-brand-navy">
+                <button
+                  type="button"
+                  disabled={forking}
+                  onClick={() => setShowForkModal(false)}
+                  className="px-3 py-1.5 border-2 border-brand-navy bg-white hover:bg-gray-100 font-bold uppercase cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forking || !forkSourceEventId}
+                  className="px-4 py-1.5 border-2 border-brand-navy bg-brand-accent hover:bg-brand-accent/80 font-bold uppercase shadow-(--shadow-brut-xs) cursor-pointer flex items-center gap-1.5"
+                >
+                  {forking ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Forking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>Fork Budget Now</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

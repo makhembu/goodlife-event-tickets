@@ -31,6 +31,27 @@ export async function PUT(
       body.status = body.status.trim().toLowerCase();
     }
 
+    if (body.event_id !== undefined) {
+      const eid = parseInt(body.event_id, 10);
+      if (!isNaN(eid)) body.event_id = eid;
+    }
+
+    if ("paid_at" in body) {
+      body.paid_at = body.paid_at && String(body.paid_at).trim() !== "" ? String(body.paid_at).trim() : null;
+    }
+
+    if ("recipient" in body) {
+      body.recipient = body.recipient && String(body.recipient).trim() !== "" ? String(body.recipient).trim() : null;
+    }
+
+    if ("notes" in body) {
+      body.notes = body.notes && String(body.notes).trim() !== "" ? String(body.notes).trim() : null;
+    }
+
+    if ("receipt_url" in body) {
+      body.receipt_url = body.receipt_url && String(body.receipt_url).trim() !== "" ? String(body.receipt_url).trim() : null;
+    }
+
     const updated = await updateEventExpense(numId, body);
     if (!updated) {
       return NextResponse.json({ error: "Expense not found or update failed" }, { status: 404 });

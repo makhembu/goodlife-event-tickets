@@ -4035,7 +4035,12 @@ export async function updateEventExpense(id: number, data: Partial<EventExpense>
   if (keys.length === 0) return null;
 
   const setClause = keys.map((k, idx) => `"${k}" = $${idx + 2}`).join(", ");
-  const values = keys.map(k => (data as any)[k]);
+  const values = keys.map(k => {
+    const val = (data as any)[k];
+    if (k === 'paid_at' && (val === '' || !val)) return null;
+    if ((k === 'notes' || k === 'recipient' || k === 'receipt_url') && val === '') return null;
+    return val;
+  });
 
   const { rows } = await neonQuery(
     `UPDATE event_expenses SET ${setClause} WHERE id = $1 RETURNING *`,
@@ -4100,6 +4105,28 @@ export async function bulkDeleteExpenses(ids: number[]): Promise<number> {
   const { rowCount } = await neonQuery(
     "DELETE FROM event_expenses WHERE id = ANY($1::int[])",
     [ids]
+  );
+  return rowCount || 0;
+}
+
+export async function cloneEventExpenses(fromEventId: number, toEventId: number): Promise<number> {
+  if (fromEventId === toEventId) return 0;
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/expenses/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "clone_event", from_event_id: fromEventId, to_event_id: toEventId })
+    });
+    if (!res.ok) return 0;
+    const json = await res.json().catch(() => ({}));
+    return json.cloned_count || 0;
+  }
+  const { rowCount } = await neonQuery(
+    `INSERT INTO event_expenses (event_id, title, category, amount, status, payment_method, recipient, notes)
+     SELECT $2, title, category, amount, 'planned', payment_method, recipient, notes
+     FROM event_expenses
+     WHERE event_id = $1`,
+    [fromEventId, toEventId]
   );
   return rowCount || 0;
 }
