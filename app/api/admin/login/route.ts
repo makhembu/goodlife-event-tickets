@@ -12,7 +12,11 @@ export async function POST(request: NextRequest) {
 
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
     if (!ADMIN_PASSWORD) {
-      return NextResponse.json({ success: false, message: "Server misconfiguration" }, { status: 500 });
+      console.error("[Admin Login] Server misconfiguration — missing ADMIN_PASSWORD in environment.");
+      return NextResponse.json(
+        { success: false, message: "Authentication service is temporarily unavailable. Please contact the system administrator." },
+        { status: 500 }
+      );
     }
 
     const submitted = Buffer.from(password || "");

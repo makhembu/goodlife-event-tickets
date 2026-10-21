@@ -680,7 +680,7 @@ export default function TicketCheckoutPage({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Payment initialization failed.");
+        throw new Error(data.error || "Payments are temporarily unavailable. Try again in a few minutes or message us on WhatsApp.");
       }
 
       setStxReference(data.reference);

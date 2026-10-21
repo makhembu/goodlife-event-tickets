@@ -35,8 +35,9 @@ export async function POST(request: NextRequest) {
     if (!stkLimit.allowed) return stkLimit.response!;
 
     if (!isPayheroConfigured()) {
+      console.error("[PayHero Init] PayHero not configured — missing PAYHERO credentials in environment.");
       return NextResponse.json(
-        { error: "PayHero not configured — missing PAYHERO credentials." },
+        { error: "Payments are temporarily unavailable. Try again in a few minutes or message us on WhatsApp." },
         { status: 500 }
       );
     }
