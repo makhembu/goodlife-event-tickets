@@ -845,96 +845,99 @@ export default function VendorSellPage() {
     <div className="w-full min-h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
       <div className="flex-1 p-3 md:p-6 pb-32 md:pb-6 md:overflow-y-auto">
-        <div className="flex justify-between items-center mb-3 pb-2 border-b-2 border-brand-navy/20">
-          <div>
-            <h2 className="font-display text-lg uppercase tracking-wider text-brand-navy">Menu Catalog</h2>
-            <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">Tap items to add to order</p>
+        {/* Sticky Header with Title, Actions, Search, and Category Pills */}
+        <div className="sticky top-0 z-20 bg-brand-off-white/95 backdrop-blur-sm pt-1 pb-2 border-b-2 border-brand-navy/20 mb-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+            <div>
+              <h2 className="font-display text-lg sm:text-xl uppercase tracking-wider text-brand-navy leading-tight">Menu Catalog</h2>
+              <p className="text-[10px] font-mono text-brand-navy/60 font-bold uppercase">Tap items to add to order</p>
+            </div>
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  loadCustomers();
+                  setShowCustomerAuditDrawer(true);
+                }}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-[11px] sm:text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+                <span className="truncate">Customer Audit ({eventCustomers.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  loadRecentSales();
+                  setShowRecentSalesDrawer(true);
+                }}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-[11px] sm:text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+              >
+                <Receipt className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+                <span className="truncate">Recent Sales ({recentSalesList.length})</span>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                loadCustomers();
-                setShowCustomerAuditDrawer(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5 text-brand-navy" />
-              <span>Customer Audit ({eventCustomers.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                loadRecentSales();
-                setShowRecentSalesDrawer(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
-            >
-              <Receipt className="w-3.5 h-3.5 text-brand-navy" />
-              <span>Recent Sales ({recentSalesList.length})</span>
-            </button>
-          </div>
-        </div>
 
-        {/* Search catalog items */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-navy/50" />
-          <input
-            type="text"
-            value={catalogSearchQuery}
-            onChange={(e) => setCatalogSearchQuery(e.target.value)}
-            placeholder="Search menu (e.g. Tusker, Burger)..."
-            className="w-full pl-9 pr-8 py-2 bg-white border-2 border-brand-navy text-xs font-mono font-bold focus:outline-none uppercase placeholder:normal-case shadow-(--shadow-brut-xs)"
-          />
-          {catalogSearchQuery && (
-            <button
-              type="button"
-              onClick={() => setCatalogSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-brand-navy/50 hover:text-brand-navy cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+          {/* Search catalog items */}
+          <div className="relative mb-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-navy/50" />
+            <input
+              type="text"
+              value={catalogSearchQuery}
+              onChange={(e) => setCatalogSearchQuery(e.target.value)}
+              placeholder="Search menu (e.g. Tusker, Burger)..."
+              className="w-full pl-9 pr-8 py-2 bg-white border-2 border-brand-navy text-xs font-mono font-bold focus:outline-none uppercase placeholder:normal-case shadow-(--shadow-brut-xs)"
+            />
+            {catalogSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setCatalogSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-brand-navy/50 hover:text-brand-navy cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category filter pills */}
+          {categories.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar items-center">
+              <button
+                onClick={() => {
+                  HapticFeedback.trigger("confirmation");
+                  setSelectedCategory("ALL");
+                }}
+                className={`px-3 py-1.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 ${
+                  selectedCategory === "ALL"
+                    ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
+                    : "bg-white text-brand-navy hover:bg-stone-100"
+                }`}
+              >
+                ALL ({items.length})
+              </button>
+              {categories.map(cat => {
+                const count = items.filter((i: any) => (i.category || "General").toLowerCase() === cat.toLowerCase()).length;
+                const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      HapticFeedback.trigger("confirmation");
+                      setSelectedCategory(isActive ? "ALL" : cat);
+                    }}
+                    className={`px-3 py-1.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 ${
+                      isActive
+                        ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
+                        : "bg-white text-brand-navy hover:bg-stone-100"
+                    }`}
+                  >
+                    {cat} ({count})
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
-
-        {/* Category filter pills */}
-        {categories.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-3 mb-2 custom-scrollbar items-center">
-            <button
-              onClick={() => {
-                HapticFeedback.trigger("confirmation");
-                setSelectedCategory("ALL");
-              }}
-              className={`px-4 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy min-h-[44px] transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
-                selectedCategory === "ALL"
-                  ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
-                  : "bg-white text-brand-navy hover:bg-stone-100"
-              }`}
-            >
-              ALL ({items.length})
-            </button>
-            {categories.map(cat => {
-              const count = items.filter((i: any) => (i.category || "General").toLowerCase() === cat.toLowerCase()).length;
-              const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
-              return (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    HapticFeedback.trigger("confirmation");
-                    setSelectedCategory(isActive ? "ALL" : cat);
-                  }}
-                  className={`px-4 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy min-h-[44px] transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
-                    isActive
-                      ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
-                      : "bg-white text-brand-navy hover:bg-stone-100"
-                  }`}
-                >
-                  {cat} ({count})
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         {loading ? (
           <div className="animate-pulse font-bold uppercase text-brand-navy">Loading Menu...</div>
