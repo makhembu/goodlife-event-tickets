@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { HapticFeedback } from '@/components/ui/haptic-feedback';
-import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle, Camera, Search, Upload, Tags, Tag, Settings2, Check, AlertCircle } from 'lucide-react';
+import { Plus, Package, RefreshCw, Image as ImageIcon, X, Edit2, Trash2, CheckCircle, Camera, Search, Upload, Tags, Tag, Settings2, Check, AlertCircle, QrCode, Printer } from 'lucide-react';
+import { ProductQrModal, QrItem } from '@/components/vendor/ProductQrModal';
+import { PrintableQrSheetModal } from '@/components/vendor/PrintableQrSheetModal';
 
 const DEFAULT_SUGGESTED_CATEGORIES = [
   "Drinks",
@@ -96,6 +98,13 @@ export default function VendorMenuPage() {
   const [newItemImage, setNewItemImage] = useState('');
   const [isSubmittingNew, setIsSubmittingNew] = useState(false);
 
+  // QR Code & Table Tent modal state (Uses DB Till)
+  const [qrModalItem, setQrModalItem] = useState<QrItem | null>(null);
+  const [showBatchPrintModal, setShowBatchPrintModal] = useState(false);
+  const [eventTillNumber, setEventTillNumber] = useState("5761205");
+  const [eventTitle, setEventTitle] = useState("GOODLIFE FESTIVAL");
+  const [vendorName, setVendorName] = useState("Stall");
+
   // Search & Image upload state
   const [searchQuery, setSearchQuery] = useState('');
   const newFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -179,6 +188,16 @@ export default function VendorMenuPage() {
 
   useEffect(() => {
     fetchItems();
+
+    // Fetch active event DB details (including till number)
+    fetch('/api/vendor/session')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.event?.till_number) setEventTillNumber(data.event.till_number);
+        if (data?.event?.title) setEventTitle(data.event.title);
+        if (data?.session?.vendorName) setVendorName(data.session.vendorName);
+      })
+      .catch(() => {});
   }, []);
 
   const toggleStatus = async (item: CatalogItem) => {
@@ -493,6 +512,19 @@ export default function VendorMenuPage() {
             type="button"
             onClick={() => {
               HapticFeedback.trigger('confirmation');
+              setShowBatchPrintModal(true);
+            }}
+            className="flex items-center gap-1 px-2.5 py-2 md:px-4 md:py-3 bg-white text-brand-navy border-2 md:border-4 border-brand-navy font-mono font-bold uppercase text-[11px] md:text-sm shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-stone-100 active:scale-95 transition-all cursor-pointer shrink-0"
+            title="Batch Print QR Shelf Tags & Table Tents (Buy Goods Till)"
+          >
+            <Printer className="w-3.5 h-3.5 md:w-4 md:h-4 text-brand-navy" />
+            <span className="hidden sm:inline">Print QR Tags</span>
+            <span className="sm:hidden">QRs</span>
+          </button>
+          <button 
+            type="button"
+            onClick={() => {
+              HapticFeedback.trigger('confirmation');
               setShowManageCategoriesModal(true);
             }}
             className="flex items-center gap-1 px-2.5 py-2 md:px-4 md:py-3 bg-white text-brand-navy border-2 md:border-4 border-brand-navy font-mono font-bold uppercase text-[11px] md:text-sm shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) hover:bg-stone-100 active:scale-95 transition-all cursor-pointer shrink-0"
@@ -663,6 +695,18 @@ export default function VendorMenuPage() {
                     title="Edit Item Name, Category, Price"
                   >
                     <Edit2 className="w-3.5 h-3.5" /> Edit Item
+                  </button>
+
+                  {/* QR Code / Table Tent Button */}
+                  <button 
+                    onClick={() => {
+                      HapticFeedback.trigger('confirmation');
+                      setQrModalItem(item);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-bold text-xs uppercase hover:bg-brand-navy hover:text-brand-accent shadow-(--shadow-brut-xs) transition-colors cursor-pointer"
+                    title="Generate QR Code or Table Tent"
+                  >
+                    <QrCode className="w-3.5 h-3.5" /> QR Code
                   </button>
 
                   {/* Quick toggle sold out */}
@@ -1398,6 +1442,26 @@ export default function VendorMenuPage() {
           </div>
         </div>
       )}
+
+      {/* SINGLE ITEM PRODUCT QR & TABLE TENT MODAL */}
+      <ProductQrModal
+        isOpen={Boolean(qrModalItem)}
+        onClose={() => setQrModalItem(null)}
+        item={qrModalItem}
+        tillNumber={eventTillNumber}
+        vendorName={vendorName}
+        eventName={eventTitle}
+      />
+
+      {/* BATCH PRINT QR SHELF TAGS & TABLE TENTS MODAL */}
+      <PrintableQrSheetModal
+        isOpen={showBatchPrintModal}
+        onClose={() => setShowBatchPrintModal(false)}
+        items={catalog}
+        tillNumber={eventTillNumber}
+        vendorName={vendorName}
+        eventName={eventTitle}
+      />
     </div>
   );
 }

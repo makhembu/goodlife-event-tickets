@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft } from "lucide-react";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft, QrCode } from "lucide-react";
+import { ProductQrModal } from "@/components/vendor/ProductQrModal";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 
 export default function VendorSellPage() {
@@ -60,10 +61,12 @@ export default function VendorSellPage() {
   // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
   const [eventTillNumber, setEventTillNumber] = useState("5761205");
   const [eventTitle, setEventTitle] = useState("GOODLIFE 4");
+  const [vendorName, setVendorName] = useState("Vendor Stall");
   const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState("");
   const [mpesaRef, setMpesaRef] = useState("");
   const [isMpesaVerified, setIsMpesaVerified] = useState(false);
   const [showManualMpesa, setShowManualMpesa] = useState(true);
+  const [showTillQrModal, setShowTillQrModal] = useState(false);
 
   // M-Pesa Change Return state
   const [changeMethod, setChangeMethod] = useState<"cash" | "mpesa">("cash");
@@ -384,6 +387,7 @@ export default function VendorSellPage() {
       .then(data => {
         if (data?.event?.till_number) setEventTillNumber(data.event.till_number);
         if (data?.event?.title) setEventTitle(data.event.title);
+        if (data?.session?.vendorName) setVendorName(data.session.vendorName);
       })
       .catch(() => {});
 
@@ -1523,6 +1527,16 @@ export default function VendorSellPage() {
                             </span>
                           </div>
                         </div>
+
+                        {/* Customer QR Code Button */}
+                        <button
+                          type="button"
+                          onClick={() => setShowTillQrModal(true)}
+                          className="w-full py-1.5 px-3 bg-brand-accent text-brand-navy border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) active:translate-x-0.5 active:translate-y-0.5 hover:bg-brand-navy hover:text-brand-accent transition-colors cursor-pointer"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Show Customer Till QR (Scan to Pay)</span>
+                        </button>
 
                         <div className="space-y-1">
                           <label className="block text-[11px] font-bold uppercase text-brand-navy flex justify-between">
@@ -2991,6 +3005,22 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
           </div>
         </div>
       )}
+
+      {/* CUSTOMER TILL QR CODE MODAL */}
+      <ProductQrModal
+        isOpen={showTillQrModal}
+        onClose={() => setShowTillQrModal(false)}
+        item={{
+          name: cart.length > 0 
+            ? (cart.length === 1 ? cart[0].name : `${cart.length} Items (Order Total)`)
+            : "Counter Sale",
+          price: (numMpesa > 0 ? numMpesa : total) || 0,
+          category: "POS Till Sale",
+        }}
+        tillNumber={eventTillNumber}
+        vendorName={vendorName}
+        eventName={eventTitle}
+      />
     </div>
   );
 }
