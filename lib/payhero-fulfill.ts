@@ -5,7 +5,7 @@
  */
 import { Pool } from "pg";
 import { createTicket, insertPaymentLog, fetchActiveEvent, fetchTicketTiers } from "@/lib/supabase-db";
-import { sendTicketViaWhatsApp, notifyOperators } from "@/lib/whatsapp";
+import { sendTicketViaWhatsApp, notifyOperators, sendOperatorText } from "@/lib/whatsapp";
 
 export interface FulfillPayheroParams {
   /** Our reference — pending_payments.checkout_request_id (external_reference echoed by PayHero) */
@@ -88,6 +88,7 @@ export async function fulfillPayheroPayment(
   let tierGuestCount: number | undefined;
   let tierIsCamping: boolean | undefined;
   let tierCampingType: "none" | "private" | "shared_bed" | undefined;
+  let tierResolutionFailed = false;
   try {
     const tiers = await fetchTicketTiers(eventId);
     const matched = tiers.find(
@@ -100,10 +101,18 @@ export async function fulfillPayheroPayment(
         tierCampingType = matched.camping_type;
       }
     } else {
-      console.warn(`[payhero-fulfill] No matching tier found for "${ticketType}" in event ${eventId}. Defaulting to single admission.`);
+      tierResolutionFailed = true;
+      console.error(`[payhero-fulfill] GUEST COUNT UNVERIFIED: No matching tier found for "${ticketType}" in event ${eventId}. Defaulting to 1.`);
     }
   } catch (tierErr) {
-    console.error(`[payhero-fulfill] Failed to resolve tier details for event ${eventId}:`, tierErr);
+    tierResolutionFailed = true;
+    console.error(`[payhero-fulfill] GUEST COUNT UNVERIFIED: Failed to resolve tier details for event ${eventId}:`, tierErr);
+  }
+
+  if (tierResolutionFailed) {
+    sendOperatorText(
+      `⚠️ GUEST COUNT UNVERIFIED: Tier lookup failed or unmatched for reference ${p.reference} (Tier: "${ticketType}"). Ticket issued with default 1 guest. Please verify order in admin.`
+    ).catch(() => {});
   }
 
   for (let i = 1; i <= quantity; i++) {

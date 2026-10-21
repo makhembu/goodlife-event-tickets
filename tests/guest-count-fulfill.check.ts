@@ -43,6 +43,17 @@ async function runTest() {
         quantity: 2,
         amount: 5200,
         event_id: 2,
+      },
+      {
+        checkout_request_id: "GL-TEST-THROW",
+        status: "pending",
+        buyer_name: "Error Test",
+        phone_number: "254711111111",
+        whatsapp_number: "254711111111",
+        ticket_type: "non-existent-tier",
+        quantity: 1,
+        amount: 1000,
+        event_id: 2,
       }
     ],
     ticket_tiers: [
@@ -143,6 +154,18 @@ async function runTest() {
     const createdQty2_2 = mockDb.tickets.find(t => t.id === "GL-TEST-SQUAD-QTY2-2");
     check("Ticket 1 has guest_count == 4", createdQty2_1 && createdQty2_1.guest_count === 4);
     check("Ticket 2 has guest_count == 4", createdQty2_2 && createdQty2_2.guest_count === 4);
+
+    // Test 4: fulfill when tier resolution fails or throws
+    const res3 = await fulfillPayheroPayment({
+      reference: "GL-TEST-THROW",
+      providerReference: "MPESA789",
+      amountPaid: 1000,
+      source: "callback",
+      raw: {}
+    });
+    check("Ticket still issued on unverified tier", res3.fulfilled === true);
+    const created3 = mockDb.tickets.find(t => t.id === "GL-TEST-THROW");
+    check("Fallback guest_count is 1 on unverified tier", created3 && (created3.guest_count === 1 || created3.guest_count === undefined));
 
   } finally {
     pg.Pool.prototype.query = origQuery;

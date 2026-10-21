@@ -37,6 +37,7 @@ interface ScannedResult {
   success: boolean;
   alreadyScanned?: boolean;
   networkError?: boolean;
+  justAdmitted?: boolean;
   failedTicketId?: string;
   message: string;
   camping_instruction?: string;
@@ -382,13 +383,64 @@ export default function GateTerminalPage() {
         networkError: true,
         failedTicketId: cleanId,
         message: err.name === "AbortError" 
-          ? "Scan timed out (8s limit). Gate server or cellular link unresponsive. Retry."
-          : "Gate server unreachable or offline. Verify terminal connectivity and retry."
+          ? "Scan timed out (8s limit). Status unconfirmed. DO NOT ADMIT GUEST YET — check LOG tab or tap RETRY to verify."
+          : "Gate server unreachable. Status unconfirmed. DO NOT ADMIT GUEST YET — check LOG tab or tap RETRY to verify."
       });
       // Do not trigger failure/rejection audio or vibrate on offline/network errors
     } finally {
       setLoadingVerify(false);
     }
+  };
+
+  // Safe retry handler: checks if the ticket was already admitted during the lost response window
+  const retryTicketScan = async (ticketId: string) => {
+    const cleanId = ticketId.trim().toUpperCase();
+    if (!cleanId || loadingVerify) return;
+
+    setLoadingVerify(true);
+    const scannerOperator = session 
+      ? `${session.stewardName} @ ${session.gateName}`
+      : "Gate Steward";
+
+    try {
+      // Step 1: Read-only probe to check true current state
+      const checkRes = await fetch(`/api/admin/scan/${encodeURIComponent(cleanId)}`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.success && checkData.ticket) {
+          const t = checkData.ticket;
+          const scannedAtTime = t.scanned_at ? new Date(t.scanned_at).getTime() : 0;
+          const secondsSinceScan = (Date.now() - scannedAtTime) / 1000;
+          const sameOperator = t.scanned_by === scannerOperator || t.scanned_by?.includes(session?.stewardName || "---");
+
+          // If admitted by this steward within the last ~25s (the timeout window), treat as confirmed
+          if (t.is_scanned || (t.admitted_count > 0 && secondsSinceScan < 25 && sameOperator)) {
+            setLastResult({
+              success: true,
+              justAdmitted: true,
+              ticket: t,
+              admitted_count: t.admitted_count,
+              guest_count: t.guest_count,
+              message: `ADMITTED JUST NOW! Previous scan completed before timeout (${t.admitted_count} of ${t.guest_count || 1} admitted). Entry confirmed.`
+            });
+            triggerFeedback(true, false);
+            setLoadingVerify(false);
+            return;
+          }
+
+          // If multi-guest ticket and some remaining, admit only remaining delta
+          const remaining = (t.guest_count || 1) - (t.admitted_count || 0);
+          if (remaining > 0) {
+            setLoadingVerify(false);
+            return await verifyTicket(cleanId, 1);
+          }
+        }
+      }
+    } catch {}
+
+    // Fall back to standard verify
+    setLoadingVerify(false);
+    return await verifyTicket(cleanId, 1);
   };
 
   useEffect(() => {
@@ -777,7 +829,7 @@ export default function GateTerminalPage() {
                   name="quickId"
                   type="text"
                   placeholder="Enter Ticket GL-XXXX..."
-                  className="flex-1 px-3 py-2 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-black uppercase focus:outline-none placeholder:text-brand-navy/50 shadow-(--shadow-brut-2xs)"
+                  className="flex-1 px-3 py-2 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-black uppercase focus:outline-none placeholder:text-brand-navy/80 shadow-(--shadow-brut-2xs)"
                 />
                 <button
                   type="submit"
@@ -803,7 +855,7 @@ export default function GateTerminalPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
                 placeholder="Search attendee name, phone, ticket ID, or receipt..."
-                className="w-full pl-9 pr-8 py-3 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-bold uppercase focus:outline-none placeholder:normal-case shadow-(--shadow-brut-xs)"
+                className="w-full pl-9 pr-8 py-3 bg-white text-brand-navy border-3 border-brand-navy font-mono text-xs font-bold uppercase focus:outline-none placeholder:text-brand-navy/80 placeholder:normal-case shadow-(--shadow-brut-xs)"
               />
               {searchQuery && (
                 <button
@@ -1010,8 +1062,12 @@ export default function GateTerminalPage() {
             {/* Header Stamp & Dismiss button */}
             <div className="flex justify-between items-start mb-2 pt-1">
               {lastResult.networkError ? (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 text-white font-mono text-xs font-black uppercase tracking-wider border-2 border-slate-900 shadow-(--shadow-brut-2xs)">
-                  <span>📡 NO SIGNAL — TICKET NOT CHECKED</span>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400 text-brand-navy font-mono text-xs font-black uppercase tracking-wider border-2 border-brand-navy shadow-(--shadow-brut-2xs)">
+                  <span>⚠️ NOT CONFIRMED — CHECK LOG BEFORE ADMITTING</span>
+                </div>
+              ) : lastResult.justAdmitted ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-300 text-brand-navy font-mono text-xs font-black uppercase tracking-wider border-2 border-brand-navy shadow-(--shadow-brut-2xs)">
+                  <span>⚡ ADMITTED JUST NOW</span>
                 </div>
               ) : (
                 <TicketStamp
@@ -1126,7 +1182,7 @@ export default function GateTerminalPage() {
                 <button
                   type="button"
                   disabled={loadingVerify}
-                  onClick={() => verifyTicket(lastResult.failedTicketId!, 1)}
+                  onClick={() => retryTicketScan(lastResult.failedTicketId!)}
                   className="flex-1 py-2.5 bg-brand-accent text-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 hover:bg-brand-navy hover:text-white border-2 border-brand-navy transition-colors cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingVerify ? "animate-spin" : ""}`} />

@@ -25,14 +25,18 @@ function runTest() {
   check("Catch block sets networkError: true without calling triggerFeedback", 
     scannerCode.includes("networkError: true") && !scannerCode.includes("triggerFeedback(false);\n    } finally {")
   );
-  check("HUD displays distinct 'NO SIGNAL — TICKET NOT CHECKED' banner", 
-    scannerCode.includes("NO SIGNAL — TICKET NOT CHECKED")
+  check("HUD displays distinct 'NOT CONFIRMED — CHECK LOG BEFORE ADMITTING' banner", 
+    scannerCode.includes("NOT CONFIRMED — CHECK LOG BEFORE ADMITTING")
   );
   check("HUD uses slate styling instead of red INVALID styling on network error", 
     scannerCode.includes("lastResult.networkError") && scannerCode.includes("bg-slate-100 text-slate-900 border-slate-700")
   );
-  check("HUD renders RETRY SCAN button wired to verifyTicket", 
-    scannerCode.includes("RETRY SCAN") && scannerCode.includes("onClick={() => verifyTicket(lastResult.failedTicketId!, 1)}")
+  check("HUD renders RETRY SCAN button wired to retryTicketScan", 
+    scannerCode.includes("RETRY SCAN") && scannerCode.includes("onClick={() => retryTicketScan(lastResult.failedTicketId!)}")
+  );
+  check("Scanner defines retryTicketScan with read-only probe before admitting",
+    scannerCode.includes("const retryTicketScan = async") &&
+    scannerCode.includes("ADMITTED JUST NOW")
   );
 
   console.log(`\n${pass} passed, ${fail} failed`);

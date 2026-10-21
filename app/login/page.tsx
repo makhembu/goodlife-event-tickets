@@ -109,7 +109,7 @@ export default function LoginPage() {
                   placeholder="e.g. officer@goodlife.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
+                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder:text-brand-navy/80 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
                 />
               </div>
             </div>
@@ -132,7 +132,7 @@ export default function LoginPage() {
                   placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder-[var(--brand-navy)]/30 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
+                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder:text-brand-navy/80 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
                 />
               </div>
             </div>

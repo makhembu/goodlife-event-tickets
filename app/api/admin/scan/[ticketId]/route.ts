@@ -1,6 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processTicketScan } from "@/lib/supabase-db";
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ ticketId: string }> }
+) {
+  try {
+    const { ticketId } = await params;
+    if (!ticketId) {
+      return NextResponse.json(
+        { success: false, message: "Missing ticket identifier." },
+        { status: 400 }
+      );
+    }
+    const { getTicketById } = await import("@/lib/supabase-db");
+    const ticket = await getTicketById(ticketId);
+    if (!ticket) {
+      return NextResponse.json(
+        { success: false, message: "Ticket not found." },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({
+      success: true,
+      ticket: {
+        id: ticket.id,
+        ticket_type: ticket.ticket_type,
+        buyer_name: ticket.buyer_name,
+        is_scanned: ticket.is_scanned,
+        scanned_at: ticket.scanned_at,
+        scanned_by: ticket.scanned_by,
+        guest_count: ticket.guest_count,
+        admitted_count: ticket.admitted_count,
+        event_id: ticket.event_id
+      }
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
