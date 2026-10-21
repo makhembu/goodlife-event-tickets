@@ -39,12 +39,14 @@ export async function POST(req: Request) {
     }
 
     const commRate = parseFloat(String(data.commission_rate ?? data.commissionRate ?? 10)) || 10.0;
+    const category = data.category === 'operational' ? 'operational' : 'commercial';
 
     const newVendor = await createVendor({
       name,
       contact_phone: contact_phone || '',
       contact_name: contact_name || '',
-      logo_url: logo_url || ''
+      logo_url: logo_url || '',
+      category
     });
 
     if (eventId) {

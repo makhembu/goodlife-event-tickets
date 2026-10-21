@@ -2382,6 +2382,7 @@ export interface Vendor {
   contact_phone: string;
   contact_name: string;
   logo_url: string;
+  category?: 'commercial' | 'operational' | string;
   created_at: string;
 }
 
@@ -2563,9 +2564,9 @@ export async function createVendor(data: Omit<Vendor, "id" | "created_at">): Pro
     return await res.json();
   }
   const { rows } = await neonQuery(
-    `INSERT INTO vendors (name, contact_phone, contact_name, logo_url)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [data.name, data.contact_phone || "", data.contact_name || "", data.logo_url || ""]
+    `INSERT INTO vendors (name, contact_phone, contact_name, logo_url, category)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [data.name, data.contact_phone || "", data.contact_name || "", data.logo_url || "", data.category || "commercial"]
   );
   return rows[0];
 }

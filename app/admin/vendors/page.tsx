@@ -1,15 +1,24 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench } from "lucide-react";
 import Link from "next/link";
 import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
 export default function AdminVendorsPage() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState<"all" | "commercial" | "operational">("all");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({ name: "", contact_name: "", contact_phone: "", commission_rate: "10" });
+  const [formData, setFormData] = useState({
+    name: "",
+    contact_name: "",
+    contact_phone: "",
+    commission_rate: "10",
+    category: "commercial" as "commercial" | "operational",
+    operator_name: "",
+    operator_pin: "",
+  });
   const [selectedDrawerVendorId, setSelectedDrawerVendorId] = useState<number | null>(null);
 
   // PIN Visibility States
@@ -128,12 +137,20 @@ export default function AdminVendorsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
-          commission_rate: parseFloat(formData.commission_rate) || 10.0,
+          commission_rate: formData.category === "operational" ? 0 : (parseFloat(formData.commission_rate) || 10.0),
         }),
       });
       if (res.ok) {
         setShowAddModal(false);
-        setFormData({ name: "", contact_name: "", contact_phone: "", commission_rate: "10" });
+        setFormData({
+          name: "",
+          contact_name: "",
+          contact_phone: "",
+          commission_rate: "10",
+          category: "commercial",
+          operator_name: "",
+          operator_pin: "",
+        });
         await loadVendors();
       }
     } catch (err) {}
@@ -249,6 +266,12 @@ export default function AdminVendorsPage() {
     }
   };
 
+  const filteredVendors = vendors.filter((v) => {
+    if (filterType === "commercial") return v.category !== "operational";
+    if (filterType === "operational") return v.category === "operational";
+    return true;
+  });
+
   return (
     <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-4 sm:p-6 font-mono">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -257,9 +280,14 @@ export default function AdminVendorsPage() {
             <Link href="/admin/dashboard" className="text-brand-navy hover:bg-brand-accent p-2 border-2 border-brand-navy transition-colors font-bold uppercase text-sm shrink-0">
               &larr; Dashboard
             </Link>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
-              <Store className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-brand-navy shrink-0"/> STAFF & VENDOR POS
-            </h1>
+            <div>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
+                <Store className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-brand-navy shrink-0"/> DEPARTMENTS & POS
+              </h1>
+              <p className="text-xs opacity-60 font-bold uppercase mt-0.5">
+                Commercial Stalls, Selling Terminals & Internal Teams
+              </p>
+            </div>
           </div>
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
@@ -291,31 +319,74 @@ export default function AdminVendorsPage() {
               className="border-2 border-brand-navy bg-brand-accent px-3 sm:px-4 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center justify-center gap-1.5 shadow-(--shadow-brut-sm) transition-colors cursor-pointer text-xs md:text-sm text-center"
             >
               <Plus className="w-4 h-4 shrink-0" />
-              <span className="truncate">+ Add Vendor</span>
+              <span className="truncate">+ Add Department</span>
             </button>
           </div>
         </div>
 
+        {/* Classification Filter Bar */}
+        <div className="flex border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
+          <button
+            type="button"
+            onClick={() => setFilterType("all")}
+            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+              filterType === "all" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
+            }`}
+          >
+            <span>All Units ({vendors.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType("commercial")}
+            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 border-l-4 border-brand-navy transition-colors cursor-pointer ${
+              filterType === "commercial" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>Commercial POS Stalls ({vendors.filter(v => v.category !== "operational").length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType("operational")}
+            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 border-l-4 border-brand-navy transition-colors cursor-pointer ${
+              filterType === "operational" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
+            }`}
+          >
+            <Wrench className="w-3.5 h-3.5" />
+            <span>Operational Teams ({vendors.filter(v => v.category === "operational").length})</span>
+          </button>
+        </div>
+
         {loading ? (
-          <div className="p-12 text-center text-xl font-bold uppercase animate-pulse">Loading Vendors...</div>
+          <div className="p-12 text-center text-xl font-bold uppercase animate-pulse">Loading Departments...</div>
+        ) : filteredVendors.length === 0 ? (
+          <div className="p-12 text-center border-4 border-brand-navy bg-white shadow-(--shadow-brut-md)">
+            <p className="font-bold uppercase text-sm opacity-60">No units found in this view</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {vendors.map((v) => (
+            {filteredVendors.map((v) => {
+              const isOperational = v.category === "operational";
+              return (
               <div key={v.id} className="border-4 border-brand-navy bg-white p-5 shadow-(--shadow-brut-md) flex flex-col justify-between">
                 <div>
-                  <div className="flex justify-between items-start mb-3">
+                  <div className="flex justify-between items-start mb-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setSelectedDrawerVendorId(v.id)}
-                      className="text-left group cursor-pointer"
+                      className="text-left group cursor-pointer flex-1 min-w-0"
                       title="Click to view full vendor stock, velocity & sales audit"
                     >
-                      <h3 className="font-display text-xl uppercase leading-tight font-black group-hover:text-blue-700 underline decoration-2 underline-offset-2 transition-colors flex items-center gap-1.5">
+                      <h3 className="font-display text-xl uppercase leading-tight font-black group-hover:text-blue-700 underline decoration-2 underline-offset-2 transition-colors flex items-center gap-1.5 truncate">
                         {v.name}
                         <ExternalLink className="w-4 h-4 text-brand-navy/50 group-hover:text-blue-700 shrink-0" />
                       </h3>
                     </button>
-                    <span className="text-xs bg-brand-navy text-brand-accent px-2 py-0.5 uppercase font-bold">{v.status || "Active"}</span>
+                    <span className={`text-[10px] px-2 py-0.5 uppercase font-black shrink-0 border border-brand-navy ${
+                      isOperational ? "bg-neutral-800 text-neutral-100" : "bg-brand-accent text-brand-navy"
+                    }`}>
+                      {isOperational ? "Operational" : "POS Stall"}
+                    </span>
                   </div>
                   
                   <div className="text-sm space-y-1 mb-4">
@@ -325,7 +396,9 @@ export default function AdminVendorsPage() {
 
                   <div className="pt-3 border-t-2 border-brand-navy border-dashed mb-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-brand-navy/70">Assigned Operators</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-brand-navy/70">
+                        {isOperational ? "Team Leads & Crew" : "Assigned Operators"}
+                      </span>
                     </div>
 
                     {v.vendor_operators && v.vendor_operators.length > 0 ? (
@@ -396,82 +469,188 @@ export default function AdminVendorsPage() {
                 </div>
 
                 <div className="pt-3 border-t-2 border-brand-navy space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLoginAsVendor(v.id)}
-                    disabled={takingOverVendorId === v.id}
-                    className="w-full border-2 border-brand-navy bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy px-3 py-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
-                    title="Quick login as this vendor to sell items if vendor has left"
-                  >
-                    <Store className="w-3.5 h-3.5 text-brand-accent" />
-                    {takingOverVendorId === v.id ? "TAKING OVER POS..." : "LOGIN AS VENDOR (MAKE SALES) ↗"}
-                  </button>
+                  {!isOperational && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickLoginAsVendor(v.id)}
+                      disabled={takingOverVendorId === v.id}
+                      className="w-full border-2 border-brand-navy bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy px-3 py-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                      title="Quick login as this vendor to sell items"
+                    >
+                      <Store className="w-3.5 h-3.5 text-brand-accent" />
+                      {takingOverVendorId === v.id ? "TAKING OVER POS..." : "LOGIN AS CASHIER (MAKE SALES) ↗"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setSelectedDrawerVendorId(v.id)}
                     className="w-full border-2 border-brand-navy bg-yellow-300 hover:bg-brand-navy hover:text-white px-3 py-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
                   >
-                    <TrendingUp className="w-3.5 h-3.5" /> VIEW STOCK & SALES DATA ↗
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>{isOperational ? "VIEW TEAM & EXPENSE DATA ↗" : "VIEW STOCK & SALES DATA ↗"}</span>
                   </button>
                   <div className="flex gap-2">
                     <button
                       onClick={() => openEditModal(v)}
                       className="flex-1 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-navy hover:text-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-xs)"
                     >
-                      <Edit className="w-3.5 h-3.5" /> Edit Contact
+                      <Edit className="w-3.5 h-3.5" /> Edit Info
                     </button>
-                    <button
-                      onClick={() => openResetPinModal(v)}
-                      className="flex-1 border-2 border-brand-navy bg-brand-accent hover:bg-brand-navy hover:text-brand-off-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-xs)"
-                    >
-                      <Key className="w-3.5 h-3.5" /> Reset PIN
-                    </button>
+                    {!isOperational && (
+                      <button
+                        onClick={() => openResetPinModal(v)}
+                        className="flex-1 border-2 border-brand-navy bg-brand-accent hover:bg-brand-navy hover:text-brand-off-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1 transition-colors shadow-(--shadow-brut-xs)"
+                      >
+                        <Key className="w-3.5 h-3.5" /> Reset PIN
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
 
-        {/* Modal: New Vendor */}
+        {/* Modal: New Department / Vendor */}
         {showAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-4">
-            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-md p-6 shadow-(--shadow-brut-xl-accent)">
-              <h2 className="text-2xl font-display uppercase mb-4 border-b-2 border-brand-navy pb-2">New Vendor</h2>
+            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-lg p-6 shadow-(--shadow-brut-xl-accent) max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-display uppercase mb-4 border-b-2 border-brand-navy pb-2">
+                New Department or Unit
+              </h2>
               <form onSubmit={handleCreate} className="space-y-4">
+                {/* 2-Way Classification Switch */}
                 <div>
-                  <label className="block text-sm font-bold uppercase mb-1">Business Name</label>
-                  <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent" />
+                  <label className="block text-xs font-black uppercase mb-1.5 opacity-70">
+                    Classification
+                  </label>
+                  <div className="grid grid-cols-2 border-2 border-brand-navy">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, category: "commercial" })}
+                      className={`p-2.5 text-xs font-black uppercase flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+                        formData.category === "commercial"
+                          ? "bg-brand-navy text-brand-off-white"
+                          : "bg-white text-brand-navy hover:bg-brand-accent/30"
+                      }`}
+                    >
+                      <Store className="w-4 h-4" />
+                      <span>Commercial POS Stall</span>
+                      <span className="text-[10px] font-normal opacity-75">(Selling Terminal)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, category: "operational" })}
+                      className={`p-2.5 text-xs font-black uppercase flex flex-col items-center justify-center gap-1 border-l-2 border-brand-navy transition-colors cursor-pointer ${
+                        formData.category === "operational"
+                          ? "bg-brand-navy text-brand-off-white"
+                          : "bg-white text-brand-navy hover:bg-brand-accent/30"
+                      }`}
+                    >
+                      <Wrench className="w-4 h-4" />
+                      <span>Operational Team</span>
+                      <span className="text-[10px] font-normal opacity-75">(Cost Center / Crew)</span>
+                    </button>
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold uppercase mb-1">Contact Name</label>
-                  <input type="text" value={formData.contact_name} onChange={e => setFormData({...formData, contact_name: e.target.value})} className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold uppercase mb-1">Contact Phone</label>
-                  <input type="text" value={formData.contact_phone} onChange={e => setFormData({...formData, contact_phone: e.target.value})} className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold uppercase mb-1">
-                    Commission Rate (%)
+                  <label className="block text-xs font-bold uppercase mb-1">
+                    {formData.category === "commercial" ? "Stall / Business Name" : "Department / Team Name"}
                   </label>
                   <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    value={formData.commission_rate}
-                    onChange={(e) => setFormData({ ...formData, commission_rate: e.target.value })}
-                    className="w-full border-2 border-brand-navy p-2 bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent"
-                    placeholder="e.g. 10.0"
+                    type="text"
+                    required
+                    placeholder={formData.category === "commercial" ? "e.g. Goodlife Cocktail Bar" : "e.g. Sound & Lighting Crew"}
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full border-2 border-brand-navy p-2 bg-white text-xs font-bold focus:outline-none focus:ring-4 focus:ring-brand-accent"
                   />
-                  <p className="text-[11px] opacity-75 mt-1">
-                    Agreed festival commission percentage retained from sales (defaults to 10%).
-                  </p>
                 </div>
-                <div className="flex gap-4 pt-4">
-                  <button type="submit" className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-bold uppercase p-3 hover:bg-brand-accent hover:text-brand-navy transition-colors">Create</button>
-                  <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 bg-transparent border-2 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 transition-colors">Cancel</button>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Lead Contact Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Trina / Dr. Stoned"
+                      value={formData.contact_name}
+                      onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+                      className="w-full border-2 border-brand-navy p-2 bg-white text-xs font-bold focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Contact Phone</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 0712345678"
+                      value={formData.contact_phone}
+                      onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
+                      className="w-full border-2 border-brand-navy p-2 bg-white text-xs font-bold focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                    />
+                  </div>
+                </div>
+
+                {formData.category === "commercial" && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">
+                      Agreed Commission Rate (%)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={formData.commission_rate}
+                      onChange={(e) => setFormData({ ...formData, commission_rate: e.target.value })}
+                      className="w-full border-2 border-brand-navy p-2 bg-white text-xs font-bold focus:outline-none focus:ring-4 focus:ring-brand-accent"
+                      placeholder="e.g. 10.0"
+                    />
+                    <p className="text-[10px] opacity-75 mt-1">
+                      Festival cut retained from digital sales (defaults to 10%). Set to 0% for internal stalls like Goodlife Kitchen.
+                    </p>
+                  </div>
+                )}
+
+                {/* Optional Initial Cashier Setup for Commercial */}
+                {formData.category === "commercial" && (
+                  <div className="p-3 bg-brand-off-white border-2 border-brand-navy border-dashed space-y-2">
+                    <p className="text-xs font-black uppercase text-brand-navy">Initial Cashier Setup (Optional)</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Cashier Name (e.g. Main POS)"
+                        value={formData.operator_name}
+                        onChange={(e) => setFormData({ ...formData, operator_name: e.target.value })}
+                        className="border border-brand-navy p-1.5 bg-white text-xs font-bold"
+                      />
+                      <input
+                        type="text"
+                        maxLength={6}
+                        placeholder="4-digit PIN"
+                        value={formData.operator_pin}
+                        onChange={(e) => setFormData({ ...formData, operator_pin: e.target.value })}
+                        className="border border-brand-navy p-1.5 bg-white text-xs font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-black uppercase p-2.5 text-xs hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"
+                  >
+                    Create {formData.category === "commercial" ? "Stall" : "Department"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="flex-1 bg-transparent border-2 border-brand-navy font-black uppercase p-2.5 text-xs hover:bg-brand-navy/10 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </form>
             </div>
