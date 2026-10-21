@@ -3953,17 +3953,29 @@ export async function fetchEventExpenses(eventId?: number | null): Promise<Event
   }
 
   let query = `
-    SELECT ee.*, e.title as event_title 
+    SELECT 
+      ee.*, 
+      e.title as event_title,
+      v.name as vendor_name,
+      vo.name as operator_name
     FROM event_expenses ee
     LEFT JOIN events e ON e.id = ee.event_id
+    LEFT JOIN vendors v ON v.id = ee.vendor_id
+    LEFT JOIN vendor_operators vo ON vo.id = ee.operator_id
     ORDER BY ee.paid_at DESC, ee.created_at DESC
   `;
   let params: any[] = [];
   if (eventId) {
     query = `
-      SELECT ee.*, e.title as event_title 
+      SELECT 
+        ee.*, 
+        e.title as event_title,
+        v.name as vendor_name,
+        vo.name as operator_name
       FROM event_expenses ee
       LEFT JOIN events e ON e.id = ee.event_id
+      LEFT JOIN vendors v ON v.id = ee.vendor_id
+      LEFT JOIN vendor_operators vo ON vo.id = ee.operator_id
       WHERE ee.event_id = $1
       ORDER BY ee.paid_at DESC, ee.created_at DESC
     `;
@@ -3978,6 +3990,9 @@ export async function fetchEventExpenses(eventId?: number | null): Promise<Event
 
 export async function createEventExpense(data: {
   event_id: number;
+  vendor_id?: number | null;
+  operator_id?: number | null;
+  expense_type?: string | null;
   title: string;
   category: string;
   amount: number;
@@ -4000,11 +4015,14 @@ export async function createEventExpense(data: {
 
   const { rows } = await neonQuery(
     `INSERT INTO event_expenses (
-      event_id, title, category, amount, status, payment_method, recipient, receipt_url, notes, paid_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, NOW()))
+      event_id, vendor_id, operator_id, expense_type, title, category, amount, status, payment_method, recipient, receipt_url, notes, paid_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, NOW()))
     RETURNING *`,
     [
       data.event_id,
+      data.vendor_id || null,
+      data.operator_id || null,
+      data.expense_type || 'overhead',
       data.title,
       data.category,
       data.amount,
@@ -4030,7 +4048,7 @@ export async function updateEventExpense(id: number, data: Partial<EventExpense>
     return null;
   }
 
-  const allowed = ['title', 'category', 'amount', 'status', 'payment_method', 'recipient', 'receipt_url', 'notes', 'paid_at', 'event_id'];
+  const allowed = ['title', 'category', 'amount', 'status', 'payment_method', 'recipient', 'receipt_url', 'notes', 'paid_at', 'event_id', 'vendor_id', 'operator_id', 'expense_type'];
   const keys = Object.keys(data).filter(k => allowed.includes(k));
   if (keys.length === 0) return null;
 
@@ -4039,6 +4057,7 @@ export async function updateEventExpense(id: number, data: Partial<EventExpense>
     const val = (data as any)[k];
     if (k === 'paid_at' && (val === '' || !val)) return null;
     if ((k === 'notes' || k === 'recipient' || k === 'receipt_url') && val === '') return null;
+    if ((k === 'vendor_id' || k === 'operator_id') && (val === '' || val === undefined || Number.isNaN(Number(val)))) return null;
     return val;
   });
 
@@ -4122,8 +4141,8 @@ export async function cloneEventExpenses(fromEventId: number, toEventId: number)
     return json.cloned_count || 0;
   }
   const { rowCount } = await neonQuery(
-    `INSERT INTO event_expenses (event_id, title, category, amount, status, payment_method, recipient, notes)
-     SELECT $2, title, category, amount, 'planned', payment_method, recipient, notes
+    `INSERT INTO event_expenses (event_id, vendor_id, operator_id, expense_type, title, category, amount, status, payment_method, recipient, notes)
+     SELECT $2, vendor_id, operator_id, expense_type, title, category, amount, 'planned', payment_method, recipient, notes
      FROM event_expenses
      WHERE event_id = $1`,
     [fromEventId, toEventId]

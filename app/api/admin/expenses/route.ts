@@ -36,7 +36,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { event_id, title, category, amount, status, payment_method, recipient, receipt_url, notes, paid_at } = body;
+    const { 
+      event_id, 
+      vendor_id, 
+      operator_id, 
+      expense_type, 
+      title, 
+      category, 
+      amount, 
+      status, 
+      payment_method, 
+      recipient, 
+      receipt_url, 
+      notes, 
+      paid_at 
+    } = body;
 
     if (!event_id || !title || !category || amount === undefined) {
       return NextResponse.json(
@@ -52,6 +66,9 @@ export async function POST(request: NextRequest) {
 
     const expense = await createEventExpense({
       event_id: Number(event_id),
+      vendor_id: vendor_id ? Number(vendor_id) : null,
+      operator_id: operator_id ? Number(operator_id) : null,
+      expense_type: expense_type ? String(expense_type).trim() : 'overhead',
       title: String(title).trim(),
       category: String(category).trim(),
       amount: numAmount,

@@ -34,8 +34,8 @@ import {
   Beer,
   Box,
   Image as ImageIcon,
-  CheckSquare,
-  Square
+  Store,
+  Users
 } from "lucide-react";
 import PosterUploader from "@/components/admin/PosterUploader";
 
@@ -43,6 +43,11 @@ export interface ExpenseItem {
   id: number;
   event_id: number;
   event_title?: string;
+  vendor_id?: number | null;
+  vendor_name?: string | null;
+  operator_id?: number | null;
+  operator_name?: string | null;
+  expense_type?: "overhead" | "vendor_cogs" | "vendor_advance" | "staff_payout" | string;
   title: string;
   category: string;
   amount: number;
@@ -113,9 +118,17 @@ export default function AdminBudgetPage() {
   const [forkCopyBudgetCap, setForkCopyBudgetCap] = useState(true);
   const [forking, setForking] = useState(false);
 
+  // Unified Event Vendors & Staff Operators State
+  const [eventVendors, setEventVendors] = useState<any[]>([]);
+  const [vendorOperators, setVendorOperators] = useState<any[]>([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
+
   // Form State for Expense
   const [formData, setFormData] = useState({
     event_id: "",
+    vendor_id: "",
+    operator_id: "",
+    expense_type: "overhead",
     title: "",
     category: "venue",
     amount: "",
@@ -200,8 +213,31 @@ export default function AdminBudgetPage() {
   useEffect(() => {
     if (selectedEventId) {
       loadData(selectedEventId);
+      // Fetch assigned vendors for this event
+      setLoadingVendors(true);
+      fetch(`/api/admin/events/${selectedEventId}/vendors`)
+        .then((res) => res.json())
+        .then((data) => {
+          setEventVendors(Array.isArray(data) ? data : []);
+        })
+        .catch(() => setEventVendors([]))
+        .finally(() => setLoadingVendors(false));
     }
   }, [selectedEventId]);
+
+  // Load operators when vendor changes in form
+  useEffect(() => {
+    if (formData.vendor_id) {
+      fetch(`/api/admin/vendors/${formData.vendor_id}/operators`)
+        .then((res) => res.json())
+        .then((data) => {
+          setVendorOperators(data.operators || data || []);
+        })
+        .catch(() => setVendorOperators([]));
+    } else {
+      setVendorOperators([]);
+    }
+  }, [formData.vendor_id]);
 
   // Filtered expenses
   const filteredExpenses = useMemo(() => {
@@ -445,6 +481,9 @@ export default function AdminBudgetPage() {
 
       const payload = {
         event_id: resolvedEventId,
+        vendor_id: formData.vendor_id ? Number(formData.vendor_id) : null,
+        operator_id: formData.operator_id ? Number(formData.operator_id) : null,
+        expense_type: formData.expense_type || 'overhead',
         title: formData.title.trim(),
         category: formData.category,
         amount: numAmount,
@@ -577,6 +616,9 @@ export default function AdminBudgetPage() {
     setEditingExpense(item);
     setFormData({
       event_id: (item.event_id || selectedEventId || (events[0]?.id ? events[0].id.toString() : "2")).toString(),
+      vendor_id: item.vendor_id ? item.vendor_id.toString() : "",
+      operator_id: item.operator_id ? item.operator_id.toString() : "",
+      expense_type: item.expense_type || (item.vendor_id ? "vendor_cogs" : "overhead"),
       title: item.title,
       category: item.category,
       amount: item.amount.toString(),
@@ -593,6 +635,9 @@ export default function AdminBudgetPage() {
   const resetForm = () => {
     setFormData({
       event_id: selectedEventId || (events[0]?.id ? events[0].id.toString() : "2"),
+      vendor_id: "",
+      operator_id: "",
+      expense_type: "overhead",
       title: "",
       category: "venue",
       amount: "",
@@ -660,10 +705,10 @@ export default function AdminBudgetPage() {
             </Link>
             <div>
               <h1 className="text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
-                <DollarSign className="w-7 h-7 text-brand-navy" /> Event Budget & P&L
+                <DollarSign className="w-7 h-7 text-brand-navy" /> Event Finances & P&L
               </h1>
               <p className="text-xs text-brand-navy/60 font-bold uppercase mt-0.5">
-                Initial Budget, Cost Tracking, Live Inflows & Financial Reconciliation
+                Unified Event Budget, Commercial Stalls, Payroll & Dual P&L
               </p>
             </div>
           </div>
@@ -1212,8 +1257,25 @@ export default function AdminBudgetPage() {
 
                           {/* Title & Payee */}
                           <td className="p-2.5">
-                            <p className="font-bold text-brand-navy">{item.title}</p>
-                            <div className="text-[10px] text-brand-navy/60 flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-brand-navy">{item.title}</span>
+                              {item.vendor_name && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 border border-brand-navy bg-brand-accent/30 text-[9px] font-black uppercase text-brand-navy">
+                                  <Store className="w-2.5 h-2.5" /> {item.vendor_name}
+                                </span>
+                              )}
+                              {item.expense_type && item.expense_type !== "overhead" && (
+                                <span className="px-1 py-0.2 border border-brand-navy/60 bg-white text-[9px] font-mono uppercase text-brand-navy/80">
+                                  {item.expense_type === "vendor_cogs" ? "COGS" : item.expense_type === "vendor_advance" ? "Advance" : "Staff"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-brand-navy/60 flex items-center gap-2 mt-0.5 flex-wrap">
+                              {item.operator_name && (
+                                <span className="flex items-center gap-0.5 text-brand-navy font-semibold">
+                                  <Users className="w-2.5 h-2.5" /> {item.operator_name}
+                                </span>
+                              )}
                               {item.recipient && <span>Payee: <strong>{item.recipient}</strong></span>}
                               {item.notes && <span className="italic truncate max-w-xs">{item.notes}</span>}
                             </div>
@@ -1346,6 +1408,16 @@ export default function AdminBudgetPage() {
                               <span className={`px-1.5 py-0.5 border text-[9px] font-black uppercase ${cat.color}`}>
                                 {cat.label}
                               </span>
+                              {item.vendor_name && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 border border-brand-navy bg-brand-accent/30 text-[9px] font-black uppercase text-brand-navy">
+                                  <Store className="w-2.5 h-2.5" /> {item.vendor_name}
+                                </span>
+                              )}
+                              {item.expense_type && item.expense_type !== "overhead" && (
+                                <span className="px-1 py-0.5 border border-brand-navy/60 bg-white text-[9px] font-mono uppercase text-brand-navy/80">
+                                  {item.expense_type === "vendor_cogs" ? "COGS" : item.expense_type === "vendor_advance" ? "Advance" : "Staff"}
+                                </span>
+                              )}
                               <span className="text-[10px] text-brand-navy/60 font-mono">
                                 {item.paid_at ? item.paid_at.substring(0, 10) : "No date"}
                               </span>
@@ -1486,6 +1558,94 @@ export default function AdminBudgetPage() {
                 <p className="text-[10px] text-brand-navy/60 font-medium mt-1">
                   {editingExpense ? "Re-assign this expense to any event edition if needed." : "Event edition this expense belongs to."}
                 </p>
+              </div>
+
+              {/* Expense Type & Allocation Scope */}
+              <div className="bg-brand-off-white border-2 border-brand-navy p-3 space-y-2">
+                <label className="font-bold uppercase block text-brand-navy flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-brand-navy" /> Allocation Scope / Department
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-brand-accent/40 font-mono text-brand-navy uppercase">
+                    {formData.vendor_id ? "Vendor Stall Linked" : "Festival Overhead"}
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase block text-brand-navy/70 mb-0.5">
+                      Assigned Commercial Vendor
+                    </label>
+                    <select
+                      value={formData.vendor_id}
+                      onChange={(e) => {
+                        const vid = e.target.value;
+                        const vObj = eventVendors.find((v) => v.id.toString() === vid);
+                        setFormData({
+                          ...formData,
+                          vendor_id: vid,
+                          operator_id: "",
+                          // Auto set appropriate category if vendor selected
+                          category: vid ? "inventory" : formData.category,
+                          expense_type: vid ? "vendor_cogs" : "overhead",
+                        });
+                      }}
+                      className="w-full p-1.5 border border-brand-navy font-bold text-xs uppercase bg-white focus:outline-none cursor-pointer"
+                    >
+                      <option value="">— Festival Overhead (General) —</option>
+                      {eventVendors.map((v) => (
+                        <option key={v.id} value={v.id.toString()}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase block text-brand-navy/70 mb-0.5">
+                      Accounting Classification
+                    </label>
+                    <select
+                      value={formData.expense_type}
+                      onChange={(e) => setFormData({ ...formData, expense_type: e.target.value })}
+                      className="w-full p-1.5 border border-brand-navy font-bold text-xs uppercase bg-white focus:outline-none cursor-pointer"
+                    >
+                      <option value="overhead">Festival Overhead</option>
+                      <option value="vendor_cogs">Vendor Stock / COGS</option>
+                      <option value="vendor_advance">Vendor Cash Advance</option>
+                      <option value="staff_payout">Staff / Crew Wage</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Operator / Staff Attribution */}
+                {vendorOperators.length > 0 && (
+                  <div className="pt-1 border-t border-brand-navy/20">
+                    <label className="text-[10px] font-bold uppercase block text-brand-navy/70 mb-0.5 flex items-center gap-1">
+                      <Users className="w-3 h-3" /> Cashier / Operator Incurring Expense (Optional)
+                    </label>
+                    <select
+                      value={formData.operator_id}
+                      onChange={(e) => {
+                        const opId = e.target.value;
+                        const opObj = vendorOperators.find((o) => o.id.toString() === opId);
+                        setFormData({
+                          ...formData,
+                          operator_id: opId,
+                          recipient: opObj && !formData.recipient ? opObj.name : formData.recipient,
+                        });
+                      }}
+                      className="w-full p-1.5 border border-brand-navy font-bold text-xs uppercase bg-white focus:outline-none cursor-pointer"
+                    >
+                      <option value="">— No Specific Operator —</option>
+                      {vendorOperators.map((op) => (
+                        <option key={op.id} value={op.id.toString()}>
+                          {op.name} ({op.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               {/* Title */}

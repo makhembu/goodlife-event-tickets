@@ -52,6 +52,20 @@ export async function PUT(
       body.receipt_url = body.receipt_url && String(body.receipt_url).trim() !== "" ? String(body.receipt_url).trim() : null;
     }
 
+    if ("vendor_id" in body) {
+      const vid = parseInt(body.vendor_id, 10);
+      body.vendor_id = !isNaN(vid) && vid > 0 ? vid : null;
+    }
+
+    if ("operator_id" in body) {
+      const opid = parseInt(body.operator_id, 10);
+      body.operator_id = !isNaN(opid) && opid > 0 ? opid : null;
+    }
+
+    if ("expense_type" in body) {
+      body.expense_type = body.expense_type && String(body.expense_type).trim() !== "" ? String(body.expense_type).trim() : "overhead";
+    }
+
     const updated = await updateEventExpense(numId, body);
     if (!updated) {
       return NextResponse.json({ error: "Expense not found or update failed" }, { status: 404 });

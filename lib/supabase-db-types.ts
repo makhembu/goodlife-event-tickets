@@ -254,10 +254,15 @@ export interface EventExpense {
   id: number;
   event_id: number;
   event_title?: string;
+  vendor_id?: number | null;
+  vendor_name?: string | null;
+  operator_id?: number | null;
+  operator_name?: string | null;
+  expense_type?: "overhead" | "vendor_cogs" | "vendor_advance" | "staff_payout" | string;
   title: string;
   category: "venue" | "sound_stage" | "artists" | "permits_security" | "marketing" | "logistics" | "inventory" | "other" | string;
   amount: number;
-  status: "paid" | "pending" | "planned";
+  status: "paid" | "pending" | "planned" | "cancelled";
   payment_method: "mpesa" | "cash" | "bank_transfer" | string;
   recipient?: string | null;
   receipt_url?: string | null;
