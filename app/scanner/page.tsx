@@ -133,6 +133,7 @@ export default function GateTerminalPage() {
   const scannerRef = useRef<any>(null);
   const verifyRef = useRef<((id: string, count?: number) => Promise<void>) | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recentDecodesRef = useRef<Map<string, number>>(new Map());
 
   // Load session
   useEffect(() => {
@@ -403,6 +404,14 @@ export default function GateTerminalPage() {
                 ticketId = u.searchParams.get("ticket") || decodedText;
               } catch {}
             }
+
+            const cleanId = ticketId.trim().toUpperCase();
+            const now = Date.now();
+            const lastScannedAt = recentDecodesRef.current.get(cleanId);
+            if (lastScannedAt && now - lastScannedAt < 2000) {
+              return;
+            }
+            recentDecodesRef.current.set(cleanId, now);
 
             if (verifyRef.current) {
               await verifyRef.current(ticketId);

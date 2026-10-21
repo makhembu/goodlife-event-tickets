@@ -1201,15 +1201,60 @@ export async function processTicketScan(
 
   // Server side - Neon SQL
   try {
-    await neonQuery(
+    const updateResult = await neonQuery(
       `UPDATE tickets 
-       SET is_scanned = $1, 
+       SET is_scanned = (admitted_count + $1 >= guest_count), 
            scanned_at = $2, 
            scanned_by = $3, 
-           admitted_count = $4 
-       WHERE id = $5 AND deleted_at IS NULL`,
-      [isFullyAdmitted, scannedAt, scannerName, newAdmitted, id]
+           admitted_count = admitted_count + $1 
+       WHERE id = $4 AND deleted_at IS NULL AND is_scanned = FALSE AND (admitted_count + $1 <= guest_count)
+       RETURNING admitted_count, guest_count, is_scanned, scanned_at, scanned_by`,
+      [countToAdmit, scannedAt, scannerName, id]
     );
+
+    if (!updateResult.rows || updateResult.rows.length === 0) {
+      // Re-read true ticket state from database to accurately inform the steward
+      const freshTicket = await getTicketById(id);
+      if (!freshTicket) {
+        return {
+          success: false,
+          message: `Ticket ID: ${id} could not be resolved. Entry rejected.`
+        };
+      }
+      const freshTotal = Number(freshTicket.guest_count) || 1;
+      const freshAdmitted = Number(freshTicket.admitted_count) || 0;
+      if (freshTicket.is_scanned || freshAdmitted >= freshTotal) {
+        return {
+          success: false,
+          alreadyScanned: true,
+          scannedAt: freshTicket.scanned_at || freshTicket.purchase_time,
+          ticket: freshTicket,
+          message: `TICKET ALREADY FULLY SCANNED! All ${freshTotal} guest(s) were admitted on ${new Date(freshTicket.scanned_at || "").toLocaleTimeString()} by ${freshTicket.scanned_by || "Unknown"}. ENTRY REJECTED.`
+        };
+      }
+      return {
+        success: false,
+        alreadyScanned: false,
+        ticket: freshTicket,
+        admitted_count: freshAdmitted,
+        guest_count: freshTotal,
+        message: `ADMISSION CONFLICT! Requested ${countToAdmit} guest(s), but only ${freshTotal - freshAdmitted} remaining out of ${freshTotal}. Please scan again.`
+      };
+    }
+
+    const updatedRow = updateResult.rows[0];
+    const actualAdmitted = Number(updatedRow.admitted_count);
+    const actualTotal = Number(updatedRow.guest_count);
+    const actualFullyScanned = Boolean(updatedRow.is_scanned);
+
+    const persistedTicket: Ticket = {
+      ...ticket,
+      is_scanned: actualFullyScanned,
+      scanned_at: updatedRow.scanned_at,
+      scanned_by: updatedRow.scanned_by,
+      admitted_count: actualAdmitted,
+      guest_count: actualTotal
+    };
 
     // Send scan notification via WhatsApp
     try {
@@ -1225,8 +1270,8 @@ export async function processTicketScan(
       console.error("Failed to import/dispatch scan notification:", err);
     }
 
-    const countStatus = totalGuests > 1 
-      ? `ADMITTED ${countToAdmit} GUESTS (${newAdmitted}/${totalGuests})`
+    const countStatus = actualTotal > 1 
+      ? `ADMITTED ${countToAdmit} GUESTS (${actualAdmitted}/${actualTotal})`
       : `VALID TICKET`;
 
     const fullMsg = campingInstruction
@@ -1235,11 +1280,11 @@ export async function processTicketScan(
 
     return {
       success: true,
-      ticket: updatedTicket,
+      ticket: persistedTicket,
       message: fullMsg,
       camping_instruction: campingInstruction,
-      admitted_count: newAdmitted,
-      guest_count: totalGuests
+      admitted_count: actualAdmitted,
+      guest_count: actualTotal
     };
   } catch (err) {
     console.error("Neon processTicketScan error:", err);
