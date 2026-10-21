@@ -809,30 +809,30 @@ export default function AdminBudgetPage() {
         </div>
 
         {/* View Mode Switcher: Event Overall vs Stall Unit Economics */}
-        <div className="flex border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
+        <div className="flex flex-col sm:flex-row border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
           <button
             type="button"
             onClick={() => setActiveFinanceTab("overview")}
-            className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+            className={`flex-1 px-4 py-2.5 text-xs font-black uppercase flex items-center justify-center gap-2.5 transition-colors cursor-pointer text-center ${
               activeFinanceTab === "overview"
                 ? "bg-brand-navy text-brand-off-white"
                 : "bg-white text-brand-navy hover:bg-brand-accent/30"
             }`}
           >
-            <PieChart className="w-4 h-4" />
-            <span>Festival Overall Finances & P&L</span>
+            <PieChart className="w-4 h-4 shrink-0" />
+            <span className="leading-tight">Festival Overall Finances & P&L</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveFinanceTab("stalls")}
-            className={`flex-1 py-2 text-xs font-black uppercase flex items-center justify-center gap-2 border-l-4 border-brand-navy transition-colors cursor-pointer ${
+            className={`flex-1 px-4 py-2.5 text-xs font-black uppercase flex items-center justify-center gap-2.5 border-t-4 sm:border-t-0 sm:border-l-4 border-brand-navy transition-colors cursor-pointer text-center ${
               activeFinanceTab === "stalls"
                 ? "bg-brand-navy text-brand-off-white"
                 : "bg-white text-brand-navy hover:bg-brand-accent/30"
             }`}
           >
-            <Store className="w-4 h-4" />
-            <span>Commercial Stalls Unit Economics ({eventVendors.length})</span>
+            <Store className="w-4 h-4 shrink-0" />
+            <span className="leading-tight">Commercial Stalls Unit Economics ({eventVendors.length})</span>
           </button>
         </div>
 
