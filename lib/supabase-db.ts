@@ -1711,8 +1711,8 @@ export async function createPendingPayment(payment: PendingPayment): Promise<Pen
       resolvedEventId = active?.id || 1;
     }
     await neonQuery(
-      `INSERT INTO pending_payments (checkout_request_id, phone_number, ticket_type, quantity, buyer_name, amount, whatsapp_number, mpesa_reference, status, event_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO pending_payments (checkout_request_id, phone_number, ticket_type, quantity, buyer_name, amount, whatsapp_number, mpesa_reference, status, event_id, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         payment.checkout_request_id,
         payment.phone_number,
@@ -1723,7 +1723,8 @@ export async function createPendingPayment(payment: PendingPayment): Promise<Pen
         payment.whatsapp_number || "",
         payment.mpesa_reference || "",
         payment.status || "",
-        resolvedEventId
+        resolvedEventId,
+        payment.idempotency_key || null
       ]
     );
     return { ...payment, event_id: resolvedEventId };

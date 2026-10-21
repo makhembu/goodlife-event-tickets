@@ -26,6 +26,7 @@ const bebasNeue = Bebas_Neue({
 import { fetchEventDetails } from '@/lib/supabase-db';
 import { SITE_NAME, TWITTER_HANDLE, buildEventSeo, siteUrl } from '@/lib/seo';
 import SeoStructuredData from '@/components/SeoStructuredData';
+import PwaUpdatePrompt from '@/components/ui/PwaUpdatePrompt';
 
 export async function generateMetadata(): Promise<Metadata> {
   // Must never throw. generateMetadata runs for every prerendered route, so an
@@ -108,6 +109,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
     <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
       <body className="font-sans antialiased bg-brand-bg text-brand-black min-h-screen" suppressHydrationWarning>
         <SeoStructuredData />
+        <PwaUpdatePrompt />
         {children}
       </body>
     </html>

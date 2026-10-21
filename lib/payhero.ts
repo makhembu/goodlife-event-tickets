@@ -195,11 +195,28 @@ export async function getPayheroTransactionStatus(
   return { ok: true, data };
 }
 
+/**
+ * Official documented PayHero statuses from https://docs.payhero.co.ke:
+ * - QUEUED: Payment request queued / STK push prompt awaiting customer action
+ * - SUCCESS: Payment completed successfully and verified
+ * - FAILED: Payment declined, cancelled, wrong PIN, or failed
+ *
+ * UNVERIFIED statuses: CANCELLED, TIMEOUT (marked UNVERIFIED per docs; if PayHero reports them,
+ * we handle them defensively as failure, but the docs specifically document QUEUED, SUCCESS, FAILED).
+ * Unknown statuses are strictly treated as pending/in-progress.
+ */
 export function payheroStatusIsSuccess(d?: PayheroStatusResponse): boolean {
-  return String(d?.status || "").toUpperCase() === "SUCCESS";
+  return String(d?.status || "").trim().toUpperCase() === "SUCCESS";
 }
 
 export function payheroStatusIsFailed(d?: PayheroStatusResponse): boolean {
-  const s = String(d?.status || "").toUpperCase();
+  const s = String(d?.status || "").trim().toUpperCase();
+  // SUCCESS and QUEUED are explicitly not failed.
+  // FAILED is documented. CANCELLED / TIMEOUT are UNVERIFIED in official docs, handled defensively.
   return s === "FAILED" || s === "CANCELLED" || s === "TIMEOUT";
+}
+
+export function payheroStatusIsQueued(d?: PayheroStatusResponse): boolean {
+  const s = String(d?.status || "").trim().toUpperCase();
+  return s === "QUEUED";
 }

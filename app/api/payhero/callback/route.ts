@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-fulfill";
 import { recordPayheroFailure } from "@/lib/rate-limit";
+import { getPayheroTransactionStatus, payheroStatusIsSuccess } from "@/lib/payhero";
 
 /**
  * PayHero payment webhook.
@@ -51,8 +52,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (status === "success") {
-      const amountPaid = Number(payload?.amount) || 0;
-      const providerReference = String(payload?.provider_reference || payload?.reference);
+      // Security re-verification: always query PayHero transaction-status endpoint
+      // before fulfilling tickets to prevent forged callbacks or man-in-the-middle attacks.
+      const lookupRef = payload?.reference || ourReference;
+      const verifyCheck = await getPayheroTransactionStatus(lookupRef);
+      if (!verifyCheck.ok || !verifyCheck.data || !payheroStatusIsSuccess(verifyCheck.data)) {
+        console.warn("[PayHero Callback] Re-verification failed for ref:", lookupRef, verifyCheck);
+        return NextResponse.json(
+          { error: "Callback re-verification failed with PayHero" },
+          { status: 400 }
+        );
+      }
+
+      const verifiedData = verifyCheck.data;
+      const amountPaid = Number(verifiedData.amount) || Number(payload?.amount) || 0;
+      const providerReference = String(
+        verifiedData.provider_reference || payload?.provider_reference || payload?.reference
+      );
 
       // Check if this is a Tab Remote Self-Pay payment
       if (ourReference.startsWith("TABPAY_")) {

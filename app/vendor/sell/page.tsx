@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft, QrCode } from "lucide-react";
 import { ProductQrModal } from "@/components/vendor/ProductQrModal";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 export default function VendorSellPage() {
+  const isOnline = useOnlineStatus();
   const [items, setItems] = useState<any[]>([]);
   const [cart, setCart] = useState<any[]>([]);
   const [confirmClearCart, setConfirmClearCart] = useState(false);
@@ -1654,12 +1656,13 @@ export default function VendorSellPage() {
                               />
                               <button
                                 type="button"
-                                disabled={isTriggeringStk || !mpesaCustomerPhone.trim()}
+                                disabled={!isOnline || isTriggeringStk || !mpesaCustomerPhone.trim()}
                                 onClick={triggerStkPush}
+                                title={!isOnline ? "M-Pesa STK is disabled while offline" : ""}
                                 className="bg-[#25D366] text-brand-navy border-2 border-brand-navy px-3 py-2 font-display text-sm uppercase flex items-center gap-1 hover:bg-[#20ba59] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-(--shadow-brut-xs) cursor-pointer"
                               >
                                 <Zap className="w-4 h-4 fill-brand-navy" />
-                                {isTriggeringStk ? "Sending..." : "Prompt Phone"}
+                                {!isOnline ? "Offline" : isTriggeringStk ? "Sending..." : "Prompt Phone"}
                               </button>
                             </div>
                             <p className="text-[10px] text-brand-navy/60 font-mono">

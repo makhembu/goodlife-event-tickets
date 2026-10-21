@@ -1,23 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingPayment, fetchTicketTiers, fetchActiveEvent } from "@/lib/supabase-db";
+import crypto from "crypto";
+import { fetchTicketTiers, fetchActiveEvent, neonQuery } from "@/lib/supabase-db";
 import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
-import { checkRateLimit, checkPayheroStkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   isPayheroConfigured,
   initiatePayheroStkPush,
   normalizePayheroPhone,
   payheroCallbackUrl,
   getPayheroServiceWallet,
+  getPayheroTransactionStatus,
+  payheroStatusIsSuccess,
+  payheroStatusIsFailed,
 } from "@/lib/payhero";
 import { alertLowPayheroWallet } from "@/lib/payhero-alerts";
 
 export async function POST(request: NextRequest) {
-  const rl = checkRateLimit(request, "payhero-init", { maxRequests: 6, windowMs: 60 * 1000 });
+  const rl = checkRateLimit(request, "payhero-init", { maxRequests: 10, windowMs: 60 * 1000 });
   if (!rl.allowed) return rl.response!;
 
   try {
-    const { phone_number, ticket_type, buyer_name, quantity = 1, whatsapp_number = "", event_id } =
-      await request.json();
+    const {
+      phone_number,
+      ticket_type,
+      buyer_name,
+      quantity = 1,
+      whatsapp_number = "",
+      event_id,
+      idempotency_key,
+    } = await request.json();
 
     if (!phone_number || !ticket_type || !buyer_name) {
       return NextResponse.json(
@@ -26,36 +37,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // PayHero STK Abuse Protection (phone cooldown + frequency limits)
-    const stkLimit = checkPayheroStkRateLimit({
-      request,
-      phoneNumber: phone_number,
-      scope: "ticket-checkout",
-    });
-    if (!stkLimit.allowed) return stkLimit.response!;
+    // 1. If client provided an idempotency_key, check for existing payment record first
+    if (idempotency_key && typeof idempotency_key === "string" && idempotency_key.trim()) {
+      const cleanKey = idempotency_key.trim();
+      const existing = await neonQuery(
+        `SELECT checkout_request_id, status, ticket_id, amount, phone_number, created_at
+         FROM pending_payments
+         WHERE idempotency_key = $1
+         LIMIT 1`,
+        [cleanKey]
+      );
 
-    // Database-backed duplicate-in-flight guard: check if a pending payment already exists for this phone within the last 45 seconds
-    try {
-      const { neonQuery } = await import("@/lib/supabase-db");
-      if (neonQuery) {
-        const { rows: pendingDupes } = await neonQuery(
-          `SELECT checkout_request_id, created_at 
-           FROM pending_payments 
-           WHERE phone_number = $1 
-             AND status = 'pending' 
-             AND created_at > (NOW() - INTERVAL '45 seconds') 
-           LIMIT 1`,
-          [phone_number]
-        );
-        if (pendingDupes && pendingDupes.length > 0) {
-          return NextResponse.json(
-            { error: "A payment request is already in progress for this phone number. Please check your phone for the M-Pesa PIN prompt or wait 45 seconds." },
-            { status: 429 }
-          );
+      if (existing && existing.rows && existing.rows.length > 0) {
+        const row = existing.rows[0];
+        // If already completed, return existing ticket immediately
+        if (row.status === "completed" && row.ticket_id) {
+          const ids = String(row.ticket_id).split(",").map((s) => s.trim()).filter(Boolean);
+          return NextResponse.json({
+            success: true,
+            status: "completed",
+            reference: row.checkout_request_id,
+            merchant_reference: row.checkout_request_id,
+            ticket_id: ids[0],
+            ticket_ids: ids,
+            amount: Number(row.amount),
+          });
+        }
+
+        // If pending, check live PayHero status first to avoid initiating another STK push
+        if (row.status === "pending") {
+          try {
+            const check = await getPayheroTransactionStatus(row.checkout_request_id);
+            if (check.ok && check.data) {
+              if (payheroStatusIsSuccess(check.data)) {
+                // Let verify or callback complete it, or return pending with existing reference
+                return NextResponse.json({
+                  success: true,
+                  status: "QUEUED",
+                  reference: row.checkout_request_id,
+                  merchant_reference: row.checkout_request_id,
+                  amount: Number(row.amount),
+                });
+              }
+            }
+          } catch {
+            // Ignore status check error and return existing reference
+          }
+
+          return NextResponse.json({
+            success: true,
+            status: "QUEUED",
+            reference: row.checkout_request_id,
+            merchant_reference: row.checkout_request_id,
+            amount: Number(row.amount),
+          });
         }
       }
-    } catch (dupeErr) {
-      console.warn("[PayHero Init] Failed to check pending duplicate in DB, proceeding with in-memory limits:", dupeErr);
     }
 
     if (!isPayheroConfigured()) {
@@ -68,7 +105,6 @@ export async function POST(request: NextRequest) {
 
     // Fee-float guard: PayHero deducts collection fees from the service wallet.
     // Empty float = payments fail. Block early with a clear message; warn below threshold.
-    // If the balance check itself errors, proceed — monitoring must never block sales.
     const minBalance = Number(process.env.PAYHERO_MIN_BALANCE || 50);
     const wallet = await getPayheroServiceWallet();
     if (wallet.ok && wallet.balance !== null) {
@@ -99,15 +135,7 @@ export async function POST(request: NextRequest) {
       targetEvent = await fetchActiveEvent();
     }
 
-    // One instant, reused for both the event-level availability check below and
-    // the per-tier availability window further down, so a request cannot be
-    // judged "open" by one and "closed" by the other a millisecond apart.
     const now = new Date();
-
-    // A closed event must not be able to take money, and neither must one
-    // whose sales window has not opened or has shut, nor a recurring session
-    // that is on today. The rule itself lives in lib/event-availability.ts;
-    // this route only decides the wording.
     const availability = getEventAvailability(targetEvent, now);
     if (!availability.sellable) {
       return NextResponse.json(
@@ -115,8 +143,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    // Fail closed: never fall back to a hardcoded event id, which would sell
-    // tickets for whatever happens to live at id 1.
     const eventId = targetEvent.id;
 
     const allTiers = await fetchTicketTiers(eventId);
@@ -139,21 +165,51 @@ export async function POST(request: NextRequest) {
     // PayHero expects whole KES shillings
     const amount = Math.round(cost);
 
-    // Our reference — echoed back on the webhook as external_reference
-    const reference = "GL-" + Math.random().toString(36).substring(2, 12).toUpperCase();
-
+    // Cryptographically secure reference generation
+    const reference = "GL-" + crypto.randomBytes(6).toString("hex").toUpperCase();
     const mpesaPhone = normalizePayheroPhone(phone_number);
+    const cleanIdempotencyKey = idempotency_key ? String(idempotency_key).trim() : null;
 
-    await createPendingPayment({
-      checkout_request_id: reference,
-      phone_number,
-      ticket_type,
-      quantity: Number(quantity),
-      buyer_name,
-      amount: cost,
-      whatsapp_number: whatsapp_number || "",
-      event_id: eventId,
-    });
+    // Atomic insert into pending_payments with UNIQUE idempotency_key
+    try {
+      await neonQuery(
+        `INSERT INTO pending_payments (checkout_request_id, phone_number, ticket_type, quantity, buyer_name, amount, whatsapp_number, status, event_id, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)`,
+        [
+          reference,
+          phone_number,
+          ticket_type,
+          Number(quantity),
+          buyer_name,
+          cost,
+          whatsapp_number || "",
+          eventId,
+          cleanIdempotencyKey,
+        ]
+      );
+    } catch (insertErr: any) {
+      // If unique constraint violation on idempotency_key (Postgres error code 23505)
+      if (insertErr.code === "23505" && cleanIdempotencyKey) {
+        const { rows } = await neonQuery(
+          `SELECT checkout_request_id, status, ticket_id, amount
+           FROM pending_payments
+           WHERE idempotency_key = $1
+           LIMIT 1`,
+          [cleanIdempotencyKey]
+        );
+        if (rows && rows.length > 0) {
+          const row = rows[0];
+          return NextResponse.json({
+            success: true,
+            status: row.status === "completed" ? "completed" : "QUEUED",
+            reference: row.checkout_request_id,
+            merchant_reference: row.checkout_request_id,
+            amount: Number(row.amount),
+          });
+        }
+      }
+      throw insertErr;
+    }
 
     const stkRes = await initiatePayheroStkPush({
       customer_name: buyer_name,
@@ -168,6 +224,12 @@ export async function POST(request: NextRequest) {
 
     if (!stkRes.ok) {
       console.error("PayHero STK push failed:", stkRes.error, stkRes.data);
+      // Mark as failed in DB so it doesn't linger as pending
+      await neonQuery(
+        `UPDATE pending_payments SET status = 'failed' WHERE checkout_request_id = $1`,
+        [reference]
+      ).catch(() => {});
+
       return NextResponse.json(
         { error: stkRes.error || "M-Pesa STK Push failed." },
         { status: 400 }

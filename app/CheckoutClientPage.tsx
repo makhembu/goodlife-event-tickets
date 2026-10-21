@@ -41,6 +41,17 @@ import { isHiddenFromSite, isEventSellable, canonicalStatus } from "@/lib/event-
 import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
 import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 import StoryDeckHero from "@/components/StoryDeckHero";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import OfflineTicketsDrawer from "@/components/ui/OfflineTicketsDrawer";
+import {
+  saveDraftOrder,
+  getAllDraftOrders,
+  deleteDraftOrder,
+  saveOfflineTickets,
+  getAllOfflineTickets,
+  DraftOrder,
+  CachedTicket,
+} from "@/lib/offline-db";
 
 interface CheckoutClientPageProps {
   initialEventDetails?: EventDetails;
@@ -154,6 +165,28 @@ export default function TicketCheckoutPage({
   const [stxReference, setStxReference] = useState<string | null>(null);
   const [promptTargetPhone, setPromptTargetPhone] = useState<string>("");
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
+
+  // Offline PWA & Payment State Machine
+  // DRAFT -> QUEUED_LOCALLY -> AWAITING_RECHECK -> AWAITING_USER_CONFIRMATION -> PROMPT_SENT -> POLLING -> PAID / FAILED / CANCELLED / TIMED_OUT
+  type PaymentStateMachine =
+    | "DRAFT"
+    | "QUEUED_LOCALLY"
+    | "AWAITING_RECHECK"
+    | "AWAITING_USER_CONFIRMATION"
+    | "PROMPT_SENT"
+    | "POLLING"
+    | "PAID"
+    | "FAILED"
+    | "CANCELLED"
+    | "TIMED_OUT";
+
+  const isOnline = useOnlineStatus();
+  const [paymentState, setPaymentState] = useState<PaymentStateMachine>("DRAFT");
+  const [activeDraft, setActiveDraft] = useState<DraftOrder | null>(null);
+  const [showOfflineTickets, setShowOfflineTickets] = useState(false);
+  const [offlineTicketsCount, setOfflineTicketsCount] = useState(0);
+  const [offlineSavedSuccess, setOfflineSavedSuccess] = useState(false);
+  const [recheckMessage, setRecheckMessage] = useState<string | null>(null);
 
   // Secret admin access (5x logo tap fallback)
   const [showSecretMenu, setShowSecretMenu] = useState(false);
@@ -286,42 +319,85 @@ export default function TicketCheckoutPage({
     }
   }, [generatedTicketId, triggerHaptic]);
 
-  // Initialize myTickets from local storage.
-  //
-  // Deliberately an effect, not a useState lazy initialiser. The initialiser
-  // would run during the hydration render, so the client would render "My
-  // Tickets (3)" where the server rendered nothing - a real hydration
-  // mismatch. Reading an external store after mount is the case effects exist
-  // for, so the rule is suppressed here rather than worked around at the cost
-  // of a broken first paint.
+  // Load stored tickets from IndexedDB (strictly no localStorage for offline tickets)
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("my_goodlife_purchases");
-        if (stored) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setMyTickets(JSON.parse(stored));
-        }
-      } catch (e) {}
-    }
+    if (typeof window === "undefined") return;
+    getAllOfflineTickets().then((tickets) => {
+      setOfflineTicketsCount(tickets.length);
+      const ids = tickets.map((t) => t.id);
+      if (ids.length > 0) {
+        setMyTickets(ids);
+        const map: Record<string, any> = {};
+        tickets.forEach((t) => {
+          map[t.id] = {
+            id: t.id,
+            ticket_type: t.ticketType,
+            amount_paid: t.amountPaid,
+            buyer_name: t.buyerName,
+            purchase_time: t.purchaseTime,
+            event_title: t.eventTitle,
+            event_date: t.eventDate,
+            venue: t.venue,
+          };
+        });
+        setTicketDetailsMap((prev) => ({ ...prev, ...map }));
+      }
+    }).catch((e) => console.warn("Failed to load offline tickets from IndexedDB:", e));
+
+    // Load active draft orders from IndexedDB
+    getAllDraftOrders().then((drafts) => {
+      // Filter drafts within 24 hour TTL
+      const now = Date.now();
+      const validDrafts = drafts.filter((d) => now - d.createdAt < 24 * 60 * 60 * 1000);
+      if (validDrafts.length > 0) {
+        const latest = validDrafts[validDrafts.length - 1];
+        setActiveDraft(latest);
+        setPaymentState("QUEUED_LOCALLY");
+      }
+    }).catch((e) => console.warn("Failed to load drafts from IndexedDB:", e));
   }, []);
 
-  // Update myTickets when a new ticket is generated.
-  //
-  // Also left as an effect on purpose. The three call sites that set
-  // generatedTicketId already sit on the payment-success path, and moving this
-  // append into them to satisfy the linter risks double-adding a ticket or
-  // dropping it - a real-money regression for a lint-level gain.
+  // Set safety flag on window so service worker update prompt doesn't reload during payment
   useEffect(() => {
-    if (generatedTicketId && !myTickets.includes(generatedTicketId)) {
-      const updated = [generatedTicketId, ...myTickets];
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMyTickets(updated);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("my_goodlife_purchases", JSON.stringify(updated));
-      }
+    if (typeof window !== "undefined") {
+      (window as any).__GOODLIFE_PAYMENT_ACTIVE__ =
+        paymentState === "PROMPT_SENT" || paymentState === "POLLING";
     }
-  }, [generatedTicketId, myTickets]);
+  }, [paymentState]);
+
+  // Network transition: When coming back online while in QUEUED_LOCALLY, transition to AWAITING_RECHECK
+  useEffect(() => {
+    if (isOnline && paymentState === "QUEUED_LOCALLY" && activeDraft) {
+      setPaymentState("AWAITING_RECHECK");
+      // Auto-validate price and stock
+      fetch(`/api/ticket-tiers?event_id=${activeDraft.eventId}`)
+        .then((res) => res.json())
+        .then((tiers: TicketTier[]) => {
+          const matched = Array.isArray(tiers)
+            ? tiers.find((t) => t.id === activeDraft.ticketType || t.name.toLowerCase() === activeDraft.ticketName.toLowerCase())
+            : null;
+
+          if (!matched) {
+            setRecheckMessage("This ticket tier is no longer available. Please select another tier.");
+            return;
+          }
+          if (matched.max_quantity != null && (matched.sold_count || 0) >= matched.max_quantity) {
+            setRecheckMessage("This ticket tier has sold out while you were offline.");
+            return;
+          }
+          if (matched.price !== activeDraft.unitPrice) {
+            setRecheckMessage(`Price updated: ticket is now KES ${matched.price} (was KES ${activeDraft.unitPrice}).`);
+            setActiveDraft((prev) => prev ? { ...prev, unitPrice: matched.price, totalAmount: matched.price * prev.quantity } : null);
+          } else {
+            setRecheckMessage(null);
+          }
+          setPaymentState("AWAITING_USER_CONFIRMATION");
+        })
+        .catch(() => {
+          setPaymentState("AWAITING_USER_CONFIRMATION");
+        });
+    }
+  }, [isOnline, paymentState, activeDraft]);
 
   // Fetch metadata for stored tickets
   useEffect(() => {
@@ -349,11 +425,25 @@ export default function TicketCheckoutPage({
       if (deadIds.length) {
         const pruned = myTickets.filter(id => !deadIds.includes(id));
         setMyTickets(pruned);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("my_goodlife_purchases", JSON.stringify(pruned));
-        }
       }
       setTicketDetailsMap(prev => Object.keys(fresh).length ? { ...prev, ...fresh } : prev);
+
+      // Keep IndexedDB synchronized with fresh metadata
+      if (Object.keys(fresh).length > 0) {
+        const toCache: CachedTicket[] = Object.values(fresh).map((f: any) => ({
+          id: f.id,
+          eventId: eventDetails.id,
+          eventTitle: eventDetails.title || "GOODLIFE EVENT",
+          eventDate: eventDetails.event_date,
+          venue: eventDetails.venue,
+          buyerName: f.buyer_name,
+          ticketType: f.ticket_type,
+          amountPaid: f.amount_paid,
+          purchaseTime: f.purchase_time,
+          savedAt: Date.now(),
+        }));
+        saveOfflineTickets(toCache).catch(() => {});
+      }
     });
     return () => { cancelled = true; };
   }, [myTickets, ticketDetailsMap]);
@@ -545,6 +635,32 @@ export default function TicketCheckoutPage({
     return price * quantity;
   }, [selectedTierObj, quantity]);
 
+  // Update myTickets when a new ticket is generated and cache into IndexedDB
+  useEffect(() => {
+    if (generatedTicketId && !myTickets.includes(generatedTicketId)) {
+      const updated = [generatedTicketId, ...myTickets];
+      setMyTickets(updated);
+      setOfflineTicketsCount(updated.length);
+
+      // Save ticket details into IndexedDB for 100% offline access
+      const detail = ticketDetailsMap[generatedTicketId];
+      saveOfflineTickets([
+        {
+          id: generatedTicketId,
+          eventId: eventDetails.id,
+          eventTitle: eventDetails.title || "GOODLIFE EVENT",
+          eventDate: eventDetails.event_date,
+          venue: eventDetails.venue,
+          buyerName: detail?.buyer_name || buyerName || "Attendee",
+          ticketType: detail?.ticket_type || selectedTierObj?.name || "Pass",
+          amountPaid: detail?.amount_paid || totalPrice || 0,
+          purchaseTime: new Date().toISOString(),
+          savedAt: Date.now(),
+        },
+      ]).catch((err) => console.warn("Failed caching ticket to IndexedDB:", err));
+    }
+  }, [generatedTicketId, myTickets, ticketDetailsMap, eventDetails, buyerName, selectedTierObj, totalPrice]);
+
   // Deep-linking handler for ?tier=
   //
   // Applied during render, not in an effect. The server derives
@@ -629,39 +745,42 @@ export default function TicketCheckoutPage({
       return;
     }
 
+    // OFFLINE CHECK & DRAFT CREATION
+    if (!isOnline) {
+      const draftId = "draft_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now().toString(36);
+      const newDraft: DraftOrder = {
+        id: draftId,
+        eventId: eventDetails.id,
+        eventTitle: eventDetails.title || "GOODLIFE EVENT",
+        ticketType: safeSelectedTier,
+        ticketName: selectedTierObj.name,
+        quantity: Number(quantity),
+        unitPrice: selectedTierObj.price,
+        totalAmount: totalPrice,
+        buyerName: buyerName || "Attendee",
+        phoneNumber: phoneNumber.trim(),
+        whatsappNumber: showWhatsAppField && whatsappNumber ? whatsappNumber.trim() : "",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      await saveDraftOrder(newDraft);
+      setActiveDraft(newDraft);
+      setPaymentState("QUEUED_LOCALLY");
+      setLoading(false);
+      triggerHaptic("confirmation");
+      setOfflineSavedSuccess(true);
+      setStatusMessage("You are offline. Your ticket selection is safely saved! When your connection returns, you can confirm and pay.");
+      return;
+    }
+
     setLoading(true);
+    setPaymentState("PROMPT_SENT");
 
-    /*
-     * THE FREE-RSVP PIPELINE THAT USED TO BE HERE IS GONE, AND IT WAS NEVER
-     * WORKING.
-     *
-     * It issued a ticket server-side with no payment whenever the selected tier
-     * cost KES 0, so a customer tapping "Pay" on a free pass got a real ticket by
-     * WhatsApp without paying. Two things ended it.
-     *
-     * First, it was broken. The POST sent `ticket_type` while
-     * `app/api/tickets/rsvp-free/route.ts` requires `tier_id`, so the route
-     * answered 400 "Missing required fields: buyer_name, phone_number,
-     * tier_id." That mismatch has been in the file since the route and the call
-     * landed in the same commit, so this branch has never once issued a ticket.
-     *
-     * Second, and the actual reason it should not be restored: there is no free
-     * pass. Every tier in the ladder is paid, the early RSVP being a discounted
-     * rate rather than a giveaway, so `totalPrice === 0` is no longer a state a
-     * customer can reach. Keeping a second, un-metered ticket-issuing path
-     * alongside the payment path is a liability regardless: the next KES 0 tier
-     * anybody creates would silently bypass M-Pesa, and it would do so through
-     * a branch that 400s.
-     *
-     * If a genuinely free public tier is ever wanted back, it should be
-     * deliberate and it should be rate-limited, quota-checked and written
-     * through one issuance path shared with paid checkout. Do not restore this
-     * block.
-     */
-
-    // STANDARD PAID CHECKOUT (PayHero STK Push)
+    // STANDARD PAID CHECKOUT (PayHero STK Push with client-generated idempotency key)
     setStatusMessage("Sending the M-Pesa prompt to your phone...");
     const autoEmail = phoneNumber.replace(/[^0-9]/g, "") + "@example.goodlife.com";
+    const idempotencyKey = activeDraft?.id || "order_" + Math.random().toString(36).substring(2, 12) + "_" + Date.now().toString(36);
 
     try {
       const endpoint = paymentProvider === "payhero" ? "/api/payhero/initialize" : "/api/paystack/initialize";
@@ -675,21 +794,31 @@ export default function TicketCheckoutPage({
           buyer_name: buyerName || "Attendee",
           quantity: Number(quantity),
           whatsapp_number: showWhatsAppField && whatsappNumber ? whatsappNumber : "",
-          event_id: eventDetails.id
+          event_id: eventDetails.id,
+          idempotency_key: idempotencyKey,
         })
       });
 
       const data = await res.json();
       if (!res.ok) {
+        setPaymentState("FAILED");
         throw new Error(data.error || "Payments are temporarily unavailable. Try again in a few minutes or message us on WhatsApp.");
       }
 
       setStxReference(data.reference);
       setPromptTargetPhone(phoneNumber.trim());
+      setPaymentState("POLLING");
       triggerHaptic("confirmation");
       setStatusMessage("Prompt sent! Check your phone and enter your M-Pesa PIN to confirm payment.");
+
+      // If this was fulfilled from a draft, clean up the draft
+      if (activeDraft) {
+        await deleteDraftOrder(activeDraft.id);
+        setActiveDraft(null);
+      }
     } catch (err: any) {
       triggerHaptic("error");
+      setPaymentState("FAILED");
       setStatusMessage(err.message || "An error occurred processing your request.");
       setLoading(false);
     }
@@ -708,71 +837,84 @@ export default function TicketCheckoutPage({
   // Immediate verification checker (can be triggered on poll timer, visibilitychange, or window focus)
   const pollCheckRef = useRef<(() => Promise<void>) | null>(null);
 
-  // Polling for payment completion
+  // Exact polling schedule: every 2s for first 20s, then every 3s up to 60s, then manual check state
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    if (!stxReference || generatedTicketId) return;
+
+    let pollCount = 0;
+    let timer: NodeJS.Timeout | null = null;
+    let stopped = false;
 
     const checkVerification = async () => {
-      if (!stxReference || generatedTicketId) return;
+      if (stopped || !stxReference || generatedTicketId) return;
       try {
         const res = await fetch(`/api/${paymentProvider}/verify?reference=${stxReference}`);
         if (res.ok) {
           const data = await res.json();
           if (data.status === "completed" && data.ticket_id) {
+            stopped = true;
+            setPaymentState("PAID");
             const ids: string[] = (data.ticket_ids && Array.isArray(data.ticket_ids) && data.ticket_ids.length > 0)
               ? data.ticket_ids
               : [data.ticket_id];
             setGeneratedTicketId(ids[0]);
-            setMyTickets(prev => {
-              const merged = Array.from(new Set([...ids, ...prev]));
-              if (typeof window !== "undefined") {
-                localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
-              }
-              return merged;
-            });
+            setMyTickets(prev => Array.from(new Set([...ids, ...prev])));
             setStatusMessage(ids.length > 1 ? `Payment confirmed! All ${ids.length} tickets are ready.` : "Payment confirmed. Your ticket is ready.");
             setLoading(false);
-            if (interval) clearInterval(interval);
+            setPollingTimedOut(false);
+            return;
           } else if (data.status === "failed") {
-            if (interval) clearInterval(interval);
+            stopped = true;
+            setPaymentState("FAILED");
             setLoading(false);
             setPollingTimedOut(true);
             triggerHaptic("error");
             setStatusMessage(data.message ? `Payment failed: ${data.message}` : "Payment failed: transaction was declined or cancelled. Please try again.");
+            return;
           }
         }
       } catch (err) {
-        console.error("Polling error:", err);
+        console.warn("Poll verification check:", err);
+      }
+
+      pollCount++;
+      // Schedule next check
+      // 0-10 polls (0 to 20 seconds): every 2000ms
+      // 11-23 polls (20 to 60 seconds): every 3000ms
+      if (pollCount <= 10) {
+        timer = setTimeout(checkVerification, 2000);
+      } else if (pollCount <= 23) {
+        timer = setTimeout(checkVerification, 3000);
+      } else {
+        // Exceeded 60s -> show taking longer than usual with manual check button
+        setPaymentState("TIMED_OUT");
+        setPollingTimedOut(true);
+        setLoading(false);
+        setStatusMessage("Taking longer than usual. If you entered your M-Pesa PIN, tap 'Check Payment Status' below.");
       }
     };
 
     pollCheckRef.current = checkVerification;
+    // Initial poll after 2 seconds
+    timer = setTimeout(checkVerification, 2000);
 
-    if (stxReference && !generatedTicketId) {
-      interval = setInterval(checkVerification, 3000);
-
-      // Resumes polling immediately when attendee returns from SIM Toolkit / phone home screen
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === "visible") {
-          checkVerification();
-        }
-      };
-      const handleWindowFocus = () => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !stopped) {
         checkVerification();
-      };
+      }
+    };
+    const handleWindowFocus = () => {
+      if (!stopped) checkVerification();
+    };
 
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-      window.addEventListener("focus", handleWindowFocus);
-
-      return () => {
-        clearInterval(interval);
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-        window.removeEventListener("focus", handleWindowFocus);
-      };
-    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
-      if (interval) clearInterval(interval);
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
     };
   }, [stxReference, generatedTicketId, paymentProvider, triggerHaptic]);
 
@@ -811,31 +953,29 @@ export default function TicketCheckoutPage({
             ? data.ticket_ids
             : [data.ticket_id];
           setGeneratedTicketId(ids[0]);
-          setMyTickets(prev => {
-            const merged = Array.from(new Set([...ids, ...prev]));
-            if (typeof window !== "undefined") {
-              localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
-            }
-            return merged;
-          });
+          setPaymentState("PAID");
+          setMyTickets(prev => Array.from(new Set([...ids, ...prev])));
           setStatusMessage(ids.length > 1 ? `Payment confirmed! All ${ids.length} tickets are ready.` : "Payment confirmed. Your ticket is ready.");
           setLoading(false);
           setPollingTimedOut(false);
         } else if (data.status === "failed") {
+          setPaymentState("FAILED");
           triggerHaptic("error");
           setStatusMessage(data.message ? `Payment failed: ${data.message}` : "Payment failed: transaction was declined or cancelled. Please try again.");
           setLoading(false);
         } else {
           triggerHaptic("error");
-          setStatusMessage("Status check: payment is not confirmed yet. Try again or contact admin.");
+          setStatusMessage("Status check: payment is not confirmed yet. Please verify you completed the M-Pesa PIN prompt.");
+          setLoading(false);
         }
       } else {
         triggerHaptic("error");
         setStatusMessage("Status check: server error. Contact admin if payment was deducted.");
+        setLoading(false);
       }
     } catch {
       triggerHaptic("error");
-      setStatusMessage("Status check: network error. Check your connection and try again.");
+      setStatusMessage("Network error checking status. Please check your connection.");
     } finally {
       setLoading(false);
     }
@@ -1021,6 +1161,34 @@ export default function TicketCheckoutPage({
             </nav>
 
             <div className="flex items-center gap-1.5 md:gap-3 shrink-0 justify-end">
+              {/* Online / Offline status badge */}
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded border-2 font-mono text-[10px] font-bold uppercase transition-all shadow-(--shadow-brut-xs)">
+                {isOnline ? (
+                  <span className="flex items-center gap-1 text-green-700 bg-green-100/60 px-1.5 py-0.5 rounded border border-green-600/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse" />
+                    ONLINE
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-600/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                    OFFLINE
+                  </span>
+                )}
+              </div>
+
+              {/* Offline Passes Button */}
+              {offlineTicketsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowOfflineTickets(true)}
+                  className="text-[11px] md:text-xs font-bold uppercase border-2 border-brand-navy bg-brand-accent px-2 py-1 md:px-3 md:py-2 text-brand-navy hover:bg-brand-navy hover:text-brand-off-white shadow-(--shadow-brut-xs) md:shadow-(--shadow-brut-sm) active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                >
+                  <TicketIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Offline Passes</span>
+                  <span className="sm:hidden">Passes</span> ({offlineTicketsCount})
+                </button>
+              )}
+
               {myTickets.length > 0 && (
                 <button 
                   onClick={() => document.getElementById("my-tickets-section")?.scrollIntoView({ behavior: "smooth" })}
@@ -1766,6 +1934,67 @@ export default function TicketCheckoutPage({
                     </div>
                   )}
 
+                  {/* RECONNECT / DRAFT CONFIRMATION BANNER */}
+                  {paymentState === "AWAITING_USER_CONFIRMATION" && activeDraft && (
+                    <div className="border-4 border-brand-accent bg-brand-navy text-white p-4 space-y-3 shadow-(--shadow-brut-sm-accent) animate-fade-in">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
+                        <span className="font-display uppercase text-sm tracking-wide text-brand-accent">
+                          Connection Restored • Draft Order Ready
+                        </span>
+                      </div>
+                      <div className="bg-white/10 p-2.5 border border-white/20 font-mono text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Ticket:</span>
+                          <span className="font-bold text-white">{activeDraft.quantity}x {activeDraft.ticketName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Total:</span>
+                          <span className="font-bold text-brand-accent">KES {activeDraft.totalAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">M-Pesa Phone:</span>
+                          <span className="font-bold text-white">{activeDraft.phoneNumber}</span>
+                        </div>
+                        {recheckMessage && (
+                          <p className="text-[11px] text-amber-300 pt-1 font-semibold">{recheckMessage}</p>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-mono text-gray-300 leading-tight">
+                        Tap below to explicitly confirm your order and send the M-Pesa prompt.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhoneNumber(activeDraft.phoneNumber);
+                            setSelectedTier(activeDraft.ticketType);
+                            setQuantity(activeDraft.quantity);
+                            // Proceed to trigger STK
+                            const pseudoEvent = { preventDefault: () => {} } as React.FormEvent;
+                            handleCheckout(pseudoEvent);
+                          }}
+                          className="flex-1 py-2.5 bg-brand-accent text-brand-navy font-display text-base uppercase tracking-wider font-black hover:bg-white transition shadow-(--shadow-brut-xs) cursor-pointer text-center"
+                        >
+                          Confirm & Send STK Push
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (activeDraft) {
+                              await deleteDraftOrder(activeDraft.id);
+                              setActiveDraft(null);
+                              setPaymentState("DRAFT");
+                            }
+                          }}
+                          className="px-3 py-2.5 border border-white/30 text-gray-300 hover:text-white font-mono text-xs uppercase"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* ACTION SUBMIT BUTTON */}
                   <button
                     type="submit"
@@ -1773,6 +2002,8 @@ export default function TicketCheckoutPage({
                     className={`w-full py-3 sm:py-3.5 md:py-4 border-4 border-brand-navy font-display text-lg sm:text-xl md:text-2xl uppercase tracking-widest flex items-center justify-center gap-2 md:gap-3 transition-all duration-100 mt-2 cursor-pointer ${
                       loading 
                         ? "bg-brand-bg text-brand-navy/30 cursor-not-allowed shadow-none" 
+                        : !isOnline
+                        ? "bg-amber-400 text-brand-navy hover:bg-amber-300 shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft)"
                         : "bg-brand-accent-vivid text-brand-navy hover:bg-brand-off-white shadow-(--shadow-brut-sm) md:shadow-(--shadow-brut-xl-soft) active:translate-y-[4px] md:active:translate-y-[8px] active:translate-x-[4px] md:active:translate-x-[8px] active:shadow-none"
                     }`}
                   >
@@ -1780,6 +2011,11 @@ export default function TicketCheckoutPage({
                       <>
                         <div className="animate-spin border-4 border-brand-navy border-t-transparent w-5 h-5" />
                         PROCESSING...
+                      </>
+                    ) : !isOnline ? (
+                      <>
+                        <ShieldCheck className="w-6 h-6" />
+                        SAVE ORDER OFFLINE
                       </>
                     ) : totalPrice === 0 ? (
                       <>
@@ -2215,6 +2451,13 @@ export default function TicketCheckoutPage({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* OFFLINE PASSES DRAWER MODAL */}
+      <OfflineTicketsDrawer
+        isOpen={showOfflineTickets}
+        onClose={() => setShowOfflineTickets(false)}
+        triggerRefresh={offlineTicketsCount}
+      />
 
       {/*
         REMOVED: the "CAMP GROUNDS & TENT WALKTHROUGH" lightbox that used to

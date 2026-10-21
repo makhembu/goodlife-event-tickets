@@ -125,6 +125,7 @@ export interface PendingPayment {
   whatsapp_number?: string;
   mpesa_reference?: string;
   event_id?: number | null;
+  idempotency_key?: string | null;
 }
 
 export interface TicketTier {
