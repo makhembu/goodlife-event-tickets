@@ -34,6 +34,30 @@ export async function POST(request: NextRequest) {
     });
     if (!stkLimit.allowed) return stkLimit.response!;
 
+    // Database-backed duplicate-in-flight guard: check if a pending payment already exists for this phone within the last 45 seconds
+    try {
+      const { neonQuery } = await import("@/lib/supabase-db");
+      if (neonQuery) {
+        const { rows: pendingDupes } = await neonQuery(
+          `SELECT checkout_request_id, created_at 
+           FROM pending_payments 
+           WHERE phone_number = $1 
+             AND status = 'pending' 
+             AND created_at > (NOW() - INTERVAL '45 seconds') 
+           LIMIT 1`,
+          [phone_number]
+        );
+        if (pendingDupes && pendingDupes.length > 0) {
+          return NextResponse.json(
+            { error: "A payment request is already in progress for this phone number. Please check your phone for the M-Pesa PIN prompt or wait 45 seconds." },
+            { status: 429 }
+          );
+        }
+      }
+    } catch (dupeErr) {
+      console.warn("[PayHero Init] Failed to check pending duplicate in DB, proceeding with in-memory limits:", dupeErr);
+    }
+
     if (!isPayheroConfigured()) {
       console.error("[PayHero Init] PayHero not configured — missing PAYHERO credentials in environment.");
       return NextResponse.json(

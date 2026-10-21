@@ -152,6 +152,7 @@ export default function TicketCheckoutPage({
   const [paymentProvider, setPaymentProvider] = useState<"payhero" | "paystack">("payhero");
   const paystackEnabled = process.env.NEXT_PUBLIC_ENABLE_PAYSTACK === "true";
   const [stxReference, setStxReference] = useState<string | null>(null);
+  const [promptTargetPhone, setPromptTargetPhone] = useState<string>("");
   const [pollingTimedOut, setPollingTimedOut] = useState(false);
 
   // Secret admin access (5x logo tap fallback)
@@ -684,6 +685,7 @@ export default function TicketCheckoutPage({
       }
 
       setStxReference(data.reference);
+      setPromptTargetPhone(phoneNumber.trim());
       triggerHaptic("confirmation");
       setStatusMessage("Prompt sent! Check your phone and enter your M-Pesa PIN to confirm payment.");
     } catch (err: any) {
@@ -703,43 +705,70 @@ export default function TicketCheckoutPage({
     }
   };
 
+  // Immediate verification checker (can be triggered on poll timer, visibilitychange, or window focus)
+  const pollCheckRef = useRef<(() => Promise<void>) | null>(null);
+
   // Polling for payment completion
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
-    if (stxReference && !generatedTicketId) {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/${paymentProvider}/verify?reference=${stxReference}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.status === "completed" && data.ticket_id) {
-              const ids: string[] = (data.ticket_ids && Array.isArray(data.ticket_ids) && data.ticket_ids.length > 0)
-                ? data.ticket_ids
-                : [data.ticket_id];
-              setGeneratedTicketId(ids[0]);
-              setMyTickets(prev => {
-                const merged = Array.from(new Set([...ids, ...prev]));
-                if (typeof window !== "undefined") {
-                  localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
-                }
-                return merged;
-              });
-              setStatusMessage(ids.length > 1 ? `Payment confirmed! All ${ids.length} tickets are ready.` : "Payment confirmed. Your ticket is ready.");
-              setLoading(false);
-              clearInterval(interval);
-            } else if (data.status === "failed") {
-              clearInterval(interval);
-              setLoading(false);
-              setPollingTimedOut(true);
-              triggerHaptic("error");
-              setStatusMessage(data.message ? `Payment failed: ${data.message}` : "Payment failed: transaction was declined or cancelled. Please try again.");
-            }
+
+    const checkVerification = async () => {
+      if (!stxReference || generatedTicketId) return;
+      try {
+        const res = await fetch(`/api/${paymentProvider}/verify?reference=${stxReference}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "completed" && data.ticket_id) {
+            const ids: string[] = (data.ticket_ids && Array.isArray(data.ticket_ids) && data.ticket_ids.length > 0)
+              ? data.ticket_ids
+              : [data.ticket_id];
+            setGeneratedTicketId(ids[0]);
+            setMyTickets(prev => {
+              const merged = Array.from(new Set([...ids, ...prev]));
+              if (typeof window !== "undefined") {
+                localStorage.setItem("my_goodlife_purchases", JSON.stringify(merged));
+              }
+              return merged;
+            });
+            setStatusMessage(ids.length > 1 ? `Payment confirmed! All ${ids.length} tickets are ready.` : "Payment confirmed. Your ticket is ready.");
+            setLoading(false);
+            if (interval) clearInterval(interval);
+          } else if (data.status === "failed") {
+            if (interval) clearInterval(interval);
+            setLoading(false);
+            setPollingTimedOut(true);
+            triggerHaptic("error");
+            setStatusMessage(data.message ? `Payment failed: ${data.message}` : "Payment failed: transaction was declined or cancelled. Please try again.");
           }
-        } catch (err) {
-          console.error("Polling error:", err);
         }
-      }, 3000);
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    };
+
+    pollCheckRef.current = checkVerification;
+
+    if (stxReference && !generatedTicketId) {
+      interval = setInterval(checkVerification, 3000);
+
+      // Resumes polling immediately when attendee returns from SIM Toolkit / phone home screen
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          checkVerification();
+        }
+      };
+      const handleWindowFocus = () => {
+        checkVerification();
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("focus", handleWindowFocus);
+
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener("focus", handleWindowFocus);
+      };
     }
 
     return () => {
@@ -1877,6 +1906,12 @@ export default function TicketCheckoutPage({
                           {isSuccess ? "✓ PAYMENT CONFIRMED" : isError ? "✗ PAYMENT FAILED" : "STATUS UPDATE"}
                         </span>
                         <p className="font-mono text-xs text-brand-navy uppercase leading-relaxed">{statusMessage}</p>
+                        {loading && !generatedTicketId && promptTargetPhone && (
+                          <div className="mt-2.5 p-2 bg-brand-navy/5 border-2 border-brand-navy/20 flex items-center justify-between text-[11px] font-mono">
+                            <span className="text-brand-navy/70 uppercase">STK PROMPT SENT TO:</span>
+                            <span className="font-black text-brand-navy tracking-wider">{promptTargetPhone}</span>
+                          </div>
+                        )}
 
                         {pollingTimedOut && stxReference && !generatedTicketId && (
                           <div className="mt-3 pt-3 border-t-2 border-brand-navy/20 space-y-2">
