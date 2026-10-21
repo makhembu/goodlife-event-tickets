@@ -10,8 +10,8 @@ interface TicketStampProps {
 
 const variants = {
   success: {
-    border: "border-green-600",
-    text: "text-green-700",
+    border: "border-[#15803d]",
+    text: "text-[#15803d]",
     bg: "bg-green-100",
     shadow: "shadow-(--shadow-brut-success)",
     rotate: -6,
@@ -24,8 +24,8 @@ const variants = {
     rotate: 8,
   },
   used: {
-    border: "border-brand-warning",
-    text: "text-brand-warning",
+    border: "border-[#92400e]",
+    text: "text-[#78350f]",
     bg: "bg-[var(--brand-warning-bg)]",
     shadow: "shadow-(--shadow-brut-md-accent)",
     rotate: -4,

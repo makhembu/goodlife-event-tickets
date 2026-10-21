@@ -1580,7 +1580,7 @@ export default function TicketCheckoutPage({
                           placeholder="E.g. Amani Mwangi"
                           value={buyerName}
                           onChange={(e) => setBuyerName(e.target.value)}
-                          className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
+                          className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/80 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
                         />
                       </div>
 
@@ -1644,7 +1644,7 @@ export default function TicketCheckoutPage({
                             placeholder="0712 345 678"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
-                            className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
+                            className="block w-full px-3 py-2 border-4 border-brand-navy bg-brand-off-white font-mono text-xs md:text-sm uppercase placeholder-brand-navy/80 focus:outline-none focus:bg-brand-accent/10 focus:shadow-(--shadow-brut-sm) transition-all text-brand-navy"
                           />
                         </div>
                         {!showWhatsAppField && (
@@ -1681,7 +1681,7 @@ export default function TicketCheckoutPage({
                                 placeholder="WhatsApp number"
                                 value={whatsappNumber}
                                 onChange={(e) => setWhatsappNumber(e.target.value)}
-                                className="flex-1 min-w-0 px-2.5 py-1.5 font-mono text-[11px] uppercase placeholder-brand-navy/30 focus:outline-none focus:bg-brand-accent/5 text-brand-navy border-0"
+                                className="flex-1 min-w-0 px-2.5 py-1.5 font-mono text-[11px] uppercase placeholder-brand-navy/80 focus:outline-none focus:bg-brand-accent/5 text-brand-navy border-0"
                               />
                               <button
                                 type="button"

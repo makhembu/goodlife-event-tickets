@@ -10,10 +10,10 @@
   --color-brand-accent-vivid: #F5C842; /* Vivid Gold — primary CTA only */
   --color-brand-danger: #E84855;
   --color-brand-danger-bg: #FADBD8;
-  --color-brand-success: #2ECC71;
-  --color-brand-success-bg: #D4EFDF;
-  --color-brand-warning: #F39C12;
-  --color-brand-warning-bg: #FCF3CF;
+  --color-brand-success: #15803d;
+  --color-brand-success-bg: #dcfce7;
+  --color-brand-warning: #92400e;
+  --color-brand-warning-bg: #fef3c7;
   
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bebas-neue), ui-sans-serif, system-ui, sans-serif;
