@@ -23,7 +23,7 @@ export function PrintableQrSheetModal({
   onClose,
   items,
   tillNumber,
-  vendorName = "Vendor Stall",
+  vendorName = "THE CRAFT VAULT",
   eventName = "GOODLIFE FESTIVAL",
 }: PrintableQrSheetModalProps) {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -83,7 +83,7 @@ export function PrintableQrSheetModal({
           });
 
           const dataUrl = await generateQrDataUrl(url, {
-            width: 320,
+            width: 360,
             margin: 1,
           });
 
@@ -106,116 +106,157 @@ export function PrintableQrSheetModal({
         <!DOCTYPE html>
         <html>
           <head>
-            <title>QR Menu Tags - ${vendorName}</title>
+            <title>GOODLIFE FESTIVAL - QR Menu Tags - ${vendorName}</title>
             <style>
+              @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@700;900&family=JetBrains+Mono:wght@700;800;900&display=swap');
+
               @page {
                 size: A4 portrait;
-                margin: 10mm;
+                margin: 8mm;
               }
+
               * {
                 box-sizing: border-box;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              }
-              body {
                 margin: 0;
                 padding: 0;
-                background: #fff;
-                color: #000;
               }
+
+              body {
+                background: #fff;
+                color: #0a1128;
+                font-family: 'Space Grotesk', -apple-system, sans-serif;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+
               .grid-container {
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
-                gap: 12mm;
+                gap: 8mm;
                 page-break-inside: auto;
               }
-              .card {
-                border: 3px solid #0a1128;
+
+              .poster-card {
+                border: 4px solid #0a1128;
                 padding: 14px;
                 text-align: center;
-                background: #fff;
+                background: #fdfbf7;
                 page-break-inside: avoid;
                 position: relative;
-                box-shadow: 4px 4px 0px #0a1128;
+                box-shadow: 4px 4px 0px #ffde59, 6px 6px 0px #0a1128;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
               }
-              .badge {
-                display: inline-block;
-                background: #ffde59;
-                color: #0a1128;
-                font-weight: 900;
-                font-size: 10px;
-                padding: 2px 8px;
-                border: 1.5px solid #0a1128;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                margin-bottom: 6px;
-              }
-              .event {
-                font-size: 9px;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                color: #555;
-              }
-              .name {
-                font-size: 18px;
-                font-weight: 900;
-                text-transform: uppercase;
-                margin: 4px 0;
-                line-height: 1.2;
-              }
-              .price {
-                font-size: 20px;
-                font-weight: 900;
-                font-family: monospace;
-                display: inline-block;
-                background: #f4f4f4;
-                padding: 2px 10px;
-                border: 1.5px solid #0a1128;
+
+              .card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 2px solid #0a1128;
+                padding-bottom: 6px;
                 margin-bottom: 8px;
               }
-              .qr-box {
-                margin: 6px auto;
-                display: inline-block;
+
+              .brand-badge {
+                background: #0a1128;
+                color: #ffde59;
+                font-family: 'Bebas Neue', sans-serif;
+                font-size: 18px;
+                padding: 2px 8px;
+                letter-spacing: 1px;
                 border: 2px solid #0a1128;
-                padding: 4px;
-                background: #fff;
               }
+
+              .vendor-tag {
+                font-size: 9px;
+                font-weight: 900;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: #ff6b35;
+              }
+
+              .item-name {
+                font-family: 'Bebas Neue', sans-serif;
+                font-size: 26px;
+                line-height: 1;
+                text-transform: uppercase;
+                margin: 2px 0 6px 0;
+                color: #0a1128;
+              }
+
+              .price-pill {
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 20px;
+                font-weight: 900;
+                background: #ffde59;
+                color: #0a1128;
+                padding: 3px 14px;
+                border: 2px solid #0a1128;
+                display: inline-block;
+                margin: 0 auto 6px auto;
+                box-shadow: 3px 3px 0px #0a1128;
+              }
+
+              .qr-box {
+                margin: 4px auto;
+                display: inline-block;
+                border: 3px solid #0a1128;
+                padding: 6px;
+                background: #fff;
+                box-shadow: 3px 3px 0px #0a1128;
+              }
+
               .qr-box img {
                 width: 140px;
                 height: 140px;
                 display: block;
               }
+
               .till-box {
-                background: #ffde59;
+                background: #0a1128;
+                color: #fff;
                 border: 2px solid #0a1128;
                 padding: 6px;
                 margin: 8px 0 6px 0;
               }
+
               .till-label {
                 font-size: 9px;
                 font-weight: 900;
                 text-transform: uppercase;
                 letter-spacing: 1px;
+                color: #ffde59;
               }
+
               .till-num {
-                font-size: 24px;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 26px;
                 font-weight: 900;
-                font-family: monospace;
-                letter-spacing: 1.5px;
+                letter-spacing: 2px;
+                color: #fff;
               }
-              .steps {
+
+              .card-footer {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-top: 1px dashed #0a1128;
+                padding-top: 6px;
+                margin-top: 6px;
                 font-size: 9px;
-                font-weight: 700;
-                color: #333;
-                line-height: 1.3;
+                font-weight: 800;
+                text-transform: uppercase;
               }
-              .cut-line {
-                border-top: 1px dashed #aaa;
-                margin-top: 8px;
-                padding-top: 4px;
-                font-size: 8px;
-                color: #777;
-                font-family: monospace;
+
+              @media print {
+                body {
+                  background: #fff;
+                  padding: 0;
+                }
+                .poster-card {
+                  box-shadow: none !important;
+                }
               }
             </style>
           </head>
@@ -224,29 +265,34 @@ export function PrintableQrSheetModal({
               ${qrCards
                 .map(
                   ({ item, numPrice, qrDataUrl }) => `
-                <div class="card">
-                  <div class="badge">Lipa na M-Pesa • Buy Goods</div>
-                  <div class="event">${eventName} • ${vendorName}</div>
-                  <div class="name">${item.name}</div>
+                <div class="poster-card">
+                  <div class="card-header">
+                    <div class="brand-badge">GOODLIFE</div>
+                    <div class="vendor-tag">${vendorName}</div>
+                  </div>
+
+                  <div class="item-name">${item.name}</div>
                   ${
                     numPrice > 0
-                      ? `<div class="price">KES ${numPrice.toLocaleString("en-KE")}</div>`
+                      ? `<div class="price-pill">KES ${numPrice.toLocaleString("en-KE")}</div>`
                       : ""
                   }
                   
-                  <div class="qr-box">
-                    <img src="${qrDataUrl}" alt="QR code" />
+                  <div style="text-align: center;">
+                    <div class="qr-box">
+                      <img src="${qrDataUrl}" alt="${item.name} QR" />
+                    </div>
                   </div>
 
                   <div class="till-box">
-                    <div class="till-label">Buy Goods Till</div>
+                    <div class="till-label">LIPA NA M-PESA TILL</div>
                     <div class="till-num">${cleanTill}</div>
                   </div>
 
-                  <div class="steps">
-                    Scan with any phone camera or M-Pesa to pay directly
+                  <div class="card-footer">
+                    <span>⚡ SCAN TO PAY</span>
+                    <span>goodlife.smwhr.space</span>
                   </div>
-                  <div class="cut-line">✂ Cut along border for shelf or table tent</div>
                 </div>
               `
                 )
@@ -264,8 +310,8 @@ export function PrintableQrSheetModal({
       printWindow.document.write(html);
       printWindow.document.close();
     } catch (err) {
-      console.error("Print sheet error", err);
-      alert("Failed to prepare printable sheet.");
+      console.error("Batch print failed", err);
+      alert("Failed to render QR sheets. Try again.");
     } finally {
       setIsPrinting(false);
     }
@@ -273,119 +319,114 @@ export function PrintableQrSheetModal({
 
   return (
     <div
-      className="fixed inset-0 bg-brand-navy/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 bg-brand-navy/85 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="bg-white border-4 border-[var(--brand-navy)] w-full max-w-lg shadow-(--shadow-brut-lg) overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]"
+        className="bg-brand-off-white border-4 border-brand-navy w-full max-w-xl my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl-accent) overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[var(--brand-navy)] text-white p-3.5 flex items-center justify-between border-b-2 border-[var(--brand-navy)]">
+        <div className="bg-brand-navy text-white p-4 flex items-center justify-between border-b-4 border-brand-navy shrink-0">
           <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-brand-accent" />
-            <h3 className="font-black text-xs uppercase tracking-wider">
-              Batch Print QR Shelf Tags / Table Tents
+            <QrCode className="w-5 h-5 text-brand-accent" />
+            <h3 className="font-display text-lg uppercase tracking-wider text-brand-accent">
+              Printable Goodlife Poster Sheet (A4)
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-white/80 hover:text-white p-1 hover:bg-white/10 transition-colors"
+            className="text-white hover:text-brand-accent p-1 border border-white/30 hover:border-brand-accent transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-4 space-y-3 overflow-y-auto flex-1">
-          <div className="flex items-center justify-between text-xs font-bold border-b border-gray-200 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-brand-navy/70">Selected:</span>
-              <span className="bg-brand-accent px-2 py-0.5 border border-[var(--brand-navy)] font-mono font-black">
-                {selectedIds.length} / {items.length} items
-              </span>
-            </div>
-            <div className="flex gap-2">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+          <div className="bg-white border-2 border-brand-navy p-3 text-xs">
+            <p className="font-bold uppercase text-brand-navy">
+              Stall: <strong>{vendorName}</strong> • Till: <strong>{cleanTill}</strong>
+            </p>
+            <p className="text-stone-500 text-[11px] mt-0.5">
+              Generates high-contrast, poster-styled QR tags laid out 2x2 for clean cutting and display on stall counters.
+            </p>
+          </div>
+
+          {/* Selection controls */}
+          <div className="flex justify-between items-center text-xs font-mono">
+            <div className="space-x-2">
               <button
                 type="button"
                 onClick={selectAll}
-                className="text-[11px] font-black uppercase text-brand-navy hover:underline"
+                className="underline font-bold text-brand-navy hover:text-brand-accent cursor-pointer"
               >
-                Select All
+                Select All ({items.length})
               </button>
-              <span className="text-gray-300">|</span>
+              <span className="text-stone-400">|</span>
               <button
                 type="button"
                 onClick={deselectAll}
-                className="text-[11px] font-black uppercase text-brand-navy/60 hover:underline"
+                className="underline font-bold text-brand-navy hover:text-brand-accent cursor-pointer"
               >
                 Clear
               </button>
             </div>
+            <div className="font-bold text-stone-700">
+              {selectedIds.length} of {items.length} selected
+            </div>
           </div>
 
-          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-            {items.map((item, idx) => {
-              const id = item.id ?? idx;
+          {/* Item grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto border-2 border-brand-navy p-2 bg-white">
+            {items.map((it, idx) => {
+              const id = it.id ?? idx;
               const isSelected = selectedIds.includes(id);
-              const numPrice = Number(item.price) || 0;
+              const numPrice = Number(it.price) || 0;
 
               return (
                 <div
                   key={id}
                   onClick={() => toggleSelect(id)}
-                  className={`p-2.5 border-2 transition-all flex items-center justify-between cursor-pointer ${
+                  className={`p-2.5 border-2 flex items-center justify-between cursor-pointer transition-all ${
                     isSelected
-                      ? "border-[var(--brand-navy)] bg-brand-accent/15"
-                      : "border-gray-200 bg-white opacity-60 hover:opacity-100"
+                      ? "bg-brand-accent/25 border-brand-navy font-bold shadow-(--shadow-brut-xs)"
+                      : "bg-stone-50 border-stone-300 opacity-60 hover:opacity-100"
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2 overflow-hidden">
                     {isSelected ? (
-                      <CheckSquare className="w-4 h-4 text-[var(--brand-navy)] shrink-0" />
+                      <CheckSquare className="w-4 h-4 text-brand-navy shrink-0" />
                     ) : (
-                      <Square className="w-4 h-4 text-gray-400 shrink-0" />
+                      <Square className="w-4 h-4 text-stone-400 shrink-0" />
                     )}
-                    <span className="text-xs font-black uppercase text-[var(--brand-navy)]">
-                      {item.name}
-                    </span>
+                    <span className="text-xs uppercase truncate">{it.name}</span>
                   </div>
-                  <span className="text-xs font-mono font-bold text-[var(--brand-navy)]">
-                    KES {numPrice.toLocaleString("en-KE")}
+                  <span className="text-xs font-mono font-black ml-2 shrink-0">
+                    KES {numPrice.toLocaleString()}
                   </span>
                 </div>
               );
             })}
           </div>
 
-          <div className="p-2.5 bg-gray-50 border-2 border-dashed border-[var(--brand-navy)] text-[11px] font-bold text-brand-navy flex items-center justify-between">
-            <span>Till Number on Tags:</span>
-            <span className="font-mono font-black text-sm bg-brand-accent px-1.5 py-0.5 border border-[var(--brand-navy)]">
-              {cleanTill}
-            </span>
+          {/* Print button */}
+          <div className="pt-2">
+            <button
+              type="button"
+              disabled={isPrinting || selectedIds.length === 0}
+              onClick={handlePrintSheet}
+              className="w-full py-3.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-lg uppercase shadow-(--shadow-brut-sm) active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2 hover:bg-brand-navy hover:text-brand-accent transition-all disabled:opacity-40 cursor-pointer"
+            >
+              <Printer className="w-5 h-5" />
+              <span>
+                {isPrinting
+                  ? "Generating High-Res Sheets..."
+                  : `Print ${selectedIds.length} Goodlife Poster Tags`}
+              </span>
+            </button>
           </div>
-        </div>
-
-        {/* Footer actions */}
-        <div className="p-3 bg-gray-50 border-t-2 border-[var(--brand-navy)] flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-1/3 py-2.5 border-2 border-[var(--brand-navy)] font-black text-xs uppercase bg-white hover:bg-gray-100 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintSheet}
-            disabled={isPrinting || selectedIds.length === 0}
-            className="w-2/3 py-2.5 bg-brand-accent text-brand-navy border-2 border-[var(--brand-navy)] font-black text-xs uppercase shadow-(--shadow-brut-xs) active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-1.5 hover:bg-brand-accent/90 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            <span>{isPrinting ? "Generating..." : `Print ${selectedIds.length} Tags (A4)`}</span>
-          </button>
         </div>
       </div>
     </div>
