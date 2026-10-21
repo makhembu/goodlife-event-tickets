@@ -136,6 +136,35 @@ export default function GateTerminalPage() {
   const verifyRef = useRef<((id: string, count?: number) => Promise<void>) | null>(null);
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recentDecodesRef = useRef<Map<string, number>>(new Map());
+  const sharedAudioCtxRef = useRef<AudioContext | null>(null);
+
+  // Initialize or resume AudioContext on user interaction
+  const initOrResumeAudio = useCallback(() => {
+    try {
+      if (!sharedAudioCtxRef.current) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          sharedAudioCtxRef.current = new AudioCtx();
+        }
+      }
+      if (sharedAudioCtxRef.current && sharedAudioCtxRef.current.state === "suspended") {
+        sharedAudioCtxRef.current.resume();
+      }
+    } catch {}
+  }, []);
+
+  // Listen to first user tap anywhere on /scanner to unlock Web Audio on iOS Safari
+  useEffect(() => {
+    const handleFirstTap = () => {
+      initOrResumeAudio();
+    };
+    window.addEventListener("touchstart", handleFirstTap, { passive: true, once: true });
+    window.addEventListener("click", handleFirstTap, { passive: true, once: true });
+    return () => {
+      window.removeEventListener("touchstart", handleFirstTap);
+      window.removeEventListener("click", handleFirstTap);
+    };
+  }, [initOrResumeAudio]);
 
   // Load session
   useEffect(() => {
@@ -239,9 +268,9 @@ export default function GateTerminalPage() {
     if (!soundEnabled) return;
 
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      initOrResumeAudio();
+      const ctx = sharedAudioCtxRef.current;
+      if (!ctx) return;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -530,7 +559,11 @@ export default function GateTerminalPage() {
 
           {/* Sound Toggle */}
           <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              if (next) initOrResumeAudio();
+            }}
             className="p-1.5 sm:p-2 border-2 border-brand-navy bg-white hover:bg-stone-200 text-brand-navy transition-colors cursor-pointer"
             title={soundEnabled ? "Mute audio" : "Enable audio"}
           >
