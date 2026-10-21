@@ -1,9 +1,9 @@
-import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab } from "./supabase-db-types";
+import { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab, EventExpense, EventBudgetSummary } from "./supabase-db-types";
 import { getEventAvailability, type SchedulableEvent } from "./event-availability";
 import { phoneMatchKey } from "./phone";
 
 // Re-export interface types so all existing pages compile unchanged
-export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab };
+export type { Ticket, Event, EventDetails, PendingPayment, TicketTier, TicketAudience, NormalizedTicket, EventCustomer, EventCustomerOrder, EventCustomerTicket, EventCustomerTab, EventExpense, EventBudgetSummary };
 
 // Safe import for server-side pg pool to avoid breaking client bundle builds
 export let neonQuery: any = null;
@@ -398,7 +398,7 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
       'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
       'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
       'custom_schedule_text', 'max_tent_inventory', 'max_shared_beds', 'maps_url',
-      'archived_at'
+      'archived_at', 'budget_allocated'
     ]);
 
     const fields = Object.keys(updates).filter((k) => MUTABLE_EVENT_FIELDS.has(k));
@@ -3891,4 +3891,199 @@ export async function fetchRadioSets(eventId?: number): Promise<RadioSet[]> {
   const { rows } = await neonQuery(query, params);
   return rows;
 }
+
+// ==================== BUDGET & EXPENSES ====================
+
+export async function fetchEventExpenses(eventId?: number | null): Promise<EventExpense[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const url = eventId ? `/api/admin/expenses?eventId=${eventId}` : "/api/admin/expenses";
+      const res = await fetch(url);
+      if (res.ok) return await res.json();
+    } catch {}
+    return [];
+  }
+
+  let query = `
+    SELECT ee.*, e.title as event_title 
+    FROM event_expenses ee
+    LEFT JOIN events e ON e.id = ee.event_id
+    ORDER BY ee.paid_at DESC, ee.created_at DESC
+  `;
+  let params: any[] = [];
+  if (eventId) {
+    query = `
+      SELECT ee.*, e.title as event_title 
+      FROM event_expenses ee
+      LEFT JOIN events e ON e.id = ee.event_id
+      WHERE ee.event_id = $1
+      ORDER BY ee.paid_at DESC, ee.created_at DESC
+    `;
+    params = [eventId];
+  }
+  const { rows } = await neonQuery(query, params);
+  return rows.map((r: any) => ({
+    ...r,
+    amount: Number(r.amount || 0)
+  }));
+}
+
+export async function createEventExpense(data: {
+  event_id: number;
+  title: string;
+  category: string;
+  amount: number;
+  status?: string;
+  payment_method?: string;
+  recipient?: string | null;
+  receipt_url?: string | null;
+  notes?: string | null;
+  paid_at?: string | null;
+}): Promise<EventExpense | null> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/expenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) return await res.json();
+    return null;
+  }
+
+  const { rows } = await neonQuery(
+    `INSERT INTO event_expenses (
+      event_id, title, category, amount, status, payment_method, recipient, receipt_url, notes, paid_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamptz, NOW()))
+    RETURNING *`,
+    [
+      data.event_id,
+      data.title,
+      data.category,
+      data.amount,
+      data.status || 'paid',
+      data.payment_method || 'mpesa',
+      data.recipient || null,
+      data.receipt_url || null,
+      data.notes || null,
+      data.paid_at || null
+    ]
+  );
+  return rows[0] || null;
+}
+
+export async function updateEventExpense(id: number, data: Partial<EventExpense>): Promise<EventExpense | null> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/expenses/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) return await res.json();
+    return null;
+  }
+
+  const allowed = ['title', 'category', 'amount', 'status', 'payment_method', 'recipient', 'receipt_url', 'notes', 'paid_at', 'event_id'];
+  const keys = Object.keys(data).filter(k => allowed.includes(k));
+  if (keys.length === 0) return null;
+
+  const setClause = keys.map((k, idx) => `"${k}" = $${idx + 2}`).join(", ");
+  const values = keys.map(k => (data as any)[k]);
+
+  const { rows } = await neonQuery(
+    `UPDATE event_expenses SET ${setClause} WHERE id = $1 RETURNING *`,
+    [id, ...values]
+  );
+  return rows[0] || null;
+}
+
+export async function deleteEventExpense(id: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/admin/expenses/${id}`, { method: "DELETE" });
+    return res.ok;
+  }
+  await neonQuery("DELETE FROM event_expenses WHERE id = $1", [id]);
+  return true;
+}
+
+export async function updateEventBudget(eventId: number, budgetAllocated: number): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/admin/budget", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId, budgetAllocated })
+    });
+    return res.ok;
+  }
+  await neonQuery("UPDATE events SET budget_allocated = $2 WHERE id = $1", [eventId, budgetAllocated]);
+  return true;
+}
+
+export async function fetchEventBudgetSummary(eventId: number): Promise<EventBudgetSummary | null> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/admin/budget?eventId=${eventId}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return null;
+  }
+
+  const { rows: eventRows } = await neonQuery("SELECT id, title, COALESCE(budget_allocated, 0) as budget_allocated FROM events WHERE id = $1", [eventId]);
+  if (eventRows.length === 0) return null;
+  const evt = eventRows[0];
+
+  const { rows: expRows } = await neonQuery(
+    `SELECT 
+      category,
+      status,
+      SUM(amount) as cat_total
+    FROM event_expenses
+    WHERE event_id = $1
+    GROUP BY category, status`,
+    [eventId]
+  );
+
+  let totalExpenses = 0;
+  let paidExpenses = 0;
+  let pendingExpenses = 0;
+  let plannedExpenses = 0;
+  const expensesByCategory: Record<string, number> = {};
+
+  for (const r of expRows) {
+    const amt = Number(r.cat_total || 0);
+    totalExpenses += amt;
+    if (r.status === 'paid') paidExpenses += amt;
+    else if (r.status === 'pending') pendingExpenses += amt;
+    else if (r.status === 'planned') plannedExpenses += amt;
+
+    expensesByCategory[r.category] = (expensesByCategory[r.category] || 0) + amt;
+  }
+
+  // Live ticket sales for this event
+  const { rows: ticketRows } = await neonQuery(
+    `SELECT COALESCE(SUM(amount_paid), 0) as total_ticket_revenue 
+     FROM tickets 
+     WHERE event_id = $1 AND deleted_at IS NULL`,
+    [eventId]
+  );
+  const ticketRevenue = Number(ticketRows[0]?.total_ticket_revenue || 0);
+  const budgetAllocated = Number(evt.budget_allocated || 0);
+
+  const netProfitOrLoss = ticketRevenue - totalExpenses;
+  const breakEvenProgressPct = totalExpenses > 0 ? Math.min(100, Math.round((ticketRevenue / totalExpenses) * 100)) : 100;
+
+  return {
+    event_id: evt.id,
+    event_title: evt.title,
+    budget_allocated: budgetAllocated,
+    total_expenses: totalExpenses,
+    paid_expenses: paidExpenses,
+    pending_expenses: pendingExpenses,
+    planned_expenses: plannedExpenses,
+    ticket_revenue: ticketRevenue,
+    net_profit_or_loss: netProfitOrLoss,
+    break_even_progress_pct: breakEvenProgressPct,
+    expenses_by_category: expensesByCategory
+  };
+}
+
 

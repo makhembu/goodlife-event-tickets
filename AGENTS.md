@@ -48,8 +48,10 @@ Use the **local** `tsx.cmd`, not `npx tsx`: inside a `ForEach-Object` block `npx
 | `story-deck.check.ts` | `components/StoryDeckHero.tsx` contract (poster + teaser, `playsInline`, tap-to-enlarge) |
 | `og-social.check.ts` | the social/SEO contract: 1200x630 banner **generated per event** from its own poster, no hardcoded `og-*.jpg`, canonical/site_name/locale/twitter/apple-icon/manifest present, JSON-LD emitted |
 | `video-upload.check.ts` | video teaser upload pipeline with Catbox tier 1, Pomf2 fallback 1, and Uguu fallback 2 (11) |
+| `settlements.check.ts` | vendor settlement reconciliation: digital vs cash custody, 10% commission, net payout formula (19) |
+| `budget.check.ts` | event budget & expense P&L engine, category breakdown, utilization & break-even math (24) |
 
-All 10 passed on 2026-10-20. `public-state.check.ts --live` re-runs the same decisions read-only against the real database. **Add a case before changing routing, pricing, phone matching, session auth, PWA scope, or social metadata.**
+All 12 passed on 2026-10-21. `public-state.check.ts --live` re-runs the same decisions read-only against the real database. **Add a case before changing routing, pricing, phone matching, session auth, PWA scope, or social metadata.**
 
 `tests/` is deliberately *outside* `scripts/`: `.gitignore` excludes `scripts/` because the ad-hoc DB scripts there hardcode the production Neon password, so a verification tool the codebase depends on must not live there. The one-off data repair (`scripts/repair-event-status.js`, writes to prod, dry-run by default) stays untracked in `scripts/` alongside its peers — recreate it from this file's description if you ever need it again.
 

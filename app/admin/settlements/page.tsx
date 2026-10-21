@@ -231,6 +231,12 @@ export default function AdminSettlementsPage() {
 
           {/* Event Filter & Refresh */}
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Link
+              href="/admin/budget"
+              className="px-2.5 py-1.5 border-2 border-brand-navy bg-brand-accent hover:bg-brand-navy hover:text-white text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs)"
+            >
+              Budget & P&L
+            </Link>
             {events.length > 0 && (
               <div className="flex items-center gap-1.5 border-2 border-brand-navy bg-white px-2 py-1 shadow-(--shadow-brut-xs)">
                 <Calendar className="w-4 h-4 text-brand-navy/60" />

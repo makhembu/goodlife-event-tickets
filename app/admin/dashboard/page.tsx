@@ -48,6 +48,7 @@ import {
   Flame,
   Store,
   Receipt,
+  DollarSign,
   Users,
   ExternalLink,
   Key,
@@ -1827,6 +1828,13 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
             >
               <Receipt className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">SETTLEMENTS</span>
+            </Link>
+            <Link 
+              href="/admin/budget" 
+              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
+            >
+              <DollarSign className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">BUDGET & P&L</span>
             </Link>
             <Link 
               href="/scanner" 

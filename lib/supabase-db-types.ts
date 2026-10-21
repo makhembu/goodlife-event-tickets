@@ -16,6 +16,7 @@ export interface Event {
   next_event_title?: string;
   recap_video_url?: string;
   video_url?: string | null;
+  budget_allocated?: number | null;
   category?: 'flagship' | 'mini';
   recurrence_pattern?: 'none' | 'weekly' | 'biweekly' | 'monthly';
   recurrence_day?: string;
@@ -97,6 +98,7 @@ export interface EventDetails {
   next_event_title?: string;
   recap_video_url?: string;
   video_url?: string | null;
+  budget_allocated?: number | null;
   max_tent_inventory?: number;
   max_shared_beds?: number;
   maps_url?: string;
@@ -246,5 +248,35 @@ export interface EventCustomer {
   tickets?: EventCustomerTicket[];
   combined_spend?: number;
   total_due?: number;
+}
+
+export interface EventExpense {
+  id: number;
+  event_id: number;
+  event_title?: string;
+  title: string;
+  category: "venue" | "sound_stage" | "artists" | "permits_security" | "marketing" | "logistics" | "inventory" | "other" | string;
+  amount: number;
+  status: "paid" | "pending" | "planned";
+  payment_method: "mpesa" | "cash" | "bank_transfer" | string;
+  recipient?: string | null;
+  receipt_url?: string | null;
+  notes?: string | null;
+  paid_at?: string;
+  created_at?: string;
+}
+
+export interface EventBudgetSummary {
+  event_id: number;
+  event_title: string;
+  budget_allocated: number;
+  total_expenses: number;
+  paid_expenses: number;
+  pending_expenses: number;
+  planned_expenses: number;
+  ticket_revenue: number;
+  net_profit_or_loss: number;
+  break_even_progress_pct: number;
+  expenses_by_category: Record<string, number>;
 }
 
