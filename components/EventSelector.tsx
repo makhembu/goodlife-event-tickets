@@ -336,7 +336,7 @@ export default function EventSelector({ selectedEventId, onSelect, onEventCreate
                 }}
                 className="w-full py-1.5 px-3 border-2 border-dashed border-brand-navy text-xs font-bold uppercase bg-brand-accent/20 hover:bg-brand-accent text-brand-navy flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> + CREATE NEW EDITION
+                <Plus className="w-3.5 h-3.5" /> CREATE NEW EDITION
               </button>
             </div>
           </div>

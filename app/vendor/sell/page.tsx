@@ -2073,7 +2073,7 @@ export default function VendorSellPage() {
                   }}
                   className="w-full py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-brand-navy hover:text-brand-accent transition-colors shadow-(--shadow-brut-xs)"
                 >
-                  <Plus className="w-4 h-4" /> + Open New Tab
+                  <Plus className="w-4 h-4" /> Open New Tab
                 </button>
               </div>
             </div>

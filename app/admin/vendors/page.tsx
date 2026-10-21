@@ -319,7 +319,7 @@ export default function AdminVendorsPage() {
               className="border-2 border-brand-navy bg-brand-accent px-3 sm:px-4 py-2 font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white flex items-center justify-center gap-1.5 shadow-(--shadow-brut-sm) transition-colors cursor-pointer text-xs md:text-sm text-center"
             >
               <Plus className="w-4 h-4 shrink-0" />
-              <span className="truncate">+ Add Department</span>
+              <span className="truncate">Add Department</span>
             </button>
           </div>
         </div>
