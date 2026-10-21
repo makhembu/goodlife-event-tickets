@@ -72,7 +72,7 @@ export default function TicketCheckoutPage({
     subtitle: "237-THIKA | JULY 11",
     tag: "SMWHR INC / MARARA CAMP",
     venue: "MARARA CAMP, THIKA",
-    till_number: "4785645",
+    till_number: "5761205",
     flyer_url: "/flyer.png",
     regulations: "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification.",
     maps_url: "https://www.google.com/maps/search/?api=1&query=MARARA+CAMP,+THIKA"

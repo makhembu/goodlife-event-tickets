@@ -58,7 +58,7 @@ export default function VendorSellPage() {
 
   // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
   // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
-  const [eventTillNumber, setEventTillNumber] = useState("4785645");
+  const [eventTillNumber, setEventTillNumber] = useState("5761205");
   const [eventTitle, setEventTitle] = useState("GOODLIFE 4");
   const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState("");
   const [mpesaRef, setMpesaRef] = useState("");
