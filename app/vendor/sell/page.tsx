@@ -10,7 +10,18 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 export default function VendorSellPage() {
   const isOnline = useOnlineStatus();
   const [items, setItems] = useState<any[]>([]);
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = sessionStorage.getItem("goodlife_vendor_cart");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {}
+    }
+    return [];
+  });
   const [confirmClearCart, setConfirmClearCart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -372,6 +383,17 @@ export default function VendorSellPage() {
         setLoading(false);
       });
   };
+
+  // Persist active cart to sessionStorage so accidental reloads or page refreshes don't lose the ticket
+  useEffect(() => {
+    try {
+      if (cart.length > 0) {
+        sessionStorage.setItem("goodlife_vendor_cart", JSON.stringify(cart));
+      } else {
+        sessionStorage.removeItem("goodlife_vendor_cart");
+      }
+    } catch {}
+  }, [cart]);
 
   useEffect(() => {
     loadItems();
