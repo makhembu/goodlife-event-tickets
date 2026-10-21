@@ -726,40 +726,35 @@ export default function AdminBudgetPage() {
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* Top Header Bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-4 border-brand-navy pb-4 gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between border-b-4 border-brand-navy pb-4 gap-4">
+          <div className="flex items-start sm:items-center gap-3 w-full lg:w-auto">
             <Link
               href="/admin/dashboard"
-              className="text-brand-navy hover:bg-brand-accent p-2 border-2 border-brand-navy font-bold uppercase transition-colors shadow-(--shadow-brut-xs)"
+              className="text-brand-navy bg-brand-accent hover:bg-brand-accent/80 px-3 py-2 border-2 border-brand-navy font-black uppercase text-xs transition-colors shadow-(--shadow-brut-xs) shrink-0 flex items-center gap-1.5"
             >
-              &larr; Dashboard
+              <span>&larr;</span>
+              <span>Dashboard</span>
             </Link>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-display uppercase flex items-center gap-2">
-                <DollarSign className="w-7 h-7 text-brand-navy" /> Event Finances & P&L
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-display uppercase flex items-center gap-2 leading-none">
+                <DollarSign className="w-6 h-6 sm:w-7 sm:h-7 text-brand-navy shrink-0" />
+                <span className="truncate">Event Finances & P&L</span>
               </h1>
-              <p className="text-xs text-brand-navy/60 font-bold uppercase mt-0.5">
+              <p className="text-[10px] sm:text-xs text-brand-navy/60 font-bold uppercase mt-1 line-clamp-1 sm:line-clamp-none">
                 Unified Event Budget, Commercial Stalls, Payroll & Dual P&L
               </p>
             </div>
           </div>
 
           {/* Quick Sub-navigation & Controls */}
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <Link
-              href="/admin/settlements"
-              className="px-2.5 py-1.5 border-2 border-brand-navy bg-white hover:bg-brand-accent text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs)"
-            >
-              Settlements
-            </Link>
-
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto">
             {events.length > 0 && (
-              <div className="flex items-center gap-1.5 border-2 border-brand-navy bg-white px-2 py-1 shadow-(--shadow-brut-xs)">
-                <Calendar className="w-4 h-4 text-brand-navy/60" />
+              <div className="col-span-2 sm:col-auto flex items-center gap-1.5 border-2 border-brand-navy bg-white px-2.5 py-1.5 shadow-(--shadow-brut-xs) min-w-0">
+                <Calendar className="w-4 h-4 text-brand-navy/60 shrink-0" />
                 <select
                   value={selectedEventId}
                   onChange={(e) => handleSelectEvent(e.target.value)}
-                  className="font-bold text-xs uppercase bg-transparent outline-none cursor-pointer"
+                  className="font-bold text-xs uppercase bg-transparent outline-none cursor-pointer w-full truncate"
                 >
                   {events.map((evt) => (
                     <option key={evt.id} value={evt.id.toString()}>
@@ -770,6 +765,13 @@ export default function AdminBudgetPage() {
               </div>
             )}
 
+            <Link
+              href="/admin/settlements"
+              className="px-3 py-2 border-2 border-brand-navy bg-white hover:bg-brand-accent text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) text-center flex items-center justify-center"
+            >
+              Settlements
+            </Link>
+
             {events.length > 1 && (
               <button
                 type="button"
@@ -778,33 +780,35 @@ export default function AdminBudgetPage() {
                   if (other) setForkSourceEventId(other.id.toString());
                   setShowForkModal(true);
                 }}
-                className="px-2.5 py-1.5 border-2 border-brand-navy bg-white hover:bg-brand-accent text-xs font-bold uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-2 border-2 border-brand-navy bg-white hover:bg-brand-accent text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer flex items-center justify-center gap-1.5"
                 title="Fork / clone budget line items from a previous edition"
               >
-                <Layers className="w-3.5 h-3.5" />
+                <Layers className="w-3.5 h-3.5 shrink-0" />
                 <span>Fork Budget</span>
               </button>
             )}
 
-            <button
-              onClick={() => loadData()}
-              className="p-2 border-2 border-brand-navy bg-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
+            <div className="col-span-2 sm:col-auto flex items-center gap-2">
+              <button
+                onClick={() => loadData()}
+                className="p-2 border-2 border-brand-navy bg-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs) cursor-pointer shrink-0"
+                title="Refresh Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
 
-            <button
-              onClick={() => {
-                resetForm();
-                setEditingExpense(null);
-                setShowAddModal(true);
-              }}
-              className="px-3 py-1.5 border-2 border-brand-navy bg-brand-accent hover:bg-brand-accent/80 font-bold text-xs uppercase transition-all shadow-(--shadow-brut-xs) cursor-pointer flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Log Expense</span>
-            </button>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setEditingExpense(null);
+                  setShowAddModal(true);
+                }}
+                className="flex-1 sm:flex-initial px-4 py-2 border-2 border-brand-navy bg-brand-accent hover:bg-brand-accent/80 font-black text-xs uppercase transition-all shadow-(--shadow-brut-xs) cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Log Expense</span>
+              </button>
+            </div>
           </div>
         </div>
 
