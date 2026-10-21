@@ -36,6 +36,8 @@ import PwaInstallButton from "@/components/ui/PwaInstallButton";
 interface ScannedResult {
   success: boolean;
   alreadyScanned?: boolean;
+  networkError?: boolean;
+  failedTicketId?: string;
   message: string;
   camping_instruction?: string;
   admitted_count?: number;
@@ -324,9 +326,11 @@ export default function GateTerminalPage() {
     } catch (err: any) {
       setLastResult({
         success: false,
-        message: "Network/Server Connection Error: " + err.message
+        networkError: true,
+        failedTicketId: cleanId,
+        message: "Gate server unreachable. Verify terminal connectivity and retry."
       });
-      triggerFeedback(false);
+      // Do not trigger failure/rejection audio or vibrate on offline/network errors
     } finally {
       setLoadingVerify(false);
     }
@@ -914,7 +918,9 @@ export default function GateTerminalPage() {
             exit={{ opacity: 0, y: 40, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
             className={`fixed inset-x-2 sm:inset-x-auto sm:w-[460px] sm:left-1/2 sm:-translate-x-1/2 bottom-3 z-50 p-4 border-4 shadow-(--shadow-brut-lg) font-mono ${
-              lastResult.success
+              lastResult.networkError
+                ? "bg-slate-100 text-slate-900 border-slate-700"
+                : lastResult.success
                 ? "bg-green-50 text-green-950 border-green-600"
                 : lastResult.alreadyScanned
                 ? "bg-amber-50 text-amber-950 border-amber-600"
@@ -933,18 +939,24 @@ export default function GateTerminalPage() {
 
             {/* Header Stamp & Dismiss button */}
             <div className="flex justify-between items-start mb-2 pt-1">
-              <TicketStamp
-                text={
-                  lastResult.success
-                    ? "ENTRY CLEARED"
-                    : lastResult.alreadyScanned
-                    ? "ALREADY USED"
-                    : "ENTRY REJECTED"
-                }
-                variant={
-                  lastResult.success ? "success" : lastResult.alreadyScanned ? "used" : "fail"
-                }
-              />
+              {lastResult.networkError ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 text-white font-mono text-xs font-black uppercase tracking-wider border-2 border-slate-900 shadow-(--shadow-brut-2xs)">
+                  <span>📡 NO SIGNAL — TICKET NOT CHECKED</span>
+                </div>
+              ) : (
+                <TicketStamp
+                  text={
+                    lastResult.success
+                      ? "ENTRY CLEARED"
+                      : lastResult.alreadyScanned
+                      ? "ALREADY USED"
+                      : "ENTRY REJECTED"
+                  }
+                  variant={
+                    lastResult.success ? "success" : lastResult.alreadyScanned ? "used" : "fail"
+                  }
+                />
+              )}
               <button
                 onClick={dismissHUD}
                 className="p-1 hover:bg-black/10 rounded-full cursor-pointer transition-colors"
@@ -956,15 +968,17 @@ export default function GateTerminalPage() {
             {/* Big readable attendee name & Tier */}
             <div className="space-y-1 mb-3">
               <h2 className="font-sans font-black text-2xl uppercase tracking-tight leading-tight">
-                {lastResult.ticket?.buyer_name || (lastResult.success ? "ATTENDEE" : "UNKNOWN PASS")}
+                {lastResult.networkError
+                  ? "CONNECTION LOST"
+                  : lastResult.ticket?.buyer_name || (lastResult.success ? "ATTENDEE" : "UNKNOWN PASS")}
               </h2>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-xs font-black uppercase px-2 py-0.5 bg-brand-navy text-white">
-                  {lastResult.ticket?.ticket_type || "TICKET"}
+                  {lastResult.networkError ? "OFFLINE / TIMEOUT" : lastResult.ticket?.ticket_type || "TICKET"}
                 </span>
-                {lastResult.ticket?.id && (
+                {(lastResult.failedTicketId || lastResult.ticket?.id) && (
                   <span className="font-mono text-xs font-bold text-gray-700">
-                    ID: {lastResult.ticket.id}
+                    ID: {lastResult.failedTicketId || lastResult.ticket?.id}
                   </span>
                 )}
               </div>
@@ -1037,10 +1051,21 @@ export default function GateTerminalPage() {
             )}
 
             {/* BOTTOM DISMISS / NEXT SCAN BUTTON */}
-            <div className="pt-1">
+            <div className="pt-1 flex gap-2">
+              {lastResult.networkError && lastResult.failedTicketId && (
+                <button
+                  type="button"
+                  disabled={loadingVerify}
+                  onClick={() => verifyTicket(lastResult.failedTicketId!, 1)}
+                  className="flex-1 py-2.5 bg-brand-accent text-brand-navy font-mono text-xs font-black uppercase flex items-center justify-center gap-1.5 hover:bg-brand-navy hover:text-white border-2 border-brand-navy transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingVerify ? "animate-spin" : ""}`} />
+                  <span>RETRY SCAN</span>
+                </button>
+              )}
               <button
                 onClick={dismissHUD}
-                className="w-full py-2.5 bg-brand-navy text-brand-off-white font-mono text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy transition-colors cursor-pointer"
+                className="flex-1 py-2.5 bg-brand-navy text-brand-off-white font-mono text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy transition-colors cursor-pointer"
               >
                 <span>NEXT TICKET</span>
                 {autoDismissCountdown !== null && (
