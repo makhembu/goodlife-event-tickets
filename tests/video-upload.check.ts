@@ -37,15 +37,17 @@ if (fs.existsSync(compPath)) {
   assert(compCode.includes("showManualInput"), "VideoUploader retains manual URL fallback input");
 }
 
-// 3. Live upload connectivity test to Catbox / Pomf2
+// 3. Live upload connectivity test to Catbox and Uguu fallback
 async function testLiveUpload() {
   const dummyVideoBuffer = Buffer.from("dummy-video-header-for-test-verification");
   const blob = new Blob([dummyVideoBuffer], { type: "video/mp4" });
-  const form = new FormData();
-  form.append("reqtype", "fileupload");
-  form.append("fileToUpload", blob, "test.mp4");
 
+  // Test Tier 1: Catbox
   try {
+    const form = new FormData();
+    form.append("reqtype", "fileupload");
+    form.append("fileToUpload", blob, "test.mp4");
+
     const res = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
       headers: {
@@ -59,22 +61,33 @@ async function testLiveUpload() {
       const url = (await res.text()).trim();
       assert(url.startsWith("http"), `Live Catbox upload verified (got: ${url})`);
     } else {
-      console.log(`INFO: Catbox status ${res.status}, verifying Pomf2 fallback...`);
-      const pomfForm = new FormData();
-      pomfForm.append("files[]", blob, "test.mp4");
-      const pomfRes = await fetch("https://pomf2.lain.la/upload.php", {
-        method: "POST",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-        body: pomfForm,
-        signal: AbortSignal.timeout(15000),
-      });
-      const pomfJson = await pomfRes.json();
-      assert(pomfJson?.success && pomfJson?.files?.[0]?.url, `Live Pomf2 fallback verified (got: ${pomfJson?.files?.[0]?.url})`);
+      console.warn(`Catbox status: ${res.status}`);
     }
   } catch (err: any) {
-    console.error("Live test warning:", err.message);
+    console.warn("Catbox live check warning:", err.message);
+  }
+
+  // Test Tier 3 fallback: Uguu
+  try {
+    const uguuForm = new FormData();
+    uguuForm.append("files[]", blob, "test.mp4");
+
+    const uguuRes = await fetch("https://uguu.se/upload", {
+      method: "POST",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      body: uguuForm,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const uguuJson = await uguuRes.json();
+    assert(
+      uguuJson?.success && uguuJson?.files?.[0]?.url,
+      `Live Uguu fallback verified (got: ${uguuJson?.files?.[0]?.url})`
+    );
+  } catch (err: any) {
+    console.warn("Uguu live check warning:", err.message);
   }
 
   if (failures > 0) {
