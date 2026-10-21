@@ -916,8 +916,8 @@ export default function VendorTabsPage() {
 
       {/* Collect Payment Modal (Enhanced with Chips, Split, Change, STK Push) */}
       {collectTab && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-lg border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative my-8">
+        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-lg border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative my-auto max-h-[92vh] flex flex-col">
             <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
               <div>
                 <h3 className="font-display text-2xl uppercase tracking-wider">Collect Tab Payment</h3>
@@ -1238,8 +1238,8 @@ export default function VendorTabsPage() {
 
       {/* GAP 6: Edit Credit Limit Modal */}
       {limitTab && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative my-auto max-h-[92vh] flex flex-col">
             <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
               <div>
                 <h3 className="font-display text-2xl uppercase tracking-wider">Edit Credit Limit</h3>
@@ -1436,8 +1436,8 @@ export default function VendorTabsPage() {
         const tabsWithoutPhone = eligibleTabs.length - tabsWithPhone.length;
 
         return (
-          <div className="fixed inset-0 z-50 bg-brand-navy/85 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-lg border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+          <div className="fixed inset-0 z-50 bg-brand-navy/85 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-white w-full max-w-lg border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative my-auto max-h-[92vh] flex flex-col">
               <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
                 <div className="flex items-center gap-2">
                   <span className="p-1.5 bg-brand-accent border-2 border-brand-navy font-bold text-xs">

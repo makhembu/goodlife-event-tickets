@@ -907,7 +907,7 @@ export default function VendorSellPage() {
                   HapticFeedback.trigger("confirmation");
                   setSelectedCategory("ALL");
                 }}
-                className={`px-3 py-1.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 ${
+                className={`px-3 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 min-h-[44px] ${
                   selectedCategory === "ALL"
                     ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                     : "bg-white text-brand-navy hover:bg-stone-100"
@@ -925,7 +925,7 @@ export default function VendorSellPage() {
                       HapticFeedback.trigger("confirmation");
                       setSelectedCategory(isActive ? "ALL" : cat);
                     }}
-                    className={`px-3 py-1.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 ${
+                    className={`px-3 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center shrink-0 min-h-[44px] ${
                       isActive
                         ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                         : "bg-white text-brand-navy hover:bg-stone-100"
@@ -1151,10 +1151,10 @@ export default function VendorSellPage() {
 
       {/* Checkout Modal */}
       {showCheckout && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-brand-off-white w-full max-w-xl border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) flex flex-col max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-brand-off-white w-full max-w-xl my-auto border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) flex flex-col max-h-[92vh]">
             {/* Modal Header */}
-            <div className="flex justify-between items-start border-b-4 border-brand-navy pb-3 mb-4">
+            <div className="flex justify-between items-start border-b-4 border-brand-navy pb-3 mb-4 shrink-0 bg-brand-off-white">
               <div>
                 <span className="text-[10px] font-mono font-black uppercase text-brand-navy/60 tracking-wider block">
                   Point of Sale • Checkout Terminal
@@ -1182,8 +1182,10 @@ export default function VendorSellPage() {
               </div>
             </div>
 
-            {/* 1-Tap Quick Pay Row */}
-            <div className="mb-4 bg-brand-navy text-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+            {/* Scrollable Form Body */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* 1-Tap Quick Pay Row */}
+              <div className="bg-brand-navy text-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[11px] font-mono font-black uppercase text-brand-accent flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 fill-brand-accent" />
@@ -1976,8 +1978,10 @@ export default function VendorSellPage() {
 
             
 
+            </div>
+
             {/* Bottom Actions Bar */}
-            <div className="flex gap-3 mt-6 pt-4 border-t-2 border-brand-navy">
+            <div className="flex gap-3 pt-3 border-t-2 border-brand-navy shrink-0 bg-brand-off-white mt-2">
               <button 
                 type="button"
                 onClick={() => {
@@ -1985,7 +1989,7 @@ export default function VendorSellPage() {
                   setIsSearchDropdownOpen(false);
                   setCustomerSearchQuery("");
                 }} 
-                className="w-1/3 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-base transition-colors cursor-pointer"
+                className="w-1/3 bg-transparent border-4 border-brand-navy font-bold uppercase p-3 hover:bg-brand-navy/10 text-sm sm:text-base transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1993,7 +1997,7 @@ export default function VendorSellPage() {
                 type="button"
                 disabled={submittingSale || remainingDue > 0}
                 onClick={handleCheckout} 
-                className={`w-2/3 border-4 border-brand-navy font-display uppercase p-3 text-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`w-2/3 border-4 border-brand-navy font-display uppercase p-3 text-base sm:text-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   remainingDue > 0
                     ? "bg-gray-200 text-gray-400 border-gray-400 cursor-not-allowed opacity-70"
                     : "bg-green-600 hover:bg-green-700 text-white shadow-(--shadow-brut-md)"
@@ -2023,8 +2027,8 @@ export default function VendorSellPage() {
         </div>
       )}{/* Smart Unpaid Remainder Intercept Modal */}
       {showRemainderModal && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
             <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
               <h3 className="font-display text-2xl uppercase tracking-wider flex items-center gap-2">
                 <Users className="w-6 h-6 text-brand-navy" /> Unpaid Balance
@@ -2114,8 +2118,8 @@ export default function VendorSellPage() {
 
       {/* Quick Add Person / Tab Modal */}
       {showNewTabModal && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
+        <div className="fixed inset-0 z-50 bg-brand-navy/80 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy relative">
             <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
               <h3 className="font-display text-2xl uppercase tracking-wider flex items-center gap-2">
                 <Users className="w-6 h-6" /> Open Customer Tab
@@ -2202,8 +2206,8 @@ export default function VendorSellPage() {
 
       {/* STK Waiting Modal */}
       {showStkModal && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy text-center relative animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-md my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy text-center relative animate-in fade-in zoom-in-95 duration-150">
             <button
               onClick={() => setShowStkModal(false)}
               className="absolute top-4 right-4 border-2 border-brand-navy p-1 hover:bg-brand-accent transition-colors"
@@ -2288,8 +2292,8 @@ export default function VendorSellPage() {
 
       {/* Digital Receipt Modal */}
       {completedSale && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy font-mono relative">
+        <div className="fixed inset-0 z-50 bg-brand-navy/95 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-sm my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy p-4 sm:p-6 shadow-(--shadow-brut-xl-accent) text-brand-navy font-mono relative">
             <div className="text-center border-b-4 border-brand-navy pb-3 mb-4">
               <h3 className="font-display text-2xl uppercase tracking-wider">GOODLIFE TICKET & POS</h3>
               <p className="text-[11px] font-bold text-gray-500 uppercase">OFFICIAL ORDER RECEIPT</p>

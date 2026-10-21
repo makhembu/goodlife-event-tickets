@@ -2857,18 +2857,18 @@ export default function VendorDetailDrawer({
 
         {/* 2. ADD / EDIT PRODUCT MODAL */}
         {showAddProductModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-md p-5 shadow-(--shadow-brut-xl)">
-              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
-                <h3 className="text-lg font-black uppercase">
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-md my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] p-4 shrink-0 bg-[var(--brand-off-white)]">
+                <h3 className="text-base sm:text-lg font-black uppercase">
                   {editingItem ? "Edit Catalog Item" : "Add New Catalog Item"}
                 </h3>
-                <button onClick={() => setShowAddProductModal(false)} className="text-stone-500 hover:text-black cursor-pointer">
+                <button onClick={() => setShowAddProductModal(false)} className="p-1 text-stone-500 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveProductSubmit} className="space-y-3">
+              <form onSubmit={handleSaveProductSubmit} className="flex-1 overflow-y-auto p-4 space-y-3">
                 <div>
                   <label className="text-[10px] font-black uppercase block mb-1">Product Name</label>
                   <input
@@ -2881,7 +2881,7 @@ export default function VendorDetailDrawer({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-black uppercase block mb-1">Category</label>
                     <input
@@ -2935,7 +2935,7 @@ export default function VendorDetailDrawer({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-black uppercase block mb-1">
                       Stock Quantity <span className="text-stone-400 font-normal">(Empty = Unlimited)</span>
@@ -2976,18 +2976,18 @@ export default function VendorDetailDrawer({
                   </label>
                 </div>
 
-                <div className="flex gap-2 pt-3">
+                <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
                   <button
                     type="button"
                     onClick={() => setShowAddProductModal(false)}
-                    className="flex-1 py-2 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
+                    className="flex-1 py-2.5 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submittingProduct}
-                    className="flex-1 py-2 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     {submittingProduct ? "SAVING..." : editingItem ? "UPDATE PRODUCT" : "CREATE PRODUCT"}
                   </button>
@@ -2999,16 +2999,16 @@ export default function VendorDetailDrawer({
 
         {/* 3. EDIT VENDOR PROFILE MODAL */}
         {showEditVendorModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm p-5 shadow-(--shadow-brut-xl)">
-              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
-                <h3 className="text-lg font-black uppercase">Edit Vendor Profile</h3>
-                <button onClick={() => setShowEditVendorModal(false)} className="text-stone-500 hover:text-black cursor-pointer">
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] p-4 shrink-0 bg-[var(--brand-off-white)]">
+                <h3 className="text-base sm:text-lg font-black uppercase">Edit Vendor Profile</h3>
+                <button onClick={() => setShowEditVendorModal(false)} className="p-1 text-stone-500 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveProfile} className="space-y-3">
+              <form onSubmit={handleSaveProfile} className="flex-1 overflow-y-auto p-4 space-y-3">
                 <div>
                   <label className="text-[10px] font-black uppercase block mb-1">Contact Person Name</label>
                   <input
@@ -3045,18 +3045,18 @@ export default function VendorDetailDrawer({
                   />
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
                   <button
                     type="button"
                     onClick={() => setShowEditVendorModal(false)}
-                    className="flex-1 py-2 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
+                    className="flex-1 py-2.5 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={updatingVendor}
-                    className="flex-1 py-2 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     {updatingVendor ? "SAVING..." : "SAVE PROFILE"}
                   </button>
@@ -3068,16 +3068,16 @@ export default function VendorDetailDrawer({
 
         {/* 4. ADD OPERATOR MODAL */}
         {showAddOperatorModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm p-5 shadow-(--shadow-brut-xl)">
-              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
-                <h3 className="text-lg font-black uppercase">Add Stall Cashier</h3>
-                <button onClick={() => setShowAddOperatorModal(false)} className="text-stone-500 hover:text-black cursor-pointer">
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] p-4 shrink-0 bg-[var(--brand-off-white)]">
+                <h3 className="text-base sm:text-lg font-black uppercase">Add Stall Cashier</h3>
+                <button onClick={() => setShowAddOperatorModal(false)} className="p-1 text-stone-500 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleAddOperator} className="space-y-3">
+              <form onSubmit={handleAddOperator} className="flex-1 overflow-y-auto p-4 space-y-3">
                 <div>
                   <label className="text-[10px] font-black uppercase block mb-1">Cashier Name</label>
                   <input
@@ -3118,18 +3118,18 @@ export default function VendorDetailDrawer({
                   </select>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
                   <button
                     type="button"
                     onClick={() => setShowAddOperatorModal(false)}
-                    className="flex-1 py-2 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
+                    className="flex-1 py-2.5 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submittingOperator}
-                    className="flex-1 py-2 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     {submittingOperator ? "CREATING..." : "ADD CASHIER"}
                   </button>
@@ -3141,15 +3141,22 @@ export default function VendorDetailDrawer({
 
         {/* 5. QUICK SETTLEMENT MODAL */}
         {showSettleModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm p-5 shadow-(--shadow-brut-xl)">
-              <h3 className="text-lg font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
-                Record Vendor Settlement
-              </h3>
-              <p className="text-xs font-bold uppercase text-[var(--brand-navy-light)] mb-3">
-                Vendor: <strong>{vendor?.name}</strong>
-              </p>
-              <form onSubmit={handleSettleSubmit} className="space-y-3">
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] p-4 shrink-0 bg-[var(--brand-off-white)]">
+                <h3 className="text-base sm:text-lg font-black uppercase">
+                  Record Vendor Settlement
+                </h3>
+                <button onClick={() => setShowSettleModal(false)} className="p-1 text-stone-500 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 border-b border-stone-200 bg-white">
+                <p className="text-xs font-bold uppercase text-[var(--brand-navy-light)]">
+                  Vendor: <strong>{vendor?.name}</strong>
+                </p>
+              </div>
+              <form onSubmit={handleSettleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3">
                 <div>
                   <label className="text-[10px] font-black uppercase block mb-1">Settlement Amount (KES)</label>
                   <input
@@ -3162,18 +3169,18 @@ export default function VendorDetailDrawer({
                     className="w-full border-2 border-[var(--brand-navy)] px-3 py-2 font-mono text-base font-bold focus:outline-none"
                   />
                 </div>
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
                   <button
                     type="button"
                     onClick={() => setShowSettleModal(false)}
-                    className="flex-1 py-2 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
+                    className="flex-1 py-2.5 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={settling}
-                    className="flex-1 py-2 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     {settling ? "SAVING..." : "CONFIRM PAYMENT"}
                   </button>
@@ -3185,8 +3192,8 @@ export default function VendorDetailDrawer({
 
         {/* 6. ADMIN MANAGE CATEGORIES MODAL */}
         {showManageCategoriesModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-lg p-4 sm:p-5 shadow-(--shadow-brut-xl) max-h-[90vh] flex flex-col">
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-lg my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
               <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] pb-2 mb-3">
                 <div className="flex items-center gap-2">
                   <Tags className="w-5 h-5 text-yellow-600" />

@@ -744,10 +744,10 @@ export default function VendorMenuPage() {
 
       {/* ADD NEW ITEM MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-brand-off-white w-full max-w-lg border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent)">
-            <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
-              <h2 className="font-display text-2xl uppercase flex items-center gap-2">
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-brand-off-white w-full max-w-lg my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy shadow-(--shadow-brut-xl-accent)">
+            <div className="flex justify-between items-center border-b-4 border-brand-navy p-4 shrink-0 bg-brand-off-white">
+              <h2 className="font-display text-xl sm:text-2xl uppercase flex items-center gap-2">
                 <Plus className="w-6 h-6 text-brand-accent" /> Add New Item to Stall
               </h2>
               <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-brand-navy/15 border border-brand-navy cursor-pointer">
@@ -755,7 +755,7 @@ export default function VendorMenuPage() {
               </button>
             </div>
 
-            <form onSubmit={handleAddNewItem} className="space-y-4">
+            <form onSubmit={handleAddNewItem} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase mb-1">Item / Product Name *</label>
                 <input 
@@ -936,7 +936,7 @@ export default function VendorMenuPage() {
                 )}
               </div>
 
-              <div className="flex gap-3 pt-3 border-t-2 border-brand-navy">
+              <div className="flex gap-3 pt-3 border-t-2 border-brand-navy sticky bottom-0 bg-brand-off-white mt-2">
                 <button 
                   type="button" 
                   onClick={() => setShowAddModal(false)}
@@ -959,10 +959,10 @@ export default function VendorMenuPage() {
 
       {/* EDIT ITEM MODAL */}
       {editingItem && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-brand-off-white w-full max-w-lg border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent)">
-            <div className="flex justify-between items-center border-b-4 border-brand-navy pb-3 mb-4">
-              <h2 className="font-display text-2xl uppercase flex items-center gap-2">
+        <div className="fixed inset-0 z-50 bg-brand-navy/90 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-brand-off-white w-full max-w-lg my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy shadow-(--shadow-brut-xl-accent)">
+            <div className="flex justify-between items-center border-b-4 border-brand-navy p-4 shrink-0 bg-brand-off-white">
+              <h2 className="font-display text-xl sm:text-2xl uppercase flex items-center gap-2">
                 <Edit2 className="w-6 h-6 text-brand-accent" /> Edit Product: {editingItem.name}
               </h2>
               <button onClick={() => setEditingItem(null)} className="p-1 hover:bg-brand-navy/15 border border-brand-navy cursor-pointer">
@@ -970,7 +970,7 @@ export default function VendorMenuPage() {
               </button>
             </div>
 
-            <form onSubmit={handleEditSubmit} className="space-y-4">
+            <form onSubmit={handleEditSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase mb-1">Item / Product Name *</label>
                 <input 
@@ -1176,7 +1176,7 @@ export default function VendorMenuPage() {
                 </label>
               </div>
 
-              <div className="flex gap-3 pt-3 border-t-2 border-brand-navy">
+              <div className="flex gap-3 pt-3 border-t-2 border-brand-navy sticky bottom-0 bg-brand-off-white mt-2">
                 <button 
                   type="button" 
                   onClick={() => setEditingItem(null)}
@@ -1199,13 +1199,20 @@ export default function VendorMenuPage() {
 
       {/* MID-NIGHT RESTOCK MODAL */}
       {restockModalItem && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/85 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-brand-off-white w-full max-w-md border-4 border-brand-navy p-6 shadow-(--shadow-brut-xl-accent)">
-            <h2 className="font-display text-2xl uppercase border-b-4 border-brand-navy pb-3 mb-4 flex items-center gap-2">
-              <Package className="w-6 h-6 text-brand-accent" /> Restock: {restockModalItem.name}
-            </h2>
+        <div className="fixed inset-0 z-50 bg-brand-navy/85 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-brand-off-white w-full max-w-md my-auto max-h-[92vh] flex flex-col border-4 border-brand-navy shadow-(--shadow-brut-xl-accent)">
+            <div className="p-4 sm:p-6 border-b-4 border-brand-navy bg-brand-off-white shrink-0">
+              <div className="flex justify-between items-center">
+                <h2 className="font-display text-xl sm:text-2xl uppercase flex items-center gap-2">
+                  <Package className="w-6 h-6 text-brand-accent" /> Restock: {restockModalItem.name}
+                </h2>
+                <button onClick={() => setRestockModalItem(null)} className="p-1 hover:bg-brand-navy/15 border border-brand-navy cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
 
-            <form onSubmit={handleRestockSubmit} className="space-y-4">
+            <form onSubmit={handleRestockSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div className="p-3 bg-white border-2 border-brand-navy text-xs space-y-1">
                 <p><span className="opacity-60">Current Stock:</span> <strong>{restockModalItem.stock_qty !== null ? `${restockModalItem.stock_qty} Units` : 'Uncapped / Kitchen Prep'}</strong></p>
                 <p><span className="opacity-60">Category:</span> <strong>{restockModalItem.category || 'General'}</strong></p>
@@ -1257,7 +1264,7 @@ export default function VendorMenuPage() {
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4 border-t-2 border-brand-navy">
+              <div className="flex gap-3 pt-4 border-t-2 border-brand-navy sticky bottom-0 bg-brand-off-white mt-2">
                 <button 
                   type="button" 
                   onClick={() => setRestockModalItem(null)}
@@ -1280,9 +1287,9 @@ export default function VendorMenuPage() {
 
       {/* MANAGE CATEGORIES MODAL */}
       {showManageCategoriesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-xs">
-          <div className="bg-brand-off-white border-4 border-brand-navy p-5 md:p-6 w-full max-w-lg shadow-(--shadow-brut-lg) max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b-2 border-brand-navy mb-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-2 sm:p-4 bg-brand-navy/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-brand-off-white border-4 border-brand-navy p-4 sm:p-6 w-full max-w-lg my-auto shadow-(--shadow-brut-lg) max-h-[92vh] flex flex-col">
+            <div className="flex justify-between items-center pb-3 border-b-2 border-brand-navy mb-4 shrink-0 bg-brand-off-white">
               <div className="flex items-center gap-2">
                 <Tags className="w-5 h-5 text-brand-navy" />
                 <h3 className="font-display text-lg md:text-xl uppercase">Manage Categories</h3>
@@ -1298,6 +1305,8 @@ export default function VendorMenuPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
 
             {categoryNotice && (
               <div className="mb-4 p-2.5 bg-yellow-100 border-2 border-brand-navy text-xs font-bold uppercase flex items-center justify-between gap-2">
@@ -1425,8 +1434,9 @@ export default function VendorMenuPage() {
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="mt-5 pt-3 border-t-2 border-brand-navy flex justify-end">
+            <div className="mt-4 pt-3 border-t-2 border-brand-navy flex justify-end shrink-0 bg-brand-off-white">
               <button
                 type="button"
                 onClick={() => {
@@ -1434,7 +1444,7 @@ export default function VendorMenuPage() {
                   setEditingCategoryOldName(null);
                   setCategoryNotice(null);
                 }}
-                className="w-full sm:w-auto px-5 py-2 bg-brand-navy text-white text-xs font-black uppercase hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy cursor-pointer transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 bg-brand-navy text-white text-xs font-black uppercase hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy cursor-pointer transition-colors"
               >
                 Close
               </button>

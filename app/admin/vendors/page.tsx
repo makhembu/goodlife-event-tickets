@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench, X } from "lucide-react";
 import Link from "next/link";
 import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
@@ -514,12 +514,17 @@ export default function AdminVendorsPage() {
 
         {/* Modal: New Department / Vendor */}
         {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-4">
-            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-lg p-6 shadow-(--shadow-brut-xl-accent) max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-display uppercase mb-4 border-b-2 border-brand-navy pb-2">
-                New Department or Unit
-              </h2>
-              <form onSubmit={handleCreate} className="space-y-4">
+          <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-lg my-auto max-h-[92vh] flex flex-col p-4 sm:p-6 shadow-(--shadow-brut-xl-accent)">
+              <div className="flex justify-between items-center border-b-2 border-brand-navy pb-3 mb-4 shrink-0 bg-brand-off-white">
+                <h2 className="text-xl sm:text-2xl font-display uppercase">
+                  New Department or Unit
+                </h2>
+                <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-brand-navy/15 border border-brand-navy cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handleCreate} className="flex-1 overflow-y-auto space-y-4 pr-1">
                 {/* 2-Way Classification Switch */}
                 <div>
                   <label className="block text-xs font-black uppercase mb-1.5 opacity-70">
@@ -637,7 +642,7 @@ export default function AdminVendorsPage() {
                   </div>
                 )}
 
-                <div className="flex gap-3 pt-3">
+                <div className="flex gap-3 pt-3 border-t border-stone-200 sticky bottom-0 bg-brand-off-white mt-2">
                   <button
                     type="submit"
                     className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-black uppercase p-2.5 text-xs hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"
@@ -659,9 +664,9 @@ export default function AdminVendorsPage() {
 
         {/* Modal: Reset PIN */}
         {pinModal.open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-4">
-            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-md p-6 shadow-(--shadow-brut-xl-accent)">
-              <div className="flex items-center justify-between border-b-2 border-brand-navy pb-2 mb-4">
+          <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-md my-auto max-h-[92vh] flex flex-col p-4 sm:p-6 shadow-(--shadow-brut-xl-accent)">
+              <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3 mb-4 shrink-0 bg-brand-off-white">
                 <h2 className="text-xl font-display uppercase flex items-center gap-2">
                   <Key className="w-5 h-5 text-brand-navy" /> Reset POS PIN
                 </h2>
@@ -685,7 +690,7 @@ export default function AdminVendorsPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleResetPin} className="space-y-4">
+                <form onSubmit={handleResetPin} className="flex-1 overflow-y-auto space-y-4 pr-1">
                   {pinModal.errorMessage && (
                     <div className="p-3 bg-red-100 border-2 border-brand-navy text-red-950 text-xs font-bold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
@@ -741,7 +746,7 @@ export default function AdminVendorsPage() {
                     </p>
                   </div>
 
-                  <div className="flex gap-3 pt-2">
+                  <div className="flex gap-3 pt-3 border-t border-stone-200 sticky bottom-0 bg-brand-off-white mt-2">
                     <button
                       type="submit"
                       disabled={pinModal.submitting}
@@ -774,9 +779,9 @@ export default function AdminVendorsPage() {
 
         {/* Modal: Edit Vendor Contact */}
         {editModal.open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-4">
-            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-md p-6 shadow-(--shadow-brut-xl-accent)">
-              <div className="flex items-center justify-between border-b-2 border-brand-navy pb-2 mb-4">
+          <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-brand-navy/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-brand-off-white border-4 border-brand-navy w-full max-w-md my-auto max-h-[92vh] flex flex-col p-4 sm:p-6 shadow-(--shadow-brut-xl-accent)">
+              <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3 mb-4 shrink-0 bg-brand-off-white">
                 <h2 className="text-xl font-display uppercase flex items-center gap-2">
                   <Edit className="w-5 h-5 text-brand-navy" /> Edit Vendor Contact
                 </h2>
@@ -800,7 +805,7 @@ export default function AdminVendorsPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleUpdateVendor} className="space-y-4">
+                <form onSubmit={handleUpdateVendor} className="flex-1 overflow-y-auto space-y-4 pr-1">
                   {editModal.errorMessage && (
                     <div className="p-3 bg-red-100 border-2 border-brand-navy text-red-950 text-xs font-bold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
@@ -855,7 +860,7 @@ export default function AdminVendorsPage() {
                     </p>
                   </div>
 
-                  <div className="flex gap-3 pt-2">
+                  <div className="flex gap-3 pt-3 border-t border-stone-200 sticky bottom-0 bg-brand-off-white mt-2">
                     <button
                       type="submit"
                       disabled={editModal.submitting}

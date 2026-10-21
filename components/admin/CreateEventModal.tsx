@@ -179,7 +179,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/90 p-3 md:p-6 backdrop-blur-xs font-mono">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-brand-navy/90 p-2 sm:p-6 backdrop-blur-xs font-mono overflow-y-auto">
       <div className="relative w-full max-w-2xl max-h-[92vh] border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-2xl) flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b-4 border-brand-navy bg-brand-accent p-3.5 shrink-0">
