@@ -24,7 +24,10 @@ export async function POST(request: NextRequest) {
     const passwordMatch =
       submitted.length === expected.length && timingSafeEqual(submitted, expected);
 
-    if (email === "admin@goodlife.com" && passwordMatch) {
+    // Accept either default email "admin@goodlife.com" or if email is omitted (single master password authentication)
+    const effectiveEmail = (email || "admin@goodlife.com").trim().toLowerCase();
+
+    if (effectiveEmail === "admin@goodlife.com" && passwordMatch) {
       const response = NextResponse.json({ success: true, message: "Authenticated successfully" });
       
       // Set session cookie

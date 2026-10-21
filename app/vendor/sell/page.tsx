@@ -9,6 +9,7 @@ import { HapticFeedback } from "@/components/ui/haptic-feedback";
 export default function VendorSellPage() {
   const [items, setItems] = useState<any[]>([]);
   const [cart, setCart] = useState<any[]>([]);
+  const [confirmClearCart, setConfirmClearCart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
@@ -904,7 +905,7 @@ export default function VendorSellPage() {
                 HapticFeedback.trigger("confirmation");
                 setSelectedCategory("ALL");
               }}
-              className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap ${
+              className={`px-4 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy min-h-[44px] transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
                 selectedCategory === "ALL"
                   ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                   : "bg-white text-brand-navy hover:bg-stone-100"
@@ -922,7 +923,7 @@ export default function VendorSellPage() {
                     HapticFeedback.trigger("confirmation");
                     setSelectedCategory(isActive ? "ALL" : cat);
                   }}
-                  className={`px-3 py-1 text-xs font-bold font-mono uppercase border-2 border-brand-navy transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-4 py-2.5 text-xs font-bold font-mono uppercase border-2 border-brand-navy min-h-[44px] transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
                     isActive
                       ? "bg-brand-navy text-brand-accent shadow-(--shadow-brut-xs)"
                       : "bg-white text-brand-navy hover:bg-stone-100"
@@ -1049,6 +1050,39 @@ export default function VendorSellPage() {
         <div className="p-4 border-b-4 border-brand-navy bg-brand-accent text-brand-navy font-display text-xl uppercase flex justify-between items-center">
           <span className="flex items-center gap-2"><ShoppingCart className="w-6 h-6"/> Ticket ({cart.length})</span>
           <div className="flex items-center gap-2">
+            {cart.length > 0 && (
+              confirmClearCart ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      HapticFeedback.trigger("confirmation");
+                      setCart([]);
+                      setConfirmClearCart(false);
+                    }}
+                    className="px-2 py-1 bg-red-600 text-white font-mono text-[10px] font-black uppercase border border-brand-navy hover:bg-red-700 cursor-pointer animate-pulse"
+                  >
+                    CONFIRM CLEAR?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearCart(false)}
+                    className="px-1.5 py-1 bg-brand-navy text-white font-mono text-[10px] font-black uppercase border border-brand-navy hover:bg-brand-navy/80 cursor-pointer"
+                  >
+                    NO
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearCart(true)}
+                  className="px-2 py-1 bg-brand-navy/10 text-brand-navy font-mono text-[10px] font-bold uppercase border border-brand-navy hover:bg-red-100 hover:text-red-700 transition-colors cursor-pointer"
+                  title="Clear Cart"
+                >
+                  Clear
+                </button>
+              )
+            )}
             <button 
               onClick={() => setMobileCartOpen(false)}
               className="md:hidden p-1.5 bg-brand-navy text-white border-2 border-brand-navy hover:bg-brand-navy/80"

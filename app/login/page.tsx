@@ -3,11 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Lock, Mail, Flame, AlertTriangle, QrCode, Store } from "lucide-react";
+import { Lock, Flame, AlertTriangle, QrCode, Store } from "lucide-react";
 import { fetchEventDetails, EventDetails } from "@/lib/supabase-db";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,7 +32,7 @@ export default function LoginPage() {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: "admin@goodlife.com", password })
       });
 
       const data = await res.json();
@@ -91,33 +90,10 @@ export default function LoginPage() {
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">
             
-            {/* Email Field */}
-            <div className="space-y-2">
-              <label htmlFor="email-address" className="text-xs font-bold tracking-wider uppercase text-[var(--brand-navy)] block">
-                01. EMAIL ADDRESS
-              </label>
-              <div className="relative flex items-stretch">
-                <div className="flex items-center justify-center px-4 border-4 border-r-0 border-[var(--brand-navy)] bg-[var(--brand-navy)] text-[var(--brand-off-white)] pointer-events-none">
-                  <Mail className="h-5 w-5 text-[var(--brand-off-white)]" />
-                </div>
-                <input
-                  id="email-address"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  placeholder="e.g. officer@goodlife.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder:text-brand-navy/80 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
-                />
-              </div>
-            </div>
-
-            {/* Password Field */}
+            {/* Master Access Key / Password Field */}
             <div className="space-y-2">
               <label htmlFor="password" className="text-xs font-bold tracking-wider uppercase text-[var(--brand-navy)] block">
-                02. PASSWORD
+                ADMIN ACCESS KEY / PASSWORD
               </label>
               <div className="relative flex items-stretch">
                 <div className="flex items-center justify-center px-4 border-4 border-r-0 border-[var(--brand-navy)] bg-[var(--brand-navy)] text-[var(--brand-off-white)] pointer-events-none">
@@ -129,7 +105,8 @@ export default function LoginPage() {
                   type="password"
                   autoComplete="current-password"
                   required
-                  placeholder="••••••••••••"
+                  autoFocus
+                  placeholder="Enter administrator password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full px-4 py-3 font-mono text-sm bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] placeholder:text-brand-navy/80 focus:outline-none focus:bg-[var(--brand-accent)]/10 focus:shadow-(--shadow-brut-sm-accent) transition-all text-[var(--brand-navy)]"
