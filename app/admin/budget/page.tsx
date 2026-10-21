@@ -63,7 +63,11 @@ export interface BudgetSummary {
   paid_expenses: number;
   pending_expenses: number;
   planned_expenses: number;
+  unallocated_budget?: number;
+  over_budget_amount?: number;
   ticket_revenue: number;
+  realized_profit_or_loss?: number;
+  projected_profit_or_loss?: number;
   net_profit_or_loss: number;
   break_even_progress_pct: number;
   expenses_by_category: Record<string, number>;
@@ -608,12 +612,38 @@ export default function AdminBudgetPage() {
 
   const budgetAllocated = summary?.budget_allocated || 0;
   const totalExpenses = summary?.total_expenses || 0;
-  const ticketRevenue = summary?.ticket_revenue || 0;
-  const netProfitOrLoss = summary?.net_profit_or_loss || 0;
-  const isProfitable = netProfitOrLoss >= 0;
+  const paidExpenses = summary?.paid_expenses || 0;
+  const pendingExpenses = summary?.pending_expenses || 0;
+  const plannedExpenses = summary?.planned_expenses || 0;
 
-  const budgetUsedPct = budgetAllocated > 0 ? Math.round((totalExpenses / budgetAllocated) * 100) : 0;
+  const unallocatedBudget = summary?.unallocated_budget !== undefined 
+    ? summary.unallocated_budget 
+    : Math.max(0, budgetAllocated - totalExpenses);
+  const overBudgetAmount = summary?.over_budget_amount !== undefined 
+    ? summary.over_budget_amount 
+    : (totalExpenses > budgetAllocated && budgetAllocated > 0 ? totalExpenses - budgetAllocated : 0);
+
+  const ticketRevenue = summary?.ticket_revenue || 0;
+
+  // Dual P&L
+  const realizedProfitOrLoss = summary?.realized_profit_or_loss !== undefined
+    ? summary.realized_profit_or_loss
+    : ticketRevenue - paidExpenses;
+  const isRealizedProfitable = realizedProfitOrLoss >= 0;
+
+  const projectedProfitOrLoss = summary?.projected_profit_or_loss !== undefined
+    ? summary.projected_profit_or_loss
+    : ticketRevenue - totalExpenses;
+  const isProjectedProfitable = projectedProfitOrLoss >= 0;
+
+  const budgetAllocatedPct = budgetAllocated > 0 ? Math.round((totalExpenses / budgetAllocated) * 100) : 0;
   const isOverBudget = budgetAllocated > 0 && totalExpenses > budgetAllocated;
+
+  // Stacking percentages relative to budget cap (or total if cap is 0)
+  const baseDenominator = budgetAllocated > 0 ? budgetAllocated : (totalExpenses > 0 ? totalExpenses : 1);
+  const paidPct = Math.min(100, Math.round((paidExpenses / baseDenominator) * 100));
+  const pendingPct = Math.min(100 - paidPct, Math.round((pendingExpenses / baseDenominator) * 100));
+  const plannedPct = Math.min(100 - (paidPct + pendingPct), Math.round((plannedExpenses / baseDenominator) * 100));
 
   return (
     <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-4 md:p-6 font-mono">
@@ -702,90 +732,155 @@ export default function AdminBudgetPage() {
           </div>
         </div>
 
-        {/* KPI Dashboard Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {/* Card 1: Initial Budget */}
+        {/* KPI Dashboard Cards: 3-Tier Budget Model & Dual P&L */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {/* Card 1: Initial Budget Cap & Earmarked */}
           <div className="border-4 border-brand-navy p-3 md:p-4 bg-white shadow-(--shadow-brut-sm) flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] uppercase font-bold text-brand-navy/60">Initial Budget</p>
-              <button
-                type="button"
-                onClick={() => setShowBudgetModal(true)}
-                className="text-[10px] font-bold uppercase underline hover:text-brand-accent text-brand-navy cursor-pointer flex items-center gap-1"
-              >
-                <Edit2 className="w-3 h-3" /> Set Budget
-              </button>
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase font-bold text-brand-navy/60">Initial Budget Cap</p>
+                <button
+                  type="button"
+                  onClick={() => setShowBudgetModal(true)}
+                  className="text-[10px] font-bold uppercase underline hover:text-brand-accent text-brand-navy cursor-pointer flex items-center gap-1"
+                >
+                  <Edit2 className="w-3 h-3" /> Set Cap
+                </button>
+              </div>
+              <p className="text-xl md:text-2xl font-bold font-mono text-brand-navy mt-1">
+                KES {budgetAllocated.toLocaleString()}
+              </p>
             </div>
-            <p className="text-xl md:text-2xl font-bold font-mono text-brand-navy mt-1">
-              KES {budgetAllocated.toLocaleString()}
-            </p>
-            <div className="mt-2 text-[10px] text-brand-navy/70 uppercase">
-              {budgetAllocated > 0 ? (
-                <span>Cap: KES {budgetAllocated.toLocaleString()}</span>
-              ) : (
-                <span className="text-amber-600 font-bold">No budget cap set</span>
-              )}
+
+            <div className="mt-3 pt-2 border-t border-brand-navy/20 space-y-1 text-[11px]">
+              <div className="flex justify-between items-center text-brand-navy/80">
+                <span className="uppercase text-[10px] font-bold">Earmarked:</span>
+                <span className="font-mono font-bold">KES {totalExpenses.toLocaleString()} ({budgetAllocatedPct}%)</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="uppercase text-[10px] font-bold text-brand-navy/60">Unallocated:</span>
+                {unallocatedBudget > 0 ? (
+                  <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1 border border-emerald-300">
+                    KES {unallocatedBudget.toLocaleString()}
+                  </span>
+                ) : overBudgetAmount > 0 ? (
+                  <span className="font-mono font-bold text-red-600 bg-red-50 px-1 border border-red-300">
+                    KES {overBudgetAmount.toLocaleString()} OVER
+                  </span>
+                ) : (
+                  <span className="font-mono font-bold text-brand-navy/60">0</span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Card 2: Total Spent & Utilization */}
+          {/* Card 2: Cash Disbursed & Multi-Tier Allocation */}
           <div className={`border-4 border-brand-navy p-3 md:p-4 bg-white shadow-(--shadow-brut-sm) flex flex-col justify-between ${isOverBudget ? "bg-red-50" : ""}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] uppercase font-bold text-brand-navy/60">Total Expenses</p>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy ${isOverBudget ? "bg-red-500 text-white" : "bg-brand-navy text-white"}`}>
-                {budgetAllocated > 0 ? `${budgetUsedPct}% USED` : `${expenses.length} ITEMS`}
-              </span>
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase font-bold text-brand-navy/60">Cash Disbursed</p>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy bg-emerald-100 text-emerald-900">
+                  {paidExpenses > 0 ? `KES ${paidExpenses.toLocaleString()} OUT` : "0 PAID"}
+                </span>
+              </div>
+              <p className="text-xl md:text-2xl font-bold font-mono mt-1 text-emerald-800">
+                KES {paidExpenses.toLocaleString()}
+              </p>
+
+              {/* Segmented Progress Bar */}
+              <div className="w-full bg-gray-200 h-2.5 border border-brand-navy mt-2 flex overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full transition-all"
+                  style={{ width: `${paidPct}%` }}
+                  title={`Paid: KES ${paidExpenses.toLocaleString()} (${paidPct}%)`}
+                />
+                <div
+                  className="bg-amber-500 h-full transition-all"
+                  style={{ width: `${pendingPct}%` }}
+                  title={`Pending: KES ${pendingExpenses.toLocaleString()} (${pendingPct}%)`}
+                />
+                <div
+                  className="bg-blue-500 h-full transition-all"
+                  style={{ width: `${plannedPct}%` }}
+                  title={`Planned: KES ${plannedExpenses.toLocaleString()} (${plannedPct}%)`}
+                />
+              </div>
             </div>
-            <p className={`text-xl md:text-2xl font-bold font-mono mt-1 ${isOverBudget ? "text-red-600" : "text-brand-navy"}`}>
-              KES {totalExpenses.toLocaleString()}
-            </p>
-            {/* Progress bar */}
-            <div className="w-full bg-gray-200 h-2 border border-brand-navy mt-2 overflow-hidden">
-              <div
-                className={`h-full transition-all ${
-                  isOverBudget
-                    ? "bg-red-500"
-                    : budgetUsedPct > 80
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
-                }`}
-                style={{ width: `${Math.min(100, budgetUsedPct)}%` }}
-              />
+
+            {/* Breakdown Chips */}
+            <div className="mt-3 pt-2 border-t border-brand-navy/20 flex flex-wrap items-center gap-1 text-[9px] font-black uppercase font-mono">
+              <span className="px-1 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-400">
+                Paid: {paidExpenses > 1000 ? `${Math.round(paidExpenses / 1000)}k` : paidExpenses}
+              </span>
+              <span className="px-1 py-0.5 bg-amber-100 text-amber-900 border border-amber-400">
+                Pend: {pendingExpenses > 1000 ? `${Math.round(pendingExpenses / 1000)}k` : pendingExpenses}
+              </span>
+              <span className="px-1 py-0.5 bg-blue-100 text-blue-900 border border-blue-400">
+                Plan: {plannedExpenses > 1000 ? `${Math.round(plannedExpenses / 1000)}k` : plannedExpenses}
+              </span>
             </div>
           </div>
 
           {/* Card 3: Ticket Sales Inflow */}
           <div className="border-4 border-brand-navy p-3 md:p-4 bg-white shadow-(--shadow-brut-sm) flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] uppercase font-bold text-brand-navy/60">Ticket Revenue</p>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy bg-emerald-100 text-emerald-900">
-                LIVE INFLOW
-              </span>
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase font-bold text-brand-navy/60">Ticket Revenue</p>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy bg-emerald-100 text-emerald-900">
+                  LIVE INFLOW
+                </span>
+              </div>
+              <p className="text-xl md:text-2xl font-bold font-mono text-emerald-700 mt-1">
+                KES {ticketRevenue.toLocaleString()}
+              </p>
             </div>
-            <p className="text-xl md:text-2xl font-bold font-mono text-emerald-700 mt-1">
-              KES {ticketRevenue.toLocaleString()}
-            </p>
-            <p className="text-[10px] text-brand-navy/70 uppercase mt-2">
-              From verified tickets
-            </p>
+
+            <div className="mt-3 pt-2 border-t border-brand-navy/20 space-y-1 text-[11px]">
+              <div className="flex justify-between items-center text-brand-navy/80">
+                <span className="uppercase text-[10px] font-bold">Source:</span>
+                <span className="font-bold">Verified Ticket Sales</span>
+              </div>
+              <div className="flex justify-between items-center text-brand-navy/60">
+                <span className="uppercase text-[10px] font-bold">Cost Coverage:</span>
+                <span className="font-mono font-bold text-brand-navy">
+                  {summary?.break_even_progress_pct || 0}%
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Card 4: Net P&L (Profit & Loss) */}
-          <div className={`border-4 border-brand-navy p-3 md:p-4 shadow-(--shadow-brut-sm) flex flex-col justify-between ${isProfitable ? "bg-emerald-50" : "bg-amber-50"}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] uppercase font-bold text-brand-navy/60">Net P&L Position</p>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy flex items-center gap-1 ${isProfitable ? "bg-emerald-600 text-white" : "bg-amber-500 text-brand-navy"}`}>
-                {isProfitable ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                {isProfitable ? "PROFIT" : "DEFICIT"}
-              </span>
+          {/* Card 4: Dual Net P&L (Cash in Hand vs Projected) */}
+          <div className={`border-4 border-brand-navy p-3 md:p-4 shadow-(--shadow-brut-sm) flex flex-col justify-between ${isProjectedProfitable ? "bg-emerald-50" : "bg-amber-50"}`}>
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase font-bold text-brand-navy/60">Net P&L Position</p>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 border border-brand-navy flex items-center gap-1 ${isProjectedProfitable ? "bg-emerald-600 text-white" : "bg-amber-500 text-brand-navy"}`}>
+                  {isProjectedProfitable ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {isProjectedProfitable ? "PROFIT" : "DEFICIT"}
+                </span>
+              </div>
+
+              {/* Dual Numbers */}
+              <div className="mt-2 space-y-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] font-bold uppercase text-brand-navy/70">Realized Cash:</span>
+                  <span className={`font-mono font-black text-sm ${isRealizedProfitable ? "text-emerald-700" : "text-amber-700"}`}>
+                    {isRealizedProfitable ? "+" : ""}KES {realizedProfitOrLoss.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between items-baseline pt-1 border-t border-brand-navy/20">
+                  <span className="text-[10px] font-bold uppercase text-brand-navy">Projected Net:</span>
+                  <span className={`font-mono font-black text-base ${isProjectedProfitable ? "text-emerald-700" : "text-red-600"}`}>
+                    {isProjectedProfitable ? "+" : ""}KES {projectedProfitOrLoss.toLocaleString()}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className={`text-xl md:text-2xl font-bold font-mono mt-1 ${isProfitable ? "text-emerald-700" : "text-amber-700"}`}>
-              {isProfitable ? "+" : ""}KES {netProfitOrLoss.toLocaleString()}
-            </p>
-            <p className="text-[10px] text-brand-navy/70 uppercase mt-2">
-              {isProfitable
-                ? "Costs fully covered by tickets"
-                : `Need KES ${Math.abs(netProfitOrLoss).toLocaleString()} to break even`}
+
+            <p className="text-[10px] text-brand-navy/70 uppercase mt-2 pt-1 border-t border-brand-navy/15">
+              {isProjectedProfitable
+                ? "All budgeted costs covered by ticket sales"
+                : `Need KES ${Math.abs(projectedProfitOrLoss).toLocaleString()} to break even`}
             </p>
           </div>
         </div>
@@ -1056,85 +1151,243 @@ export default function AdminBudgetPage() {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-brand-navy bg-brand-off-white text-[11px] font-bold uppercase">
-                    <th className="p-2.5 w-8 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        onChange={toggleSelectAll}
-                        aria-label="Select all rows"
-                        className="w-4 h-4 cursor-pointer accent-brand-navy"
-                      />
-                    </th>
-                    <th className="p-2.5">Date</th>
-                    <th className="p-2.5">Category</th>
-                    <th className="p-2.5">Expense Item / Payee</th>
-                    <th className="p-2.5">Method</th>
-                    <th className="p-2.5">Status</th>
-                    <th className="p-2.5">Receipt</th>
-                    <th className="p-2.5 text-right">Amount (KES)</th>
-                    <th className="p-2.5 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-navy/20">
-                  {filteredExpenses.map((item) => {
-                    const cat = getCategoryMeta(item.category);
-                    const isSelected = selectedExpenseIds.includes(item.id);
-                    return (
-                      <tr
-                        key={item.id}
-                        className={`transition-colors ${
-                          isSelected ? "bg-brand-accent/20" : "hover:bg-brand-navy/5"
-                        }`}
-                      >
-                        {/* Checkbox */}
-                        <td className="p-2.5 w-8 text-center">
+            <div>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-brand-navy bg-brand-off-white text-[11px] font-bold uppercase">
+                      <th className="p-2.5 w-8 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Select all rows"
+                          className="w-4 h-4 cursor-pointer accent-brand-navy"
+                        />
+                      </th>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5">Category</th>
+                      <th className="p-2.5">Expense Item / Payee</th>
+                      <th className="p-2.5">Method</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5">Receipt</th>
+                      <th className="p-2.5 text-right">Amount (KES)</th>
+                      <th className="p-2.5 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-brand-navy/20">
+                    {filteredExpenses.map((item) => {
+                      const cat = getCategoryMeta(item.category);
+                      const isSelected = selectedExpenseIds.includes(item.id);
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`transition-colors ${
+                            isSelected ? "bg-brand-accent/20" : "hover:bg-brand-navy/5"
+                          }`}
+                        >
+                          {/* Checkbox */}
+                          <td className="p-2.5 w-8 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectRow(item.id)}
+                              aria-label={`Select expense ${item.title}`}
+                              className="w-4 h-4 cursor-pointer accent-brand-navy"
+                            />
+                          </td>
+
+                          {/* Date */}
+                          <td className="p-2.5 whitespace-nowrap text-[11px] font-mono">
+                            {item.paid_at ? item.paid_at.substring(0, 10) : "—"}
+                          </td>
+
+                          {/* Category */}
+                          <td className="p-2.5 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 border text-[10px] font-bold uppercase ${cat.color}`}>
+                              {cat.label}
+                            </span>
+                          </td>
+
+                          {/* Title & Payee */}
+                          <td className="p-2.5">
+                            <p className="font-bold text-brand-navy">{item.title}</p>
+                            <div className="text-[10px] text-brand-navy/60 flex items-center gap-2 mt-0.5">
+                              {item.recipient && <span>Payee: <strong>{item.recipient}</strong></span>}
+                              {item.notes && <span className="italic truncate max-w-xs">{item.notes}</span>}
+                            </div>
+                          </td>
+
+                          {/* Method */}
+                          <td className="p-2.5 whitespace-nowrap">
+                            <span className="px-1.5 py-0.5 border border-brand-navy bg-white text-[10px] font-bold uppercase">
+                              {item.payment_method}
+                            </span>
+                          </td>
+
+                          {/* Status (Interactive Inline Dropdown) */}
+                          <td className="p-2.5 whitespace-nowrap">
+                            <select
+                              value={item.status}
+                              onChange={(e) => handleInlineStatusChange(item.id, e.target.value)}
+                              className={`px-1.5 py-0.5 border text-[10px] font-black uppercase rounded-none cursor-pointer outline-none transition-colors ${
+                                item.status === "paid"
+                                  ? "bg-green-100 text-green-900 border-green-800"
+                                  : item.status === "pending"
+                                  ? "bg-amber-100 text-amber-900 border-amber-800"
+                                  : item.status === "quoted" || item.status === "planned"
+                                  ? "bg-blue-100 text-blue-900 border-blue-800"
+                                  : "bg-gray-100 text-gray-800 border-gray-600"
+                              }`}
+                              title="Click to quickly change status"
+                            >
+                              <option value="paid">PAID</option>
+                              <option value="pending">PENDING</option>
+                              <option value="quoted">QUOTED</option>
+                              <option value="planned">PLANNED</option>
+                              <option value="cancelled">CANCELLED</option>
+                            </select>
+                          </td>
+
+                          {/* Receipt */}
+                          <td className="p-2.5 whitespace-nowrap">
+                            {item.receipt_url ? (
+                              <button
+                                type="button"
+                                onClick={() => setActiveReceiptUrl(item.receipt_url || null)}
+                                className="px-2 py-0.5 border border-brand-navy bg-brand-accent/30 hover:bg-brand-accent text-[10px] font-bold uppercase cursor-pointer flex items-center gap-1"
+                                title="Click to view receipt image"
+                              >
+                                <Receipt className="w-3 h-3 text-brand-navy" />
+                                <span>View</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-brand-navy/40 font-mono">None</span>
+                            )}
+                          </td>
+
+                          {/* Amount */}
+                          <td className="p-2.5 whitespace-nowrap text-right font-mono font-bold text-sm">
+                            KES {Number(item.amount).toLocaleString()}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="p-2.5 whitespace-nowrap text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(item)}
+                                className="p-1 border border-brand-navy/40 hover:border-brand-navy hover:bg-brand-accent text-brand-navy transition-colors cursor-pointer"
+                                title="Edit Expense"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExpense(item.id)}
+                                className="p-1 border border-red-500/40 hover:border-red-600 hover:bg-red-50 text-red-600 transition-colors cursor-pointer"
+                                title="Delete Expense"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card-List View */}
+              <div className="md:hidden divide-y-2 divide-brand-navy/20">
+                {/* Mobile Quick Select-All Header */}
+                <div className="p-2.5 bg-brand-off-white border-b border-brand-navy/20 flex items-center justify-between text-xs font-bold uppercase">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 cursor-pointer accent-brand-navy"
+                    />
+                    <span>Select All ({filteredExpenses.length})</span>
+                  </label>
+                  <span className="text-[10px] text-brand-navy/60 font-mono">
+                    {selectedExpenseIds.length > 0 ? `${selectedExpenseIds.length} chosen` : "Tap card to select"}
+                  </span>
+                </div>
+
+                {filteredExpenses.map((item) => {
+                  const cat = getCategoryMeta(item.category);
+                  const isSelected = selectedExpenseIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3 space-y-2.5 transition-colors ${
+                        isSelected ? "bg-brand-accent/20" : "hover:bg-brand-navy/5"
+                      }`}
+                    >
+                      {/* Top: Checkbox, Title & Amount */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectRow(item.id)}
                             aria-label={`Select expense ${item.title}`}
-                            className="w-4 h-4 cursor-pointer accent-brand-navy"
+                            className="w-4 h-4 mt-1 cursor-pointer accent-brand-navy shrink-0"
                           />
-                        </td>
-
-                        {/* Date */}
-                        <td className="p-2.5 whitespace-nowrap text-[11px] font-mono">
-                          {item.paid_at ? item.paid_at.substring(0, 10) : "—"}
-                        </td>
-
-                        {/* Category */}
-                        <td className="p-2.5 whitespace-nowrap">
-                          <span className={`px-2 py-0.5 border text-[10px] font-bold uppercase ${cat.color}`}>
-                            {cat.label}
-                          </span>
-                        </td>
-
-                        {/* Title & Payee */}
-                        <td className="p-2.5">
-                          <p className="font-bold text-brand-navy">{item.title}</p>
-                          <div className="text-[10px] text-brand-navy/60 flex items-center gap-2 mt-0.5">
-                            {item.recipient && <span>Payee: <strong>{item.recipient}</strong></span>}
-                            {item.notes && <span className="italic truncate max-w-xs">{item.notes}</span>}
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm text-brand-navy leading-snug break-words">
+                              {item.title}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <span className={`px-1.5 py-0.5 border text-[9px] font-black uppercase ${cat.color}`}>
+                                {cat.label}
+                              </span>
+                              <span className="text-[10px] text-brand-navy/60 font-mono">
+                                {item.paid_at ? item.paid_at.substring(0, 10) : "No date"}
+                              </span>
+                            </div>
                           </div>
-                        </td>
+                        </div>
 
-                        {/* Method */}
-                        <td className="p-2.5 whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 border border-brand-navy bg-white text-[10px] font-bold uppercase">
+                        <div className="text-right shrink-0">
+                          <p className="font-mono font-black text-sm text-brand-navy">
+                            KES {Number(item.amount).toLocaleString()}
+                          </p>
+                          <span className="text-[9px] font-bold uppercase text-brand-navy/60">
                             {item.payment_method}
                           </span>
-                        </td>
+                        </div>
+                      </div>
 
-                        {/* Status (Interactive Inline Dropdown) */}
-                        <td className="p-2.5 whitespace-nowrap">
+                      {/* Recipient & Notes */}
+                      {(item.recipient || item.notes) && (
+                        <div className="bg-brand-off-white p-2 border border-brand-navy/20 text-xs space-y-0.5">
+                          {item.recipient && (
+                            <p className="text-brand-navy">
+                              <span className="text-[10px] font-bold uppercase text-brand-navy/60">Payee:</span>{" "}
+                              <strong>{item.recipient}</strong>
+                            </p>
+                          )}
+                          {item.notes && (
+                            <p className="text-[11px] text-brand-navy/70 italic break-words">
+                              {item.notes}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Bottom Controls: Inline Status & Actions */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-brand-navy/15">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold uppercase text-brand-navy/60">Status:</span>
                           <select
                             value={item.status}
                             onChange={(e) => handleInlineStatusChange(item.id, e.target.value)}
-                            className={`px-1.5 py-0.5 border text-[10px] font-black uppercase rounded-none cursor-pointer outline-none transition-colors ${
+                            className={`px-2 py-1 border text-[10px] font-black uppercase rounded-none cursor-pointer outline-none min-h-[36px] ${
                               item.status === "paid"
                                 ? "bg-green-100 text-green-900 border-green-800"
                                 : item.status === "pending"
@@ -1143,7 +1396,6 @@ export default function AdminBudgetPage() {
                                 ? "bg-blue-100 text-blue-900 border-blue-800"
                                 : "bg-gray-100 text-gray-800 border-gray-600"
                             }`}
-                            title="Click to quickly change status"
                           >
                             <option value="paid">PAID</option>
                             <option value="pending">PENDING</option>
@@ -1151,56 +1403,42 @@ export default function AdminBudgetPage() {
                             <option value="planned">PLANNED</option>
                             <option value="cancelled">CANCELLED</option>
                           </select>
-                        </td>
+                        </div>
 
-                        {/* Receipt */}
-                        <td className="p-2.5 whitespace-nowrap">
-                          {item.receipt_url ? (
+                        <div className="flex items-center gap-1">
+                          {item.receipt_url && (
                             <button
                               type="button"
                               onClick={() => setActiveReceiptUrl(item.receipt_url || null)}
-                              className="px-2 py-0.5 border border-brand-navy bg-brand-accent/30 hover:bg-brand-accent text-[10px] font-bold uppercase cursor-pointer flex items-center gap-1"
-                              title="Click to view receipt image"
+                              className="px-2 py-1 border border-brand-navy bg-brand-accent/30 hover:bg-brand-accent text-[10px] font-bold uppercase flex items-center gap-1 min-h-[36px]"
+                              title="View Attached Receipt"
                             >
-                              <Receipt className="w-3 h-3 text-brand-navy" />
-                              <span>View</span>
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>Receipt</span>
                             </button>
-                          ) : (
-                            <span className="text-[10px] text-brand-navy/40 font-mono">None</span>
                           )}
-                        </td>
-
-                        {/* Amount */}
-                        <td className="p-2.5 whitespace-nowrap text-right font-mono font-bold text-sm">
-                          KES {Number(item.amount).toLocaleString()}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-2.5 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(item)}
-                              className="p-1 border border-brand-navy/40 hover:border-brand-navy hover:bg-brand-accent text-brand-navy transition-colors cursor-pointer"
-                              title="Edit Expense"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteExpense(item.id)}
-                              className="p-1 border border-red-500/40 hover:border-red-600 hover:bg-red-50 text-red-600 transition-colors cursor-pointer"
-                              title="Delete Expense"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(item)}
+                            className="p-1.5 border border-brand-navy/60 hover:bg-brand-accent text-brand-navy min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+                            title="Edit Expense"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(item.id)}
+                            className="p-1.5 border border-red-500/60 hover:bg-red-50 text-red-600 min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+                            title="Delete Expense"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

@@ -4175,6 +4175,7 @@ export async function fetchEventBudgetSummary(eventId: number): Promise<EventBud
   const expensesByCategory: Record<string, number> = {};
 
   for (const r of expRows) {
+    if (r.status === 'cancelled') continue;
     const amt = Number(r.cat_total || 0);
     totalExpenses += amt;
     if (r.status === 'paid') paidExpenses += amt;
@@ -4194,7 +4195,10 @@ export async function fetchEventBudgetSummary(eventId: number): Promise<EventBud
   const ticketRevenue = Number(ticketRows[0]?.total_ticket_revenue || 0);
   const budgetAllocated = Number(evt.budget_allocated || 0);
 
-  const netProfitOrLoss = ticketRevenue - totalExpenses;
+  const realizedProfitOrLoss = ticketRevenue - paidExpenses;
+  const projectedProfitOrLoss = ticketRevenue - totalExpenses;
+  const unallocatedBudget = Math.max(0, budgetAllocated - totalExpenses);
+  const overBudgetAmount = totalExpenses > budgetAllocated && budgetAllocated > 0 ? totalExpenses - budgetAllocated : 0;
   const breakEvenProgressPct = totalExpenses > 0 ? Math.min(100, Math.round((ticketRevenue / totalExpenses) * 100)) : 100;
 
   return {
@@ -4205,8 +4209,12 @@ export async function fetchEventBudgetSummary(eventId: number): Promise<EventBud
     paid_expenses: paidExpenses,
     pending_expenses: pendingExpenses,
     planned_expenses: plannedExpenses,
+    unallocated_budget: unallocatedBudget,
+    over_budget_amount: overBudgetAmount,
     ticket_revenue: ticketRevenue,
-    net_profit_or_loss: netProfitOrLoss,
+    realized_profit_or_loss: realizedProfitOrLoss,
+    projected_profit_or_loss: projectedProfitOrLoss,
+    net_profit_or_loss: projectedProfitOrLoss,
     break_even_progress_pct: breakEvenProgressPct,
     expenses_by_category: expensesByCategory
   };

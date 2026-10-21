@@ -274,7 +274,11 @@ export interface EventBudgetSummary {
   paid_expenses: number;
   pending_expenses: number;
   planned_expenses: number;
+  unallocated_budget: number;
+  over_budget_amount: number;
   ticket_revenue: number;
+  realized_profit_or_loss: number;
+  projected_profit_or_loss: number;
   net_profit_or_loss: number;
   break_even_progress_pct: number;
   expenses_by_category: Record<string, number>;
