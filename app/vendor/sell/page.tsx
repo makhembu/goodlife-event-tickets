@@ -24,8 +24,23 @@ export default function VendorSellPage() {
   });
   const [confirmClearCart, setConfirmClearCart] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [showCheckout, setShowCheckout] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return sessionStorage.getItem("goodlife_vendor_show_checkout") === "true";
+      } catch {}
+    }
+    return false;
+  });
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedCat = sessionStorage.getItem("goodlife_vendor_category");
+        if (savedCat) return savedCat;
+      } catch {}
+    }
+    return "ALL";
+  });
   const [catalogSearchQuery, setCatalogSearchQuery] = useState<string>("");
 
   // Recent Sales Drawer state
@@ -45,12 +60,40 @@ export default function VendorSellPage() {
   const [isRemindingTab, setIsRemindingTab] = useState<number | null>(null);
   
   // Split payment state
-  const [cashAmount, setCashAmount] = useState("");
-  const [mpesaAmount, setMpesaAmount] = useState("");
-  const [tabAmount, setTabAmount] = useState("");
-  const [tabId, setTabId] = useState("");
+  const [cashAmount, setCashAmount] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_cash_amount") || ""; } catch {}
+    }
+    return "";
+  });
+  const [mpesaAmount, setMpesaAmount] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_mpesa_amount") || ""; } catch {}
+    }
+    return "";
+  });
+  const [tabAmount, setTabAmount] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_tab_amount") || ""; } catch {}
+    }
+    return "";
+  });
+  const [tabId, setTabId] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_tab_id") || ""; } catch {}
+    }
+    return "";
+  });
   const [tabs, setTabs] = useState<any[]>([]);
-  const [completedSale, setCompletedSale] = useState<any>(null);
+  const [completedSale, setCompletedSale] = useState<any>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = sessionStorage.getItem("goodlife_vendor_completed_sale");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   // Customer & Tab Search state for Split Payment
@@ -72,23 +115,67 @@ export default function VendorSellPage() {
   const [remainderTabId, setRemainderTabId] = useState("");
 
   // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
-  // Track 3 additions: Dual-Path M-Pesa Engine (STK Push & Manual Till Fallback)
   const [eventTillNumber, setEventTillNumber] = useState("5761205");
   const [eventTitle, setEventTitle] = useState("GOODLIFE 4");
   const [vendorName, setVendorName] = useState("Vendor Stall");
-  const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState("");
-  const [mpesaRef, setMpesaRef] = useState("");
-  const [isMpesaVerified, setIsMpesaVerified] = useState(false);
-  const [showManualMpesa, setShowManualMpesa] = useState(true);
+  const [mpesaCustomerPhone, setMpesaCustomerPhone] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_mpesa_phone") || ""; } catch {}
+    }
+    return "";
+  });
+  const [mpesaRef, setMpesaRef] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_mpesa_ref") || ""; } catch {}
+    }
+    return "";
+  });
+  const [isMpesaVerified, setIsMpesaVerified] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_mpesa_verified") === "true"; } catch {}
+    }
+    return false;
+  });
+  const [showManualMpesa, setShowManualMpesa] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const val = sessionStorage.getItem("goodlife_vendor_manual_mpesa");
+        if (val !== null) return val === "true";
+      } catch {}
+    }
+    return true;
+  });
   const [showTillQrModal, setShowTillQrModal] = useState(false);
 
   // M-Pesa Change Return state
   const [changeMethod, setChangeMethod] = useState<"cash" | "mpesa">("cash");
   const [changeMpesaPhone, setChangeMpesaPhone] = useState("");
   const [changeMpesaRef, setChangeMpesaRef] = useState("");
-  const [showStkModal, setShowStkModal] = useState(false);
-  const [stkReference, setStkReference] = useState("");
-  const [stkTimeLeft, setStkTimeLeft] = useState(45);
+  const [showStkModal, setShowStkModal] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_show_stk_modal") === "true"; } catch {}
+    }
+    return false;
+  });
+  const [stkReference, setStkReference] = useState(() => {
+    if (typeof window !== "undefined") {
+      try { return sessionStorage.getItem("goodlife_vendor_stk_ref") || ""; } catch {}
+    }
+    return "";
+  });
+  const [stkTimeLeft, setStkTimeLeft] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedStart = sessionStorage.getItem("goodlife_vendor_stk_start_time");
+        if (savedStart) {
+          const elapsed = Math.floor((Date.now() - Number(savedStart)) / 1000);
+          const remaining = Math.max(0, 45 - elapsed);
+          return remaining;
+        }
+      } catch {}
+    }
+    return 45;
+  });
   const [stkStatusMessage, setStkStatusMessage] = useState("Waiting for customer PIN entry...");
   const [isTriggeringStk, setIsTriggeringStk] = useState(false);
   const [isManualCheckingStatus, setIsManualCheckingStatus] = useState(false);
@@ -394,6 +481,67 @@ export default function VendorSellPage() {
       }
     } catch {}
   }, [cart]);
+
+  // Persist selected category filter
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("goodlife_vendor_category", selectedCategory);
+    } catch {}
+  }, [selectedCategory]);
+
+  // Persist in-progress tender inputs
+  useEffect(() => {
+    try {
+      if (showCheckout) {
+        sessionStorage.setItem("goodlife_vendor_show_checkout", "true");
+        sessionStorage.setItem("goodlife_vendor_cash_amount", cashAmount);
+        sessionStorage.setItem("goodlife_vendor_mpesa_amount", mpesaAmount);
+        sessionStorage.setItem("goodlife_vendor_tab_amount", tabAmount);
+        sessionStorage.setItem("goodlife_vendor_tab_id", tabId);
+        sessionStorage.setItem("goodlife_vendor_mpesa_phone", mpesaCustomerPhone);
+        sessionStorage.setItem("goodlife_vendor_mpesa_ref", mpesaRef);
+        sessionStorage.setItem("goodlife_vendor_mpesa_verified", isMpesaVerified ? "true" : "false");
+        sessionStorage.setItem("goodlife_vendor_manual_mpesa", showManualMpesa ? "true" : "false");
+      } else {
+        sessionStorage.removeItem("goodlife_vendor_show_checkout");
+        sessionStorage.removeItem("goodlife_vendor_cash_amount");
+        sessionStorage.removeItem("goodlife_vendor_mpesa_amount");
+        sessionStorage.removeItem("goodlife_vendor_tab_amount");
+        sessionStorage.removeItem("goodlife_vendor_tab_id");
+        sessionStorage.removeItem("goodlife_vendor_mpesa_phone");
+        sessionStorage.removeItem("goodlife_vendor_mpesa_ref");
+        sessionStorage.removeItem("goodlife_vendor_mpesa_verified");
+      }
+    } catch {}
+  }, [showCheckout, cashAmount, mpesaAmount, tabAmount, tabId, mpesaCustomerPhone, mpesaRef, isMpesaVerified, showManualMpesa]);
+
+  // Persist active STK push state
+  useEffect(() => {
+    try {
+      if (showStkModal && stkReference) {
+        sessionStorage.setItem("goodlife_vendor_show_stk_modal", "true");
+        sessionStorage.setItem("goodlife_vendor_stk_ref", stkReference);
+        if (!sessionStorage.getItem("goodlife_vendor_stk_start_time")) {
+          sessionStorage.setItem("goodlife_vendor_stk_start_time", Date.now().toString());
+        }
+      } else {
+        sessionStorage.removeItem("goodlife_vendor_show_stk_modal");
+        sessionStorage.removeItem("goodlife_vendor_stk_ref");
+        sessionStorage.removeItem("goodlife_vendor_stk_start_time");
+      }
+    } catch {}
+  }, [showStkModal, stkReference]);
+
+  // Persist completed sale docket
+  useEffect(() => {
+    try {
+      if (completedSale) {
+        sessionStorage.setItem("goodlife_vendor_completed_sale", JSON.stringify(completedSale));
+      } else {
+        sessionStorage.removeItem("goodlife_vendor_completed_sale");
+      }
+    } catch {}
+  }, [completedSale]);
 
   useEffect(() => {
     loadItems();
