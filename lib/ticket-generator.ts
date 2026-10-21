@@ -74,7 +74,7 @@ export async function generateTicketPdf(
     subtitle: "237-THIKA | JULY 11",
     tag: "SMWHR INC",
     venue: "MARARA CAMP, THIKA",
-    till_number: "5761205",
+    till_number: "4785645",
     flyer_url: "/flyer.png",
     regulations: ""
   };

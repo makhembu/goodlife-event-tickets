@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         event: {
           id: activeEvent?.id || 2,
           title: activeEvent?.title || "GOODLIFE 4",
-          till_number: activeEvent?.till_number || "5761205"
+          till_number: activeEvent?.till_number || "4785645"
         }
       });
     } catch (e) {
