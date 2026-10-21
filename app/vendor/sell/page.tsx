@@ -1186,7 +1186,7 @@ export default function VendorSellPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-4 px-3 py-2 pr-2">
               {/* 1-Tap Quick Pay Row */}
               <div className="bg-brand-navy text-white p-3 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
               <div className="flex justify-between items-center mb-2">
@@ -1402,9 +1402,11 @@ export default function VendorSellPage() {
             <div className="space-y-4 flex-1">
               {/* 1. Cash Input */}
               <div className={`border-4 p-4 relative transition-colors ${numCash > 0 ? "border-brand-navy bg-amber-50/50" : "border-brand-navy bg-white"}`}>
-                <Banknote className="absolute -top-4 -left-4 w-8 h-8 bg-brand-accent border-2 border-brand-navy p-1 text-brand-navy" />
-                <div className="flex justify-between items-center mb-1 ml-4">
+                <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-brand-accent border-2 border-brand-navy text-brand-navy shrink-0 shadow-(--shadow-brut-xs)">
+                      <Banknote className="w-4 h-4" />
+                    </span>
                     <label className="text-xs font-bold uppercase tracking-wider">1. Cash</label>
                     <span className="text-[10px] font-mono bg-amber-100 text-amber-900 border border-amber-600 px-1.5 py-0.2 font-bold uppercase">
                       Physical Money
@@ -1457,9 +1459,11 @@ export default function VendorSellPage() {
 
               {/* 2. M-Pesa Input */}
               <div className={`border-4 p-4 relative transition-colors ${numMpesa > 0 ? "border-[#25D366] bg-green-50/40" : "border-brand-navy bg-white"}`}>
-                <CreditCard className="absolute -top-4 -left-4 w-8 h-8 bg-[#25D366] border-2 border-brand-navy p-1 text-brand-navy" />
-                <div className="flex justify-between items-center mb-1 ml-4">
+                <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-[#25D366] border-2 border-brand-navy text-brand-navy shrink-0 shadow-(--shadow-brut-xs)">
+                      <CreditCard className="w-4 h-4" />
+                    </span>
                     <label className="text-xs font-bold uppercase tracking-wider">2. M-Pesa</label>
                     <span className="text-[10px] font-mono bg-green-100 text-green-900 border border-green-700 px-1.5 py-0.2 font-bold uppercase">
                       Till or STK
@@ -1679,9 +1683,11 @@ export default function VendorSellPage() {
 
               {/* Staff / Customer Tab Input */}
               <div className="border-4 border-brand-navy p-4 bg-white relative">
-                <Users className="absolute -top-4 -left-4 w-8 h-8 bg-brand-navy border-2 border-brand-navy p-1 text-brand-off-white" />
-                <div className="flex justify-between items-center mb-1 ml-4">
+                <div className="flex justify-between items-center mb-1">
                   <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-brand-navy border-2 border-brand-navy text-brand-off-white shrink-0 shadow-(--shadow-brut-xs)">
+                      <Users className="w-4 h-4" />
+                    </span>
                     <label className="text-xs font-bold uppercase">3. Staff / VIP Tab</label>
                     <button
                       type="button"
