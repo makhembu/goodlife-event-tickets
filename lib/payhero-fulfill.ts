@@ -4,7 +4,7 @@
  * endpoint (app/api/payhero/verify) so tickets are created exactly once.
  */
 import { Pool } from "pg";
-import { createTicket, insertPaymentLog, fetchActiveEvent } from "@/lib/supabase-db";
+import { createTicket, insertPaymentLog, fetchActiveEvent, fetchTicketTiers } from "@/lib/supabase-db";
 import { sendTicketViaWhatsApp, notifyOperators } from "@/lib/whatsapp";
 
 export interface FulfillPayheroParams {
@@ -84,6 +84,24 @@ export async function fulfillPayheroPayment(
   const perTicketAmount = amountPaid / quantity;
   const createdTickets: Array<{ id: string; buyer_name: string }> = [];
 
+  // Resolve tier to pass guest_count, is_camping and camping_type into createTicket
+  let tierGuestCount: number | undefined;
+  let tierIsCamping: boolean | undefined;
+  let tierCampingType: string | undefined;
+  try {
+    const tiers = await fetchTicketTiers(eventId);
+    const matched = tiers.find(
+      (t) => t.id === ticketType || (t.name && t.name.trim().toLowerCase() === ticketType.trim().toLowerCase())
+    );
+    if (matched) {
+      if (matched.admits_quantity) tierGuestCount = Number(matched.admits_quantity);
+      if (matched.is_camping_bundle != null) tierIsCamping = Boolean(matched.is_camping_bundle);
+      if (matched.camping_type) tierCampingType = matched.camping_type;
+    }
+  } catch (tierErr) {
+    console.error("Failed to resolve tier details during fulfillment:", tierErr);
+  }
+
   for (let i = 1; i <= quantity; i++) {
     const ticketId = quantity === 1 ? p.reference : `${p.reference}-${i}`;
     const ticket = await createTicket({
@@ -94,6 +112,9 @@ export async function fulfillPayheroPayment(
       amount_paid: perTicketAmount,
       buyer_name: buyerName,
       event_id: eventId,
+      guest_count: tierGuestCount,
+      is_camping: tierIsCamping,
+      camping_type: tierCampingType,
     });
     createdTickets.push(ticket);
   }
