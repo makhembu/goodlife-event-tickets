@@ -23,51 +23,68 @@ export default function BoxOfficeMetrics({
   const checkinPct = totalTicketsSold ? Math.round((scanCount / totalTicketsSold) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">
-        <Coins className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">REVENUE</span>
-        <span className="text-2xl font-black block mt-2">KES {totalCashCollected.toLocaleString()}</span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">
-          {/* "Confirmed M-Pesa Revenue" is only true when nothing is filtered
-              out. A paid ticket on a crew tier is still real cash, so claiming
-              the filtered figure is the total is a lie of omission. */}
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+      {/* REVENUE */}
+      <div className="border-2 sm:border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-2.5 sm:p-4 shadow-(--shadow-brut-xs) sm:shadow-(--shadow-brut-md) relative flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block truncate">REVENUE</span>
+            <Coins className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[var(--brand-navy-light)] shrink-0" />
+          </div>
+          <span className="text-base sm:text-2xl font-black block leading-none">KES {totalCashCollected.toLocaleString()}</span>
+        </div>
+        <p className="text-[10px] sm:text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1.5 leading-tight line-clamp-1 sm:line-clamp-none">
           {audience === "customers"
-            ? `Paid customer sales${staffPasses > 0 ? " · staff excluded" : ""}`
+            ? `Paid customer sales${staffPasses > 0 ? " · staff excl." : ""}`
             : audience === "staff"
               ? "Paid on staff tiers"
-              : "Confirmed M-Pesa Revenue"}
+              : "Confirmed M-Pesa"}
         </p>
       </div>
 
-      <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">
-        <Users className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">
-          {audience === "staff" ? "STAFF PASSES" : audience === "all" ? "PASSES ISSUED" : "PASSES SOLD"}
-        </span>
-        <span className="text-2xl font-black block mt-2">{totalTicketsSold}</span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">
+      {/* PASSES SOLD */}
+      <div className="border-2 sm:border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-2.5 sm:p-4 shadow-(--shadow-brut-xs) sm:shadow-(--shadow-brut-md) relative flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block truncate">
+              {audience === "staff" ? "STAFF" : audience === "all" ? "ISSUED" : "PASSES"}
+            </span>
+            <Users className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[var(--brand-navy-light)] shrink-0" />
+          </div>
+          <span className="text-base sm:text-2xl font-black block leading-none">{totalTicketsSold}</span>
+        </div>
+        <p className="text-[10px] sm:text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1.5 leading-tight line-clamp-1 sm:line-clamp-none">
           {audience === "customers"
-            ? `Customer sales · ${staffPasses} staff excluded`
-            : "Unique secure receipts"}
+            ? `Customer sales · ${staffPasses} staff excl.`
+            : "Unique receipts"}
         </p>
       </div>
 
-      <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">
-        <TrendingUp className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">RECENT SALES (24H)</span>
-        <span className="text-2xl font-black block mt-2">KES {recentSalesAmount.toLocaleString()}</span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">Velocity payment speed</p>
+      {/* RECENT SALES */}
+      <div className="border-2 sm:border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-2.5 sm:p-4 shadow-(--shadow-brut-xs) sm:shadow-(--shadow-brut-md) relative flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block truncate">RECENT (24H)</span>
+            <TrendingUp className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[var(--brand-navy-light)] shrink-0" />
+          </div>
+          <span className="text-base sm:text-2xl font-black block leading-none">KES {recentSalesAmount.toLocaleString()}</span>
+        </div>
+        <p className="text-[10px] sm:text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1.5 leading-tight line-clamp-1 sm:line-clamp-none">Velocity speed</p>
       </div>
 
-      <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 shadow-(--shadow-brut-md) relative">
-        <FileCheck2 className="absolute top-4 right-4 w-5 h-5 text-[var(--brand-navy-light)]" />
-        <span className="text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block">CHECKED-IN GUESTS</span>
-        <span className="text-2xl font-black block mt-2">
-          {scanCount}
-          <span className="text-xs text-[var(--brand-navy-light)] font-bold"> / {totalTicketsSold}</span>
-        </span>
-        <p className="text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1">
+      {/* CHECKED-IN GUESTS */}
+      <div className="border-2 sm:border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-2.5 sm:p-4 shadow-(--shadow-brut-xs) sm:shadow-(--shadow-brut-md) relative flex flex-col justify-between">
+        <div>
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-[10px] sm:text-caption tracking-widest font-black uppercase text-[var(--brand-navy-light)] block truncate">CHECKED-IN</span>
+            <FileCheck2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[var(--brand-navy-light)] shrink-0" />
+          </div>
+          <span className="text-base sm:text-2xl font-black block leading-none">
+            {scanCount}
+            <span className="text-xs text-[var(--brand-navy-light)] font-bold"> / {totalTicketsSold}</span>
+          </span>
+        </div>
+        <p className="text-[10px] sm:text-caption text-[var(--brand-navy-light)] font-bold uppercase mt-1.5 leading-tight line-clamp-1 sm:line-clamp-none">
           Check-in: {checkinPct}%
         </p>
       </div>
