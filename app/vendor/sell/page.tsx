@@ -1050,7 +1050,7 @@ export default function VendorSellPage() {
         </div>
 
         {/* Sticky Search & Category Bar */}
-        <div className="sticky top-0 z-20 bg-brand-off-white/95 backdrop-blur-sm pt-1.5 pb-2 border-b-2 border-brand-navy/20 mb-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+        <div className="sticky top-14 md:top-16 z-20 bg-brand-off-white/95 backdrop-blur-sm pt-1.5 pb-2 border-b-2 border-brand-navy/20 mb-3 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
           {/* Search catalog items */}
           <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-navy/50" />
