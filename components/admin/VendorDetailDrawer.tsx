@@ -139,6 +139,8 @@ export default function VendorDetailDrawer({
   const [showAddOperatorModal, setShowAddOperatorModal] = useState(false);
   const [submittingOperator, setSubmittingOperator] = useState(false);
   const [newOperator, setNewOperator] = useState({ name: "", pin: "", role: "cashier" });
+  const [editingOperator, setEditingOperator] = useState<{ id: number; name: string; role: string; pin?: string } | null>(null);
+  const [savingOperatorEdit, setSavingOperatorEdit] = useState(false);
   const [resettingPinOpId, setResettingPinOpId] = useState<number | null>(null);
   const [pinSuccessNotice, setPinSuccessNotice] = useState<string | null>(null);
   const [takingOverPos, setTakingOverPos] = useState(false);
@@ -669,6 +671,38 @@ export default function VendorDetailDrawer({
       alert("Error creating operator");
     } finally {
       setSubmittingOperator(false);
+    }
+  };
+
+  const handleUpdateOperator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOperator || !editingOperator.name.trim()) {
+      alert("Operator name is required");
+      return;
+    }
+    setSavingOperatorEdit(true);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendorId}/operators`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operatorId: editingOperator.id,
+          name: editingOperator.name.trim(),
+          role: editingOperator.role,
+          ...(editingOperator.pin && /^\d{4}$/.test(editingOperator.pin) ? { pin: editingOperator.pin } : {})
+        })
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        setEditingOperator(null);
+        refreshData();
+      } else {
+        alert(d.error || "Failed to update operator");
+      }
+    } catch {
+      alert("Error updating operator");
+    } finally {
+      setSavingOperatorEdit(false);
     }
   };
 
@@ -2281,6 +2315,16 @@ export default function VendorDetailDrawer({
 
                               <div className="flex items-center gap-2">
                                 <button
+                                  type="button"
+                                  onClick={() => setEditingOperator({ id: op.id, name: op.name, role: op.role || "cashier", pin: op.pin || "" })}
+                                  className="px-2.5 py-1.5 bg-white hover:bg-stone-100 text-[var(--brand-navy)] border border-[var(--brand-navy)] text-[10px] font-black uppercase transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
+                                  title="Edit operator name, role or PIN"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  EDIT
+                                </button>
+
+                                <button
                                   disabled={isResetting}
                                   onClick={() => handleResetOperatorPin(op.id, op.name)}
                                   className="px-2.5 py-1.5 bg-stone-100 hover:bg-yellow-300 text-[var(--brand-navy)] border border-[var(--brand-navy)] text-[10px] font-black uppercase transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
@@ -3129,9 +3173,82 @@ export default function VendorDetailDrawer({
                   <button
                     type="submit"
                     disabled={submittingOperator}
-                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-off-white)] transition-colors disabled:opacity-40 cursor-pointer"
                   >
                     {submittingOperator ? "CREATING..." : "ADD CASHIER"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 4b. EDIT OPERATOR MODAL */}
+        {editingOperator && (
+          <div className="fixed inset-0 z-60 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-[var(--brand-off-white)] border-4 border-[var(--brand-navy)] w-full max-w-sm my-auto max-h-[92vh] flex flex-col shadow-(--shadow-brut-xl)">
+              <div className="flex justify-between items-center border-b-2 border-[var(--brand-navy)] p-4 shrink-0 bg-[var(--brand-off-white)]">
+                <h3 className="text-base sm:text-lg font-black uppercase">Edit Operator Details</h3>
+                <button onClick={() => setEditingOperator(null)} className="p-1 text-stone-500 hover:text-black hover:bg-stone-200 border border-stone-300 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateOperator} className="flex-1 overflow-y-auto p-4 space-y-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase block mb-1">Operator Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOperator.name}
+                    onChange={(e) => setEditingOperator({ ...editingOperator, name: e.target.value })}
+                    placeholder="e.g. Kitchen Cashier, Alex"
+                    className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 text-xs font-bold uppercase focus:outline-none bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase block mb-1">Role</label>
+                  <select
+                    value={editingOperator.role}
+                    onChange={(e) => setEditingOperator({ ...editingOperator, role: e.target.value })}
+                    className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 text-xs font-bold uppercase focus:outline-none bg-white"
+                  >
+                    <option value="cashier">Cashier</option>
+                    <option value="manager">Manager</option>
+                    <option value="bartender">Bartender</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase block mb-1">
+                    4-Digit POS PIN
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    pattern="\d{4}"
+                    value={editingOperator.pin || ""}
+                    onChange={(e) => setEditingOperator({ ...editingOperator, pin: e.target.value })}
+                    placeholder="e.g. 5555"
+                    className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 font-mono text-xs font-bold focus:outline-none bg-white"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingOperator(null)}
+                    className="flex-1 py-2.5 border-2 border-[var(--brand-navy)] text-xs font-black uppercase hover:bg-stone-200 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingOperatorEdit}
+                    className="flex-1 py-2.5 bg-[var(--brand-navy)] text-white text-xs font-black uppercase border-2 border-[var(--brand-navy)] hover:bg-yellow-300 hover:text-[var(--brand-navy)] transition-colors disabled:opacity-40 cursor-pointer"
+                  >
+                    {savingOperatorEdit ? "SAVING..." : "UPDATE OPERATOR"}
                   </button>
                 </div>
               </form>
