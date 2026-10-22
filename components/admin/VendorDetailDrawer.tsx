@@ -985,62 +985,74 @@ export default function VendorDetailDrawer({
         <div className="w-full max-w-5xl bg-[var(--brand-off-white)] h-full overflow-y-auto border-l-4 border-[var(--brand-navy)] flex flex-col shadow-(--shadow-brut-xl)">
           
           {/* TOP APP HEADER */}
-          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-3 sm:p-5 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 border-b-4 border-yellow-400 sticky top-0 z-20">
-            <div>
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <span className="text-[9px] sm:text-[10px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-1.5 sm:px-2 py-0.5">
-                  VENDOR INTELLIGENCE
-                </span>
-                <span className="text-[9px] sm:text-[10px] font-mono uppercase bg-white/20 px-1.5 sm:px-2 py-0.5">
-                  #{vendorId}
-                </span>
-                {vendor?.status && (
-                  <span className="text-[9px] sm:text-[10px] font-black uppercase bg-emerald-500 text-white px-1.5 sm:px-2 py-0.5">
-                    {vendor.status}
+          <div className="bg-[var(--brand-navy)] text-[var(--brand-off-white)] p-3 sm:p-4 flex flex-col gap-2.5 border-b-4 border-yellow-400 sticky top-0 z-20 shadow-md">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-mono font-black uppercase bg-yellow-300 text-[var(--brand-navy)] px-1.5 py-0.5">
+                    VENDOR INTELLIGENCE
                   </span>
-                )}
-                <span className="text-[9px] sm:text-[10px] font-mono uppercase bg-white/10 px-1.5 sm:px-2 py-0.5 text-stone-300">
-                  COMM: {summary.commissionRate ?? 10}%
-                </span>
+                  <span className="text-[9px] font-mono uppercase bg-white/20 px-1.5 py-0.5">
+                    #{vendorId}
+                  </span>
+                  {vendor?.status && (
+                    <span className="text-[9px] font-black uppercase bg-emerald-500 text-white px-1.5 py-0.5">
+                      {vendor.status}
+                    </span>
+                  )}
+                  <span className="text-[9px] font-mono uppercase bg-white/10 px-1.5 py-0.5 text-stone-300">
+                    COMM: {summary.commissionRate ?? 10}%
+                  </span>
+                </div>
+                
+                <h2 className="text-xl sm:text-2xl font-display uppercase tracking-wide text-white mt-1 truncate">
+                  {loading ? "LOADING VENDOR..." : vendor?.name || "VENDOR DATA"}
+                </h2>
+                
+                <div className="text-[10px] text-stone-300 font-bold uppercase mt-0.5 flex items-center gap-2 flex-wrap">
+                  {vendor?.contact_name && (
+                    <span>Contact: <strong className="text-white">{vendor.contact_name}</strong></span>
+                  )}
+                  {vendor?.contact_phone && (
+                    <span>· Tel: <strong className="text-white font-mono">{vendor.contact_phone}</strong></span>
+                  )}
+                  <button
+                    onClick={() => setShowEditVendorModal(true)}
+                    className="inline-flex items-center gap-1 text-[9px] font-black uppercase bg-white/10 hover:bg-yellow-300 hover:text-[var(--brand-navy)] text-yellow-300 px-1.5 py-0.2 border border-yellow-300/40 transition-colors cursor-pointer"
+                  >
+                    <Edit2 className="w-2.5 h-2.5" /> EDIT PROFILE
+                  </button>
+                </div>
               </div>
-              
-              <h2 className="text-lg sm:text-2xl md:text-3xl font-sans font-black uppercase tracking-tight text-white mt-1 break-words">
-                {loading ? "LOADING VENDOR..." : vendor?.name || "VENDOR DATA"}
-              </h2>
-              
-              <div className="text-[11px] sm:text-xs text-stone-300 font-bold uppercase mt-1 flex items-center gap-2 sm:gap-3 flex-wrap">
-                {vendor?.contact_name && (
-                  <span>Contact: <strong className="text-white">{vendor.contact_name}</strong></span>
-                )}
-                {vendor?.contact_phone && (
-                  <span>· Tel: <strong className="text-white font-mono">{vendor.contact_phone}</strong></span>
-                )}
-                <button
-                  onClick={() => setShowEditVendorModal(true)}
-                  className="inline-flex items-center gap-1 text-[10px] font-black uppercase bg-white/10 hover:bg-yellow-300 hover:text-[var(--brand-navy)] text-yellow-300 px-2 py-0.5 border border-yellow-300/40 transition-colors cursor-pointer"
-                >
-                  <Edit2 className="w-2.5 h-2.5" /> EDIT PROFILE
-                </button>
-              </div>
+
+              {/* Close Button at top corner */}
+              <button
+                onClick={onClose}
+                className="p-1.5 border-2 border-white/60 hover:border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"
+                title="Close Drawer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            {/* Quick Action Bar */}
+            <div className="flex items-center gap-1.5 w-full pt-1 border-t border-white/10">
               <button
                 type="button"
                 onClick={handleTakeoverPos}
                 disabled={takingOverPos}
-                className="flex-1 sm:flex-none justify-center px-2.5 sm:px-3 py-1.5 sm:py-2 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-white font-mono font-black text-[11px] sm:text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50 text-center"
+                className="flex-1 justify-center py-2 px-3 bg-yellow-300 hover:bg-white text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] font-display font-black text-xs uppercase flex items-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50 text-center tracking-wider"
                 title="Log in to POS as this vendor to sell items if vendor has left"
               >
-                <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--brand-navy)] shrink-0" />
-                <span className="truncate">{takingOverPos ? "ENTERING POS..." : "POS TAKEOVER ↗"}</span>
+                <Store className="w-3.5 h-3.5 text-[var(--brand-navy)] shrink-0" />
+                <span className="truncate">{takingOverPos ? "ENTERING POS..." : "⚡ POS TAKEOVER ↗"}</span>
               </button>
               {intlVendorPhone && (
                 <a
                   href={`https://wa.me/${intlVendorPhone}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="p-1.5 sm:p-2 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
+                  className="py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white border-2 border-[var(--brand-navy)] transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-h-[36px]"
                   title="Message Vendor on WhatsApp"
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -1049,19 +1061,12 @@ export default function VendorDetailDrawer({
               {vendor?.contact_phone && (
                 <a
                   href={`tel:${vendor.contact_phone}`}
-                  className="p-1.5 sm:p-2 bg-blue-600 hover:bg-blue-500 text-white border-2 border-white transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
+                  className="py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white border-2 border-[var(--brand-navy)] transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center shrink-0 min-h-[36px]"
                   title="Call Vendor"
                 >
                   <Phone className="w-4 h-4" />
                 </a>
               )}
-              <button
-                onClick={onClose}
-                className="p-1.5 sm:p-2 border-2 border-white hover:bg-red-600 hover:text-white transition-colors text-white cursor-pointer flex items-center justify-center shrink-0 min-w-[34px] min-h-[34px] sm:min-w-[38px] sm:min-h-[38px]"
-                title="Close Drawer"
-              >
-                <X className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
             </div>
           </div>
 
@@ -1097,97 +1102,86 @@ export default function VendorDetailDrawer({
               </div>
             ) : (
               <>
-                {/* FINANCIAL OVERVIEW KPIS (COMPACT ON MOBILE) */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Gross Sales</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-0.5 sm:mt-1 truncate">
+                {/* FINANCIAL OVERVIEW KPIS (COMPACT BRUTALIST METRICS STRIP) */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Gross Sales</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-[var(--brand-navy)] mt-0.5 truncate">
                       KES {Number(summary.totalGross || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-[var(--brand-navy-light)] font-bold">{summary.orderCount || 0} orders</p>
+                    <p className="text-[8px] text-[var(--brand-navy-light)] font-bold truncate">{summary.orderCount || 0} orders</p>
                   </div>
 
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Avg Ticket</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-[var(--brand-navy)] mt-0.5 sm:mt-1 truncate">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Avg Ticket</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-[var(--brand-navy)] mt-0.5 truncate">
                       KES {Number(summary.avgOrderValue || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-[var(--brand-navy-light)] font-bold">per customer</p>
+                    <p className="text-[8px] text-[var(--brand-navy-light)] font-bold truncate">per cust</p>
                   </div>
 
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Comm ({summary.commissionRate ?? 10}%)</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-amber-700 mt-0.5 sm:mt-1 truncate">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Comm ({summary.commissionRate ?? 10}%)</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-amber-700 mt-0.5 truncate">
                       KES {Number(summary.commissionOwed || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-amber-800 font-bold">festival share</p>
+                    <p className="text-[8px] text-amber-800 font-bold truncate">fee cut</p>
                   </div>
 
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Settled</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-emerald-700 mt-0.5 sm:mt-1 truncate">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Settled</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-emerald-700 mt-0.5 truncate">
                       KES {Number(summary.settledAmount || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-emerald-800 font-bold">recorded paid</p>
+                    <p className="text-[8px] text-emerald-800 font-bold truncate">paid out</p>
                   </div>
 
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Balance Due</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-red-600 mt-0.5 sm:mt-1 truncate">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Balance Due</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-red-600 mt-0.5 truncate">
                       KES {Number(summary.outstandingDue || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-red-700 font-bold">unsettled</p>
+                    <p className="text-[8px] text-red-700 font-bold truncate">unsettled</p>
                   </div>
 
-                  <div className="border-2 sm:border-3 border-[var(--brand-navy)] bg-white p-2.5 sm:p-3 shadow-(--shadow-brut-xs)">
-                    <p className="text-[9px] sm:text-[10px] font-black uppercase text-[var(--brand-navy-light)]">Net to Vendor</p>
-                    <p className="text-base sm:text-xl font-mono font-black text-blue-700 mt-0.5 sm:mt-1 truncate">
+                  <div className="border-2 border-[var(--brand-navy)] bg-white p-2 shadow-(--shadow-brut-xs)">
+                    <p className="text-[9px] font-black uppercase text-[var(--brand-navy-light)] leading-tight truncate">Net Payout</p>
+                    <p className="text-sm sm:text-lg font-mono font-black text-blue-700 mt-0.5 truncate">
                       KES {Number(summary.netPayout || 0).toLocaleString()}
                     </p>
-                    <p className="text-[8px] sm:text-[9px] text-blue-800 font-bold">after comms</p>
+                    <p className="text-[8px] text-blue-800 font-bold truncate">net share</p>
                   </div>
                 </div>
 
                 {/* ACTION TOOLBAR: EXPORT + SETTLE */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black uppercase text-[var(--brand-navy)]">STALL STAFF:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {operators.length > 0 ? (
-                        operators.map((op: any) => (
-                          <span key={op.id} className="text-[10px] font-mono font-bold bg-stone-100 border border-[var(--brand-navy)] px-2 py-0.5">
-                            {op.name} ({op.role})
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-[10px] italic text-[var(--brand-navy-light)]">None assigned</span>
-                      )}
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between gap-2 p-2 bg-white border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+                  <span className="text-[11px] font-mono font-black uppercase text-[var(--brand-navy)] pl-1">
+                    {operators.length} Active {operators.length === 1 ? "Staff" : "Staff Members"}
+                  </span>
 
-                  <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={handleExportCSV}
-                      className="text-xs font-black uppercase px-3 py-2 sm:py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-stone-100 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer text-center"
+                      className="text-[11px] font-black uppercase px-2.5 py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-stone-100 transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">EXPORT CSV</span>
+                      <span>EXPORT</span>
                     </button>
                     <button
                       onClick={() => {
                         setSettleAmount(summary.outstandingDue > 0 ? summary.outstandingDue.toString() : "");
                         setShowSettleModal(true);
                       }}
-                      className="text-xs font-black uppercase px-3 py-2 sm:py-1.5 bg-yellow-300 text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) cursor-pointer text-center"
+                      className="text-[11px] font-black uppercase px-2.5 py-1.5 bg-yellow-300 text-[var(--brand-navy)] border-2 border-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
                     >
                       <HandCoins className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">RECORD SETTLEMENT</span>
+                      <span>RECORD SETTLEMENT</span>
                     </button>
                   </div>
                 </div>
 
-                {/* 6-TAB NAVIGATION BAR (TOUCH HORIZONTAL SCROLL ON MOBILE) */}
-                <div className="flex border-b-3 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto scrollbar-none pb-0.5 w-full">
+                {/* 6-TAB NAVIGATION BAR (NO RAW SCROLLBAR, CLEAN PILLS) */}
+                <div className="flex border-b-2 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-1 w-full">
                   {[
                     { id: "velocity", label: "PRODUCTS MOVING MOST", shortLabel: "VELOCITY", icon: TrendingUp },
                     { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, shortLabel: `STOCK (${stock.length})`, icon: Package },
