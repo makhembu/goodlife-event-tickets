@@ -2384,6 +2384,7 @@ export interface Vendor {
   contact_name: string;
   logo_url: string;
   category?: 'commercial' | 'operational' | string;
+  is_house?: boolean;
   pay_ref_prefix?: string | null;
   created_at: string;
 }
@@ -2696,10 +2697,11 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
         v.contact_name,
         v.contact_phone,
         v.logo_url,
+        COALESCE(v.is_house, false) as is_house,
         COALESCE(vea.id, 0) as id,
         COALESCE(vea.event_id, $1) as event_id,
         COALESCE(e.title, 'Event #' || $1) as event_title,
-        COALESCE(vea.commission_rate, 10.0) as commission_rate,
+        CASE WHEN v.is_house = TRUE THEN 0.0 ELSE COALESCE(vea.commission_rate, 10.0) END as commission_rate,
         COALESCE(vea.flat_fee, 0) as flat_fee,
         COALESCE(vea.settled_amount, 0) as settled_amount,
         COALESCE(vea.status, 'active') as status,
@@ -2709,8 +2711,8 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
         COALESCE(sales_summary.mpesa_collected, 0) as mpesa_collected,
         COALESCE(sales_summary.tab_collected, 0) as tab_collected,
         (COALESCE(sales_summary.mpesa_collected, 0) + COALESCE(sales_summary.tab_collected, 0)) as digital_collected,
-        ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
-        ROUND(COALESCE(sales_summary.total_sales, vea.total_sales, 0) - (COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share,
+        CASE WHEN v.is_house = TRUE THEN 0.0 ELSE ROUND((COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) END as commission_owed,
+        CASE WHEN v.is_house = TRUE THEN COALESCE(sales_summary.total_sales, vea.total_sales, 0) ELSE ROUND(COALESCE(sales_summary.total_sales, vea.total_sales, 0) - (COALESCE(sales_summary.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) END as vendor_net_share,
         COALESCE(advances_summary.advances_total, 0) as advances_total,
         COALESCE(advances_summary.advances_count, 0) as advances_count
       FROM vendors v
@@ -2764,10 +2766,11 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
       v.contact_name,
       v.contact_phone,
       v.logo_url,
+      COALESCE(v.is_house, false) as is_house,
       COALESCE(vea.id, 0) as id,
       COALESCE(vea.event_id, ps.event_id, 0) as event_id,
       COALESCE(e.title, 'Event #' || COALESCE(vea.event_id, ps.event_id, 0)) as event_title,
-      COALESCE(vea.commission_rate, 10.0) as commission_rate,
+      CASE WHEN v.is_house = TRUE THEN 0.0 ELSE COALESCE(vea.commission_rate, 10.0) END as commission_rate,
       COALESCE(vea.flat_fee, 0) as flat_fee,
       COALESCE(vea.settled_amount, 0) as settled_amount,
       COALESCE(vea.status, 'active') as status,
@@ -2777,8 +2780,8 @@ export async function fetchSettlementsForEvent(eventId?: number | null) {
       COALESCE(ps.mpesa_collected, 0) as mpesa_collected,
       COALESCE(ps.tab_collected, 0) as tab_collected,
       (COALESCE(ps.mpesa_collected, 0) + COALESCE(ps.tab_collected, 0)) as digital_collected,
-      ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as commission_owed,
-      ROUND(COALESCE(ps.total_sales, vea.total_sales, 0) - (COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) as vendor_net_share,
+      CASE WHEN v.is_house = TRUE THEN 0.0 ELSE ROUND((COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) END as commission_owed,
+      CASE WHEN v.is_house = TRUE THEN COALESCE(ps.total_sales, vea.total_sales, 0) ELSE ROUND(COALESCE(ps.total_sales, vea.total_sales, 0) - (COALESCE(ps.total_sales, vea.total_sales, 0) * COALESCE(vea.commission_rate, 10.0) / 100.0), 2) END as vendor_net_share,
       COALESCE(advances_summary.advances_total, 0) as advances_total,
       COALESCE(advances_summary.advances_count, 0) as advances_count
     FROM vendors v

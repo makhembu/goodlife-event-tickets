@@ -139,7 +139,8 @@ export default function VendorDetailDrawer({
   const [vendorForm, setVendorForm] = useState({
     contact_name: "",
     contact_phone: "",
-    commission_rate: "10"
+    commission_rate: "10",
+    is_house: false
   });
 
   // Operator Management State
@@ -202,7 +203,8 @@ export default function VendorDetailDrawer({
             setVendorForm({
               contact_name: resData.vendor.contact_name || "",
               contact_phone: resData.vendor.contact_phone || "",
-              commission_rate: String(resolvedComm ?? 10)
+              commission_rate: String(resolvedComm ?? 10),
+              is_house: Boolean(resData.vendor.is_house)
             });
           }
         } else {
@@ -287,7 +289,8 @@ export default function VendorDetailDrawer({
             setVendorForm({
               contact_name: resData.vendor.contact_name || "",
               contact_phone: resData.vendor.contact_phone || "",
-              commission_rate: String(resolvedComm ?? 10)
+              commission_rate: String(resolvedComm ?? 10),
+              is_house: Boolean(resData.vendor.is_house)
             });
           }
         } else {
@@ -676,7 +679,8 @@ export default function VendorDetailDrawer({
         body: JSON.stringify({
           contact_name: vendorForm.contact_name,
           contact_phone: vendorForm.contact_phone,
-          commission_rate: commissionRate,
+          commission_rate: vendorForm.is_house ? 0 : commissionRate,
+          is_house: vendorForm.is_house,
           event_id: eventId ? Number(eventId) : (data?.assignments?.[0]?.event_id || 2)
         })
       });
@@ -3270,19 +3274,46 @@ export default function VendorDetailDrawer({
                   />
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black uppercase block mb-1">Commission Rate (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="100"
-                    value={vendorForm.commission_rate}
-                    onChange={(e) => setVendorForm({ ...vendorForm, commission_rate: e.target.value })}
-                    placeholder="e.g. 10.0"
-                    className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 font-mono text-xs font-bold focus:outline-none bg-white"
-                  />
+                <div className="p-3 border-2 border-[var(--brand-navy)] bg-white space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={vendorForm.is_house}
+                      onChange={(e) => {
+                        const isH = e.target.checked;
+                        setVendorForm({
+                          ...vendorForm,
+                          is_house: isH,
+                          commission_rate: isH ? "0" : (vendorForm.commission_rate === "0" ? "10" : vendorForm.commission_rate)
+                        });
+                      }}
+                      className="w-4 h-4 accent-brand-navy"
+                    />
+                    <span className="text-xs font-black uppercase text-brand-navy">
+                      House / Event-Owned Stall
+                    </span>
+                  </label>
+                  <p className="text-[10px] text-brand-navy/70 uppercase leading-snug">
+                    For internal operations like Festival Kitchen, Main Bar, or Official Merch.
+                    Commission is 0%, and 100% of sales are retained as festival revenue (no vendor payout required).
+                  </p>
                 </div>
+
+                {!vendorForm.is_house && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase block mb-1">Commission Rate (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={vendorForm.commission_rate}
+                      onChange={(e) => setVendorForm({ ...vendorForm, commission_rate: e.target.value })}
+                      placeholder="e.g. 10.0"
+                      className="w-full border-2 border-[var(--brand-navy)] px-3 py-1.5 font-mono text-xs font-bold focus:outline-none bg-white"
+                    />
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-3 border-t border-stone-200 sticky bottom-0 bg-[var(--brand-off-white)] mt-2">
                   <button

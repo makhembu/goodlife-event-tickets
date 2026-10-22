@@ -41,7 +41,7 @@ export async function GET(
   try {
     // 1. Vendor Details
     const { rows: vendorRows } = await neonQuery(
-      `SELECT id, name, contact_name, contact_phone, logo_url, created_at
+      `SELECT id, name, contact_name, contact_phone, logo_url, is_house, created_at
        FROM vendors
        WHERE id = $1 AND deleted_at IS NULL
        LIMIT 1`,
@@ -743,15 +743,16 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { contact_name, contact_phone, commission_rate, event_id } = body;
+    const { contact_name, contact_phone, commission_rate, event_id, is_house } = body;
 
-    if (contact_name !== undefined || contact_phone !== undefined) {
+    if (contact_name !== undefined || contact_phone !== undefined || is_house !== undefined) {
       await neonQuery(
         `UPDATE vendors 
          SET contact_name = COALESCE($1, contact_name),
-             contact_phone = COALESCE($2, contact_phone)
-         WHERE id = $3`,
-        [contact_name, contact_phone, vendorId]
+             contact_phone = COALESCE($2, contact_phone),
+             is_house = COALESCE($3, is_house)
+         WHERE id = $4`,
+        [contact_name, contact_phone, is_house !== undefined ? Boolean(is_house) : null, vendorId]
       );
     }
 

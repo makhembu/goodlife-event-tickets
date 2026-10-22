@@ -138,6 +138,7 @@ export default function AdminSettlementsPage() {
 
   // Helper calculations for each settlement record
   const getSettlementMetrics = (s: any) => {
+    const isHouse = Boolean(s.is_house);
     const grossSales = Number(s.total_sales) || 0;
     const orderCount = Number(s.order_count) || 0;
     const cashCollected = Number(s.cash_collected) || 0;
@@ -145,38 +146,40 @@ export default function AdminSettlementsPage() {
     const tabCollected = Number(s.tab_collected) || 0;
     const digitalHeld = mpesaCollected + tabCollected;
     
-    const commRate = Number(s.commission_rate) || 10;
-    const commissionCut = Number(s.commission_owed) || Math.round((grossSales * commRate) / 100);
-    const vendorNetShare = Number(s.vendor_net_share) || (grossSales - commissionCut);
+    // House stalls (kitchen, main bar, merch) have 0% commission: 100% is festival revenue
+    const commRate = isHouse ? 0 : (Number(s.commission_rate) || 10);
+    const commissionCut = isHouse ? 0 : (Number(s.commission_owed) || Math.round((grossSales * commRate) / 100));
+    const vendorNetShare = isHouse ? grossSales : (Number(s.vendor_net_share) || (grossSales - commissionCut));
     const settledAmount = Number(s.settled_amount) || 0;
     const advancesTotal = Number(s.advances_total) || 0;
 
-    // Gross Payout Due (before subtracting past settlements and advances)
-    // Goodlife collected digitalHeld. Goodlife retains commissionCut and recoups advances.
-    // So Goodlife must pay vendor: digitalHeld - commissionCut - advancesTotal
-    const grossPayoutDue = digitalHeld - commissionCut - advancesTotal;
-    
-    // Remaining Net Balance:
     let pendingDue = 0;
-    let direction: "organizer_pays_vendor" | "vendor_pays_organizer" | "cleared" = "cleared";
+    let direction: "organizer_pays_vendor" | "vendor_pays_organizer" | "house_revenue" | "cleared" = "cleared";
 
-    if (grossPayoutDue > 0) {
-      // Goodlife holds more digital money than its commission cut -> Goodlife owes vendor
-      direction = "organizer_pays_vendor";
-      pendingDue = Math.max(0, grossPayoutDue - settledAmount);
-    } else if (grossPayoutDue < 0) {
-      // Vendor collected physical cash exceeding their net share -> Vendor owes Goodlife commission
-      direction = "vendor_pays_organizer";
-      const cashCommDue = Math.abs(grossPayoutDue);
-      pendingDue = Math.max(0, cashCommDue - settledAmount);
-    } else {
-      direction = "cleared";
+    if (isHouse) {
+      // Internal operation: No vendor payout owed. All digital is festival funds.
+      // Physical cash collected at till must be turned in to the festival safe.
+      direction = "house_revenue";
       pendingDue = 0;
+    } else {
+      const grossPayoutDue = digitalHeld - commissionCut - advancesTotal;
+      if (grossPayoutDue > 0) {
+        direction = "organizer_pays_vendor";
+        pendingDue = Math.max(0, grossPayoutDue - settledAmount);
+      } else if (grossPayoutDue < 0) {
+        direction = "vendor_pays_organizer";
+        const cashCommDue = Math.abs(grossPayoutDue);
+        pendingDue = Math.max(0, cashCommDue - settledAmount);
+      } else {
+        direction = "cleared";
+        pendingDue = 0;
+      }
     }
 
-    const isFullyCleared = (grossSales > 0 && pendingDue === 0) || (grossSales === 0);
+    const isFullyCleared = isHouse ? true : ((grossSales > 0 && pendingDue === 0) || (grossSales === 0));
 
     return {
+      isHouse,
       grossSales,
       orderCount,
       cashCollected,
@@ -188,7 +191,7 @@ export default function AdminSettlementsPage() {
       vendorNetShare,
       settledAmount,
       advancesTotal,
-      grossPayoutDue,
+      grossPayoutDue: isHouse ? 0 : (digitalHeld - commissionCut - advancesTotal),
       pendingDue,
       direction,
       isFullyCleared
@@ -197,6 +200,7 @@ export default function AdminSettlementsPage() {
 
   // Aggregate Metrics across all vendors
   const totalGross = settlements.reduce((sum, r) => sum + (Number(r.total_sales) || 0), 0);
+  const totalHouseGross = settlements.reduce((sum, r) => sum + (r.is_house ? (Number(r.total_sales) || 0) : 0), 0);
   const totalDigitalHeld = settlements.reduce((sum, r) => sum + (Number(r.digital_collected) || 0), 0);
   const totalCashHeld = settlements.reduce((sum, r) => sum + (Number(r.cash_collected) || 0), 0);
   const totalCommission = settlements.reduce((sum, r) => sum + (Number(r.commission_owed) || 0), 0);
@@ -284,7 +288,7 @@ export default function AdminSettlementsPage() {
           </div>
 
           {showExplainer && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t-2 border-brand-navy border-dashed text-xs leading-relaxed">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4 pt-4 border-t-2 border-brand-navy border-dashed text-xs leading-relaxed">
               <div className="bg-brand-off-white p-3 border-2 border-brand-navy space-y-1">
                 <p className="font-bold uppercase text-brand-navy flex items-center gap-1.5">
                   <DollarSign className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -316,6 +320,16 @@ export default function AdminSettlementsPage() {
                   <strong>Settled:</strong> Cumulative payouts already sent/transferred.
                 </p>
               </div>
+
+              <div className="bg-purple-50 p-3 border-2 border-purple-800 space-y-1">
+                <p className="font-bold uppercase text-purple-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-purple-700 shrink-0" />
+                  4. House / Event Stalls
+                </p>
+                <p className="text-purple-900/90 text-[11px]">
+                  <strong>House Operations</strong> (Kitchen, Main Bar, Merch) operate at <strong>0% commission</strong>. 100% of sales belong directly to the festival. No vendor payout is owed; all cash is deposited into the safe.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -327,7 +341,9 @@ export default function AdminSettlementsPage() {
             <p className="text-lg md:text-xl font-bold font-mono text-brand-navy mt-1">
               KES {totalGross.toLocaleString()}
             </p>
-            <p className="text-[9px] text-brand-navy/60 uppercase mt-0.5">All stall sales</p>
+            <p className="text-[9px] text-brand-navy/60 uppercase mt-0.5">
+              All stalls {totalHouseGross > 0 ? "(KES " + totalHouseGross.toLocaleString() + " house)" : ""}
+            </p>
           </div>
 
           <div className="border-4 border-brand-navy p-3 bg-white shadow-(--shadow-brut-sm)">
@@ -384,24 +400,73 @@ export default function AdminSettlementsPage() {
                   <div key={s.id || `v-${s.vendor_id}-${s.event_id}`} className="bg-white border-4 border-brand-navy p-4 shadow-(--shadow-brut-md) space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
                         <button type="button" onClick={() => setSelectedDrawerVendorId(s.vendor_id)} className="font-black text-base text-brand-navy underline decoration-2 underline-offset-2 text-left">{vendorName}</button>
+                        {m.isHouse && (
+                          <span className="bg-purple-100 text-purple-900 border border-purple-400 text-[9px] font-black uppercase px-1.5 py-0.5">HOUSE</span>
+                        )}
+                      </div>
                         {s.contact_name && <div className="text-[10px] text-brand-navy/70 mt-0.5">{s.contact_name} {s.contact_phone ? `(${s.contact_phone})` : ""}</div>}
                         {s.event_title && <div className="text-[10px] text-brand-navy/50">{s.event_title}</div>}
                       </div>
-                      {m.isFullyCleared ? (<span className="bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-emerald-700 shrink-0">CLEARED</span>) : m.settledAmount > 0 ? (<span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-blue-700 shrink-0">PARTIAL</span>) : (<span className="bg-stone-200 text-stone-800 text-[9px] font-black uppercase px-2 py-1 border border-stone-400 shrink-0">UNSETTLED</span>)}
+                      {m.isHouse ? (<span className="bg-purple-700 text-white text-[9px] font-black uppercase px-2 py-1 border border-purple-900 shrink-0">INTERNAL</span>) : m.isFullyCleared ? (<span className="bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-emerald-700 shrink-0">CLEARED</span>) : m.settledAmount > 0 ? (<span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-1 border border-blue-700 shrink-0">PARTIAL</span>) : (<span className="bg-stone-200 text-stone-800 text-[9px] font-black uppercase px-2 py-1 border border-stone-400 shrink-0">UNSETTLED</span>)}
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs border-t-2 border-dashed border-brand-navy pt-3">
                       <div><div className="font-bold text-brand-navy/60 uppercase text-[10px]">Gross Sales</div><div className="font-mono font-black text-brand-navy">KES {m.grossSales.toLocaleString()}</div><div className="text-[10px] text-brand-navy/50">{m.orderCount} orders</div></div>
-                      <div><div className="font-bold text-brand-navy/60 uppercase text-[10px]">Commission ({m.commRate}%)</div><div className="font-mono font-black text-brand-navy">KES {m.commissionCut.toLocaleString()}</div><div className="font-mono text-emerald-700 text-[10px]">Net: KES {m.vendorNetShare.toLocaleString()}</div></div>
+                      <div>
+                        <div className="font-bold text-brand-navy/60 uppercase text-[10px]">{m.isHouse ? "House Share" : "Commission (" + m.commRate + "%)"}</div>
+                        <div className="font-mono font-black text-brand-navy">{m.isHouse ? "0% (INTERNAL)" : "KES " + m.commissionCut.toLocaleString()}</div>
+                        <div className="font-mono text-emerald-700 text-[10px]">{m.isHouse ? "100% Festival Revenue" : "Net: KES " + m.vendorNetShare.toLocaleString()}</div>
+                      </div>
                       <div><div className="font-bold text-blue-700 uppercase text-[10px] flex items-center gap-1"><Smartphone className="w-3 h-3" /> Digital (Goodlife)</div><div className="font-mono font-black text-blue-900">KES {m.digitalHeld.toLocaleString()}</div><div className="text-[10px] text-blue-700/70">M-Pesa: {m.mpesaCollected.toLocaleString()} � Tab: {m.tabCollected.toLocaleString()}</div></div>
-                      <div><div className="font-bold text-amber-700 uppercase text-[10px] flex items-center gap-1"><Banknote className="w-3 h-3" /> Cash (Vendor)</div><div className="font-mono font-black text-amber-900">KES {m.cashCollected.toLocaleString()}</div></div>
+                      <div>
+                        <div className="font-bold text-amber-700 uppercase text-[10px] flex items-center gap-1"><Banknote className="w-3 h-3" /> {m.isHouse ? "Cash (To Safe)" : "Cash (Vendor)"}</div>
+                        <div className="font-mono font-black text-amber-900">KES {m.cashCollected.toLocaleString()}</div>
+                        {m.isHouse && m.cashCollected > 0 && <div className="text-[9px] text-amber-800 font-bold uppercase">Safe Deposit Due</div>}
+                      </div>
                     </div>
                     <div className="border-t-2 border-dashed border-brand-navy pt-3">
-                      {m.direction === "organizer_pays_vendor" ? (<div className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 border border-emerald-500 text-[10px] font-black uppercase px-2 py-0.5"><ArrowDownLeft className="w-3 h-3 text-emerald-700" /> GOODLIFE OWES VENDOR</span><span className="font-mono font-black text-emerald-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span></div>) : m.direction === "vendor_pays_organizer" ? (<div className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-500 text-[10px] font-black uppercase px-2 py-0.5"><ArrowUpRight className="w-3 h-3 text-amber-700" /> VENDOR OWES GOODLIFE</span><span className="font-mono font-black text-amber-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span></div>) : (<div className="flex items-center gap-2 text-gray-600 text-[10px] font-bold uppercase"><CheckCircle2 className="w-4 h-4" /> FULLY BALANCED</div>)}
+                      {m.isHouse ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-2 bg-purple-50 border border-purple-300 p-2">
+                            <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-900 border border-purple-500 text-[10px] font-black uppercase px-2 py-0.5">
+                              <CheckCircle2 className="w-3 h-3 text-purple-700" /> 100% INTERNAL REVENUE
+                            </span>
+                            <span className="font-mono font-black text-purple-900 text-xs shrink-0">NO PAYOUT DUE</span>
+                          </div>
+                          {m.cashCollected > 0 && (
+                            <div className="text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-300 px-2 py-1">
+                              ⚠️ Deposit KES {m.cashCollected.toLocaleString()} cash from till to festival safe
+                            </div>
+                          )}
+                        </div>
+                      ) : m.direction === "organizer_pays_vendor" ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 border border-emerald-500 text-[10px] font-black uppercase px-2 py-0.5">
+                            <ArrowDownLeft className="w-3 h-3 text-emerald-700" /> GOODLIFE OWES VENDOR
+                          </span>
+                          <span className="font-mono font-black text-emerald-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span>
+                        </div>
+                      ) : m.direction === "vendor_pays_organizer" ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-500 text-[10px] font-black uppercase px-2 py-0.5">
+                            <ArrowUpRight className="w-3 h-3 text-amber-700" /> VENDOR OWES GOODLIFE
+                          </span>
+                          <span className="font-mono font-black text-amber-800 text-base shrink-0">KES {m.pendingDue.toLocaleString()}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-gray-600 text-[10px] font-bold uppercase">
+                          <CheckCircle2 className="w-4 h-4" /> FULLY BALANCED
+                        </div>
+                      )}
                       <div className="text-[10px] text-brand-navy/60 mt-1">Settled: <span className="font-mono font-bold text-emerald-700">KES {m.settledAmount.toLocaleString()}</span></div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 border-t-2 border-dashed border-brand-navy pt-3">
-                      <button type="button" onClick={() => { setShowSettleModal(s); setSettleAmount(m.pendingDue > 0 ? m.pendingDue.toString() : ""); setSettleMode("add"); setSettleNote(""); }} className={`py-2 text-xs uppercase font-black border-2 border-brand-navy shadow-(--shadow-brut-xs) cursor-pointer ${m.direction === "organizer_pays_vendor" ? "bg-emerald-400 text-brand-navy" : m.direction === "vendor_pays_organizer" ? "bg-amber-400 text-brand-navy" : "bg-white text-brand-navy"}`}>{m.direction === "organizer_pays_vendor" ? "RECORD PAYOUT" : m.direction === "vendor_pays_organizer" ? "COLLECT COMM" : "SETTLE"}</button>
+                      {m.isHouse ? (
+                        <button type="button" disabled className="py-2 text-xs uppercase font-black border-2 border-purple-300 bg-purple-50 text-purple-700 opacity-70 cursor-not-allowed">INTERNAL STALL</button>
+                      ) : (
+                        <button type="button" onClick={() => { setShowSettleModal(s); setSettleAmount(m.pendingDue > 0 ? m.pendingDue.toString() : ""); setSettleMode("add"); setSettleNote(""); }} className={`py-2 text-xs uppercase font-black border-2 border-brand-navy shadow-(--shadow-brut-xs) cursor-pointer ${m.direction === "organizer_pays_vendor" ? "bg-emerald-400 text-brand-navy" : m.direction === "vendor_pays_organizer" ? "bg-amber-400 text-brand-navy" : "bg-white text-brand-navy"}`}>{m.direction === "organizer_pays_vendor" ? "RECORD PAYOUT" : m.direction === "vendor_pays_organizer" ? "COLLECT COMM" : "SETTLE"}</button>
+                      )}
                       <button type="button" onClick={() => setSelectedDrawerVendorId(s.vendor_id)} className="py-2 bg-white text-brand-navy border-2 border-brand-navy text-xs font-bold uppercase hover:bg-yellow-300 shadow-(--shadow-brut-xs) flex items-center justify-center gap-1 cursor-pointer"><TrendingUp className="w-3 h-3" /> AUDIT</button>
                       <button type="button" onClick={() => handleQuickLoginAsVendor(s.vendor_id)} disabled={takingOverVendorId === s.vendor_id} className="col-span-2 py-1.5 bg-brand-navy text-brand-accent text-[10px] font-black uppercase border border-brand-navy flex items-center justify-center gap-1 hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"><Store className="w-3 h-3" /> {takingOverVendorId === s.vendor_id ? "TAKING OVER..." : "POS TAKEOVER"}</button>
                     </div>
@@ -441,10 +506,15 @@ export default function AdminSettlementsPage() {
                           onClick={() => setSelectedDrawerVendorId(s.vendor_id)}
                           title="Click to view full vendor stock, velocity & sales audit"
                         >
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-brand-navy underline decoration-2 underline-offset-2 group-hover:text-blue-700 font-black text-sm">
                               {vendorName}
                             </span>
+                            {m.isHouse && (
+                              <span className="bg-purple-100 text-purple-900 border border-purple-400 text-[9px] font-black uppercase px-1.5 py-0.2 shrink-0">
+                                HOUSE
+                              </span>
+                            )}
                             <ExternalLink className="w-3.5 h-3.5 text-brand-navy/50 group-hover:text-blue-700 shrink-0" />
                           </div>
                         </div>
@@ -499,7 +569,7 @@ export default function AdminSettlementsPage() {
 
                           <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 px-2 py-0.5">
                             <span className="text-[10px] font-bold text-amber-900 flex items-center gap-1">
-                              <Banknote className="w-3 h-3 text-amber-700" /> Cash (Vendor):
+                              <Banknote className="w-3 h-3 text-amber-700" /> {m.isHouse ? "Cash (Till → Safe):" : "Cash (Vendor):"}
                             </span>
                             <span className="font-mono font-black text-amber-900">
                               KES {m.cashCollected.toLocaleString()}
@@ -510,28 +580,62 @@ export default function AdminSettlementsPage() {
 
                       {/* Commission & Vendor Share */}
                       <td className="p-3 text-right font-mono align-top">
-                        <div className="text-xs font-bold text-brand-navy">
-                          Fee: KES {m.commissionCut.toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-brand-navy/60">
-                          ({m.commRate}% commission)
-                        </div>
-                        {m.advancesTotal > 0 && (
-                          <div className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1 py-0.5 mt-1 inline-block">
-                            Advance: -KES {m.advancesTotal.toLocaleString()}
-                          </div>
+                        {m.isHouse ? (
+                          <>
+                            <div className="text-xs font-bold text-purple-800">
+                              0% Commission
+                            </div>
+                            <div className="text-[10px] text-purple-600 uppercase font-bold">
+                              House Stall
+                            </div>
+                            <div className="text-xs font-bold text-purple-900 mt-1 pt-1 border-t border-purple-200">
+                              100% Festival Rev
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs font-bold text-brand-navy">
+                              Fee: KES {m.commissionCut.toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-brand-navy/60">
+                              ({m.commRate}% commission)
+                            </div>
+                            {m.advancesTotal > 0 && (
+                              <div className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-1 py-0.5 mt-1 inline-block">
+                                Advance: -KES {m.advancesTotal.toLocaleString()}
+                              </div>
+                            )}
+                            <div className="text-xs font-bold text-emerald-800 mt-1 pt-1 border-t border-brand-navy/10">
+                              Net: KES {m.vendorNetShare.toLocaleString()}
+                            </div>
+                            <div className="text-[9px] text-emerald-700">
+                              ({100 - m.commRate}% vendor share)
+                            </div>
+                          </>
                         )}
-                        <div className="text-xs font-bold text-emerald-800 mt-1 pt-1 border-t border-brand-navy/10">
-                          Net: KES {m.vendorNetShare.toLocaleString()}
-                        </div>
-                        <div className="text-[9px] text-emerald-700">
-                          ({100 - m.commRate}% vendor share)
-                        </div>
                       </td>
 
                       {/* Settlement Position (WHO OWES WHO) */}
                       <td className="p-3 align-top">
-                        {m.direction === "organizer_pays_vendor" ? (
+                        {m.isHouse ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-900 border border-purple-500 text-[10px] font-black uppercase px-2 py-0.5 tracking-wider">
+                              <CheckCircle2 className="w-3 h-3 text-purple-700" />
+                              100% INTERNAL REVENUE
+                            </span>
+                            <div className="font-mono text-sm font-black text-purple-900">
+                              KES 0 PAYOUT DUE
+                            </div>
+                            <div className="text-[9px] text-purple-800 leading-tight">
+                              Festival-owned operation.
+                              {m.cashCollected > 0 && (
+                                <span className="block font-bold text-amber-800 mt-0.5">
+                                  ⚠️ Deposit KES {m.cashCollected.toLocaleString()} cash from till to safe.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : m.direction === "organizer_pays_vendor" ? (
                           <div className="space-y-1">
                             <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 border border-emerald-500 text-[10px] font-black uppercase px-2 py-0.5 tracking-wider">
                               <ArrowDownLeft className="w-3 h-3 text-emerald-700" />
@@ -579,7 +683,11 @@ export default function AdminSettlementsPage() {
                           KES {m.settledAmount.toLocaleString()}
                         </div>
                         <div className="mt-1">
-                          {m.isFullyCleared ? (
+                          {m.isHouse ? (
+                            <span className="bg-purple-700 text-white text-[9px] font-black uppercase px-1.5 py-0.5 border border-purple-900">
+                              INTERNAL
+                            </span>
+                          ) : m.isFullyCleared ? (
                             <span className="bg-emerald-600 text-white text-[9px] font-black uppercase px-1.5 py-0.5 border border-emerald-700">
                               CLEARED
                             </span>
@@ -598,25 +706,36 @@ export default function AdminSettlementsPage() {
                       {/* Actions */}
                       <td className="p-3 text-center align-top">
                         <div className="flex flex-col items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowSettleModal(s);
-                              setSettleAmount(m.pendingDue > 0 ? m.pendingDue.toString() : "");
-                              setSettleMode("add");
-                              setSettleNote("");
-                            }}
-                            className={`w-full px-2.5 py-1 text-xs uppercase font-black border-2 border-brand-navy transition-all shadow-(--shadow-brut-xs) cursor-pointer ${
-                              m.direction === "organizer_pays_vendor"
-                                ? "bg-emerald-400 hover:bg-emerald-300 text-brand-navy"
-                                : m.direction === "vendor_pays_organizer"
-                                ? "bg-amber-400 hover:bg-amber-300 text-brand-navy"
-                                : "bg-white hover:bg-brand-accent text-brand-navy"
-                            }`}
-                            title="Record payout disbursement or commission collection"
-                          >
-                            {m.direction === "organizer_pays_vendor" ? "RECORD PAYOUT" : m.direction === "vendor_pays_organizer" ? "COLLECT COMM" : "UPDATE SETTLED"}
-                          </button>
+                          {m.isHouse ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full px-2.5 py-1 text-xs uppercase font-black border-2 border-purple-300 bg-purple-50 text-purple-700 opacity-70 cursor-not-allowed"
+                              title="Event-owned stall — all revenue retained by festival"
+                            >
+                              INTERNAL STALL
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowSettleModal(s);
+                                setSettleAmount(m.pendingDue > 0 ? m.pendingDue.toString() : "");
+                                setSettleMode("add");
+                                setSettleNote("");
+                              }}
+                              className={`w-full px-2.5 py-1 text-xs uppercase font-black border-2 border-brand-navy transition-all shadow-(--shadow-brut-xs) cursor-pointer ${
+                                m.direction === "organizer_pays_vendor"
+                                  ? "bg-emerald-400 hover:bg-emerald-300 text-brand-navy"
+                                  : m.direction === "vendor_pays_organizer"
+                                  ? "bg-amber-400 hover:bg-amber-300 text-brand-navy"
+                                  : "bg-white hover:bg-brand-accent text-brand-navy"
+                              }`}
+                              title="Record payout disbursement or commission collection"
+                            >
+                              {m.direction === "organizer_pays_vendor" ? "RECORD PAYOUT" : m.direction === "vendor_pays_organizer" ? "COLLECT COMM" : "UPDATE SETTLED"}
+                            </button>
+                          )}
 
                           <button
                             type="button"
