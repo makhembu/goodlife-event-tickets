@@ -1824,7 +1824,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
             >
               <Store className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">STAFF & POS</span>
+              <span className="truncate">DEPTS & POS</span>
             </Link>
             <Link 
               href="/admin/settlements" 

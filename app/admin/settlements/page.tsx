@@ -371,7 +371,7 @@ export default function AdminSettlementsPage() {
         ) : settlements.length === 0 ? (
           <div className="p-12 text-center font-bold uppercase border-4 border-brand-navy bg-white space-y-2">
             <p className="text-base text-brand-navy">No vendor settlements found for this event selection.</p>
-            <p className="text-xs text-brand-navy/60">Assign vendors in Staff & POS to start tracking commissions.</p>
+            <p className="text-xs text-brand-navy/60">Assign vendors in Depts & POS to start tracking commissions.</p>
           </div>
         ) : (
           <>
