@@ -1181,7 +1181,7 @@ export default function VendorDetailDrawer({
                 </div>
 
                 {/* 6-TAB NAVIGATION BAR (NO RAW SCROLLBAR, CLEAN PILLS) */}
-                <div className="flex border-b-2 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-1 w-full">
+                <div className="flex border-b-2 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto no-scrollbar pb-1 w-full">
                   {[
                     { id: "velocity", label: "PRODUCTS MOVING MOST", shortLabel: "VELOCITY", icon: TrendingUp },
                     { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, shortLabel: `STOCK (${stock.length})`, icon: Package },
