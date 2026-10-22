@@ -22,6 +22,25 @@ function getSession(request: NextRequest) {
   }
 }
 
+async function buildPosReference(vendorId: number, operatorName?: string): Promise<string> {
+  try {
+    const { query } = await import("@/lib/neon-client");
+    const { rows } = await query(
+      "SELECT pay_ref_prefix FROM vendors WHERE id = $1 LIMIT 1",
+      [vendorId]
+    );
+    const prefix = rows[0]?.pay_ref_prefix || `VND${vendorId}`;
+    const operatorSlug = (operatorName || "CASH")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
+    const short = Math.floor(1000 + Math.random() * 9000);
+    return `${prefix}-${operatorSlug}-${short}`;
+  } catch {
+    return "POS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -78,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     const wholeAmount = Math.round(numAmount);
-    const finalReference = reference || "POS-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const finalReference = reference || await buildPosReference(session.vendorId, session.operatorName);
 
     const stkRes = await initiatePayheroStkPush({
       customer_name: session.vendorName || "POS Customer",

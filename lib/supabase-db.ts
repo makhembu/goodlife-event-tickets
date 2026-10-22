@@ -2384,6 +2384,7 @@ export interface Vendor {
   contact_name: string;
   logo_url: string;
   category?: 'commercial' | 'operational' | string;
+  pay_ref_prefix?: string | null;
   created_at: string;
 }
 
@@ -2416,6 +2417,7 @@ export interface VendorItem {
   category: string;
   price: number;
   stock_qty: number | null;
+  opening_stock_qty?: number | null;
   low_stock_threshold: number;
   image_url: string;
   modifiers: { name: string; price_add: number }[];
@@ -2434,6 +2436,7 @@ export interface PosSale {
   voided_by: number | null;
   void_reason: string | null;
   notes: string;
+  till_session_id?: number | null;
   created_at: string;
 }
 
@@ -3126,9 +3129,9 @@ export async function createPosSale(
 
     // 1. Insert Sale
     await client.query(
-      `INSERT INTO pos_sales (id, vendor_id, event_id, operator_id, subtotal, total, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [sale.id, sale.vendor_id, sale.event_id, sale.operator_id, sale.subtotal, sale.total, sale.notes || ""]
+      `INSERT INTO pos_sales (id, vendor_id, event_id, operator_id, subtotal, total, notes, till_session_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [sale.id, sale.vendor_id, sale.event_id, sale.operator_id, sale.subtotal, sale.total, sale.notes || "", (sale as any).till_session_id || null]
     );
 
     // 2. Insert Items & Decrement Stock
@@ -4278,4 +4281,127 @@ export async function fetchEventBudgetSummary(eventId: number): Promise<EventBud
   };
 }
 
+// ==================== TILL SESSIONS ====================
+
+export interface TillSession {
+  id: number;
+  vendor_id: number;
+  event_id: number;
+  operator_id: number | null;
+  operator_name: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  opening_float: number;
+  closing_cash_counted: number | null;
+  notes: string | null;
+  status: 'open' | 'closed';
+}
+
+export interface TillSessionWithStats extends TillSession {
+  cash_sales: number;
+  mpesa_sales: number;
+  total_sales: number;
+  expected_cash: number;
+  variance: number | null;
+}
+
+export async function getCurrentTillSession(vendorId: number): Promise<TillSession | null> {
+  if (typeof window !== 'undefined') {
+    const res = await fetch(`/api/vendor/till/current`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.session || null;
+  }
+  const { rows } = await neonQuery(
+    `SELECT * FROM till_sessions WHERE vendor_id = $1 AND status = 'open' LIMIT 1`,
+    [vendorId]
+  );
+  return rows[0] || null;
+}
+
+export async function openTillSession(
+  vendorId: number,
+  eventId: number,
+  operatorId: number | null,
+  operatorName: string | null,
+  openingFloat: number
+): Promise<TillSession> {
+  if (typeof window !== 'undefined') {
+    const res = await fetch('/api/vendor/till/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opening_float: openingFloat }),
+    });
+    if (!res.ok) throw new Error((await res.json()).message || 'Failed to open till');
+    return (await res.json()).session;
+  }
+  const { rows } = await neonQuery(
+    `INSERT INTO till_sessions (vendor_id, event_id, operator_id, operator_name, opening_float)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [vendorId, eventId, operatorId, operatorName, openingFloat]
+  );
+  return rows[0];
+}
+
+export async function closeTillSession(
+  sessionId: number,
+  closingCashCounted: number,
+  notes?: string
+): Promise<TillSession> {
+  if (typeof window !== 'undefined') {
+    const res = await fetch('/api/vendor/till/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, closing_cash_counted: closingCashCounted, notes }),
+    });
+    if (!res.ok) throw new Error((await res.json()).message || 'Failed to close till');
+    return (await res.json()).session;
+  }
+  const { rows } = await neonQuery(
+    `UPDATE till_sessions
+     SET closed_at = NOW(), closing_cash_counted = $2, notes = $3, status = 'closed'
+     WHERE id = $1 RETURNING *`,
+    [sessionId, closingCashCounted, notes || null]
+  );
+  return rows[0];
+}
+
+export async function getTillSessionsForVendor(
+  vendorId: number,
+  eventId: number
+): Promise<TillSessionWithStats[]> {
+  if (typeof window !== 'undefined') {
+    const res = await fetch(`/api/admin/till-sessions?vendorId=${vendorId}&eventId=${eventId}`);
+    if (!res.ok) return [];
+    return (await res.json()).sessions || [];
+  }
+  const { rows } = await neonQuery(
+    `SELECT
+       ts.*,
+       COALESCE(SUM(CASE WHEN psp.method = 'cash' THEN psp.amount ELSE 0 END), 0) AS cash_sales,
+       COALESCE(SUM(CASE WHEN psp.method = 'mpesa' THEN psp.amount ELSE 0 END), 0) AS mpesa_sales,
+       COALESCE(SUM(psp.amount), 0) AS total_sales,
+       ts.opening_float + COALESCE(SUM(CASE WHEN psp.method = 'cash' THEN psp.amount ELSE 0 END), 0) AS expected_cash,
+       CASE WHEN ts.closing_cash_counted IS NOT NULL
+            THEN ts.closing_cash_counted - (ts.opening_float + COALESCE(SUM(CASE WHEN psp.method = 'cash' THEN psp.amount ELSE 0 END), 0))
+            ELSE NULL END AS variance
+     FROM till_sessions ts
+     LEFT JOIN pos_sales ps ON ps.till_session_id = ts.id
+     LEFT JOIN pos_split_payments psp ON psp.sale_id = ps.id
+     WHERE ts.vendor_id = $1 AND ts.event_id = $2
+     GROUP BY ts.id
+     ORDER BY ts.opened_at DESC`,
+    [vendorId, eventId]
+  );
+  return rows;
+}
+
+export async function forceCloseTillSession(sessionId: number): Promise<TillSession> {
+  const { rows } = await neonQuery(
+    `UPDATE till_sessions SET closed_at = NOW(), status = 'closed', notes = COALESCE(notes || ' | ', '') || 'Force-closed by admin'
+     WHERE id = $1 RETURNING *`,
+    [sessionId]
+  );
+  return rows[0];
+}
 

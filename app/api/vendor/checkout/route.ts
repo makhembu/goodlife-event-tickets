@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Invalid JSON payload" }, { status: 400 });
     }
     
-    let { event_id, subtotal, total, notes, items, payments, splitPayments } = body || {};
+    let { event_id, subtotal, total, notes, items, payments, splitPayments, till_session_id } = body || {};
     payments = payments || splitPayments;
 
     if (!event_id) {
@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
       operator_id: session.operatorId,
       subtotal,
       total,
-      notes: notes || ""
+      notes: notes || "",
+      till_session_id: till_session_id ? Number(till_session_id) : null,
     };
 
     const formattedPayments = payments.map((p: any) => ({

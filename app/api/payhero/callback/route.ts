@@ -104,6 +104,28 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Check if this is a Vendor POS M-Pesa payment (reference starts with vendor prefix, not GL- or TABPAY_)
+      if (!ourReference.startsWith("GL-") && !ourReference.startsWith("TABPAY_")) {
+        const { query } = await import("@/lib/neon-client");
+        const { rows: vendorRows } = await query(
+          `SELECT id, name FROM vendors WHERE $1 LIKE (pay_ref_prefix || '%') AND pay_ref_prefix IS NOT NULL AND pay_ref_prefix != '' LIMIT 1`,
+          [ourReference]
+        );
+        if (vendorRows.length > 0) {
+          const { insertPaymentLog } = await import("@/lib/supabase-db");
+          await insertPaymentLog({
+            checkout_request_id: ourReference,
+            mpesa_receipt: providerReference,
+            phone_number: payload?.phone_number || "",
+            amount: amountPaid,
+            status: "success",
+            result_desc: `Vendor POS M-Pesa: vendor_id=${vendorRows[0].id} (${vendorRows[0].name}) ref=${ourReference}`,
+            raw_payload: payload,
+          });
+          return NextResponse.json({ message: "Vendor POS payment logged", ref: ourReference });
+        }
+      }
+
       const result = await fulfillPayheroPayment({
         reference: ourReference,
         providerReference,

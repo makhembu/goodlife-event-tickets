@@ -36,7 +36,9 @@ import {
   Tags,
   Tag,
   Settings2,
-  Ticket
+  Ticket,
+  QrCode,
+  Calculator
 } from "lucide-react";
 import { fmtDate, fmtTime } from "@/lib/utils";
 import { toWhatsAppNumber } from "@/lib/phone";
@@ -71,7 +73,12 @@ export default function VendorDetailDrawer({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"velocity" | "stock" | "sales" | "payments" | "customers" | "operators">("velocity");
+  const [activeTab, setActiveTab] = useState<"velocity" | "stock" | "shifts" | "sales" | "payments" | "customers" | "operators">("velocity");
+  
+  // Till Sessions / Shifts State
+  const [tillSessions, setTillSessions] = useState<any[]>([]);
+  const [loadingTillSessions, setLoadingTillSessions] = useState(false);
+  const [forceClosingSessionId, setForceClosingSessionId] = useState<number | null>(null);
   
   // Searches & Filters
   const [salesSearch, setSalesSearch] = useState("");
@@ -207,15 +214,55 @@ export default function VendorDetailDrawer({
       });
   };
 
+  const loadTillSessions = async () => {
+    if (!vendorId) return;
+    setLoadingTillSessions(true);
+    try {
+      const eId = eventId && eventId !== "all" && eventId !== "" ? eventId : 1;
+      const res = await fetch(`/api/admin/till-sessions?vendorId=${vendorId}&eventId=${eId}`);
+      if (res.ok) {
+        const d = await res.json();
+        setTillSessions(d.sessions || []);
+      }
+    } catch (err) {
+      console.error("Failed to load till sessions:", err);
+    } finally {
+      setLoadingTillSessions(false);
+    }
+  };
+
+  const handleForceCloseShift = async (sessionId: number) => {
+    if (!confirm("Are you sure you want to force-close this open shift?")) return;
+    setForceClosingSessionId(sessionId);
+    try {
+      const res = await fetch(`/api/admin/till-sessions/${sessionId}/force-close`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await loadTillSessions();
+        refreshData();
+      } else {
+        const d = await res.json();
+        alert(d.error || "Failed to force close shift");
+      }
+    } catch {
+      alert("Network error closing shift");
+    } finally {
+      setForceClosingSessionId(null);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen || !vendorId) {
       setData(null);
+      setTillSessions([]);
       setError(null);
       return;
     }
 
     setLoading(true);
     setError(null);
+    loadTillSessions();
 
     const query = eventId && eventId !== "all" && eventId !== "" ? `?eventId=${eventId}` : "";
     fetch(`/api/admin/vendors/${vendorId}/analytics${query}`)
@@ -1160,6 +1207,16 @@ export default function VendorDetailDrawer({
                   </span>
 
                   <div className="flex items-center gap-2">
+                    <a
+                      href={`/admin/vendors/${vendorId}/qr`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-black uppercase px-2.5 py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-yellow-300 transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer text-[var(--brand-navy)]"
+                      title="Open printable stall QR tent card"
+                    >
+                      <QrCode className="w-3.5 h-3.5 shrink-0" />
+                      <span>PRINT QR</span>
+                    </a>
                     <button
                       onClick={handleExportCSV}
                       className="text-[11px] font-black uppercase px-2.5 py-1.5 bg-white border-2 border-[var(--brand-navy)] hover:bg-stone-100 transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
@@ -1180,11 +1237,12 @@ export default function VendorDetailDrawer({
                   </div>
                 </div>
 
-                {/* 6-TAB NAVIGATION BAR (NO RAW SCROLLBAR, CLEAN PILLS) */}
+                {/* 7-TAB NAVIGATION BAR (NO RAW SCROLLBAR, CLEAN PILLS) */}
                 <div className="flex border-b-2 border-[var(--brand-navy)] gap-1 flex-nowrap overflow-x-auto no-scrollbar pb-1 w-full">
                   {[
                     { id: "velocity", label: "PRODUCTS MOVING MOST", shortLabel: "VELOCITY", icon: TrendingUp },
                     { id: "stock", label: `STOCK & INVENTORY (${stock.length})`, shortLabel: `STOCK (${stock.length})`, icon: Package },
+                    { id: "shifts", label: `TILL SHIFTS (${tillSessions.length})`, shortLabel: `SHIFTS (${tillSessions.length})`, icon: Calculator },
                     { id: "payments", label: `PAYMENT METHODS & AUDIT`, shortLabel: "PAYMENTS", icon: CreditCard },
                     { id: "customers", label: `CUSTOMER AUDIT (${customers.length})`, shortLabel: `CUSTOMERS (${customers.length})`, icon: Users },
                     { id: "sales", label: `TIME OF SALES (${sales.length})`, shortLabel: `SALES (${sales.length})`, icon: Clock },
@@ -1693,6 +1751,149 @@ export default function VendorDetailDrawer({
                           </table>
                         </div>
                       </>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB: TILL SHIFTS & CASH RECONCILIATION */}
+                {activeTab === "shifts" && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b-2 border-[var(--brand-navy)]">
+                      <div>
+                        <h4 className="font-mono text-sm font-black uppercase text-[var(--brand-navy)]">
+                          Shift &amp; Cash Drawer Reconciliation
+                        </h4>
+                        <p className="text-xs text-[var(--brand-navy-light)] mt-0.5">
+                          Every open till, physical cash counted, and variance recorded per cashier.
+                        </p>
+                      </div>
+                      <button
+                        onClick={loadTillSessions}
+                        disabled={loadingTillSessions}
+                        className="p-1.5 border-2 border-[var(--brand-navy)] bg-white hover:bg-yellow-300 transition-colors shadow-(--shadow-brut-xs) cursor-pointer"
+                        title="Refresh shifts"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 text-[var(--brand-navy)] ${loadingTillSessions ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+
+                    {loadingTillSessions ? (
+                      <div className="py-12 flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-6 h-6 animate-spin text-[var(--brand-navy)]" />
+                        <span className="font-mono text-xs uppercase text-[var(--brand-navy-light)]">Loading shift records...</span>
+                      </div>
+                    ) : tillSessions.length === 0 ? (
+                      <div className="border-2 border-dashed border-[var(--brand-navy)]/30 p-8 text-center bg-white">
+                        <Calculator className="w-8 h-8 text-[var(--brand-navy-light)] mx-auto mb-2 opacity-50" />
+                        <p className="font-mono text-xs font-bold uppercase text-[var(--brand-navy)]">No Till Sessions Recorded</p>
+                        <p className="text-[11px] text-[var(--brand-navy-light)] mt-1">
+                          When cashiers log into POS at /vendor/sell and open their till, shifts will appear here.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {tillSessions.map((shift: any) => {
+                          const isOpen = shift.status === "open";
+                          const variance = shift.variance !== null && shift.variance !== undefined ? Number(shift.variance) : null;
+                          return (
+                            <div
+                              key={shift.id}
+                              className={`border-2 border-[var(--brand-navy)] bg-white p-3.5 shadow-(--shadow-brut-xs) space-y-3 ${
+                                isOpen ? "border-l-8 border-l-yellow-400" : ""
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[var(--brand-navy)]/10">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-2 py-0.5 text-[10px] font-mono font-black uppercase border border-[var(--brand-navy)] ${
+                                      isOpen ? "bg-yellow-300 text-[var(--brand-navy)]" : "bg-stone-200 text-stone-700"
+                                    }`}
+                                  >
+                                    {isOpen ? "SHIFT ACTIVE (OPEN)" : "CLOSED"}
+                                  </span>
+                                  <span className="font-mono text-xs font-bold text-[var(--brand-navy)]">
+                                    Shift #{shift.id} • Cashier: <span className="font-black">{shift.operator_name || "General Staff"}</span>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs font-mono text-[var(--brand-navy-light)]">
+                                  <span>
+                                    {new Date(shift.opened_at).toLocaleDateString()} {fmtTime(shift.opened_at)}
+                                  </span>
+                                  <span>→</span>
+                                  <span>
+                                    {shift.closed_at ? fmtTime(shift.closed_at) : "Current"}
+                                  </span>
+                                  {isOpen && (
+                                    <button
+                                      onClick={() => handleForceCloseShift(shift.id)}
+                                      disabled={forceClosingSessionId === shift.id}
+                                      className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white font-mono text-[10px] font-black uppercase border border-[var(--brand-navy)] shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                                    >
+                                      {forceClosingSessionId === shift.id ? "Closing..." : "Force Close"}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Numbers grid */}
+                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                <div className="p-2 bg-stone-50 border border-[var(--brand-navy)]/20">
+                                  <p className="text-[9px] font-mono uppercase text-[var(--brand-navy-light)]">Opening Float</p>
+                                  <p className="font-mono font-bold text-xs sm:text-sm text-[var(--brand-navy)] mt-0.5">
+                                    KES {Number(shift.opening_float || 0).toLocaleString()}
+                                  </p>
+                                </div>
+                                <div className="p-2 bg-stone-50 border border-[var(--brand-navy)]/20">
+                                  <p className="text-[9px] font-mono uppercase text-[var(--brand-navy-light)]">POS Cash Sales</p>
+                                  <p className="font-mono font-bold text-xs sm:text-sm text-green-700 mt-0.5">
+                                    KES {Number(shift.cash_sales || 0).toLocaleString()}
+                                  </p>
+                                </div>
+                                <div className="p-2 bg-stone-50 border border-[var(--brand-navy)]/20">
+                                  <p className="text-[9px] font-mono uppercase text-[var(--brand-navy-light)]">Expected in Box</p>
+                                  <p className="font-mono font-bold text-xs sm:text-sm text-blue-700 mt-0.5">
+                                    KES {Number(shift.expected_cash || 0).toLocaleString()}
+                                  </p>
+                                </div>
+                                <div className="p-2 bg-stone-50 border border-[var(--brand-navy)]/20">
+                                  <p className="text-[9px] font-mono uppercase text-[var(--brand-navy-light)]">Actual Counted</p>
+                                  <p className="font-mono font-bold text-xs sm:text-sm text-[var(--brand-navy)] mt-0.5">
+                                    {shift.closing_cash_counted !== null && shift.closing_cash_counted !== undefined
+                                      ? `KES ${Number(shift.closing_cash_counted).toLocaleString()}`
+                                      : "—"}
+                                  </p>
+                                </div>
+                                <div className={`p-2 border col-span-2 sm:col-span-1 ${
+                                  variance === null
+                                    ? "bg-stone-50 border-[var(--brand-navy)]/20"
+                                    : variance === 0
+                                    ? "bg-green-50 border-green-300 text-green-800"
+                                    : variance > 0
+                                    ? "bg-blue-50 border-blue-300 text-blue-800"
+                                    : "bg-red-50 border-red-300 text-red-800"
+                                }`}>
+                                  <p className="text-[9px] font-mono uppercase opacity-75">Variance</p>
+                                  <p className="font-mono font-black text-xs sm:text-sm mt-0.5">
+                                    {variance === null
+                                      ? "In Progress"
+                                      : variance === 0
+                                      ? "KES 0 (Exact)"
+                                      : variance > 0
+                                      ? `+KES ${Math.abs(variance).toLocaleString()}`
+                                      : `-KES ${Math.abs(variance).toLocaleString()}`}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {shift.notes && (
+                                <p className="text-[11px] font-mono bg-yellow-50 border border-yellow-200 p-2 text-stone-700">
+                                  <span className="font-bold">Notes:</span> {shift.notes}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}

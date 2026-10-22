@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft, QrCode } from "lucide-react";
+import { ShoppingCart, Plus, Minus, CreditCard, Banknote, Users, Download, ChevronUp, ChevronDown, X, Zap, RotateCw, CheckCircle2, FileText, Search, Ticket, Loader2, Receipt, ExternalLink, MessageSquare, Phone, Clock, ShoppingBag, Printer, AlertTriangle, ArrowLeft, QrCode, LogOut } from "lucide-react";
 import { ProductQrModal } from "@/components/vendor/ProductQrModal";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -146,6 +146,16 @@ export default function VendorSellPage() {
     return true;
   });
   const [showTillQrModal, setShowTillQrModal] = useState(false);
+
+  // Till Session state
+  const [tillSession, setTillSession] = useState<any | null>(null);
+  const [tillLoading, setTillLoading] = useState(true);
+  const [showOpenTill, setShowOpenTill] = useState(false);
+  const [openingFloat, setOpeningFloat] = useState("2000");
+  const [showCloseTill, setShowCloseTill] = useState(false);
+  const [closingCash, setClosingCash] = useState("");
+  const [closeNotes, setCloseNotes] = useState("");
+  const [isClosingTill, setIsClosingTill] = useState(false);
 
   // M-Pesa Change Return state
   const [changeMethod, setChangeMethod] = useState<"cash" | "mpesa">("cash");
@@ -549,6 +559,22 @@ export default function VendorSellPage() {
     loadCustomers();
     loadRecentSales();
 
+    // Load till session on mount
+    async function loadTillSession() {
+      try {
+        const res = await fetch("/api/vendor/till/current");
+        if (res.ok) {
+          const data = await res.json();
+          setTillSession(data.session);
+          setShowOpenTill(!data.session);
+        } else {
+          setShowOpenTill(true);
+        }
+      } catch { setShowOpenTill(true); }
+      finally { setTillLoading(false); }
+    }
+    loadTillSession();
+
     // Auto-fill change phone if mpesaCustomerPhone changes
     if (mpesaCustomerPhone && !changeMpesaPhone) {
       setChangeMpesaPhone(mpesaCustomerPhone);
@@ -866,6 +892,44 @@ export default function VendorSellPage() {
     }
   };
 
+  async function handleOpenTill() {
+    try {
+      const res = await fetch("/api/vendor/till/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opening_float: Number(openingFloat) || 0 }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to open till"); return; }
+      setTillSession(data.session);
+      setShowOpenTill(false);
+    } catch { alert("Network error. Try again."); }
+  }
+
+  async function handleCloseTill() {
+    if (!tillSession) return;
+    setIsClosingTill(true);
+    try {
+      const res = await fetch("/api/vendor/till/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: tillSession.id,
+          closing_cash_counted: Number(closingCash) || 0,
+          notes: closeNotes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to close till"); return; }
+      setTillSession(null);
+      setShowCloseTill(false);
+      setShowOpenTill(true);
+      setClosingCash("");
+      setCloseNotes("");
+    } catch { alert("Network error. Try again."); }
+    finally { setIsClosingTill(false); }
+  }
+
   const handleCheckout = async () => {
     if (cart.length === 0 || submittingSale) return;
     const splitPayments = [];
@@ -924,6 +988,7 @@ export default function VendorSellPage() {
         subtotal: total,
         total: totalPaid,
         notes: changeNote,
+        till_session_id: tillSession?.id || null,
         items: cart.map(i => ({ item_id: i.id, item_name: i.name, quantity: i.quantity, unit_price: i.price, line_total: i.price * i.quantity })),
         splitPayments
       };
@@ -1013,6 +1078,75 @@ export default function VendorSellPage() {
     return matchesCategory && matchesSearch;
   });
 
+  if (tillLoading) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center bg-brand-off-white">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-navy" />
+          <p className="font-mono text-xs font-bold uppercase tracking-widest text-brand-navy/70">Checking Till Status...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (showOpenTill) {
+    return (
+      <div className="w-full min-h-screen bg-brand-off-white flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border-4 border-brand-navy shadow-(--shadow-brut)">
+          <div className="bg-brand-navy text-white text-center py-5 px-6 border-b-2 border-brand-navy">
+            <p className="text-[11px] font-mono font-black tracking-widest text-brand-accent uppercase">Goodlife POS</p>
+            <h1 className="font-display text-3xl uppercase tracking-wider mt-1">Open Your Till</h1>
+            <p className="text-xs font-mono text-white/70 mt-1">Start your shift &amp; set opening change float</p>
+          </div>
+          <div className="p-6 space-y-5">
+            <div>
+              <label className="text-xs font-mono font-black uppercase tracking-wider text-brand-navy block mb-2">
+                Opening Float (KES)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-black text-brand-navy/50 text-lg">KES</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={openingFloat}
+                  onChange={e => setOpeningFloat(e.target.value)}
+                  className="w-full border-2 border-brand-navy pl-16 pr-4 py-3 font-mono font-black text-2xl text-right text-brand-navy focus:outline-none focus:bg-yellow-50"
+                  placeholder="0"
+                  autoFocus
+                />
+              </div>
+              <p className="text-[11px] font-mono text-brand-navy/60 mt-1.5">Count the physical cash you are starting in your drawer</p>
+              
+              <div className="flex gap-2 mt-3">
+                {["0", "1000", "2000", "5000"].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setOpeningFloat(amt)}
+                    className={`flex-1 py-1.5 border-2 border-brand-navy font-mono text-xs font-bold transition-all cursor-pointer ${
+                      openingFloat === amt ? "bg-brand-navy text-white" : "bg-white hover:bg-gray-100 text-brand-navy"
+                    }`}
+                  >
+                    {amt === "0" ? "None" : `KES ${Number(amt).toLocaleString()}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenTill}
+              className="w-full bg-brand-accent hover:bg-yellow-300 text-brand-navy border-2 border-brand-navy font-mono font-black text-sm uppercase py-4 shadow-(--shadow-brut-sm) transition-transform active:translate-x-0.5 active:translate-y-0.5 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Open Till &amp; Start Selling</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full min-h-full flex flex-col md:flex-row bg-brand-off-white">
       {/* Items Grid */}
@@ -1046,6 +1180,17 @@ export default function VendorSellPage() {
               <Receipt className="w-3.5 h-3.5 text-brand-navy shrink-0" />
               <span className="truncate">Recent Sales ({recentSalesList.length})</span>
             </button>
+            {tillSession && (
+              <button
+                type="button"
+                onClick={() => setShowCloseTill(true)}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-brand-navy border-2 border-brand-navy font-mono text-[11px] sm:text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) cursor-pointer col-span-2 sm:col-span-1"
+                title={`Float: KES ${Number(tillSession.opening_float || 0).toLocaleString()}`}
+              >
+                <LogOut className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+                <span className="truncate">Close Shift</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -3223,6 +3368,98 @@ ${completedSale.payments.map((p: any) => `• ${p.method.toUpperCase().padEnd(16
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CLOSE TILL SHIFT MODAL */}
+      {showCloseTill && tillSession && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white border-4 border-brand-navy shadow-(--shadow-brut) max-h-[90vh] overflow-y-auto">
+            <div className="bg-brand-navy text-white px-5 py-4 flex items-center justify-between border-b-2 border-brand-navy sticky top-0">
+              <div>
+                <p className="text-[10px] font-mono font-black text-brand-accent uppercase tracking-widest">End of Shift</p>
+                <h3 className="font-display text-xl uppercase tracking-wider">Close Till &amp; Count Cash</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCloseTill(false)}
+                className="w-8 h-8 flex items-center justify-center border-2 border-white/20 hover:border-white text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-gray-50 border-2 border-brand-navy/20 p-3.5 font-mono text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-brand-navy/60 uppercase">Shift Started:</span>
+                  <span className="font-bold text-brand-navy">
+                    {new Date(tillSession.opened_at).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-brand-navy/60 uppercase">Cashier:</span>
+                  <span className="font-bold text-brand-navy">{tillSession.operator_name || "Assigned Operator"}</span>
+                </div>
+                <div className="flex justify-between border-t border-brand-navy/10 pt-1.5">
+                  <span className="text-brand-navy/60 uppercase">Opening Float:</span>
+                  <span className="font-bold text-brand-navy">KES {Number(tillSession.opening_float || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-mono font-black uppercase tracking-wider text-brand-navy block mb-2">
+                  Actual Cash Counted (KES)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-black text-brand-navy/50 text-lg">KES</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="50"
+                    value={closingCash}
+                    onChange={e => setClosingCash(e.target.value)}
+                    className="w-full border-2 border-brand-navy pl-16 pr-4 py-3 font-mono font-black text-2xl text-right text-brand-navy focus:outline-none focus:bg-yellow-50"
+                    placeholder="0"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[11px] font-mono text-brand-navy/60 mt-1.5">Physically count all cash notes and coins in the drawer right now</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-mono font-black uppercase tracking-wider text-brand-navy block mb-1">
+                  Shift Notes (Optional)
+                </label>
+                <textarea
+                  value={closeNotes}
+                  onChange={e => setCloseNotes(e.target.value)}
+                  className="w-full border-2 border-brand-navy p-2.5 font-mono text-xs focus:outline-none resize-none"
+                  rows={2}
+                  placeholder="e.g. gave change for 100, vendor manager collected cash, etc."
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCloseTill(false)}
+                  className="flex-1 py-3 border-2 border-brand-navy font-mono text-xs font-bold uppercase hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Keep Open
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseTill}
+                  disabled={isClosingTill || closingCash === ""}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white border-2 border-brand-navy font-mono text-xs font-black uppercase transition-colors shadow-(--shadow-brut-xs) flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isClosingTill ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                  <span>Confirm Close Shift</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
