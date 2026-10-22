@@ -149,6 +149,12 @@
   scrollbar-color: var(--brand-navy) var(--brand-bg);
 }
 
+
+/* Reserve space for the OS scrollbar so the fixed sticky bar
+   never gets visually overlapped by the native scrollbar gutter. */
+html {
+  scrollbar-gutter: stable;
+}
 /* Input placeholder contrast enforcement (HIG secondaryLabel ≈ 60% opacity) */
 ::placeholder,
 ::-webkit-input-placeholder,

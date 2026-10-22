@@ -1205,7 +1205,8 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
             sales_close_date: (eventFormState as any).sales_close_date || null,
             next_event_title: (eventFormState as any).next_event_title || null,
             status: nextStatus,
-            is_active: nextStatus === "live"
+            is_active: nextStatus === "live",
+            custom_schedule_text: (eventFormState as any).custom_schedule_text || null
           })
         });
         if (!res.ok) {
@@ -1730,165 +1731,129 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               );
             })()}
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-caption font-black uppercase text-[var(--brand-navy)]">Showing</span>
-              <div className="flex border-2 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
-                {AUDIENCE_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => handleAudienceSelect(opt.value)}
-                    aria-pressed={audience === opt.value}
-                    className={`px-2.5 py-1 text-[11px] font-black uppercase transition-colors duration-150 active:scale-95 ${
-                      audience === opt.value
-                        ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
-                        : "bg-white text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <span className="text-caption text-[var(--brand-navy-light)] font-bold uppercase whitespace-nowrap">
-                {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"}
-              </span>
-              {dateMismatches.map(m => (
-                <span
-                  key={m.eventId}
-                  className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
-                  title={`${data.eventLabels[String(m.eventId)] || `Event #${m.eventId}`} ${m.reason}.`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  {data.eventLabels[String(m.eventId)] || `EVENT #${m.eventId}`} &mdash; {m.reason}
-                </span>
-              ))}
-              {duplicateCount > 0 && (
-                <span
-                  className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
-                  title="Possible duplicate payment."
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  {duplicateCount} possible duplicate payment{duplicateCount === 1 ? "" : "s"}
-                </span>
-              )}
-            </div>
+
           </div>
 
-          {/* Right: Operational Tool Buttons — 2-Col Grid on Mobile, Flex on Desktop */}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto">
-            <button
-              onClick={() => {
-                setIsEditingEvent(true);
-                const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
-                setEventFormState({
-                  ...eventDetails,
-                  title: cur?.title || eventDetails?.title,
-                  subtitle: cur?.subtitle || eventDetails?.subtitle,
-                  tag: cur?.tag || eventDetails?.tag,
-                  venue: cur?.venue || eventDetails?.venue,
-                  event_date: cur?.event_date || eventDetails?.event_date,
-                  maps_url: cur?.maps_url || eventDetails?.maps_url,
-                  till_number: cur?.till_number || eventDetails?.till_number,
-                  flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
-                  video_url: cur?.video_url ?? (eventDetails as any)?.video_url ?? "",
-                  ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
-                  logo_url: cur?.logo_url || eventDetails?.logo_url,
-                  status: normalizeLifecycleStatus(cur?.status, cur?.is_active),
-                  // The sales window and next-edition title only exist on the
-                  // `events` row. They were never copied into the form, which is
-                  // why the inputs for them did not exist: there was nothing to
-                  // show and nothing to save. Null-safe so a cleared field stays
-                  // cleared instead of falling back to the singleton.
-                  sales_open_date: cur?.sales_open_date ?? null,
-                  sales_close_date: cur?.sales_close_date ?? null,
-                  next_event_title: cur?.next_event_title ?? null,
-                  whatsapp_message: eventDetails?.whatsapp_message?.trim()
-                    ? eventDetails.whatsapp_message
-                    : getDefaultWhatsAppTemplate(),
-                  payment_contact: eventDetails?.payment_contact || "",
-                  whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
-                    ? eventDetails.whatsapp_operator_template
-                    : getDefaultOperatorTemplate(),
-                  whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
-                    ? eventDetails.whatsapp_scan_template
-                    : getDefaultScanTemplate(),
-                  operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
-                } as any);
-              }}
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 bg-white shadow-(--shadow-brut-xs) text-center cursor-pointer"
-            >
-              <Edit className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">EDIT EVENT INFO</span>
-            </button>
-            <Link 
-              href="/admin/vendors" 
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-            >
-              <Store className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">DEPTS & POS</span>
-            </Link>
-            <Link 
-              href="/admin/settlements" 
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-            >
-              <Receipt className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">SETTLEMENTS</span>
-            </Link>
-            <Link 
-              href={selectedEventId ? `/admin/budget?eventId=${selectedEventId}` : "/admin/budget"} 
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-            >
-              <DollarSign className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">BUDGET & P&L</span>
-            </Link>
-            <Link 
-              href="/scanner" 
-              className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-            >
-              <Activity className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">GATE SCAN</span>
-            </Link>
-            <button
-              onClick={() => {
-                loadGateScannerData();
-                setShowGatePinModal(true);
-              }}
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center cursor-pointer"
-            >
-              <Key className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">GATE PIN</span>
-            </button>
-            <Link
-              href="/admin/whatsapp"
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-              title="Open WhatsApp Gateway pairing QR code and live status"
-            >
-              <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">WHATSAPP QR</span>
-            </Link>
-            <Link
-              href="/admin/gallery"
-              className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center"
-              title="Manage event gallery photos and posters"
-            >
-              <span className="truncate">📷 GALLERY</span>
-            </Link>
+          {/* Right: Operational Tool Buttons — grouped by purpose */}
+          <div className="flex flex-col gap-2 w-full lg:w-auto">
+            {/* LIVE OPS: primary high-contrast action buttons */}
+            <div className="flex flex-wrap items-stretch gap-2">
+              <Link
+                href="/scanner"
+                className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
+              >
+                <Activity className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">GATE SCAN</span>
+              </Link>
+              <Link
+                href="/admin/vendors"
+                className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
+              >
+                <Store className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">DEPTS &amp; POS</span>
+              </Link>
+              <Link
+                href="/admin/settlements"
+                className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
+              >
+                <Receipt className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">SETTLEMENTS</span>
+              </Link>
+            </div>
+            {/* CONFIG: secondary configuration buttons */}
+            <div className="flex flex-wrap items-stretch gap-1.5">
+              <button
+                onClick={() => {
+                  setIsEditingEvent(true);
+                  const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
+                  setEventFormState({
+                    ...eventDetails,
+                    title: cur?.title || eventDetails?.title,
+                    subtitle: cur?.subtitle || eventDetails?.subtitle,
+                    tag: cur?.tag || eventDetails?.tag,
+                    venue: cur?.venue || eventDetails?.venue,
+                    event_date: cur?.event_date || eventDetails?.event_date,
+                    maps_url: cur?.maps_url || eventDetails?.maps_url,
+                    till_number: cur?.till_number || eventDetails?.till_number,
+                    flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
+                    video_url: cur?.video_url ?? (eventDetails as any)?.video_url ?? "",
+                    ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
+                    logo_url: cur?.logo_url || eventDetails?.logo_url,
+                    status: normalizeLifecycleStatus(cur?.status, cur?.is_active),
+                    sales_open_date: cur?.sales_open_date ?? null,
+                    sales_close_date: cur?.sales_close_date ?? null,
+                    next_event_title: cur?.next_event_title ?? null,
+                    whatsapp_message: eventDetails?.whatsapp_message?.trim()
+                      ? eventDetails.whatsapp_message
+                      : getDefaultWhatsAppTemplate(),
+                    payment_contact: eventDetails?.payment_contact || "",
+                    whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
+                      ? eventDetails.whatsapp_operator_template
+                      : getDefaultOperatorTemplate(),
+                    whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
+                      ? eventDetails.whatsapp_scan_template
+                      : getDefaultScanTemplate(),
+                    operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
+                  } as any);
+                }}
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-white shadow-(--shadow-brut-xs) cursor-pointer"
+              >
+                <Edit className="w-3 h-3 shrink-0" />
+                <span>EDIT EVENT</span>
+              </button>
+              <Link
+                href={selectedEventId ? `/admin/budget?eventId=${selectedEventId}` : "/admin/budget"}
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
+              >
+                <DollarSign className="w-3 h-3 shrink-0" />
+                <span>BUDGET &amp; P&amp;L</span>
+              </Link>
+              <button
+                onClick={() => {
+                  loadGateScannerData();
+                  setShowGatePinModal(true);
+                }}
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
+              >
+                <Key className="w-3 h-3 shrink-0" />
+                <span>GATE PIN</span>
+              </button>
+              <Link
+                href="/admin/whatsapp"
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
+                title="Open WhatsApp Gateway pairing QR code and live status"
+              >
+                <MessageSquare className="w-3 h-3 shrink-0" />
+                <span>WHATSAPP QR</span>
+              </Link>
+              <Link
+                href="/admin/gallery"
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
+                title="Manage event gallery photos and posters"
+              >
+                <span>📷 GALLERY</span>
+              </Link>
+            </div>
+            {/* DANGER ZONE: END / REOPEN EVENT — isolated at bottom */}
             {selectedEventId && selectedEventId > 0 && (() => {
               const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
               const isClosed = cur?.status === "closed" || cur?.is_active === false;
               return (
-                <button
-                  type="button"
-                  onClick={handleToggleEventLifecycle}
-                  className={`text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs) text-center cursor-pointer col-span-2 sm:col-span-1 ${
-                    isClosed
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-red-600 text-white hover:bg-red-700"
-                  }`}
-                  title={isClosed ? "Re-open this event and resume ticket sales" : "Conclude/close this event"}
-                >
-                  <StopCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{isClosed ? "RE-OPEN EVENT" : "END EVENT"}</span>
-                </button>
+                <div className="border-t-2 border-dashed border-red-400/60 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleEventLifecycle}
+                    className={`text-[11px] font-black uppercase px-3 py-1.5 transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer ${
+                      isClosed
+                        ? "border-2 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "border-2 border-red-600 bg-white text-red-600 hover:bg-red-600 hover:text-white"
+                    }`}
+                    title={isClosed ? "Re-open this event and resume ticket sales" : "Conclude/close this event"}
+                  >
+                    <StopCircle className="w-3 h-3 shrink-0" />
+                    <span>{isClosed ? "RE-OPEN EVENT" : "END EVENT"}</span>
+                  </button>
+                </div>
               );
             })()}
           </div>
@@ -1910,6 +1875,53 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
         </div>
       )}
+
+            {/* AUDIENCE SELECTOR STRIP */}
+      <div className="w-full max-w-7xl xl:max-w-[1500px] mx-auto mb-5 flex flex-wrap items-center justify-between gap-3 p-3 bg-white border-2 border-[var(--brand-navy)] shadow-(--shadow-brut-xs)">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="text-[11px] font-black uppercase text-[var(--brand-navy)]">AUDIENCE:</span>
+          <div className="flex border-2 border-[var(--brand-navy)] bg-white shadow-(--shadow-brut-xs)">
+            {AUDIENCE_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => handleAudienceSelect(opt.value)}
+                aria-pressed={audience === opt.value}
+                className={`px-3 py-1 text-[11px] font-black uppercase transition-colors duration-150 active:scale-95 cursor-pointer ${
+                  audience === opt.value
+                    ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                    : "bg-white text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase whitespace-nowrap">
+            {data.staffPasses} staff pass{data.staffPasses === 1 ? "" : "es"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {dateMismatches.map(m => (
+            <span
+              key={m.eventId}
+              className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+              title={`${data.eventLabels[String(m.eventId)] || `Event #${m.eventId}`} ${m.reason}.`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              {data.eventLabels[String(m.eventId)] || `EVENT #${m.eventId}`} &mdash; {m.reason}
+            </span>
+          ))}
+          {duplicateCount > 0 && (
+            <span
+              className="text-caption font-black uppercase text-brand-danger flex items-center gap-1"
+              title="Possible duplicate payment."
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              {duplicateCount} possible duplicate payment{duplicateCount === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      </div>
 
       <div className="w-full max-w-7xl xl:max-w-[1500px] mx-auto space-y-6">
 
@@ -3650,6 +3662,17 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     onChange={(e) => setEventFormState({ ...eventFormState, till_number: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black uppercase">Schedule / Vibe Text</label>
+                  <input
+                    type="text"
+                    value={(eventFormState as any).custom_schedule_text || ""}
+                    onChange={(e) => setEventFormState({ ...eventFormState, custom_schedule_text: e.target.value } as any)}
+                    placeholder="e.g. GATES OPEN 2PM • OVERNIGHT CAMPING"
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                  />
+                  <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase">Shown in the date/time info box on the homepage. Leave blank to auto-derive from event date.</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-black uppercase">Payment Contact (for till users)</label>

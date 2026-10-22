@@ -190,8 +190,7 @@ export default function TicketCheckoutPage({
 
   // Secret admin access (5x logo tap fallback)
   const [showSecretMenu, setShowSecretMenu] = useState(false);
-  const logoTapCountRef = useRef(0);
-  const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimestampsRef = useRef<number[]>([]);
   const headerRef = useRef<HTMLElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -237,17 +236,13 @@ export default function TicketCheckoutPage({
 
   function handleLogoTap() {
     HapticFeedback.trigger("confirmation");
-    logoTapCountRef.current += 1;
-    if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
-
-    if (logoTapCountRef.current >= 5) {
+    const now = Date.now();
+    // Keep only taps within the last 2 seconds — no timers, no race conditions
+    tapTimestampsRef.current = [...tapTimestampsRef.current, now].filter(t => now - t < 2000);
+    if (tapTimestampsRef.current.length >= 5) {
       HapticFeedback.trigger("success");
       setShowSecretMenu(true);
-      logoTapCountRef.current = 0;
-    } else {
-      logoTapTimerRef.current = setTimeout(() => {
-        logoTapCountRef.current = 0;
-      }, 2500);
+      tapTimestampsRef.current = [];
     }
   }
 
@@ -1547,11 +1542,29 @@ export default function TicketCheckoutPage({
                   </a>
                   <div className="bg-brand-accent p-3 border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) min-w-0 flex flex-col justify-between">
                     <div>
-                      <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1.5 font-mono font-bold">PAYMENT TILL</span>
-                      <span className="text-brand-navy block text-sm md:text-base font-display break-all">#{eventDetails.till_number}</span>
+                      <span className="block text-[10px] text-brand-navy border-b border-brand-navy pb-1 mb-1.5 font-mono font-bold">
+                        {eventDetails.custom_schedule_text ? "VIBE" : "DATE / TIME"}
+                      </span>
+                      <span className="text-brand-navy block text-xs font-mono font-bold leading-snug break-words">
+                        {eventDetails.custom_schedule_text
+                          ? eventDetails.custom_schedule_text
+                          : eventDetails.event_date
+                            ? (() => {
+                                const d = new Date(eventDetails.event_date);
+                                const mon = d.toLocaleString("en-KE", { month: "short" }).toUpperCase();
+                                const day = d.getDate();
+                                const hr = d.getHours();
+                                const min = d.getMinutes();
+                                const suffix = hr >= 12 ? "PM" : "AM";
+                                const h12 = hr % 12 || 12;
+                                const timeStr = min === 0 ? `${h12}${suffix}` : `${h12}:${String(min).padStart(2,"0")}${suffix}`;
+                                return `${mon} ${day} • GATES OPEN ${timeStr}`;
+                              })()
+                            : "OVERNIGHT CAMPING"}
+                      </span>
                     </div>
                     <span className="text-[9px] font-mono font-bold tracking-wider text-brand-navy/60 block mt-2">
-                      INSTANT STK PUSH
+                      LINEUP / VIBE
                     </span>
                   </div>
                 </div>
