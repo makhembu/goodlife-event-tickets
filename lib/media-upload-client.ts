@@ -36,7 +36,10 @@ async function safeJson<T>(res: Response): Promise<T> {
   throw new Error(text.slice(0, 200) || `HTTP ${res.status}`);
 }
 
-export async function uploadImageFile(file: File): Promise<string> {
+export async function uploadImageFile(
+  file: File,
+  folder: "gallery" | "posters" = "gallery"
+): Promise<string> {
   // Try direct-to-R2 upload first if available
   try {
     const presignedRes = await fetch("/api/admin/presigned-url", {
@@ -45,7 +48,7 @@ export async function uploadImageFile(file: File): Promise<string> {
       body: JSON.stringify({
         filename: file.name || "image.jpg",
         contentType: file.type || "image/jpeg",
-        folder: "posters",
+        folder,
       }),
     });
     if (presignedRes.ok) {
@@ -79,7 +82,8 @@ export async function uploadImageFile(file: File): Promise<string> {
 
 export async function uploadVideoFile(
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  folder: "videos" | "gallery" = "gallery"
 ): Promise<string> {
   // Tier 0: Direct browser-to-R2 upload (Bypasses Vercel 4.5MB limit completely)
   try {
@@ -89,7 +93,7 @@ export async function uploadVideoFile(
       body: JSON.stringify({
         filename: file.name || "video.mp4",
         contentType: file.type || "video/mp4",
-        folder: "videos",
+        folder,
       }),
     });
 

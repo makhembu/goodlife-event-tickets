@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchEventGallery, neonQuery } from '@/lib/supabase-db';
 import { requireAdmin } from "@/lib/admin-auth";
 import { resolveGalleryMediaType } from "@/lib/gallery-media";
+import { deleteR2Object } from "@/lib/r2-storage";
 
 export async function GET(req: Request) {
   try {
@@ -78,7 +79,25 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Valid ID is required' }, { status: 400 });
     }
 
+    const result = await neonQuery(
+      'SELECT image_url, thumbnail_url FROM event_gallery WHERE id = $1',
+      [id]
+    );
+    const rows = (result?.rows || []) as Array<{ image_url?: string; thumbnail_url?: string }>;
+
     await neonQuery('DELETE FROM event_gallery WHERE id = $1', [id]);
+
+    // If the image or thumbnail is hosted on Cloudflare R2, clean up the object
+    if (rows && rows.length > 0) {
+      const { image_url, thumbnail_url } = rows[0];
+      if (image_url) {
+        await deleteR2Object(image_url).catch((err) => console.warn('Could not delete R2 image:', err));
+      }
+      if (thumbnail_url && thumbnail_url !== image_url) {
+        await deleteR2Object(thumbnail_url).catch((err) => console.warn('Could not delete R2 thumbnail:', err));
+      }
+    }
+
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error('Error deleting gallery image:', err);

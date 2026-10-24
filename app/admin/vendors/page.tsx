@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench, X, Trash2 } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench, X, Trash2, Search, Filter } from "lucide-react";
 import Link from "next/link";
 import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
 export default function AdminVendorsPage() {
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<"all" | "commercial" | "operational">("all");
+  const [filterType, setFilterType] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -292,9 +293,48 @@ export default function AdminVendorsPage() {
     }
   };
 
+  const commercialCount = vendors.filter((v) => v.category !== "operational").length;
+  const operationalCount = vendors.filter((v) => v.category === "operational").length;
+  const houseCount = vendors.filter((v) => Boolean(v.is_house)).length;
+
+  const dynamicCategories = React.useMemo(() => {
+    const set = new Set<string>();
+    vendors.forEach((v) => {
+      const cat = (v.category || "").trim().toLowerCase();
+      if (cat && cat !== "commercial" && cat !== "operational") {
+        set.add(cat);
+      }
+    });
+    return Array.from(set);
+  }, [vendors]);
+
   const filteredVendors = vendors.filter((v) => {
-    if (filterType === "commercial") return v.category !== "operational";
-    if (filterType === "operational") return v.category === "operational";
+    // 1. Classification & category filtering
+    if (filterType === "commercial") {
+      if (v.category === "operational") return false;
+    } else if (filterType === "operational") {
+      if (v.category !== "operational") return false;
+    } else if (filterType === "house") {
+      if (!v.is_house) return false;
+    } else if (filterType !== "all") {
+      if ((v.category || "").toLowerCase() !== filterType.toLowerCase()) return false;
+    }
+
+    // 2. Search query filtering
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const nameMatch = (v.name || "").toLowerCase().includes(q);
+      const contactMatch = (v.contact_name || "").toLowerCase().includes(q);
+      const phoneMatch = (v.contact_phone || "").toLowerCase().includes(q);
+      const catMatch = (v.category || "").toLowerCase().includes(q);
+      const opMatch = Array.isArray(v.vendor_operators) && v.vendor_operators.some((op: any) =>
+        (op.name || "").toLowerCase().includes(q) || (op.role || "").toLowerCase().includes(q)
+      );
+      if (!nameMatch && !contactMatch && !phoneMatch && !catMatch && !opMatch) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -350,44 +390,142 @@ export default function AdminVendorsPage() {
           </div>
         </div>
 
-        {/* Classification Filter Bar */}
-        <div className="flex border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs)">
-          <button
-            type="button"
-            onClick={() => setFilterType("all")}
-            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-              filterType === "all" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
-            }`}
-          >
-            <span>All Units ({vendors.length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType("commercial")}
-            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 border-l-4 border-brand-navy transition-colors cursor-pointer ${
-              filterType === "commercial" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
-            }`}
-          >
-            <Store className="w-3.5 h-3.5" />
-            <span>Commercial POS Stalls ({vendors.filter(v => v.category !== "operational").length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType("operational")}
-            className={`flex-1 py-2 px-3 text-xs font-black uppercase flex items-center justify-center gap-1.5 border-l-4 border-brand-navy transition-colors cursor-pointer ${
-              filterType === "operational" ? "bg-brand-navy text-brand-off-white" : "bg-white text-brand-navy hover:bg-brand-accent/30"
-            }`}
-          >
-            <Wrench className="w-3.5 h-3.5" />
-            <span>Operational Teams ({vendors.filter(v => v.category === "operational").length})</span>
-          </button>
+        {/* Search & Category Filter Toolbar */}
+        <div className="space-y-3">
+          {/* Search Input Bar */}
+          <div className="relative border-4 border-brand-navy bg-white shadow-(--shadow-brut-xs) flex items-center">
+            <Search className="w-5 h-5 ml-3.5 text-brand-navy/60 shrink-0 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by stall name, contact person, phone number, operator..."
+              className="w-full py-3 pl-3 pr-10 text-xs sm:text-sm font-bold placeholder:text-stone-400 placeholder:font-normal focus:outline-none focus:bg-brand-accent/15"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="p-2 mr-1 hover:bg-brand-navy/10 text-brand-navy shrink-0 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter Chips */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-brand-navy/70 mr-1 flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5" /> Category:
+              </span>
+              <button
+                type="button"
+                onClick={() => setFilterType("all")}
+                className={`py-1.5 px-3 text-xs font-black uppercase border-2 border-brand-navy transition-colors cursor-pointer ${
+                  filterType === "all"
+                    ? "bg-brand-navy text-brand-off-white"
+                    : "bg-white text-brand-navy hover:bg-brand-accent/30 shadow-(--shadow-brut-xs)"
+                }`}
+              >
+                All ({vendors.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType("commercial")}
+                className={`py-1.5 px-3 text-xs font-black uppercase border-2 border-brand-navy flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  filterType === "commercial"
+                    ? "bg-brand-navy text-brand-off-white"
+                    : "bg-white text-brand-navy hover:bg-brand-accent/30 shadow-(--shadow-brut-xs)"
+                }`}
+              >
+                <Store className="w-3.5 h-3.5" />
+                <span>Commercial ({commercialCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType("operational")}
+                className={`py-1.5 px-3 text-xs font-black uppercase border-2 border-brand-navy flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  filterType === "operational"
+                    ? "bg-brand-navy text-brand-off-white"
+                    : "bg-white text-brand-navy hover:bg-brand-accent/30 shadow-(--shadow-brut-xs)"
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>Operational ({operationalCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterType("house")}
+                className={`py-1.5 px-3 text-xs font-black uppercase border-2 border-brand-navy flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  filterType === "house"
+                    ? "bg-brand-navy text-brand-off-white"
+                    : "bg-white text-brand-navy hover:bg-brand-accent/30 shadow-(--shadow-brut-xs)"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>House Units ({houseCount})</span>
+              </button>
+              {dynamicCategories.map((cat) => {
+                const count = vendors.filter((v) => (v.category || "").toLowerCase() === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setFilterType(cat)}
+                    className={`py-1.5 px-3 text-xs font-black uppercase border-2 border-brand-navy transition-colors cursor-pointer ${
+                      filterType === cat
+                        ? "bg-brand-navy text-brand-off-white"
+                        : "bg-white text-brand-navy hover:bg-brand-accent/30 shadow-(--shadow-brut-xs)"
+                    }`}
+                  >
+                    <span>{cat} ({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Results count & Clear */}
+            {(searchQuery || filterType !== "all") && (
+              <div className="flex items-center gap-2 text-xs font-bold uppercase ml-auto">
+                <span className="opacity-70">
+                  Showing {filteredVendors.length} of {vendors.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setFilterType("all");
+                  }}
+                  className="text-red-700 underline hover:text-red-900 cursor-pointer"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {loading ? (
           <div className="p-12 text-center text-xl font-bold uppercase animate-pulse">Loading Departments...</div>
         ) : filteredVendors.length === 0 ? (
-          <div className="p-12 text-center border-4 border-brand-navy bg-white shadow-(--shadow-brut-md)">
-            <p className="font-bold uppercase text-sm opacity-60">No units found in this view</p>
+          <div className="p-12 text-center border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) space-y-3">
+            <p className="font-bold uppercase text-sm opacity-70">
+              {searchQuery ? `No units matching "${searchQuery}"` : "No units found in this category view"}
+            </p>
+            {(searchQuery || filterType !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setFilterType("all");
+                }}
+                className="inline-flex items-center gap-1.5 bg-brand-navy text-brand-off-white px-4 py-2 text-xs font-bold uppercase hover:bg-brand-accent hover:text-brand-navy border-2 border-brand-navy transition-colors cursor-pointer"
+              >
+                Clear Search &amp; Filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,7 +1,24 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Image as ImageIcon, Plus, Upload, X, CheckCircle, Loader2, Trash2, Play } from "lucide-react";
+import {
+  Image as ImageIcon,
+  Plus,
+  Upload,
+  X,
+  CheckCircle,
+  Loader2,
+  Trash2,
+  Play,
+  Cloud,
+  Copy,
+  Check,
+  Folder,
+  RefreshCw,
+  ExternalLink,
+  Search,
+  Film,
+} from "lucide-react";
 import Link from "next/link";
 import { isVideoMediaUrl, resolveGalleryMediaType, type GalleryMediaType } from "@/lib/gallery-media";
 import { extractVideoPoster, uploadImageFile, uploadVideoFile, type ExtractedPosterMeta } from "@/lib/media-upload-client";
@@ -22,16 +39,60 @@ type GalleryImage = {
 
 type Event = { id: number; title: string };
 
+export interface R2ObjectItem {
+  key: string;
+  url: string;
+  size: number;
+  lastModified: string;
+  folder: string;
+  filename: string;
+  isImage: boolean;
+  isVideo: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatKenyaDate(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString("en-KE", {
+      timeZone: "Africa/Nairobi",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
 export default function AdminGalleryPage() {
+  const [activeTab, setActiveTab] = useState<"gallery" | "r2">("gallery");
+
+  // Gallery items state
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  // Separate from `uploadError`: this is "the picker has nothing to offer",
-  // which must not be confused with "your upload failed".
   const [eventLoadError, setEventLoadError] = useState("");
 
-  // form state
+  // Cloudflare R2 bucket state
+  const [r2Objects, setR2Objects] = useState<R2ObjectItem[]>([]);
+  const [r2Loading, setR2Loading] = useState(false);
+  const [r2Error, setR2Error] = useState("");
+  const [r2FolderFilter, setR2FolderFilter] = useState<"all" | "gallery" | "posters" | "videos">("all");
+  const [r2Search, setR2Search] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [deletingR2Key, setDeletingR2Key] = useState<string | null>(null);
+
+  // Form state
   const [eventId, setEventId] = useState("");
   const [caption, setCaption] = useState("");
   const [tag, setTag] = useState("PHOTO");
@@ -39,10 +100,11 @@ export default function AdminGalleryPage() {
   const [urlMode, setUrlMode] = useState(false);
   const [mediaType, setMediaType] = useState<GalleryMediaType>("image");
 
-  // upload state
+  // Upload state
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -50,24 +112,14 @@ export default function AdminGalleryPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Release the object URL when the picker closes or a new file replaces it.
+  // Release the object URL when preview unmounts or replaces
   useEffect(() => {
     return () => {
       if (preview) URL.revokeObjectURL(preview);
     };
   }, [preview]);
 
-  // load gallery + events
-  //
-  // The events request used to target `/api/admin/events`, which does not exist
-  // — the only events endpoints are `/api/events`, `/api/events/active` and
-  // `/api/events/[id]`. So the request 404'd, `.catch(() => [])` swallowed it,
-  // and the Event picker rendered empty with no indication anything had failed.
-  // Every other admin page (settlements, dashboard, EventSelector) already uses
-  // `/api/events`; this was the sole outlier.
-  //
-  // `GET /api/events` returns a bare array of full event rows and is gated on
-  // the admin cookie, which this page already holds.
+  // Load curated gallery + events
   const loadGallery = useCallback(async () => {
     try {
       const [galleryRes, eventsRes] = await Promise.all([
@@ -76,9 +128,6 @@ export default function AdminGalleryPage() {
           .then(async (r) => {
             const body = await r.json().catch(() => null);
             if (!r.ok) {
-              // Report rather than degrade to "no events exist" — an empty
-              // picker reads as "this festival has no editions", which is a
-              // different and much more alarming claim than "the list failed".
               throw new Error(
                 (body && (body.error || body.message)) || `Events request failed (HTTP ${r.status})`
               );
@@ -97,10 +146,6 @@ export default function AdminGalleryPage() {
       setEventLoadError("");
 
       if (evts.length > 0) {
-        // Default to the HOMEPAGE event, not merely the first row. `fetchAllEvents`
-        // orders by created_at DESC, so `evts[0]` is the newest edition — which
-        // for an archived-then-reopened festival is not the event currently
-        // selling. This matches app/admin/settlements/page.tsx.
         const preferred = evts.find((e: any) => e.is_active) || evts[0];
         setEventId(String(preferred.id));
       } else {
@@ -116,9 +161,32 @@ export default function AdminGalleryPage() {
     }
   }, []);
 
-  useEffect(() => { loadGallery(); }, [loadGallery]);
+  // Load Cloudflare R2 bucket items
+  const loadR2Objects = useCallback(async () => {
+    setR2Loading(true);
+    setR2Error("");
+    try {
+      const res = await fetch("/api/admin/r2");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `Failed to list R2 bucket (HTTP ${res.status})`);
+      }
+      setR2Objects(Array.isArray(data?.objects) ? data.objects : []);
+    } catch (err: any) {
+      console.error("Error loading R2 objects:", err);
+      setR2Error(err?.message || "Could not load Cloudflare bucket items.");
+      setR2Objects([]);
+    } finally {
+      setR2Loading(false);
+    }
+  }, []);
 
-  // file pick / drag-drop
+  useEffect(() => {
+    loadGallery();
+    loadR2Objects();
+  }, [loadGallery, loadR2Objects]);
+
+  // File pick / drag-drop
   const handleFile = (f: File) => {
     const isVideo = f.type.startsWith("video/") || isVideoMediaUrl(f.name);
     const isImage = f.type.startsWith("image/");
@@ -145,14 +213,17 @@ export default function AdminGalleryPage() {
   };
 
   const onDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragging(false);
+    e.preventDefault();
+    setDragging(false);
     const f = e.dataTransfer.files[0];
     if (f) handleFile(f);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true); setUploadError("");
+    setSaving(true);
+    setUploadError("");
+    setUploadProgress(null);
     try {
       let finalUrl = imageUrl.trim();
       let thumbnailUrl = "";
@@ -163,23 +234,22 @@ export default function AdminGalleryPage() {
       if (!urlMode && file) {
         setUploading(true);
         if (effectiveType === "video") {
-          // Upload the video and extract its poster in parallel. The poster is
-          // what the public grid paints; the video is only fetched on open.
           const posterPromise = extractVideoPoster(file).catch((): ExtractedPosterMeta => ({}));
-          finalUrl = await uploadVideoFile(file);
+          finalUrl = await uploadVideoFile(file, (percent) => setUploadProgress(percent), "gallery");
           const meta = await posterPromise;
           thumbnailUrl = meta.poster_url || "";
         } else {
-          finalUrl = await uploadImageFile(file);
+          finalUrl = await uploadImageFile(file, "gallery");
         }
         setUploading(false);
       }
 
-      if (!finalUrl) { setUploadError("Please pick a file or enter a URL."); setSaving(false); return; }
+      if (!finalUrl) {
+        setUploadError("Please pick a file or enter a URL.");
+        setSaving(false);
+        return;
+      }
 
-      // Refuse to guess the event. This used to fall back to `event_id: 1`,
-      // which silently filed the image against whatever edition happens to
-      // hold id 1 — a poster for the wrong festival, with no error anywhere.
       if (!eventId) {
         setUploadError(
           eventLoadError
@@ -208,22 +278,28 @@ export default function AdminGalleryPage() {
         throw new Error(body?.error || "Failed to save media");
       }
 
-      // reset + reload
+      // Reset + reload both curated gallery and Cloudflare R2 list
       if (preview) URL.revokeObjectURL(preview);
-      setFile(null); setPreview(null); setCaption(""); setImageUrl(""); setTag("PHOTO");
+      setFile(null);
+      setPreview(null);
+      setCaption("");
+      setImageUrl("");
+      setTag("PHOTO");
       setMediaType("image");
       setShowModal(false);
-      await loadGallery();
+      await Promise.all([loadGallery(), loadR2Objects()]);
     } catch (err: any) {
       setUploadError(err.message || "Something went wrong.");
       setUploading(false);
     } finally {
       setSaving(false);
+      setUploadProgress(null);
     }
   };
 
+  // Delete from Curated Event Gallery (also cleans up Cloudflare R2 file)
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this item?")) return;
+    if (!window.confirm("Are you sure you want to delete this gallery item? If hosted on Cloudflare R2, it will also be deleted from storage.")) return;
     setDeletingId(id);
     try {
       const res = await fetch(`/api/hub/gallery?id=${id}`, {
@@ -233,7 +309,7 @@ export default function AdminGalleryPage() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error || "Failed to delete image");
       }
-      await loadGallery();
+      await Promise.all([loadGallery(), loadR2Objects()]);
     } catch (err: any) {
       alert(err.message || "Failed to delete image");
     } finally {
@@ -241,16 +317,89 @@ export default function AdminGalleryPage() {
     }
   };
 
+  // Delete directly from Cloudflare R2 bucket
+  const handleDeleteR2 = async (key: string) => {
+    if (!window.confirm(`Permanently delete "${key}" from Cloudflare R2 bucket? This cannot be undone.`)) {
+      return;
+    }
+    setDeletingR2Key(key);
+    try {
+      const res = await fetch(`/api/admin/r2?key=${encodeURIComponent(key)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to delete file from Cloudflare R2");
+      }
+      // Remove from state immediately
+      setR2Objects((prev) => prev.filter((o) => o.key !== key));
+      // Reload gallery in case an item referenced this file
+      loadGallery();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete file from Cloudflare R2");
+    } finally {
+      setDeletingR2Key(null);
+    }
+  };
+
+  // Copy public URL to clipboard
+  const handleCopyUrl = (url: string, key: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey(null), 2000);
+      });
+    }
+  };
+
+  // Quick Add an existing R2 item to an Event Gallery
+  const handleQuickAddToEvent = (obj: R2ObjectItem) => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null);
+    setPreview(null);
+    setImageUrl(obj.url);
+    setUrlMode(true);
+    setCaption(obj.filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+    setTag(obj.isVideo ? "VIDEO" : obj.folder === "posters" ? "POSTER" : "PHOTO");
+    setMediaType(obj.isVideo ? "video" : "image");
+    setUploadError("");
+    setUploading(false);
+    setShowModal(true);
+  };
+
   const openModal = () => {
-    setFile(null); setPreview(null); setCaption(""); setImageUrl("");
-    setTag("PHOTO"); setUploadError(""); setUrlMode(false); setUploading(false);
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null);
+    setPreview(null);
+    setCaption("");
+    setImageUrl("");
+    setTag("PHOTO");
+    setUploadError("");
+    setUrlMode(false);
+    setUploading(false);
+    setUploadProgress(null);
     setMediaType("image");
     setShowModal(true);
   };
 
   const visibleImages = images.filter(
-    img => !img.image_url?.includes("photo-1540039155732") && !img.image_url?.includes("photo-1470229722913")
+    (img) => !img.image_url?.includes("photo-1540039155732") && !img.image_url?.includes("photo-1470229722913")
   );
+
+  // Filter R2 objects
+  const filteredR2Objects = r2Objects.filter((obj) => {
+    if (r2FolderFilter !== "all" && obj.folder !== r2FolderFilter) return false;
+    if (r2Search.trim()) {
+      const q = r2Search.toLowerCase().trim();
+      return obj.filename.toLowerCase().includes(q) || obj.key.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const totalR2Bytes = r2Objects.reduce((acc, o) => acc + (o.size || 0), 0);
+  const galleryFolderCount = r2Objects.filter((o) => o.folder === "gallery").length;
+  const postersFolderCount = r2Objects.filter((o) => o.folder === "posters").length;
+  const videosFolderCount = r2Objects.filter((o) => o.folder === "videos").length;
 
   return (
     <div className="w-full min-h-screen bg-brand-off-white text-brand-navy p-4 md:p-6 font-mono">
@@ -260,89 +409,363 @@ export default function AdminGalleryPage() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-8 border-brand-navy pb-6 gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <Link href="/admin/dashboard" className="p-2 border-2 border-brand-navy bg-white hover:bg-brand-accent transition-colors">
+              <Link
+                href="/admin/dashboard"
+                className="p-2 border-2 border-brand-navy bg-white hover:bg-brand-accent transition-colors font-bold"
+              >
                 ←
               </Link>
               <h1 className="font-display text-3xl md:text-4xl uppercase tracking-wider flex items-center gap-3">
                 <ImageIcon className="w-7 h-7 text-brand-accent" />
-                Gallery
+                Media &amp; Gallery Hub
               </h1>
             </div>
-            <p className="text-xs font-bold uppercase tracking-widest opacity-60">
-              {visibleImages.length} item{visibleImages.length !== 1 ? "s" : ""} · Upload posters, photos &amp; videos
-            </p>
+            <div className="flex items-center gap-3 flex-wrap text-xs font-bold uppercase tracking-widest opacity-80">
+              <span className="flex items-center gap-1.5 text-emerald-800 bg-emerald-100 border border-emerald-500 px-2 py-0.5">
+                <Cloud className="w-3.5 h-3.5 text-emerald-600" /> Cloudflare R2 Connected
+              </span>
+              <span>·</span>
+              <span>{visibleImages.length} Curated Item{visibleImages.length !== 1 ? "s" : ""}</span>
+              <span>·</span>
+              <span>{r2Objects.length} Bucket Object{r2Objects.length !== 1 ? "s" : ""} ({formatBytes(totalR2Bytes)})</span>
+            </div>
           </div>
-          <button
-            onClick={openModal}
-            className="flex items-center gap-2 bg-brand-accent text-brand-navy px-5 py-3 border-4 border-brand-navy shadow-(--shadow-brut-md) hover:bg-brand-navy hover:text-brand-accent font-bold uppercase transition-colors"
-          >
-            <Plus className="w-5 h-5" /> Add Media
-          </button>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                loadGallery();
+                loadR2Objects();
+              }}
+              title="Refresh Media"
+              className="p-3 bg-white border-4 border-brand-navy shadow-(--shadow-brut-sm) hover:bg-brand-accent transition-colors font-bold"
+            >
+              <RefreshCw className={`w-5 h-5 ${loading || r2Loading ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={openModal}
+              className="flex items-center gap-2 bg-brand-accent text-brand-navy px-5 py-3 border-4 border-brand-navy shadow-(--shadow-brut-md) hover:bg-brand-navy hover:text-brand-accent font-bold uppercase transition-colors"
+            >
+              <Plus className="w-5 h-5" /> Add Media
+            </button>
+          </div>
         </header>
 
-        {/* Grid */}
-        {loading ? (
-          <div className="flex items-center gap-3 font-bold uppercase text-lg py-12">
-            <Loader2 className="w-5 h-5 animate-spin" /> Loading Gallery…
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {visibleImages.map(img => {
-              const isVideo = resolveGalleryMediaType(img.media_type, img.image_url) === "video";
-              const poster = img.thumbnail_url && !isVideoMediaUrl(img.thumbnail_url) ? img.thumbnail_url : "";
-              return (
-              <div key={img.id} className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col group relative">
-                <div className="aspect-square bg-brand-navy/10 overflow-hidden relative">
-                  {isVideo ? (
-                    poster ? (
-                      <img src={poster} alt={img.caption} className="w-full h-full object-cover" />
-                    ) : (
-                      <video src={img.image_url} muted playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
-                    )
-                  ) : (
-                    <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
-                  )}
-                  {isVideo && (
-                    <>
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="bg-brand-navy/80 text-brand-off-white border-2 border-brand-off-white p-2">
-                          <Play className="w-5 h-5" />
+        {/* View Switcher Tabs */}
+        <div className="flex border-4 border-brand-navy bg-white p-1 gap-1 max-w-md shadow-(--shadow-brut-sm)">
+          <button
+            type="button"
+            onClick={() => setActiveTab("gallery")}
+            className={`flex-1 py-2.5 px-3 font-bold uppercase text-xs transition-colors flex items-center justify-center gap-2 ${
+              activeTab === "gallery"
+                ? "bg-brand-navy text-brand-off-white"
+                : "text-brand-navy hover:bg-brand-navy/10"
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            Curated Gallery ({visibleImages.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("r2")}
+            className={`flex-1 py-2.5 px-3 font-bold uppercase text-xs transition-colors flex items-center justify-center gap-2 ${
+              activeTab === "r2"
+                ? "bg-brand-navy text-brand-off-white"
+                : "text-brand-navy hover:bg-brand-navy/10"
+            }`}
+          >
+            <Cloud className="w-4 h-4 text-brand-accent" />
+            Cloudflare R2 Bucket ({r2Objects.length})
+          </button>
+        </div>
+
+        {/* ── TAB 1: CURATED EVENT GALLERY ─────────────────────────── */}
+        {activeTab === "gallery" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-bold uppercase tracking-wider opacity-70">
+                Media currently displayed on public event gallery pages. Deleting removes from the event and permanently purges from Cloudflare R2 storage.
+              </p>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center gap-3 font-bold uppercase text-lg py-16 justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-brand-accent" /> Loading Gallery…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {visibleImages.map((img) => {
+                  const isVideo = resolveGalleryMediaType(img.media_type, img.image_url) === "video";
+                  const poster = img.thumbnail_url && !isVideoMediaUrl(img.thumbnail_url) ? img.thumbnail_url : "";
+                  return (
+                    <div
+                      key={img.id}
+                      className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col group relative"
+                    >
+                      <div className="aspect-square bg-brand-navy/10 overflow-hidden relative">
+                        {isVideo ? (
+                          poster ? (
+                            <img src={poster} alt={img.caption} className="w-full h-full object-cover" />
+                          ) : (
+                            <video
+                              src={img.image_url}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              className="w-full h-full object-cover pointer-events-none"
+                            />
+                          )
+                        ) : (
+                          <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
+                        )}
+
+                        {isVideo && (
+                          <>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="bg-brand-navy/80 text-brand-off-white border-2 border-brand-off-white p-2">
+                                <Play className="w-5 h-5" />
+                              </span>
+                            </div>
+                            <span className="absolute bottom-2 left-2 bg-brand-accent text-brand-navy border-2 border-brand-navy text-[9px] font-black px-1.5 py-0.5 uppercase pointer-events-none">
+                              VIDEO
+                            </span>
+                          </>
+                        )}
+
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyUrl(img.image_url, `gallery-${img.id}`)}
+                            className="bg-white text-brand-navy p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) hover:bg-brand-accent transition-colors"
+                            title="Copy media URL"
+                          >
+                            {copiedKey === `gallery-${img.id}` ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(img.id)}
+                            disabled={deletingId === img.id}
+                            className="bg-red-600 text-white p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) hover:bg-red-700 disabled:opacity-50 cursor-pointer transition-colors"
+                            title={isVideo ? "Delete video" : "Delete image"}
+                          >
+                            {deletingId === img.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="p-3 flex items-start justify-between gap-2 border-t-2 border-brand-navy">
+                        <div className="min-w-0">
+                          <div className="font-bold text-sm uppercase truncate">{img.caption || "No Caption"}</div>
+                          <div className="text-[10px] uppercase font-bold opacity-60 mt-0.5">
+                            {events.find((e) => e.id === img.event_id)?.title || `Event ${img.event_id}`}
+                          </div>
+                        </div>
+                        <span className="bg-brand-navy text-brand-off-white text-[9px] font-bold px-2 py-1 uppercase shrink-0">
+                          {img.tag}
                         </span>
                       </div>
-                      <span className="absolute bottom-2 left-2 bg-brand-accent text-brand-navy border-2 border-brand-navy text-[9px] font-black px-1.5 py-0.5 uppercase pointer-events-none">
-                        VIDEO
-                      </span>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(img.id)}
-                    disabled={deletingId === img.id}
-                    className="absolute top-2 right-2 bg-red-600 text-white p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 disabled:opacity-50 cursor-pointer"
-                    title={isVideo ? "Delete video" : "Delete image"}
+                    </div>
+                  );
+                })}
+
+                {visibleImages.length === 0 && (
+                  <div className="col-span-full py-16 text-center border-4 border-dashed border-brand-navy font-bold uppercase text-lg opacity-60 bg-white">
+                    No curated gallery media yet — click Add Media or browse Cloudflare Bucket to add items.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB 2: CLOUDFLARE R2 BUCKET BROWSER ──────────────────── */}
+        {activeTab === "r2" && (
+          <div className="space-y-4">
+            {/* Filter and search toolbar */}
+            <div className="bg-white border-4 border-brand-navy p-4 shadow-(--shadow-brut-sm) flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider mr-1 opacity-70">Folder:</span>
+                <button
+                  type="button"
+                  onClick={() => setR2FolderFilter("all")}
+                  className={`px-3 py-1.5 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                    r2FolderFilter === "all" ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                  }`}
+                >
+                  All ({r2Objects.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setR2FolderFilter("gallery")}
+                  className={`px-3 py-1.5 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                    r2FolderFilter === "gallery" ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                  }`}
+                >
+                  Gallery ({galleryFolderCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setR2FolderFilter("posters")}
+                  className={`px-3 py-1.5 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                    r2FolderFilter === "posters" ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                  }`}
+                >
+                  Posters ({postersFolderCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setR2FolderFilter("videos")}
+                  className={`px-3 py-1.5 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                    r2FolderFilter === "videos" ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                  }`}
+                >
+                  Videos ({videosFolderCount})
+                </button>
+              </div>
+
+              <div className="relative min-w-[220px]">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
+                <input
+                  type="text"
+                  value={r2Search}
+                  onChange={(e) => setR2Search(e.target.value)}
+                  placeholder="Filter files…"
+                  className="w-full pl-9 pr-3 py-1.5 border-2 border-brand-navy text-xs font-bold focus:outline-none focus:bg-brand-accent/20"
+                />
+              </div>
+            </div>
+
+            {r2Error && (
+              <div className="bg-red-100 border-4 border-red-600 text-red-800 p-4 font-bold text-xs uppercase">
+                {r2Error}
+              </div>
+            )}
+
+            {/* Bucket Grid */}
+            {r2Loading ? (
+              <div className="flex items-center gap-3 font-bold uppercase text-lg py-16 justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-brand-accent" /> Loading Cloudflare Bucket Media…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredR2Objects.map((obj) => (
+                  <div
+                    key={obj.key}
+                    className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col group relative"
                   >
-                    {deletingId === img.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-                <div className="p-3 flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-bold text-sm uppercase truncate">{img.caption || "No Caption"}</div>
-                    <div className="text-[10px] uppercase font-bold opacity-50 mt-0.5">
-                      {events.find(e => e.id === img.event_id)?.title || `Event ${img.event_id}`}
+                    <div className="aspect-square bg-stone-100 overflow-hidden relative border-b-2 border-brand-navy flex items-center justify-center">
+                      {obj.isImage ? (
+                        <img
+                          src={obj.url}
+                          alt={obj.filename}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : obj.isVideo ? (
+                        <div className="w-full h-full bg-brand-navy/90 flex flex-col items-center justify-center relative">
+                          <video
+                            src={obj.url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="bg-brand-navy/80 text-brand-off-white border-2 border-brand-off-white p-3">
+                              <Film className="w-6 h-6 text-brand-accent" />
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+                          <Folder className="w-12 h-12 opacity-40 text-brand-navy" />
+                          <span className="text-xs font-bold uppercase">{obj.filename}</span>
+                        </div>
+                      )}
+
+                      {/* Folder badge */}
+                      <span className="absolute top-2 left-2 bg-brand-navy text-brand-off-white border-2 border-brand-navy text-[9px] font-black px-2 py-0.5 uppercase">
+                        {obj.folder}
+                      </span>
+
+                      {/* Delete button on hover */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteR2(obj.key)}
+                        disabled={deletingR2Key === obj.key}
+                        className="absolute top-2 right-2 bg-red-600 text-white p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+                        title="Delete from Cloudflare R2"
+                      >
+                        {deletingR2Key === obj.key ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Metadata & Actions */}
+                    <div className="p-3 flex flex-col justify-between flex-1 gap-3">
+                      <div>
+                        <div className="font-bold text-xs uppercase truncate" title={obj.filename}>
+                          {obj.filename}
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] uppercase font-bold opacity-60 mt-1">
+                          <span>{formatBytes(obj.size)}</span>
+                          <span>{formatKenyaDate(obj.lastModified)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-brand-navy/20">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyUrl(obj.url, obj.key)}
+                          className="flex-1 py-1.5 px-2 bg-stone-100 hover:bg-brand-accent border-2 border-brand-navy text-[10px] font-bold uppercase transition-colors flex items-center justify-center gap-1.5"
+                          title="Copy Public URL"
+                        >
+                          {copiedKey === obj.key ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-700" /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" /> Copy URL
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAddToEvent(obj)}
+                          className="flex-1 py-1.5 px-2 bg-brand-accent text-brand-navy hover:bg-brand-navy hover:text-brand-accent border-2 border-brand-navy text-[10px] font-bold uppercase transition-colors flex items-center justify-center gap-1"
+                          title="Attach to an Event Gallery"
+                        >
+                          <Plus className="w-3 h-3" /> Tag Event
+                        </button>
+
+                        <a
+                          href={obj.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 bg-white hover:bg-brand-navy hover:text-white border-2 border-brand-navy transition-colors shrink-0"
+                          title="Open original"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
                     </div>
                   </div>
-                  <span className="bg-brand-navy text-brand-off-white text-[9px] font-bold px-2 py-1 uppercase shrink-0">{img.tag}</span>
-                </div>
-              </div>
-              );
-            })}
-            {visibleImages.length === 0 && (
-              <div className="col-span-full py-16 text-center border-4 border-dashed border-brand-navy font-bold uppercase text-lg opacity-50">
-                No media yet — click Add Media to upload the first one.
+                ))}
+
+                {filteredR2Objects.length === 0 && (
+                  <div className="col-span-full py-16 text-center border-4 border-dashed border-brand-navy font-bold uppercase text-lg opacity-60 bg-white">
+                    No files found in Cloudflare R2 bucket matching your filter.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -351,24 +774,33 @@ export default function AdminGalleryPage() {
 
       {/* ── ADD MEDIA MODAL ─────────────────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-brand-navy/80 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+        <div
+          className="fixed inset-0 z-50 bg-brand-navy/80 flex items-center justify-center p-4"
+          onClick={() => setShowModal(false)}
+        >
           <div
             className="bg-brand-off-white border-4 border-brand-navy w-full max-w-lg shadow-(--shadow-brut-2xl) max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
-            <div className="flex items-center justify-between border-b-4 border-brand-navy px-6 py-4">
-              <h2 className="font-display text-2xl uppercase tracking-wider">Add Media</h2>
-              <button onClick={() => setShowModal(false)} className="p-1 hover:text-red-600 transition-colors">
+            <div className="flex items-center justify-between border-b-4 border-brand-navy px-6 py-4 bg-brand-navy text-brand-off-white">
+              <h2 className="font-display text-2xl uppercase tracking-wider flex items-center gap-2">
+                <Cloud className="w-5 h-5 text-brand-accent" /> Upload Media to Cloudflare
+              </h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="p-1 hover:text-brand-accent transition-colors cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="p-6 space-y-5">
-
               {/* Event picker */}
               <div>
-                <label className="block text-xs font-bold uppercase mb-2 tracking-widest">Event</label>
+                <label className="block text-xs font-bold uppercase mb-2 tracking-widest">
+                  Target Event
+                </label>
                 {events.length === 0 ? (
                   <>
                     <select
@@ -391,11 +823,13 @@ export default function AdminGalleryPage() {
                 ) : (
                   <select
                     value={eventId}
-                    onChange={e => setEventId(e.target.value)}
+                    onChange={(e) => setEventId(e.target.value)}
                     className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
                   >
-                    {events.map(ev => (
-                      <option key={ev.id} value={ev.id}>{ev.title}</option>
+                    {events.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title}
+                      </option>
                     ))}
                   </select>
                 )}
@@ -404,13 +838,23 @@ export default function AdminGalleryPage() {
               {/* Upload / URL toggle */}
               <div>
                 <div className="flex gap-2 mb-3">
-                  <button type="button" onClick={() => setUrlMode(false)}
-                    className={`flex-1 py-2 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${!urlMode ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"}`}>
-                    <Upload className="w-3.5 h-3.5 inline mr-1" /> Upload File
+                  <button
+                    type="button"
+                    onClick={() => setUrlMode(false)}
+                    className={`flex-1 py-2 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                      !urlMode ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5 inline mr-1" /> Direct Upload (R2)
                   </button>
-                  <button type="button" onClick={() => setUrlMode(true)}
-                    className={`flex-1 py-2 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${urlMode ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"}`}>
-                    🔗 Paste URL
+                  <button
+                    type="button"
+                    onClick={() => setUrlMode(true)}
+                    className={`flex-1 py-2 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
+                      urlMode ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
+                    }`}
+                  >
+                    🔗 Media URL
                   </button>
                 </div>
 
@@ -419,22 +863,27 @@ export default function AdminGalleryPage() {
                     <input
                       type="url"
                       value={imageUrl}
-                      onChange={e => setImageUrl(e.target.value)}
-                      placeholder="https://i.ibb.co/…/poster.jpg or https://…/recap.mp4"
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      placeholder="https://pub-...r2.dev/gallery/photo.jpg or video.mp4"
                       className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
                     />
-                    <p className="mt-2 text-[10px] font-bold uppercase opacity-50">
-                      Video URLs (.mp4, .webm, .mov, .m4v) are detected automatically.
+                    <p className="mt-2 text-[10px] font-bold uppercase opacity-60">
+                      Supports direct Cloudflare R2 URLs, external CDN links, or MP4/WEBM video URLs.
                     </p>
                   </>
                 ) : (
                   <div
-                    onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragging(true);
+                    }}
                     onDragLeave={() => setDragging(false)}
                     onDrop={onDrop}
                     onClick={() => fileInputRef.current?.click()}
                     className={`relative border-4 border-dashed cursor-pointer transition-colors flex flex-col items-center justify-center gap-3 p-8 ${
-                      dragging ? "border-brand-navy bg-brand-accent/30" : "border-brand-navy/40 hover:border-brand-navy hover:bg-brand-accent/10"
+                      dragging
+                        ? "border-brand-navy bg-brand-accent/30"
+                        : "border-brand-navy/40 hover:border-brand-navy hover:bg-brand-accent/10"
                     }`}
                   >
                     <input
@@ -442,7 +891,10 @@ export default function AdminGalleryPage() {
                       type="file"
                       accept="image/*,video/*"
                       className="sr-only"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleFile(f);
+                      }}
                     />
                     {preview ? (
                       <>
@@ -455,14 +907,24 @@ export default function AdminGalleryPage() {
                             className="max-h-40 object-contain border-2 border-brand-navy"
                           />
                         ) : (
-                          <img src={preview} alt="preview" className="max-h-40 object-contain border-2 border-brand-navy" />
+                          <img
+                            src={preview}
+                            alt="preview"
+                            className="max-h-40 object-contain border-2 border-brand-navy"
+                          />
                         )}
-                        <span className="text-xs font-bold uppercase opacity-60">
+                        <span className="text-xs font-bold uppercase opacity-70">
                           {file?.name} · {mediaType === "video" ? "VIDEO" : "IMAGE"}
                         </span>
                         <button
                           type="button"
-                          onClick={e => { e.stopPropagation(); if (preview) URL.revokeObjectURL(preview); setFile(null); setPreview(null); setMediaType("image"); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (preview) URL.revokeObjectURL(preview);
+                            setFile(null);
+                            setPreview(null);
+                            setMediaType("image");
+                          }}
                           className="absolute top-2 right-2 bg-red-600 text-white p-1 hover:bg-red-700"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -470,10 +932,12 @@ export default function AdminGalleryPage() {
                       </>
                     ) : (
                       <>
-                        <Upload className="w-8 h-8 opacity-40" />
+                        <Upload className="w-8 h-8 opacity-40 text-brand-navy" />
                         <div className="text-center">
                           <div className="font-bold uppercase text-sm">Drop image or video here</div>
-                          <div className="text-xs opacity-60 mt-1">or click to browse · JPG, PNG, WEBP, MP4, WEBM, MOV · images max 10 MB · videos max 150 MB</div>
+                          <div className="text-xs opacity-60 mt-1">
+                            Uploaded directly to Cloudflare R2 bucket · JPG, PNG, WEBP, MP4, MOV · Images up to 10 MB · Videos up to 150 MB
+                          </div>
                         </div>
                       </>
                     )}
@@ -481,14 +945,32 @@ export default function AdminGalleryPage() {
                 )}
               </div>
 
+              {/* Upload progress */}
+              {uploadProgress !== null && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-bold uppercase">
+                    <span>Uploading to Cloudflare R2…</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full h-3 bg-brand-navy/20 border-2 border-brand-navy">
+                    <div
+                      className="h-full bg-brand-accent transition-all duration-150"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Caption */}
               <div>
-                <label className="block text-xs font-bold uppercase mb-2 tracking-widest">Caption</label>
+                <label className="block text-xs font-bold uppercase mb-2 tracking-widest">
+                  Caption / Title
+                </label>
                 <input
                   type="text"
                   value={caption}
-                  onChange={e => setCaption(e.target.value)}
-                  placeholder="Goodlife 4 — Official Poster"
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Official Festival Poster / Stage Highlights"
                   className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
                 />
               </div>
@@ -497,14 +979,17 @@ export default function AdminGalleryPage() {
               <div>
                 <label className="block text-xs font-bold uppercase mb-2 tracking-widest">Tag</label>
                 <div className="flex flex-wrap gap-2">
-                  {TAGS.map(t => (
+                  {TAGS.map((t) => (
                     <button
-                      key={t} type="button"
+                      key={t}
+                      type="button"
                       onClick={() => setTag(t)}
                       className={`px-3 py-1.5 border-2 border-brand-navy text-xs font-bold uppercase transition-colors ${
                         tag === t ? "bg-brand-navy text-brand-off-white" : "bg-white hover:bg-brand-accent"
                       }`}
-                    >{t}</button>
+                    >
+                      {t}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -521,21 +1006,27 @@ export default function AdminGalleryPage() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-3 bg-white border-4 border-brand-navy font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-colors text-sm"
+                  className="flex-1 px-4 py-3 bg-white border-4 border-brand-navy font-bold uppercase hover:bg-brand-navy hover:text-brand-off-white transition-colors text-sm cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving || uploading || (!file && !imageUrl.trim())}
-                  className="flex-1 px-4 py-3 bg-brand-accent text-brand-navy border-4 border-brand-navy font-bold uppercase hover:bg-brand-navy hover:text-brand-accent shadow-(--shadow-brut-md) transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-3 bg-brand-accent text-brand-navy border-4 border-brand-navy font-bold uppercase hover:bg-brand-navy hover:text-brand-accent shadow-(--shadow-brut-md) transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {uploading ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Uploading to R2…
+                    </>
                   ) : saving ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                    </>
                   ) : (
-                    <><CheckCircle className="w-4 h-4" /> Save Media</>
+                    <>
+                      <CheckCircle className="w-4 h-4" /> Save Media
+                    </>
                   )}
                 </button>
               </div>

@@ -22,10 +22,15 @@ export async function POST(request: NextRequest) {
     }
 
     const type = typeof contentType === "string" ? contentType : "application/octet-stream";
+    const allowedFolders = ["gallery", "posters", "videos"];
+    const targetFolder = typeof folder === "string" && allowedFolders.includes(folder.toLowerCase())
+      ? folder.toLowerCase()
+      : (type.startsWith("video/") ? "videos" : "gallery");
+
     const upload = await createR2PresignedUpload({
       filename,
       contentType: type,
-      folder: folder === "posters" ? "posters" : "videos",
+      folder: targetFolder,
     });
 
     if (!upload) {
