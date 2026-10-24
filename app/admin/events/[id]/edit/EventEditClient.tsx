@@ -111,6 +111,19 @@ export default function EventEditClient({
     operator_notifications_enabled: details.operator_notifications_enabled ?? false,
   });
 
+  const derivedScheduleText = React.useMemo(() => {
+    const dateVal = form.event_date ? String(form.event_date) : "";
+    if (!dateVal) return "OVERNIGHT CAMPING";
+    try {
+      const d = new Date(dateVal);
+      const mon = d.toLocaleString("en-KE", { month: "short", timeZone: "Africa/Nairobi" }).toUpperCase();
+      const day = d.getDate();
+      return `${mon} ${day} • GATES OPEN 2:00 PM`;
+    } catch {
+      return "OVERNIGHT CAMPING";
+    }
+  }, [form.event_date]);
+
   const trackChange = useCallback(() => {
     if (!saving) {
       setUnsaved(true);
@@ -518,8 +531,20 @@ export default function EventEditClient({
                     disabled={saving !== null}
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className={LABEL_CLASS}>Schedule / Vibe Text</label>
+                <div className="space-y-1.5 col-span-2">
+                  <div className="flex justify-between items-center">
+                    <label className={LABEL_CLASS}>Schedule / Vibe Text</label>
+                    {!(form.custom_schedule_text as string)?.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => set("custom_schedule_text", derivedScheduleText)}
+                        className="text-[10px] font-mono font-bold text-blue-700 hover:underline uppercase cursor-pointer"
+                        title="Click to copy the auto-derived text into this input for custom editing"
+                      >
+                        + Use auto-derived text
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={(form.custom_schedule_text as string) || ""}
@@ -528,10 +553,29 @@ export default function EventEditClient({
                     className={FIELD_CLASS}
                     disabled={saving !== null}
                   />
-                  <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase">
-                    Shown in the date/time info box on the homepage. Leave blank to
-                    auto-derive from event date.
-                  </p>
+                  <div className="text-[10px] space-y-1.5 font-mono">
+                    <p className="text-[var(--brand-navy-light)] font-bold uppercase">
+                      Shown in the date/time info box on the homepage. Leave blank to auto-derive from event date.
+                    </p>
+                    <div className="bg-stone-100 border border-brand-navy/30 p-2 text-xs flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-bold opacity-70 uppercase text-[10px]">
+                        Currently showing on homepage:
+                      </span>
+                      <span className="font-black text-brand-navy bg-white px-2 py-0.5 border border-brand-navy/20">
+                        {(form.custom_schedule_text as string)?.trim() ? (
+                          <>
+                            <span className="text-emerald-700 font-bold mr-1">CUSTOM:</span>
+                            &quot;{(form.custom_schedule_text as string).trim()}&quot;
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-blue-700 font-bold mr-1">AUTO-DERIVED:</span>
+                            &quot;{derivedScheduleText}&quot;
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
