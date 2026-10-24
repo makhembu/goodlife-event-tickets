@@ -2197,7 +2197,7 @@ const WRITABLE_TIER_COLUMNS = new Set([
  */
 export async function updateTicketTier(
   id: string,
-  updates: Partial<TicketTier>,
+  updates: Partial<TicketTier> & { new_id?: string },
   eventId?: number | null
 ): Promise<TicketTier | null> {
   const scopedEventId = eventId ?? updates.event_id ?? null;
@@ -2215,21 +2215,68 @@ export async function updateTicketTier(
         body: JSON.stringify(updates)
       });
       if (res.ok) return await res.json();
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error: ${res.status}`);
     } catch (e) {
       console.warn("API updateTicketTier failed.", e);
+      throw e;
     }
-    return null;
   }
 
   // Server side - Neon SQL
   try {
+    let targetId = id;
+    const rawNewId = updates.new_id?.trim();
+    if (rawNewId && rawNewId !== id) {
+      const cleanNewId = rawNewId.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-");
+      // Check for collision on the same event
+      const existing = await neonQuery(
+        "SELECT id FROM ticket_tiers WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL",
+        [cleanNewId, scopedEventId]
+      );
+      if (existing.rows.length > 0) {
+        throw new Error(`A ticket tier with ID "${cleanNewId}" already exists on this event.`);
+      }
+
+      // Rename tier id
+      await neonQuery(
+        "UPDATE ticket_tiers SET id = $1 WHERE id = $2 AND event_id = $3",
+        [cleanNewId, id, scopedEventId]
+      );
+
+      // Cascade update to tickets and pending payments
+      await neonQuery(
+        "UPDATE tickets SET ticket_type = $1 WHERE ticket_type = $2 AND event_id = $3",
+        [cleanNewId, id, scopedEventId]
+      );
+      await neonQuery(
+        "UPDATE pending_payments SET ticket_type = $1 WHERE ticket_type = $2",
+        [cleanNewId, id]
+      );
+
+      targetId = cleanNewId;
+    }
+
     const fields = Object.keys(updates).filter((f) => WRITABLE_TIER_COLUMNS.has(f));
-    if (fields.length === 0) return null;
+    if (fields.length === 0) {
+      const { rows } = await neonQuery("SELECT * FROM ticket_tiers WHERE id = $1 AND event_id = $2", [targetId, scopedEventId]);
+      if (rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        ...r,
+        price: Number(r.price),
+        max_quantity: r.max_quantity != null ? Number(r.max_quantity) : null,
+        sold_count: r.sold_count != null ? Number(r.sold_count) : 0,
+        show_only_on_event_day: Boolean(r.show_only_on_event_day),
+        hide_on_event_day: Boolean(r.hide_on_event_day),
+        hidden: Boolean(r.hidden)
+      };
+    }
     const setClause = fields.map((f, idx) => `"${f}" = $${idx + 3}`).join(", ");
     const values = fields.map((f) => (updates as any)[f]);
     const { rows } = await neonQuery(
       `UPDATE ticket_tiers SET ${setClause} WHERE id = $1 AND event_id = $2 RETURNING *`,
-      [id, scopedEventId, ...values]
+      [targetId, scopedEventId, ...values]
     );
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -2244,7 +2291,7 @@ export async function updateTicketTier(
     };
   } catch (err) {
     console.error("Neon updateTicketTier error:", err);
-    return null;
+    throw err;
   }
 }
 

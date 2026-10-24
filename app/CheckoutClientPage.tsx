@@ -28,7 +28,8 @@ import {
   BedSingle,
   Users,
   MapPin,
-  Navigation
+  Navigation,
+  Share2
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -121,6 +122,37 @@ export default function TicketCheckoutPage({
   // Booking Form States
   const [phoneNumber, setPhoneNumber] = useState("");
   const [selectedTier, setSelectedTier] = useState("");
+  const [shareCopiedTierId, setShareCopiedTierId] = useState<string | null>(null);
+
+  const handleShareTier = useCallback(async (tier: { id: string; name: string; price: number }) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const eventParam = eventDetails?.id ? `event=${eventDetails.id}&` : "";
+    const url = `${origin}/?${eventParam}tier=${encodeURIComponent(tier.id)}`;
+    const priceStr = Number(tier.price) === 0 ? "FREE RSVP" : `KES ${Number(tier.price).toLocaleString()}`;
+    const title = `${tier.name.toUpperCase()} (${priceStr}) · ${eventDetails?.title || "GOODLIFE"}`;
+    const text = `Get your ${tier.name} pass for ${priceStr} to ${eventDetails?.title || "GOODLIFE"}! Instant M-Pesa ticket & WhatsApp pass:`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          text,
+          url,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === "AbortError") return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setShareCopiedTierId(tier.id);
+      setTimeout(() => setShareCopiedTierId(null), 2500);
+    } catch {
+      prompt("Copy direct link for this ticket pass:", url);
+    }
+  }, [eventDetails]);
   const [buyerName, setBuyerName] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [showWhatsAppField, setShowWhatsAppField] = useState(false);
@@ -1761,16 +1793,38 @@ export default function TicketCheckoutPage({
                                     </>
                                   )}
                                 </div>
-                                <span className={`text-[10px] px-1.5 py-0.5 font-bold uppercase border border-brand-navy whitespace-nowrap inline-flex items-center gap-1 ${
-                                  tier.tag?.toUpperCase() === 'CAMPING'
-                                    ? "bg-[#25321E] text-brand-off-white"
-                                    : tier.tag?.toUpperCase() === 'GROUP'
-                                    ? "bg-brand-accent text-brand-navy font-black"
-                                    : "bg-brand-navy text-brand-off-white"
-                                }`}>
-                                  {tier.tag?.toUpperCase() === 'CAMPING' && <Tent className="w-3 h-3 text-brand-accent-vivid shrink-0" />}
-                                  {tier.tag}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className={`text-[10px] px-1.5 py-0.5 font-bold uppercase border border-brand-navy whitespace-nowrap inline-flex items-center gap-1 ${
+                                    tier.tag?.toUpperCase() === 'CAMPING'
+                                      ? "bg-[#25321E] text-brand-off-white"
+                                      : tier.tag?.toUpperCase() === 'GROUP'
+                                      ? "bg-brand-accent text-brand-navy font-black"
+                                      : "bg-brand-navy text-brand-off-white"
+                                  }`}>
+                                    {tier.tag?.toUpperCase() === 'CAMPING' && <Tent className="w-3 h-3 text-brand-accent-vivid shrink-0" />}
+                                    {tier.tag}
+                                  </span>
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleShareTier(tier);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleShareTier(tier);
+                                      }
+                                    }}
+                                    className="p-1 px-1.5 bg-brand-off-white hover:bg-white text-brand-navy border border-brand-navy font-mono font-black text-[10px] uppercase inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all shadow-(--shadow-brut-2xs)"
+                                    title="Share this ticket pass"
+                                  >
+                                    <Share2 className="w-2.5 h-2.5" />
+                                    <span>{shareCopiedTierId === tier.id ? "COPIED!" : "SHARE"}</span>
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </button>
@@ -2246,7 +2300,10 @@ export default function TicketCheckoutPage({
                                   const tierName = details?.ticket_type || selectedTierObj?.name || "Ticket";
                                   const evTitle = eventDetails.title || "GOODLIFE";
                                   const evVenue = eventDetails.venue || "MARARA CAMP, THIKA";
-                                  const shareUrl = typeof window !== "undefined" ? window.location.origin : "https://goodlife.smwhr.space";
+                                  const shareTierSlug = details?.ticket_type || selectedTierObj?.id || safeSelectedTier;
+                                  const shareUrl = typeof window !== "undefined"
+                                    ? `${window.location.origin}/?event=${eventDetails?.id || 1}&tier=${encodeURIComponent(shareTierSlug)}`
+                                    : "https://goodlife.smwhr.space";
                                   const dynamicShareMsg = `Just secured my ${tierName} pass to ${evTitle} at ${evVenue}! Grab yours before tickets sell out: ${shareUrl}`;
 
                                   return (

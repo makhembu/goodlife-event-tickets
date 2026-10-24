@@ -57,3 +57,6 @@ backups/
 .superpowers/
 
 
+
+# Sample generated ticket files
+public/sample-tickets/

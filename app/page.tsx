@@ -27,10 +27,11 @@ export const dynamic = "force-dynamic";
  * here is the only way to fully own the title for an edition page.
  */
 export async function generateMetadata(props: {
-  searchParams?: Promise<{ event?: string }>;
+  searchParams?: Promise<{ event?: string; tier?: string }>;
 }): Promise<Metadata> {
   const searchParams = props.searchParams ? await props.searchParams : {};
   const eventParam = searchParams?.event;
+  const tierParam = searchParams?.tier;
 
   // Never throw: this runs during rendering and metadata resolution.
   try {
@@ -54,26 +55,63 @@ export async function generateMetadata(props: {
 
     const baseUrl = siteUrl();
     const seo = buildEventSeo(target);
-    const pageUrl = eventParam ? `${baseUrl}/?event=${target.id}` : baseUrl;
+    const pageUrl = eventParam
+      ? (tierParam ? `${baseUrl}/?event=${target.id}&tier=${encodeURIComponent(tierParam)}` : `${baseUrl}/?event=${target.id}`)
+      : (tierParam ? `${baseUrl}/?tier=${encodeURIComponent(tierParam)}` : baseUrl);
+
+    // If tier is specified, resolve the tier details for customized title/description/image
+    let matchedTier = null;
+    if (tierParam && target.id) {
+      try {
+        const tiers = await fetchTicketTiers(target.id);
+        const trimmed = tierParam.trim().toLowerCase();
+        const normalized = trimmed.replace(/[^a-z0-9]/g, "");
+        matchedTier = tiers.find(
+          (t) =>
+            t.id.toLowerCase() === trimmed ||
+            t.name.toLowerCase() === trimmed ||
+            t.id.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized ||
+            t.name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized
+        );
+      } catch {
+        matchedTier = null;
+      }
+    }
+
+    const tierPriceStr = matchedTier
+      ? Number(matchedTier.price) === 0
+        ? "FREE RSVP"
+        : `KES ${Number(matchedTier.price).toLocaleString()}`
+      : "";
+    const tierTitle = matchedTier ? `${matchedTier.name.toUpperCase()} (${tierPriceStr}) · ${target.title}` : seo.title;
+    const tierOgTitle = matchedTier ? `${matchedTier.name.toUpperCase()} (${tierPriceStr}) · ${target.title}` : seo.ogTitle;
+    const tierDesc = matchedTier
+      ? `Get your ${matchedTier.name} pass for ${tierPriceStr} to ${target.title}. Instant M-Pesa ticket & WhatsApp pass delivery.`
+      : seo.description;
+    const tierOgDesc = matchedTier
+      ? `Get your ${matchedTier.name} pass for ${tierPriceStr} to ${target.title}. Instant M-Pesa checkout.`
+      : seo.ogDescription;
 
     // The banner is generated per edition from this event's own poster, so a
     // shared `/?event=` link shows the event it is actually selling. A metadata
     // file cannot read the query string, hence the explicit route handler.
-    const ogImage = `${baseUrl}/og?event=${target.id}`;
+    const ogImage = tierParam
+      ? `${baseUrl}/og?event=${target.id}&tier=${encodeURIComponent(tierParam)}`
+      : `${baseUrl}/og?event=${target.id}`;
 
     return {
       // `absolute`, not a string: a string gets the layout template
       // (`%s | <featured event>`) applied, which produced the doubled title
       // "GOODLIFE 4 - MARARA CAMP, THIKA | GOODLIFE 4".
-      title: { absolute: seo.title },
-      description: seo.description,
+      title: { absolute: tierTitle },
+      description: seo.description ? (matchedTier ? tierDesc : seo.description) : "",
       alternates: {
         canonical: pageUrl,
       },
       openGraph: {
         type: "website",
-        title: seo.ogTitle,
-        description: seo.ogDescription,
+        title: tierOgTitle,
+        description: seo.ogDescription ? (matchedTier ? tierOgDesc : seo.ogDescription) : "",
         url: pageUrl,
         siteName: SITE_NAME,
         locale: "en_KE",
@@ -82,7 +120,7 @@ export async function generateMetadata(props: {
             url: ogImage,
             width: 1200,
             height: 630,
-            alt: `${target.title} official event banner`,
+            alt: `${matchedTier ? matchedTier.name : target.title} official pass banner`,
             type: "image/png",
           },
         ],
@@ -91,8 +129,8 @@ export async function generateMetadata(props: {
         card: "summary_large_image",
         site: TWITTER_HANDLE,
         creator: TWITTER_HANDLE,
-        title: seo.ogTitle,
-        description: seo.ogDescription,
+        title: tierOgTitle,
+        description: seo.ogDescription ? (matchedTier ? tierOgDesc : seo.ogDescription) : "",
         images: [ogImage],
       },
     };

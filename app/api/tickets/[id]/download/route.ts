@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTicketById, getEventById, savePdfData } from "@/lib/supabase-db";
+import { getTicketById, getEventById, fetchActiveEvent, savePdfData } from "@/lib/supabase-db";
 import { generateTicketPdf } from "@/lib/ticket-generator";
 
 export async function GET(
@@ -18,18 +18,19 @@ export async function GET(
     }
 
     let pdfArray: Uint8Array;
+    const forceFresh = request.nextUrl.searchParams.get("force") === "true" || request.nextUrl.searchParams.get("fresh") === "1";
 
-    // Serve cached PDF if it exists – no regeneration needed
-    if (ticket.pdf_data) {
+    // Serve cached PDF if it exists and fresh generation is not requested
+    if (ticket.pdf_data && !forceFresh) {
       pdfArray = Uint8Array.from(Buffer.from(ticket.pdf_data, "base64"));
     } else {
-      // First-ever download: generate, cache in DB, then serve
+      // First-ever download or force refresh: generate, cache in DB, then serve
       const { origin } = new URL(request.url);
 
-      // Fetch the ticket's actual event (not the site-wide singleton)
-      const event = ticket.event_id ? await getEventById(ticket.event_id) : null;
+      // Fetch the ticket's actual event, or fall back to active event
+      let event = ticket.event_id ? await getEventById(ticket.event_id) : null;
       if (!event) {
-        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+        event = await fetchActiveEvent();
       }
 
       const pdfBuffer = await generateTicketPdf(ticket, origin, event);

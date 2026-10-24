@@ -53,7 +53,9 @@ import {
   Key,
   MessageSquare,
   Copy,
-  StopCircle
+  StopCircle,
+  Share2,
+  Radio
 } from "lucide-react";
 import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
@@ -1251,6 +1253,33 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
     setTierFormState(tier);
   };
 
+  const [copiedTierId, setCopiedTierId] = useState<string | null>(null);
+
+  const handleShareTier = async (tier: TicketTier) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const eventParam = tier.event_id ? `event=${tier.event_id}&` : "";
+    const url = `${origin}/?${eventParam}tier=${encodeURIComponent(tier.id)}`;
+    const title = `${tier.name} · KES ${Number(tier.price).toLocaleString()} | ${selectedEventTitle || "GOODLIFE"}`;
+    const text = `Get your ${tier.name} pass for KES ${Number(tier.price).toLocaleString()}! Instant M-Pesa pass:`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        return;
+      } catch (err: any) {
+        if (err.name === "AbortError") return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setCopiedTierId(tier.id);
+      setTimeout(() => setCopiedTierId(null), 2500);
+    } catch {
+      prompt("Copy direct link for this ticket pass:", url);
+    }
+  };
+
   const handleSaveTier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTier) return;
@@ -1265,7 +1294,17 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
         alert("This tier has no event attached, so it cannot be saved safely.");
         return;
       }
-      await updateTicketTier(editingTier.id, tierFormState, scope);
+      const rawNewId = (tierFormState.id || "").trim();
+      const payload: any = {
+        ...tierFormState,
+      };
+      if (rawNewId && rawNewId !== editingTier.id) {
+        payload.new_id = rawNewId;
+      }
+      const res = await updateTicketTier(editingTier.id, payload, scope);
+      if (!res) {
+        throw new Error("Could not save this tier. Please check if the Tier ID is unique.");
+      }
       setEditingTier(null);
       loadTicketTiers(scope);
       loadDashboardMetrics();
@@ -1637,7 +1676,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-[var(--brand-navy)]/50 mb-1">
                 Setup
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
               <Link
                 href={selectedEventId ? `/admin/events/${selectedEventId}/edit` : "/admin/events/-1/edit"}
                 className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 bg-white shadow-(--shadow-brut-xs)"
@@ -1660,8 +1699,16 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                 <span>📷 GALLERY</span>
               </Link>
               <Link
-                href="/admin/whatsapp"
+                href="/admin/radio"
                 className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
+                title="GOODLIFE Radio, YouTube Ingestion and Live Stream Console"
+              >
+                <Radio className="w-3 h-3 shrink-0" />
+                <span>RADIO</span>
+              </Link>
+              <Link
+                href="/admin/whatsapp"
+                className="col-span-2 sm:col-span-1 text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
                 title="WhatsApp gateway pairing, status and test console"
               >
                 <MessageSquare className="w-3 h-3 shrink-0" />
@@ -1778,10 +1825,10 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
         />
 
         {/* TABS SELECTION BAR */}
-        <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-md) overflow-hidden">
+        <div className="flex overflow-x-auto no-scrollbar border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-md) divide-x-2 sm:divide-x-4 divide-[var(--brand-navy)]">
           <button
             onClick={() => setActiveTab("ledger")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "ledger"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -1791,7 +1838,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
           <button
             onClick={() => setActiveTab("tiers")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "tiers"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -1801,7 +1848,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
           <button
             onClick={() => setActiveTab("payments")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "payments"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -1811,7 +1858,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
           <button
             onClick={() => setActiveTab("payment-requests")}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "payment-requests"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -1821,7 +1868,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
           <button
             onClick={() => { setActiveTab("waitlist"); loadWaitlist(selectedEventId); }}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "waitlist"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -1831,7 +1878,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           </button>
           <button
             onClick={() => { setActiveTab("trash"); loadDeletedItems(); }}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider transition-colors border-t-4 sm:border-t-0 sm:border-l-4 border-[var(--brand-navy)] ${
+            className={`shrink-0 sm:flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider whitespace-nowrap transition-colors ${
               activeTab === "trash"
                 ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
                 : "bg-transparent text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/5"
@@ -2456,6 +2503,13 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                         <td className="p-3 text-right">
                           <div className="flex gap-2 justify-end">
                             <button
+                              onClick={() => handleShareTier(t)}
+                              className="text-brand-navy hover:text-green-700 font-bold text-[11px] uppercase flex items-center gap-0.5 cursor-pointer"
+                              title="Share ticket pass direct link"
+                            >
+                              <Share2 className="w-3 h-3" /> {copiedTierId === t.id ? "Copied!" : "Share"}
+                            </button>
+                            <button
                               onClick={() => handleToggleHiddenTier(t)}
                               className={`font-bold text-[11px] uppercase flex items-center gap-0.5 ${t.hidden ? "text-green-600 hover:text-green-800" : "text-brand-warning hover:text-brand-warning"}`}
                             >
@@ -2463,7 +2517,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                             </button>
                             <button
                               onClick={() => handleEditTierClick(t)}
-                              className="text-[var(--brand-navy)] hover:text-[var(--brand-navy-light)] font-bold text-[11px] uppercase flex items-center gap-0.5"
+                              className="text-[var(--brand-navy)] hover:text-[var(--brand-navy-light)] font-bold text-[11px] uppercase flex items-center gap-0.5 cursor-pointer"
                             >
                               <Edit className="w-3 h-3" /> Edit
                             </button>
@@ -2534,7 +2588,14 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                         </div>
                       </div>
 
-                      <div className="flex gap-4 pt-2 border-t border-[var(--brand-navy)]/10 justify-end text-xs font-bold">
+                      <div className="flex gap-3 pt-2 border-t border-[var(--brand-navy)]/10 justify-end text-xs font-bold">
+                        <button
+                          onClick={() => handleShareTier(t)}
+                          className="text-brand-navy hover:text-green-700 uppercase flex items-center gap-0.5 text-[11px] cursor-pointer"
+                          title="Share ticket pass direct link"
+                        >
+                          <Share2 className="w-3 h-3" /> {copiedTierId === t.id ? "Copied!" : "Share"}
+                        </button>
                         <button
                           onClick={() => handleToggleHiddenTier(t)}
                           className={`uppercase flex items-center gap-0.5 text-[11px] ${t.hidden ? "text-green-600 hover:text-green-800" : "text-brand-warning hover:text-brand-warning"}`}
@@ -2543,7 +2604,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                         </button>
                         <button
                           onClick={() => handleEditTierClick(t)}
-                          className="text-[var(--brand-navy)] hover:text-[var(--brand-navy-light)] uppercase flex items-center gap-0.5 text-[11px]"
+                          className="text-[var(--brand-navy)] hover:text-[var(--brand-navy-light)] uppercase flex items-center gap-0.5 text-[11px] cursor-pointer"
                         >
                           <Edit className="w-3 h-3" /> Edit
                         </button>
@@ -3784,13 +3845,18 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
             <form onSubmit={handleSaveTier} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-black uppercase block">Tier ID</label>
+                  <label className="text-xs font-black uppercase block">Tier ID (Slug)</label>
                   <input
                     type="text"
-                    disabled
-                    value={editingTier.id}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)]/20 bg-[var(--brand-bg)] font-mono text-xs text-[var(--brand-navy-light)] cursor-not-allowed"
+                    required
+                    value={tierFormState.id || ""}
+                    onChange={(e) => setTierFormState({ ...tierFormState, id: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-") })}
+                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] bg-white font-mono text-xs text-[var(--brand-navy)] font-bold focus:outline-none"
+                    placeholder="e.g. early-bird"
                   />
+                  <span className="text-[10px] text-[var(--brand-navy-light)] block font-mono">
+                    URL slug for links (?tier={tierFormState.id})
+                  </span>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-black uppercase block">Display Name</label>

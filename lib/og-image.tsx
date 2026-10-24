@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { resolveEventFlyer } from './event-flyer';
 import { canonicalStatus, isHiddenFromSite } from './event-availability';
-import { fetchAllEvents, getEventById } from './supabase-db';
+import { fetchAllEvents, getEventById, fetchTicketTiers } from './supabase-db';
 import { clamp } from './seo';
 
 /**
@@ -123,6 +123,43 @@ export async function resolveEventByParam(raw: string | null | undefined): Promi
   }
 }
 
+export interface OgTier {
+  id: string;
+  name: string;
+  price: number;
+  tag?: string;
+  badge_text?: string | null;
+}
+
+export async function resolveTierByParam(
+  raw: string | null | undefined,
+  eventId: number
+): Promise<OgTier | null> {
+  if (!raw || !eventId) return null;
+  try {
+    const tiers = await fetchTicketTiers(eventId);
+    const trimmed = raw.trim().toLowerCase();
+    const normalized = trimmed.replace(/[^a-z0-9]/g, '');
+    const match = tiers.find(
+      (t) =>
+        t.id.toLowerCase() === trimmed ||
+        t.name.toLowerCase() === trimmed ||
+        t.id.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized ||
+        t.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized
+    );
+    if (!match) return null;
+    return {
+      id: match.id,
+      name: match.name,
+      price: Number(match.price),
+      tag: match.tag,
+      badge_text: match.badge_text,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Big, loud type for short names; still three lines for a 60-character one. */
 function titleSize(length: number): number {
   if (length <= 22) return 96;
@@ -131,7 +168,10 @@ function titleSize(length: number): number {
   return 52;
 }
 
-export async function renderEventOgImage(event?: OgEvent | null): Promise<ImageResponse> {
+export async function renderEventOgImage(
+  event?: OgEvent | null,
+  tier?: OgTier | null
+): Promise<ImageResponse> {
   const title = (event?.title || 'GOODLIFE').replace(/\s+/g, ' ').trim() || 'GOODLIFE';
   const venue = (event?.venue || '').replace(/\s+/g, ' ').trim() || 'MARARA CAMP, THIKA';
 
@@ -140,6 +180,14 @@ export async function renderEventOgImage(event?: OgEvent | null): Promise<ImageR
     loadPosterImage(resolveEventFlyer(event)),
   ]);
   const displayFont = fonts ? BRAND_FONT : undefined;
+
+  const isTierCard = Boolean(tier);
+  const tierName = tier ? (tier.name || 'TICKET PASS').toUpperCase() : '';
+  const priceDisplay = tier
+    ? Number(tier.price) === 0
+      ? 'FREE RSVP'
+      : `KES ${Number(tier.price).toLocaleString()}`
+    : '';
 
   return new ImageResponse(
     (
@@ -165,27 +213,67 @@ export async function renderEventOgImage(event?: OgEvent | null): Promise<ImageR
         >
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ width: 10, height: 36, background: GOLD, marginRight: 18 }} />
-            <div style={{ fontSize: 30, letterSpacing: 6, color: GOLD }}>GOODLIFE EVENTS</div>
+            <div style={{ fontSize: 30, letterSpacing: 6, color: GOLD }}>
+              {isTierCard ? `${title.toUpperCase()} · OFFICIAL PASS` : 'GOODLIFE EVENTS'}
+            </div>
           </div>
 
           <div
             style={{
-              fontSize: titleSize(title.length),
+              fontSize: isTierCard ? titleSize(tierName.length) : titleSize(title.length),
               lineHeight: 1.04,
-              marginTop: 26,
+              marginTop: isTierCard ? 20 : 26,
               color: '#FFFFFF',
               textTransform: 'uppercase',
             }}
           >
-            {clamp(title.toUpperCase(), 52)}
+            {clamp(isTierCard ? tierName : title.toUpperCase(), 52)}
           </div>
 
-          <div style={{ width: 120, height: 6, background: GOLD, marginTop: 30, marginBottom: 28 }} />
+          <div
+            style={{
+              width: 120,
+              height: 6,
+              background: GOLD,
+              marginTop: isTierCard ? 20 : 30,
+              marginBottom: isTierCard ? 20 : 28,
+            }}
+          />
 
-          <div style={{ fontSize: 34, color: 'rgba(243,236,225,0.80)' }}>{venue.toUpperCase()}</div>
+          {isTierCard ? (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+              <div style={{ fontSize: 68, color: GOLD, lineHeight: 1 }}>{priceDisplay}</div>
+              {tier?.badge_text && (
+                <div
+                  style={{
+                    fontSize: 22,
+                    letterSpacing: 2,
+                    color: NAVY,
+                    background: GOLD,
+                    padding: '4px 12px',
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {tier.badge_text}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ fontSize: 34, color: 'rgba(243,236,225,0.80)' }}>{venue.toUpperCase()}</div>
+          )}
 
-          <div style={{ fontSize: 26, letterSpacing: 3, color: GOLD, marginTop: 22 }}>
-            OFFICIAL TICKETS · M-PESA · WHATSAPP PDF
+          <div
+            style={{
+              fontSize: isTierCard ? 24 : 26,
+              letterSpacing: 3,
+              color: isTierCard ? 'rgba(243,236,225,0.85)' : GOLD,
+              marginTop: isTierCard ? 18 : 22,
+            }}
+          >
+            {isTierCard
+              ? `${venue.toUpperCase()} · INSTANT M-PESA & WHATSAPP DELIVERY`
+              : 'OFFICIAL TICKETS · M-PESA · WHATSAPP PDF'}
           </div>
         </div>
 
