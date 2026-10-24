@@ -3787,19 +3787,32 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Leave empty for unlimited"
-                    value={tierFormState.max_quantity || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
-                    className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Leave empty for unlimited"
+                      value={tierFormState.max_quantity || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Guests Admitted (Pax)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="1 (e.g. 2 for Duo, 4 for Squad)"
+                      value={tierFormState.admits_quantity || 1}
+                      onChange={(e) => setTierFormState({ ...tierFormState, admits_quantity: e.target.value ? Math.max(1, parseInt(e.target.value, 10)) : 1 })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
                 </div>
                 <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
-                  Leave dates empty = always visible. Capacity empty = unlimited.
+                  Leave dates empty = always visible. Capacity empty = unlimited. Pax = guests admitted per ticket (1 for single, 2 for duo, 4 for squad).
                 </p>
               </div>
 
@@ -3926,19 +3939,32 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Leave empty for unlimited"
-                    value={tierFormState.max_quantity || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
-                    className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Leave empty for unlimited"
+                      value={tierFormState.max_quantity || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase block">Guests Admitted (Pax)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="1 (e.g. 2 for Duo, 4 for Squad)"
+                      value={tierFormState.admits_quantity || 1}
+                      onChange={(e) => setTierFormState({ ...tierFormState, admits_quantity: e.target.value ? Math.max(1, parseInt(e.target.value, 10)) : 1 })}
+                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                    />
+                  </div>
                 </div>
                 <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
-                  Leave dates empty = always visible. Capacity empty = unlimited.
+                  Leave dates empty = always visible. Capacity empty = unlimited. Pax = guests admitted per ticket (1 for single, 2 for duo, 4 for squad).
                 </p>
               </div>
 

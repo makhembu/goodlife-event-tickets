@@ -3,6 +3,7 @@ import fontkit from "@pdf-lib/fontkit";
 import * as fs from "fs";
 import * as path from "path";
 import QRCode from "qrcode";
+import sharp from "sharp";
 import { EventDetails, Event, Ticket } from "./supabase-db-types";
 import { resolveEventFlyer } from "./event-flyer";
 
@@ -13,28 +14,35 @@ function hex(h: string) {
 
 /**
  * Loads the flyer image buffer either from the local `public/` folder or an external URL.
+ * Preserves the exact 14:9 aspect ratio via sharp 'cover' so the poster is NEVER squashed or compressed.
  */
 async function loadFlyerBuffer(flyerUrl: string): Promise<{ buffer: Buffer; isPng: boolean } | null> {
   if (!flyerUrl) return null;
   try {
     const publicDir = path.join(process.cwd(), "public");
+    let rawBuffer: Buffer;
 
     if (/^https?:\/\//i.test(flyerUrl)) {
       const res = await fetch(flyerUrl, { signal: AbortSignal.timeout(7000) });
       if (!res.ok) return null;
-      const buffer = Buffer.from(await res.arrayBuffer());
-      const isPng = /\.png($|\?)/i.test(flyerUrl) || res.headers.get("content-type")?.includes("png") === true;
-      return { buffer, isPng };
+      rawBuffer = Buffer.from(await res.arrayBuffer());
     } else {
       const clean = flyerUrl.replace(/^[\\/]+/, "");
       const abs = path.resolve(publicDir, clean);
       if (!abs.startsWith(publicDir + path.sep) && abs !== publicDir) return null;
       if (!fs.existsSync(abs)) return null;
-      const buffer = fs.readFileSync(abs);
-      const isPng = /\.png$/i.test(clean);
-      return { buffer, isPng };
+      rawBuffer = fs.readFileSync(abs);
     }
-  } catch {
+
+    // Proportional cover-crop: 840x540 matches 420x270 at 2x retina with ZERO height compression
+    const processedBuffer = await sharp(rawBuffer)
+      .resize(840, 540, { fit: "cover", position: "top" })
+      .png()
+      .toBuffer();
+
+    return { buffer: processedBuffer, isPng: true };
+  } catch (err) {
+    console.warn("[ticket-generator] Failed to load/process flyer image:", err);
     return null;
   }
 }
@@ -218,8 +226,8 @@ export async function generateTicketPdf(
   });
 
   // 2-Column Info Grid Card
-  const gridY = pillY - 95;
-  const gridHeight = 84;
+  const gridY = pillY - 100;
+  const gridHeight = 90;
   const gridWidth = 350;
   const gridX = 35;
 
@@ -243,8 +251,8 @@ export async function generateTicketPdf(
 
   // Horizontal separator
   page.drawLine({
-    start: { x: gridX, y: gridY + 42 },
-    end: { x: gridX + gridWidth, y: gridY + 42 },
+    start: { x: gridX, y: gridY + 45 },
+    end: { x: gridX + gridWidth, y: gridY + 45 },
     color: rgb(35 / 255, 38 / 255, 44 / 255),
     thickness: 1,
   });
@@ -260,14 +268,14 @@ export async function generateTicketPdf(
   // Row 1: DOORS | LOCATION
   page.drawText("DOORS", {
     x: gridX + 14,
-    y: gridY + 68,
+    y: gridY + 73,
     size: 7.5,
     font: fBold,
     color: rgb(120 / 255, 118 / 255, 112 / 255),
   });
   page.drawText(doorsTime, {
     x: gridX + 14,
-    y: gridY + 52,
+    y: gridY + 55,
     size: 12.5,
     font: fBold,
     color: rgb(250 / 255, 250 / 255, 250 / 255),
@@ -275,7 +283,7 @@ export async function generateTicketPdf(
 
   page.drawText("LOCATION:", {
     x: gridX + 190,
-    y: gridY + 68,
+    y: gridY + 73,
     size: 7.5,
     font: fBold,
     color: rgb(120 / 255, 118 / 255, 112 / 255),
@@ -287,7 +295,7 @@ export async function generateTicketPdf(
   }
   page.drawText(venueStr, {
     x: gridX + 190,
-    y: gridY + 52,
+    y: gridY + 55,
     size: venueSize,
     font: fBold,
     color: rgb(250 / 255, 250 / 255, 250 / 255),
@@ -296,7 +304,7 @@ export async function generateTicketPdf(
   // Row 2: GUEST | STATUS
   page.drawText("GUEST:", {
     x: gridX + 14,
-    y: gridY + 26,
+    y: gridY + 30,
     size: 7.5,
     font: fBold,
     color: rgb(120 / 255, 118 / 255, 112 / 255),
@@ -308,7 +316,7 @@ export async function generateTicketPdf(
   }
   page.drawText(attendeeName, {
     x: gridX + 14,
-    y: gridY + 11,
+    y: gridY + 12,
     size: guestSize,
     font: fBold,
     color: rgb(250 / 255, 250 / 255, 250 / 255),
@@ -316,19 +324,19 @@ export async function generateTicketPdf(
 
   page.drawText("STATUS:", {
     x: gridX + 190,
-    y: gridY + 26,
+    y: gridY + 30,
     size: 7.5,
     font: fBold,
     color: rgb(120 / 255, 118 / 255, 112 / 255),
   });
 
-  // Status pill badge: "CONFIRMED" or "ADMITTED"
+  // Status pill badge: "CONFIRMED" or "ADMITTED" (clean spacing, zero overlap)
   const statusLabel = ticket.is_scanned ? "ADMITTED" : "CONFIRMED";
   const statusPillW = 86;
   const statusPillH = 17;
   page.drawRectangle({
     x: gridX + 190,
-    y: gridY + 9,
+    y: gridY + 8,
     width: statusPillW,
     height: statusPillH,
     color: rgb(45 / 255, 36 / 255, 10 / 255),
@@ -338,7 +346,7 @@ export async function generateTicketPdf(
   const statusTextW = fBold.widthOfTextAtSize(statusLabel, 8);
   page.drawText(statusLabel, {
     x: gridX + 190 + (statusPillW - statusTextW) / 2,
-    y: gridY + 14,
+    y: gridY + 13,
     size: 8,
     font: fBold,
     color: rgb(245 / 255, 200 / 255, 66 / 255),
@@ -348,7 +356,7 @@ export async function generateTicketPdf(
   const qrCardW = 270;
   const qrCardH = 260;
   const qrCardX = (width - qrCardW) / 2;
-  const qrCardY = gridY - 280;
+  const qrCardY = gridY - 275;
 
   page.drawRectangle({
     x: qrCardX,
@@ -396,48 +404,27 @@ export async function generateTicketPdf(
     height: qrSize,
   });
 
-  // "ADD TO APPLE WALLET" pill below QR card
-  const walletPillW = 160;
-  const walletPillH = 26;
-  const walletPillX = (width - walletPillW) / 2;
-  const walletPillY = qrCardY - 38;
-
-  page.drawRectangle({
-    x: walletPillX,
-    y: walletPillY,
-    width: walletPillW,
-    height: walletPillH,
-    color: rgb(10 / 255, 10 / 255, 12 / 255),
-    borderColor: rgb(40 / 255, 42 / 255, 48 / 255),
-    borderWidth: 1,
-  });
-
-  // Apple Wallet color bars icon (three colored stacked bars)
-  const iconX = walletPillX + 14;
-  const iconY = walletPillY + 9;
-  page.drawRectangle({ x: iconX, y: iconY + 5, width: 12, height: 2.5, color: rgb(235 / 255, 87 / 255, 87 / 255) });
-  page.drawRectangle({ x: iconX, y: iconY + 2.5, width: 12, height: 2.5, color: rgb(242 / 255, 201 / 255, 76 / 255) });
-  page.drawRectangle({ x: iconX, y: iconY, width: 12, height: 2.5, color: rgb(39 / 255, 174 / 255, 96 / 255) });
-
-  page.drawText("ADD TO APPLE WALLET", {
-    x: walletPillX + 32,
-    y: walletPillY + 8.5,
-    size: 7.5,
-    font: fBold,
-    color: rgb(240 / 255, 240 / 255, 240 / 255),
-  });
-
-  // Footer: Ticket serial & security hash
+  // Footer: Ticket serial & security hash (clean, balanced at base)
   const shortTicketId = ticket.id.length > 20 ? ticket.id.slice(0, 20) : ticket.id;
   const mpesaRef = ticket.mpesa_receipt ? `  --  M-PESA: ${ticket.mpesa_receipt}` : "";
   const footerText = `TICKET ID: ${shortTicketId}${mpesaRef}  --  GOODLIFE FESTIVALS`;
-  const footerW = fReg.widthOfTextAtSize(footerText, 6.5);
+  const footerW = fBold.widthOfTextAtSize(footerText, 7);
   page.drawText(footerText, {
     x: (width - footerW) / 2,
-    y: 16,
-    size: 6.5,
+    y: 22,
+    size: 7,
+    font: fBold,
+    color: rgb(180 / 255, 175 / 255, 168 / 255),
+  });
+
+  const subFooter = "OFFICIAL DIGITAL PASS  --  PRESENT QR AT ENTRANCE GATE FOR ENTRY";
+  const subFooterW = fReg.widthOfTextAtSize(subFooter, 6);
+  page.drawText(subFooter, {
+    x: (width - subFooterW) / 2,
+    y: 11,
+    size: 6,
     font: fReg,
-    color: rgb(90 / 255, 90 / 255, 95 / 255),
+    color: rgb(110 / 255, 110 / 255, 115 / 255),
   });
 
   const pdfBytes = await pdfDoc.save();
