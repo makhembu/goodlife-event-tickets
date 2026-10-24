@@ -1552,8 +1552,14 @@ export default function TicketCheckoutPage({
                           : eventDetails.event_date
                             ? (() => {
                                 const d = new Date(eventDetails.event_date);
-                                const mon = d.toLocaleString("en-KE", { month: "short" }).toUpperCase();
+                                const mon = d.toLocaleString("en-KE", { month: "short", timeZone: "Africa/Nairobi" }).toUpperCase();
                                 const day = d.getDate();
+                                const utcH = d.getUTCHours();
+                                const utcM = d.getUTCMinutes();
+                                // Pure calendar date without time (00:00 UTC / 03:00 EAT) shouldn't invent "3AM"
+                                if (utcH === 0 && utcM === 0) {
+                                  return `${mon} ${day} • 2PM TILL LATE`;
+                                }
                                 const hr = d.getHours();
                                 const min = d.getMinutes();
                                 const suffix = hr >= 12 ? "PM" : "AM";
