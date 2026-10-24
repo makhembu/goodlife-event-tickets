@@ -110,13 +110,21 @@ export default function StoryDeckHero({
   );
 
   const advance = useCallback(() => {
+    if (slides.length <= 1) {
+      if (slides[0]?.kind === "video" && videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+      return;
+    }
+
     if (activeIndex < slides.length - 1) {
       goToSlide(activeIndex + 1, false);
     } else {
-      setProgress(100);
-      setAutoAdvanceEnabled(false);
+      // Loop back to the first slide so the hero continuously stays alive
+      goToSlide(0, false);
     }
-  }, [activeIndex, goToSlide, slides.length]);
+  }, [activeIndex, goToSlide, slides]);
 
   // Poster countdown. Pauses for the lightbox, off-screen scrolling and once
   // the deck has reached its last slide.
@@ -185,12 +193,12 @@ export default function StoryDeckHero({
 
   const handlePrev = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    goToSlide(activeIndex - 1);
+    goToSlide(activeIndex === 0 ? slides.length - 1 : activeIndex - 1);
   };
 
   const handleNext = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    goToSlide(activeIndex + 1);
+    goToSlide(activeIndex >= slides.length - 1 ? 0 : activeIndex + 1);
   };
 
   const handleToggleSound = (e: React.MouseEvent) => {
@@ -385,10 +393,9 @@ export default function StoryDeckHero({
             <button
               type="button"
               onClick={handlePrev}
-              disabled={activeIndex === 0}
               aria-label="Previous story"
               title="Previous story"
-              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white disabled:opacity-30 disabled:cursor-default cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
@@ -398,10 +405,9 @@ export default function StoryDeckHero({
             <button
               type="button"
               onClick={handleNext}
-              disabled={activeIndex === slides.length - 1}
               aria-label="Next story"
               title="Next story"
-              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white disabled:opacity-30 disabled:cursor-default cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
