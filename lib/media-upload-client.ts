@@ -37,6 +37,35 @@ async function safeJson<T>(res: Response): Promise<T> {
 }
 
 export async function uploadImageFile(file: File): Promise<string> {
+  // Try direct-to-R2 upload first if available
+  try {
+    const presignedRes = await fetch("/api/admin/presigned-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name || "image.jpg",
+        contentType: file.type || "image/jpeg",
+        folder: "posters",
+      }),
+    });
+    if (presignedRes.ok) {
+      const { uploadUrl, publicUrl } = await presignedRes.json();
+      if (uploadUrl && publicUrl) {
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type || "image/jpeg" },
+          body: file,
+        });
+        if (uploadRes.ok) {
+          return publicUrl;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Direct R2 image upload fallback to server:", err);
+  }
+
+  // Fallback to server route (ImgBB)
   const formData = new FormData();
   formData.append("image", file);
   const res = await fetch("/api/admin/upload-image", { method: "POST", body: formData });
@@ -48,12 +77,63 @@ export async function uploadImageFile(file: File): Promise<string> {
   return data.url as string;
 }
 
-export async function uploadVideoFile(file: File): Promise<string> {
+export async function uploadVideoFile(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  // Tier 0: Direct browser-to-R2 upload (Bypasses Vercel 4.5MB limit completely)
+  try {
+    const presignedRes = await fetch("/api/admin/presigned-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name || "video.mp4",
+        contentType: file.type || "video/mp4",
+        folder: "videos",
+      }),
+    });
+
+    if (presignedRes.ok) {
+      const { uploadUrl, publicUrl } = await presignedRes.json();
+      if (uploadUrl && publicUrl) {
+        // Upload directly from browser to Cloudflare R2 with XMLHttpRequest for progress tracking
+        return await new Promise<string>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+
+          if (xhr.upload && onProgress) {
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                const percent = Math.round((event.loaded / event.total) * 100);
+                onProgress(percent);
+              }
+            };
+          }
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(publicUrl);
+            } else {
+              reject(new Error(`R2 direct upload HTTP ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error("Network error during direct video upload to Cloudflare R2"));
+          xhr.send(file);
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn("Direct R2 upload attempt failed, trying fallback:", err.message);
+  }
+
+  // Fallback to server route (for small files under 4.5 MB via Catbox/Pomf)
   const formData = new FormData();
   formData.append("video", file);
   const res = await fetch("/api/admin/upload-video", { method: "POST", body: formData });
   if (res.status === 413) {
-    throw new Error(`Video file too large (${(file.size / (1024 * 1024)).toFixed(1)} MB) for direct upload. Please use "Add by URL" or compress below 4.5 MB.`);
+    throw new Error(`Video file too large (${(file.size / (1024 * 1024)).toFixed(1)} MB) for fallback server. Please use "Add by URL".`);
   }
   const data = await safeJson<{ url?: string; error?: string }>(res);
   if (!res.ok || !data.url) throw new Error(data.error || "Video upload failed");

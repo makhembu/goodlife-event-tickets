@@ -104,9 +104,11 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
     setStatus("Extracting poster frame...");
     try {
       const meta = await extractVideoPoster(file).catch(() => ({} as ExtractedPosterMeta));
-      setUploading({ kind: "video", progress: 40 });
-      setStatus("Uploading teaser...");
-      const url = await uploadVideoFile(file);
+      setStatus("Uploading teaser to Cloudflare R2...");
+      const url = await uploadVideoFile(file, (percent) => {
+        setUploading({ kind: "video", progress: percent });
+        setStatus(`Uploading teaser (${percent}%)...`);
+      });
       setUploading({ kind: "video", progress: 100 });
       append({
         kind: "video",
