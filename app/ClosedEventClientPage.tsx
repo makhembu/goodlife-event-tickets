@@ -338,6 +338,14 @@ export default function ClosedEventClientPage({
 
         </section>
 
+        <footer className="w-full text-center pb-6 pt-6 border-t-4 border-brand-navy mt-8">
+          <p className="font-display text-xl uppercase tracking-widest text-brand-navy">
+            {eventDetails.footer_title ? `© 2026 ${eventDetails.footer_title} TICKETING` : `© 2026 ${eventDetails.title} TICKETING`}
+          </p>
+          <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
+            {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
+          </p>
+        </footer>
       </div>
     </div>
   );

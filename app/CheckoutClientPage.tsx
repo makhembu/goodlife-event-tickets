@@ -2330,10 +2330,10 @@ export default function TicketCheckoutPage({
 
         <footer className="w-full text-center pb-6 pt-6 border-t-4 border-brand-navy mt-4">
           <p className="font-display text-xl uppercase tracking-widest text-brand-navy">
-            © 2026 {eventDetails.title} TICKETING
+            {eventDetails.footer_title ? `© 2026 ${eventDetails.footer_title} TICKETING` : `© 2026 ${eventDetails.title} TICKETING`}
           </p>
           <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
-            {eventDetails.venue} · STRICTLY 18+ NO OUTSIDE DRINKS
+            {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
           </p>
           {/* No staff links in the footer. It advertised "Staff & POS Login"
               and "Admin Portal" to every customer on every checkout page, which

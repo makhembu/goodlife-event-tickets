@@ -147,9 +147,10 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
   }
 
   // No event at all → fallback to eventDetails
+  const siteDetails = await fetchEventDetails();
+
   if (!targetEvent) {
-    const eventDetails = await fetchEventDetails();
-    return <ClosedEventClientPage eventDetails={eventDetails as any} />;
+    return <ClosedEventClientPage eventDetails={siteDetails as any} />;
   }
 
   const eventDetails = {
@@ -178,6 +179,8 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     recap_video_url: targetEvent.recap_video_url,
     max_tent_inventory: targetEvent.max_tent_inventory,
     max_shared_beds: targetEvent.max_shared_beds,
+    footer_title: siteDetails?.footer_title,
+    footer_legal: siteDetails?.footer_legal,
   };
 
   // The editions switcher. `canonicalStatus` folds the legacy `'active'`
