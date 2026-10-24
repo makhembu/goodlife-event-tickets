@@ -1,3 +1,5 @@
+import type { StoryMediaItem } from "./story-media";
+
 export interface Event {
   id: number;
   title: string;
@@ -10,6 +12,8 @@ export interface Event {
   ticker_text: string;
   till_number: string;
   event_date: string | null;
+  /** Ordered homepage story deck slides (posters and teaser videos). */
+  story_media?: StoryMediaItem[] | null;
   status?: 'scheduled' | 'live' | 'closed' | 'archived';
   sales_open_date?: string | null;
   sales_close_date?: string | null;
@@ -98,6 +102,8 @@ export interface EventDetails {
   next_event_title?: string;
   recap_video_url?: string;
   video_url?: string | null;
+  /** Ordered homepage story deck slides (posters and teaser videos). */
+  story_media?: StoryMediaItem[] | null;
   budget_allocated?: number | null;
   max_tent_inventory?: number;
   max_shared_beds?: number;

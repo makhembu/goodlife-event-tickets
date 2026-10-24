@@ -209,6 +209,9 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
     let schemaChecked = false;
     try {
       await neonQuery("ALTER TABLE events ADD COLUMN IF NOT EXISTS video_url TEXT;");
+      // Ordered story-deck slides. JSONB rather than a join table: the deck is a
+      // short ordered list that is always read with its event row.
+      await neonQuery("ALTER TABLE events ADD COLUMN IF NOT EXISTS story_media JSONB DEFAULT '[]'::jsonb;");
     } catch (e) {
       // Ignore if table schema check already passed or insufficient privileges
     }
@@ -398,7 +401,7 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
       'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
       'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
       'custom_schedule_text', 'max_tent_inventory', 'max_shared_beds', 'maps_url',
-      'archived_at', 'budget_allocated'
+      'archived_at', 'budget_allocated', 'story_media'
     ]);
 
     const fields = Object.keys(updates).filter((k) => MUTABLE_EVENT_FIELDS.has(k));
@@ -410,7 +413,13 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
     }
 
     const setClause = fields.map((f, idx) => `"${f}" = $${idx + 2}`).join(", ");
-    const values = fields.map(f => (updates as any)[f]);
+    // `pg` serialises a JS array as a Postgres array literal, which is not
+    // valid JSONB. Story slides are JSON, so stringify only that field.
+    const values = fields.map(f =>
+      f === 'story_media'
+        ? JSON.stringify((updates as any)[f] ?? [])
+        : (updates as any)[f]
+    );
     const { rows } = await neonQuery(
       `UPDATE events SET ${setClause} WHERE id = $1 RETURNING *`,
       [id, ...values]
@@ -2505,6 +2514,7 @@ export interface EventGallery {
   thumbnail_url: string;
   caption: string;
   tag: string;
+  media_type?: 'image' | 'video';
   created_at: string;
 }
 
@@ -3253,7 +3263,7 @@ export async function fetchSaleById(saleId: string): Promise<any> {
   return { ...sale, items: itemRows, payments: paymentRows };
 }
 
-export async function voidSale(saleId: string, voidedBy: number, reason: string): Promise<boolean> {
+export async function voidSale(saleId: string, voidedBy: number | null, reason: string): Promise<boolean> {
   if (typeof window !== "undefined") {
     const res = await fetch(`/api/vendor/sales/${saleId}/void`, {
       method: "POST",
@@ -3295,10 +3305,11 @@ export async function voidSale(saleId: string, voidedBy: number, reason: string)
     for (const p of payments) {
       if (p.tab_id) {
         await client.query("UPDATE customer_tabs SET balance = balance - $2 WHERE id = $1", [p.tab_id, p.amount]);
-        // Insert void transaction in tab ledger
+        // Insert a reversal row in the tab ledger. `type='void'` is not a
+        // charge or a payment: readers must subtract it from paid-to-date.
         await client.query(
           `INSERT INTO tab_transactions (tab_id, sale_id, type, amount, method, mpesa_ref, operator_id)
-           VALUES ($1, $2, 'payment', $3, 'void', '', $4)`,
+           VALUES ($1, $2, 'void', $3, 'void', '', $4)`,
           [p.tab_id, saleId, p.amount, voidedBy]
         );
       }

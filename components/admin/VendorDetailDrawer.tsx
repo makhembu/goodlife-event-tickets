@@ -82,6 +82,7 @@ export default function VendorDetailDrawer({
   
   // Searches & Filters
   const [salesSearch, setSalesSearch] = useState("");
+  const [voidingSaleId, setVoidingSaleId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [stockSearch, setStockSearch] = useState("");
   const [selectedStockCategory, setSelectedStockCategory] = useState<string>("ALL");
@@ -214,6 +215,42 @@ export default function VendorDetailDrawer({
       .catch((err) => {
         setError(err.message || "Network error loading vendor data");
       });
+  };
+
+  // A "delete" on a POS sale is a void: it leaves the audit row in place but
+  // removes the money from totals, restocks items, reverses tab balances and
+  // backs out commission. A hard DELETE would silently corrupt all four.
+  const handleVoidSale = async (sale: any) => {
+    const reason = window.prompt(
+      `Void sale ${sale.id} for KES ${Number(sale.total || 0).toLocaleString()}?\n\n` +
+      `It will disappear from sales totals, stock will be restored, tab balances ` +
+      `and commission will be reversed. The audit row stays with your reason.\n\n` +
+      `Reason:`
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      alert("A reason is required so the void is auditable.");
+      return;
+    }
+
+    setVoidingSaleId(sale.id);
+    try {
+      const res = await fetch(`/api/admin/sales/${encodeURIComponent(sale.id)}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: trimmed }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || "Failed to void sale");
+      if (receiptModalItem?.id === sale.id) setReceiptModalItem(null);
+      await refreshData();
+      onSettlementRecorded?.();
+    } catch (err: any) {
+      alert(err.message || "Failed to void sale");
+    } finally {
+      setVoidingSaleId(null);
+    }
   };
 
   const loadTillSessions = async () => {
@@ -2389,6 +2426,7 @@ export default function VendorDetailDrawer({
                           const dateObj = new Date(sale.created_at);
                           const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                           const dateStr = dateObj.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+                          const isVoided = sale.payment_status === "voided";
 
                           return (
                             <div
@@ -2400,6 +2438,11 @@ export default function VendorDetailDrawer({
                                   <span className="font-mono text-xs font-black bg-[var(--brand-navy)] text-white px-2 py-0.5">
                                     {sale.id}
                                   </span>
+                                  {isVoided && (
+                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-red-700 text-white border border-red-900">
+                                      VOIDED
+                                    </span>
+                                  )}
                                   <span className="text-[11px] font-mono font-bold text-stone-600">
                                     🕒 {timeStr} · {dateStr}
                                   </span>
@@ -2422,10 +2465,15 @@ export default function VendorDetailDrawer({
                                 <div className="text-[10px] font-mono text-[var(--brand-navy-light)]">
                                   Cashier: <strong className="text-[var(--brand-navy)]">{sale.operator_name || "POS Operator"}</strong>
                                 </div>
+                                {isVoided && sale.void_reason && (
+                                  <div className="text-[10px] font-mono text-red-700">
+                                    Void reason: {sale.void_reason}
+                                  </div>
+                                )}
                               </div>
 
                               <div className="sm:text-right shrink-0 flex sm:flex-col justify-between items-center sm:items-end border-t sm:border-t-0 pt-2 sm:pt-0 border-stone-200 gap-2">
-                                <div className="text-base font-mono font-black text-emerald-800">
+                                <div className={`text-base font-mono font-black ${isVoided ? "line-through text-stone-400" : "text-emerald-800"}`}>
                                   KES {Number(sale.total).toLocaleString()}
                                 </div>
                                 <div className="flex gap-1 flex-wrap sm:justify-end">
@@ -2447,6 +2495,21 @@ export default function VendorDetailDrawer({
                                 >
                                   <FileText className="w-3 h-3" /> DOCKET
                                 </button>
+                                {!isVoided && (
+                                  <button
+                                    onClick={() => handleVoidSale(sale)}
+                                    disabled={voidingSaleId === sale.id}
+                                    className="px-2 py-0.5 bg-red-50 hover:bg-red-700 hover:text-white border border-red-700 text-red-700 text-[10px] font-black uppercase transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+                                    title="Delete this sale: reverses stock, tab balance and commission, keeps the audit row"
+                                  >
+                                    {voidingSaleId === sale.id ? (
+                                      <RefreshCw className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3 h-3" />
+                                    )}
+                                    DELETE
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );

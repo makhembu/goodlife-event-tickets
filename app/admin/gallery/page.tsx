@@ -1,17 +1,23 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Image as ImageIcon, Plus, Upload, X, CheckCircle, Loader2, Trash2 } from "lucide-react";
+import { Image as ImageIcon, Plus, Upload, X, CheckCircle, Loader2, Trash2, Play } from "lucide-react";
 import Link from "next/link";
+import { isVideoMediaUrl, resolveGalleryMediaType, type GalleryMediaType } from "@/lib/gallery-media";
+import { extractVideoPoster, uploadImageFile, uploadVideoFile, type ExtractedPosterMeta } from "@/lib/media-upload-client";
 
-const TAGS = ["POSTER", "PHOTO", "RECAP", "PROMO", "FLYER"];
+const TAGS = ["POSTER", "PHOTO", "RECAP", "PROMO", "FLYER", "VIDEO"];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 150 * 1024 * 1024;
 
 type GalleryImage = {
   id: number;
   event_id: number;
   image_url: string;
+  thumbnail_url: string;
   caption: string;
   tag: string;
+  media_type?: GalleryMediaType;
 };
 
 type Event = { id: number; title: string };
@@ -31,6 +37,7 @@ export default function AdminGalleryPage() {
   const [tag, setTag] = useState("PHOTO");
   const [imageUrl, setImageUrl] = useState(""); // manual URL fallback
   const [urlMode, setUrlMode] = useState(false);
+  const [mediaType, setMediaType] = useState<GalleryMediaType>("image");
 
   // upload state
   const [file, setFile] = useState<File | null>(null);
@@ -42,6 +49,13 @@ export default function AdminGalleryPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Release the object URL when the picker closes or a new file replaces it.
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
 
   // load gallery + events
   //
@@ -106,8 +120,24 @@ export default function AdminGalleryPage() {
 
   // file pick / drag-drop
   const handleFile = (f: File) => {
-    if (!f.type.startsWith("image/")) { setUploadError("Please select an image file."); return; }
-    if (f.size > 10 * 1024 * 1024) { setUploadError("Max 10 MB per image."); return; }
+    const isVideo = f.type.startsWith("video/") || isVideoMediaUrl(f.name);
+    const isImage = f.type.startsWith("image/");
+
+    if (!isImage && !isVideo) {
+      setUploadError("Please select an image or video file.");
+      return;
+    }
+    if (isVideo && f.size > MAX_VIDEO_BYTES) {
+      setUploadError("Max 150 MB per video.");
+      return;
+    }
+    if (isImage && f.size > MAX_IMAGE_BYTES) {
+      setUploadError("Max 10 MB per image.");
+      return;
+    }
+
+    if (preview) URL.revokeObjectURL(preview);
+    setMediaType(isVideo ? "video" : "image");
     setFile(f);
     setPreview(URL.createObjectURL(f));
     setUploadError("");
@@ -120,28 +150,28 @@ export default function AdminGalleryPage() {
     if (f) handleFile(f);
   };
 
-  // upload image → get hosted URL
-  const uploadToImgbb = async (f: File): Promise<string> => {
-    const form = new FormData();
-    form.append("image", f);
-    const res = await fetch("/api/admin/upload-image", {
-      method: "POST",
-      body: form,
-    });
-    const json = await res.json();
-    if (!res.ok || !json.url) throw new Error(json.error || "Image upload failed");
-    return json.url as string;
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true); setUploadError("");
     try {
       let finalUrl = imageUrl.trim();
+      let thumbnailUrl = "";
+      const effectiveType: GalleryMediaType = urlMode
+        ? (isVideoMediaUrl(finalUrl) ? "video" : "image")
+        : mediaType;
 
       if (!urlMode && file) {
         setUploading(true);
-        finalUrl = await uploadToImgbb(file);
+        if (effectiveType === "video") {
+          // Upload the video and extract its poster in parallel. The poster is
+          // what the public grid paints; the video is only fetched on open.
+          const posterPromise = extractVideoPoster(file).catch((): ExtractedPosterMeta => ({}));
+          finalUrl = await uploadVideoFile(file);
+          const meta = await posterPromise;
+          thumbnailUrl = meta.poster_url || "";
+        } else {
+          finalUrl = await uploadImageFile(file);
+        }
         setUploading(false);
       }
 
@@ -154,7 +184,7 @@ export default function AdminGalleryPage() {
         setUploadError(
           eventLoadError
             ? "Could not load the event list, so there is nothing to file this under. Close the dialog and retry."
-            : "Please choose an event for this image."
+            : "Please choose an event for this item."
         );
         setSaving(false);
         return;
@@ -166,15 +196,22 @@ export default function AdminGalleryPage() {
         body: JSON.stringify({
           event_id: parseInt(eventId),
           image_url: finalUrl,
+          thumbnail_url: thumbnailUrl || undefined,
           caption: caption.trim(),
           tag,
+          media_type: effectiveType,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to save image");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to save media");
+      }
 
       // reset + reload
+      if (preview) URL.revokeObjectURL(preview);
       setFile(null); setPreview(null); setCaption(""); setImageUrl(""); setTag("PHOTO");
+      setMediaType("image");
       setShowModal(false);
       await loadGallery();
     } catch (err: any) {
@@ -186,7 +223,7 @@ export default function AdminGalleryPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this image?")) return;
+    if (!window.confirm("Are you sure you want to delete this item?")) return;
     setDeletingId(id);
     try {
       const res = await fetch(`/api/hub/gallery?id=${id}`, {
@@ -207,6 +244,7 @@ export default function AdminGalleryPage() {
   const openModal = () => {
     setFile(null); setPreview(null); setCaption(""); setImageUrl("");
     setTag("PHOTO"); setUploadError(""); setUrlMode(false); setUploading(false);
+    setMediaType("image");
     setShowModal(true);
   };
 
@@ -231,14 +269,14 @@ export default function AdminGalleryPage() {
               </h1>
             </div>
             <p className="text-xs font-bold uppercase tracking-widest opacity-60">
-              {visibleImages.length} image{visibleImages.length !== 1 ? "s" : ""} · Upload posters &amp; recap photos
+              {visibleImages.length} item{visibleImages.length !== 1 ? "s" : ""} · Upload posters, photos &amp; videos
             </p>
           </div>
           <button
             onClick={openModal}
             className="flex items-center gap-2 bg-brand-accent text-brand-navy px-5 py-3 border-4 border-brand-navy shadow-(--shadow-brut-md) hover:bg-brand-navy hover:text-brand-accent font-bold uppercase transition-colors"
           >
-            <Plus className="w-5 h-5" /> Add Image
+            <Plus className="w-5 h-5" /> Add Media
           </button>
         </header>
 
@@ -249,16 +287,39 @@ export default function AdminGalleryPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {visibleImages.map(img => (
+            {visibleImages.map(img => {
+              const isVideo = resolveGalleryMediaType(img.media_type, img.image_url) === "video";
+              const poster = img.thumbnail_url && !isVideoMediaUrl(img.thumbnail_url) ? img.thumbnail_url : "";
+              return (
               <div key={img.id} className="bg-white border-4 border-brand-navy shadow-(--shadow-brut-md) flex flex-col group relative">
                 <div className="aspect-square bg-brand-navy/10 overflow-hidden relative">
-                  <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
+                  {isVideo ? (
+                    poster ? (
+                      <img src={poster} alt={img.caption} className="w-full h-full object-cover" />
+                    ) : (
+                      <video src={img.image_url} muted playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                    )
+                  ) : (
+                    <img src={img.image_url} alt={img.caption} className="w-full h-full object-cover" />
+                  )}
+                  {isVideo && (
+                    <>
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="bg-brand-navy/80 text-brand-off-white border-2 border-brand-off-white p-2">
+                          <Play className="w-5 h-5" />
+                        </span>
+                      </div>
+                      <span className="absolute bottom-2 left-2 bg-brand-accent text-brand-navy border-2 border-brand-navy text-[9px] font-black px-1.5 py-0.5 uppercase pointer-events-none">
+                        VIDEO
+                      </span>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDelete(img.id)}
                     disabled={deletingId === img.id}
                     className="absolute top-2 right-2 bg-red-600 text-white p-2 border-2 border-brand-navy shadow-(--shadow-brut-sm) opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 disabled:opacity-50 cursor-pointer"
-                    title="Delete image"
+                    title={isVideo ? "Delete video" : "Delete image"}
                   >
                     {deletingId === img.id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -277,17 +338,18 @@ export default function AdminGalleryPage() {
                   <span className="bg-brand-navy text-brand-off-white text-[9px] font-bold px-2 py-1 uppercase shrink-0">{img.tag}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
             {visibleImages.length === 0 && (
               <div className="col-span-full py-16 text-center border-4 border-dashed border-brand-navy font-bold uppercase text-lg opacity-50">
-                No images yet — click Add Image to upload the first one.
+                No media yet — click Add Media to upload the first one.
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* ── ADD IMAGE MODAL ─────────────────────────────────────────── */}
+      {/* ── ADD MEDIA MODAL ─────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-brand-navy/80 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
           <div
@@ -296,7 +358,7 @@ export default function AdminGalleryPage() {
           >
             {/* Modal header */}
             <div className="flex items-center justify-between border-b-4 border-brand-navy px-6 py-4">
-              <h2 className="font-display text-2xl uppercase tracking-wider">Add Image</h2>
+              <h2 className="font-display text-2xl uppercase tracking-wider">Add Media</h2>
               <button onClick={() => setShowModal(false)} className="p-1 hover:text-red-600 transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -353,13 +415,18 @@ export default function AdminGalleryPage() {
                 </div>
 
                 {urlMode ? (
-                  <input
-                    type="url"
-                    value={imageUrl}
-                    onChange={e => setImageUrl(e.target.value)}
-                    placeholder="https://i.ibb.co/…/poster.jpg"
-                    className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
-                  />
+                  <>
+                    <input
+                      type="url"
+                      value={imageUrl}
+                      onChange={e => setImageUrl(e.target.value)}
+                      placeholder="https://i.ibb.co/…/poster.jpg or https://…/recap.mp4"
+                      className="w-full p-3 border-4 border-brand-navy bg-white focus:outline-none focus:ring-4 focus:ring-brand-accent font-bold text-sm"
+                    />
+                    <p className="mt-2 text-[10px] font-bold uppercase opacity-50">
+                      Video URLs (.mp4, .webm, .mov, .m4v) are detected automatically.
+                    </p>
+                  </>
                 ) : (
                   <div
                     onDragOver={e => { e.preventDefault(); setDragging(true); }}
@@ -373,17 +440,29 @@ export default function AdminGalleryPage() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       className="sr-only"
                       onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                     />
                     {preview ? (
                       <>
-                        <img src={preview} alt="preview" className="max-h-40 object-contain border-2 border-brand-navy" />
-                        <span className="text-xs font-bold uppercase opacity-60">{file?.name}</span>
+                        {mediaType === "video" ? (
+                          <video
+                            src={preview}
+                            controls
+                            muted
+                            playsInline
+                            className="max-h-40 object-contain border-2 border-brand-navy"
+                          />
+                        ) : (
+                          <img src={preview} alt="preview" className="max-h-40 object-contain border-2 border-brand-navy" />
+                        )}
+                        <span className="text-xs font-bold uppercase opacity-60">
+                          {file?.name} · {mediaType === "video" ? "VIDEO" : "IMAGE"}
+                        </span>
                         <button
                           type="button"
-                          onClick={e => { e.stopPropagation(); setFile(null); setPreview(null); }}
+                          onClick={e => { e.stopPropagation(); if (preview) URL.revokeObjectURL(preview); setFile(null); setPreview(null); setMediaType("image"); }}
                           className="absolute top-2 right-2 bg-red-600 text-white p-1 hover:bg-red-700"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -393,8 +472,8 @@ export default function AdminGalleryPage() {
                       <>
                         <Upload className="w-8 h-8 opacity-40" />
                         <div className="text-center">
-                          <div className="font-bold uppercase text-sm">Drop image here</div>
-                          <div className="text-xs opacity-60 mt-1">or click to browse · JPG, PNG, WEBP · max 10 MB</div>
+                          <div className="font-bold uppercase text-sm">Drop image or video here</div>
+                          <div className="text-xs opacity-60 mt-1">or click to browse · JPG, PNG, WEBP, MP4, WEBM, MOV · images max 10 MB · videos max 150 MB</div>
                         </div>
                       </>
                     )}
@@ -456,7 +535,7 @@ export default function AdminGalleryPage() {
                   ) : saving ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
                   ) : (
-                    <><CheckCircle className="w-4 h-4" /> Save Image</>
+                    <><CheckCircle className="w-4 h-4" /> Save Media</>
                   )}
                 </button>
               </div>

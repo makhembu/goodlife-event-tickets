@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomInt } from "crypto";
-import { getVendorById, updateVendor, fetchOperatorsForVendor, updateOperator, createOperator } from "@/lib/supabase-db";
+import { getVendorById, updateVendor, deleteVendor, fetchOperatorsForVendor, updateOperator, createOperator } from "@/lib/supabase-db";
 import { sendTextMessage } from "@/lib/whatsapp";
 
 export async function GET(
@@ -32,6 +32,50 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   return handleVendorUpdate(request, context);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
+  if (adminSession !== "true") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const vendorId = parseInt(id, 10);
+  if (isNaN(vendorId)) {
+    return NextResponse.json({ error: "Invalid vendor ID" }, { status: 400 });
+  }
+
+  try {
+    const existingVendor = await getVendorById(vendorId);
+    if (!existingVendor) {
+      return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
+    }
+    // House vendors (bar/kitchen) carry festival revenue and cannot be removed
+    // from the roster by a casual delete click.
+    if (existingVendor.is_house) {
+      return NextResponse.json(
+        { error: "House vendors cannot be deleted. Edit the vendor instead." },
+        { status: 400 }
+      );
+    }
+
+    const deleted = await deleteVendor(vendorId);
+    if (!deleted) {
+      return NextResponse.json({ error: "Failed to delete vendor" }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, id: vendorId });
+  } catch (error: any) {
+    console.error("Error deleting vendor:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to delete vendor" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench, X } from "lucide-react";
+import { Store, Plus, Key, Edit, CheckCircle, AlertCircle, RefreshCw, Send, ExternalLink, Receipt, Eye, EyeOff, Copy, Check, TrendingUp, Layers, Users, Wrench, X, Trash2 } from "lucide-react";
 import Link from "next/link";
 import VendorDetailDrawer from "@/components/admin/VendorDetailDrawer";
 
@@ -20,6 +20,7 @@ export default function AdminVendorsPage() {
     operator_pin: "",
   });
   const [selectedDrawerVendorId, setSelectedDrawerVendorId] = useState<number | null>(null);
+  const [deletingVendorId, setDeletingVendorId] = useState<number | null>(null);
 
   // PIN Visibility States
   const [showPins, setShowPins] = useState<Record<number, boolean>>({});
@@ -128,6 +129,31 @@ export default function AdminVendorsPage() {
       }
     }
   }, []);
+
+  const handleDeleteVendor = async (vendor: any) => {
+    if (vendor.is_house) {
+      alert("House vendors cannot be deleted. Edit the vendor instead.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Delete ${vendor.name}?\n\n` +
+      `This removes the vendor from the roster and blocks its POS login. ` +
+      `Past sales, tabs and settlement records are kept for the audit trail.`
+    );
+    if (!confirmed) return;
+
+    setDeletingVendorId(vendor.id);
+    try {
+      const res = await fetch(`/api/admin/vendors/${vendor.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete vendor");
+      await loadVendors();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete vendor");
+    } finally {
+      setDeletingVendorId(null);
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -505,6 +531,20 @@ export default function AdminVendorsPage() {
                       </button>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteVendor(v)}
+                    disabled={Boolean(v.is_house) || deletingVendorId === v.id}
+                    title={v.is_house ? "House vendors cannot be deleted" : "Delete this vendor from the roster"}
+                    className="w-full border-2 border-red-700 text-red-700 hover:bg-red-700 hover:text-white px-2 py-1.5 text-xs font-bold uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-red-700"
+                  >
+                    {deletingVendorId === v.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    {deletingVendorId === v.id ? "Deleting…" : "Delete Vendor"}
+                  </button>
                 </div>
               </div>
             );

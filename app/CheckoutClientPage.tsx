@@ -38,7 +38,7 @@ import confetti from "canvas-confetti";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
 import { useEatToday } from "@/hooks/use-eat-today";
 import { isHiddenFromSite, isEventSellable, canonicalStatus } from "@/lib/event-availability";
-import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
+import type { StoryMediaItem } from "@/lib/story-media";
 import LiveMiniEventBanner from "@/components/LiveMiniEventBanner";
 import StoryDeckHero from "@/components/StoryDeckHero";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -139,7 +139,7 @@ export default function TicketCheckoutPage({
   
   // Flyer Lightbox State
   const [isFlyerExpanded, setIsFlyerExpanded] = useState(false);
-  const [flyerExpandMode, setFlyerExpandMode] = useState<"poster" | "video">("poster");
+  const [expandedStory, setExpandedStory] = useState<StoryMediaItem | null>(null);
   
   // Manual M-Pesa till accordion. Collapsed by default: the till number is
   // already on the first screen in the venue/till strip, so this is the
@@ -451,7 +451,6 @@ export default function TicketCheckoutPage({
   };
 
   const isVideoFlyer = eventDetails.flyer_url ? /\.(mp4|webm|ogg|mov|m4v)($|\?)/i.test(eventDetails.flyer_url) || eventDetails.flyer_url.includes("video") : false;
-  const activeHeroVideo = eventDetails.video_url || resolveEventVideo(eventDetails);
 
   // "Now" in Kenya EAT, on a 60s heartbeat, re-rendering when the EAT day rolls
   // over so a tab left open overnight stops offering yesterday's tiers. Also
@@ -1486,8 +1485,10 @@ export default function TicketCheckoutPage({
                     the drifting cream margin - the poster must be allowed to
                     take the full interior or the frame stops being constant. */}
                 <StoryDeckHero
+                  key={eventDetails.id}
                   posterUrl={eventDetails.flyer_url}
-                  videoUrl={activeHeroVideo}
+                  videoUrl={eventDetails.video_url}
+                  media={eventDetails.story_media}
                   eventTitle={eventDetails.title}
                   tag={eventDetails.tag}
                   subtitle={eventDetails.subtitle}
@@ -1499,8 +1500,8 @@ export default function TicketCheckoutPage({
                   }
                   isExpanded={isFlyerExpanded}
                   className="mt-0 md:my-3"
-                  onExpand={(mode) => {
-                    setFlyerExpandMode(mode);
+                  onExpand={(item) => {
+                    setExpandedStory(item);
                     setIsFlyerExpanded(true);
                   }}
                 />
@@ -2397,34 +2398,8 @@ export default function TicketCheckoutPage({
               <div className="flex items-center justify-between border-b-2 border-brand-navy bg-brand-accent p-2 md:p-3 shrink-0">
                 <div className="flex items-center gap-2 overflow-hidden">
                   <span className="font-display text-sm md:text-lg uppercase text-brand-navy truncate">
-                    {eventDetails.title} — {flyerExpandMode === "video" ? "HERO TEASER VIDEO" : "OFFICIAL EVENT POSTER"}
+                    {eventDetails.title} — {expandedStory?.kind === "video" ? "HERO TEASER VIDEO" : "OFFICIAL EVENT POSTER"}
                   </span>
-                  {activeHeroVideo && (
-                    <div className="flex items-center gap-1 ml-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setFlyerExpandMode("poster")}
-                        className={`px-2 py-0.5 text-xs font-black uppercase border border-brand-navy transition-all ${
-                          flyerExpandMode === "poster"
-                            ? "bg-brand-navy text-brand-off-white"
-                            : "bg-brand-off-white/80 text-brand-navy hover:bg-brand-off-white"
-                        }`}
-                      >
-                        🖼️ Poster
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFlyerExpandMode("video")}
-                        className={`px-2 py-0.5 text-xs font-black uppercase border border-brand-navy transition-all ${
-                          flyerExpandMode === "video"
-                            ? "bg-brand-navy text-brand-off-white"
-                            : "bg-brand-off-white/80 text-brand-navy hover:bg-brand-off-white"
-                        }`}
-                      >
-                        🎬 Video
-                      </button>
-                    </div>
-                  )}
                 </div>
                 <button
                   type="button"
@@ -2438,10 +2413,11 @@ export default function TicketCheckoutPage({
 
               {/* Media Content */}
               <div className="relative flex-1 w-full bg-brand-navy overflow-auto flex items-center justify-center">
-                {flyerExpandMode === "video" && activeHeroVideo ? (
+                {expandedStory?.kind === "video" ? (
                   <video 
-                    key={activeHeroVideo}
-                    src={activeHeroVideo} 
+                    key={expandedStory.url}
+                    src={expandedStory.url} 
+                    poster={expandedStory.poster_url || undefined}
                     autoPlay 
                     controls 
                     loop 
@@ -2450,7 +2426,7 @@ export default function TicketCheckoutPage({
                   />
                 ) : (
                   <Image 
-                    src={eventDetails.flyer_url} 
+                    src={expandedStory?.url || eventDetails.flyer_url} 
                     alt={`${eventDetails.title} Flyer Full`} 
                     fill
                     priority

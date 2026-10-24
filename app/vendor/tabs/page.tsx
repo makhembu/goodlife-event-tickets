@@ -8,7 +8,7 @@ interface TabTransaction {
   id: number;
   tab_id: number;
   sale_id: string | null;
-  type: 'charge' | 'payment';
+  type: 'charge' | 'payment' | 'void';
   amount: string | number;
   method?: string;
   mpesa_ref?: string;
@@ -846,6 +846,7 @@ export default function VendorTabsPage() {
                         <div className="border-2 border-brand-navy bg-white shadow-(--shadow-brut-2xs) divide-y-2 divide-brand-navy/10 overflow-hidden">
                           {ledger.map((txn) => {
                             const isCharge = txn.type === 'charge';
+                            const isVoid = txn.type === 'void' || txn.method === 'void';
                             const formattedDate = new Date(txn.created_at).toLocaleString('en-KE', {
                               month: 'short',
                               day: 'numeric',
@@ -859,13 +860,15 @@ export default function VendorTabsPage() {
                                   <span className={`px-2 py-0.5 border text-[10px] font-bold uppercase tracking-wider ${
                                     isCharge 
                                       ? 'bg-red-100 text-red-800 border-red-800' 
-                                      : 'bg-emerald-100 text-emerald-800 border-emerald-800'
+                                      : isVoid
+                                        ? 'bg-zinc-200 text-zinc-700 border-zinc-600'
+                                        : 'bg-emerald-100 text-emerald-800 border-emerald-800'
                                   }`}>
-                                    {isCharge ? 'CHARGE' : 'PAYMENT'}
+                                    {isCharge ? 'CHARGE' : isVoid ? 'VOID' : 'PAYMENT'}
                                   </span>
                                   <div>
                                     <span className="font-bold uppercase">
-                                      {isCharge ? 'Tab Charge' : `Payment (${(txn.method || 'cash').toUpperCase()})`}
+                                      {isCharge ? 'Tab Charge' : isVoid ? 'Void / Reversal' : `Payment (${(txn.method || 'cash').toUpperCase()})`}
                                     </span>
                                     {txn.mpesa_ref && (
                                       <span className="ml-2 font-mono text-[11px] bg-emerald-50 px-1 py-0.2 border border-emerald-400">
@@ -889,7 +892,7 @@ export default function VendorTabsPage() {
                                     {formattedDate}
                                   </span>
                                   <span className={`font-mono font-bold text-sm ${
-                                    isCharge ? 'text-red-600' : 'text-emerald-700'
+                                    isCharge ? 'text-red-600' : isVoid ? 'text-zinc-500 line-through' : 'text-emerald-700'
                                   }`}>
                                     {isCharge ? '+' : '-'}KES {Number(txn.amount).toLocaleString()}
                                   </span>

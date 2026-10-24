@@ -19,10 +19,22 @@ assert(fs.existsSync(componentPath), "components/StoryDeckHero.tsx file exists")
 if (fs.existsSync(componentPath)) {
   const content = fs.readFileSync(componentPath, "utf-8");
 
-  // 2. Check for dual segment story bar
+  // 2. Ordered multi-slide deck, driven by the media array.
   assert(
     content.includes("activeIndex") && content.includes("setActiveIndex"),
-    "Component manages activeIndex state for dual media"
+    "Component manages activeIndex state for an ordered deck"
+  );
+  assert(
+    content.includes("media?: StoryMediaItem[]") && content.includes("normalizeStoryMedia"),
+    "Component accepts an ordered StoryMediaItem[] and normalizes it"
+  );
+  assert(
+    content.includes("slides.map"),
+    "Component renders one progress segment per slide"
+  );
+  assert(
+    content.includes("handlePrev") && content.includes("handleNext"),
+    "Deck exposes explicit previous/next controls for multi-slide decks"
   );
 
   // 3. Check for muted state management
@@ -41,19 +53,24 @@ if (fs.existsSync(componentPath)) {
   assert(content.includes("<video"), "Component renders HTML5 video element");
   assert(content.includes("playsInline"), "Video element contains playsInline for mobile iOS/Android");
   assert(content.includes("Image"), "Component renders Next.js Image for poster");
+  assert(
+    content.includes("poster={activeSlide.poster_url || deckPoster}"),
+    "Video slide paints its extracted poster (or the deck poster) while buffering"
+  );
 
-  // 6. Check for tap navigation
+  // 6. Check for media type indicators. Multi-slide decks show a counter; a
+  //    single-slide deck still names the medium.
   assert(
     content.includes("POSTER") && content.includes("TEASER"),
-    "Component provides visual indicators/pills for Poster and Teaser"
+    "Component provides visual indicators for Poster and Teaser media"
   );
 
   // ---------------------------------------------------------------------------
-  // 7. The media viewport must be the ONLY path to the lightbox, on both slides.
+  // 7. The media viewport must be the ONLY path to the lightbox, on every slide.
   //    Regression guard: invisible 30%/70% tap zones used to overlay the viewport
-  //    at z-20, and the poster branch called handleSelectVideo instead of
-  //    expanding. That made onExpand("poster") unreachable by tapping the poster,
-  //    so the only route left was: open the video, then use the lightbox toggle.
+  //    at z-20, and the poster branch called the video switcher instead of
+  //    expanding. Navigation lives in the dock and segment bars, never in
+  //    invisible overlays.
   // ---------------------------------------------------------------------------
   assert(
     !content.includes("w-[30%]") && !content.includes("w-[70%]"),
@@ -64,8 +81,8 @@ if (fs.existsSync(componentPath)) {
     "Media viewport expands on tap via handleTriggerExpand"
   );
   assert(
-    content.includes('onExpand(activeIndex === 0 ? "poster" : "video")'),
-    'Expand dispatches on what is on screen, so onExpand("poster") stays reachable'
+    content.includes("onExpand?.(activeSlide)"),
+    "Expand dispatches the slide that is actually on screen (poster or video)"
   );
 
   // 8. The viewport is a click surface, so it must be keyboard-operable too.
@@ -80,11 +97,17 @@ if (fs.existsSync(componentPath)) {
     "Clickable media viewport announces what it will open"
   );
 
-  // 9. Tapping no longer advances, so the switcher must still exist or the teaser
-  //    would be reachable only by waiting out the auto-timer.
+  // 9. Loading discipline: current video may preload; the next video gets
+  //    metadata only after a delay; slides after that are never fetched.
   assert(
-    content.includes("handleSelectPoster") && content.includes("handleSelectVideo"),
-    "POSTER/TEASER pill remains the sole slide switcher"
+    content.includes('preload="auto"') &&
+      content.includes('preload="metadata"') &&
+      content.includes("NEXT_VIDEO_WARM_DELAY"),
+    "Current video preloads, next video warms metadata only, rest stay unfetched"
+  );
+  assert(
+    content.includes("slides[activeIndex + 1]"),
+    "Warm-up is scoped to exactly one slide ahead"
   );
 
   // 10. Dock icon buttons are 26-28px, under the 44px touch-target minimum. They
@@ -98,7 +121,14 @@ if (fs.existsSync(componentPath)) {
   const duration = content.match(/POSTER_DURATION\s*=\s*(\d+)/);
   assert(
     duration !== null && Number(duration[1]) === 5000,
-    "Poster reveal runs for 5000ms before the teaser autoplays"
+    "Poster reveal runs for 5000ms before the deck advances"
+  );
+
+  // 12. The deck must pause when it is off-screen or the lightbox is open, so
+  //     a background tab never chews through mobile data.
+  assert(
+    content.includes("IntersectionObserver") && content.includes("isExpanded"),
+    "Deck pauses timers/video when off-screen or in the lightbox"
   );
 }
 

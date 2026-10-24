@@ -102,6 +102,7 @@ export async function GET(
         ps.subtotal,
         ps.total,
         ps.payment_status,
+        ps.void_reason,
         ps.notes,
         COALESCE(vo.name, 'Till Operator') as operator_name,
         (
@@ -354,8 +355,16 @@ export async function GET(
       const existing = c.tabs.get(Number(tab.id));
       const outstanding = isOutstandingTab(tab);
       const tabPaid = (tabTxnRows || [])
-        .filter((tx: any) => Number(tx.tab_id) === Number(tab.id) && tx.type === "payment")
-        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+        .filter(
+          (tx: any) =>
+            Number(tx.tab_id) === Number(tab.id) &&
+            (tx.type === "payment" || tx.type === "void" || tx.method === "void")
+        )
+        .reduce((sum: number, tx: any) => {
+          const amount = Number(tx.amount || 0);
+          const isVoid = tx.type === "void" || tx.method === "void";
+          return sum + (isVoid ? -amount : amount);
+        }, 0);
       const tabTotalCharged = Number(tab.balance || 0) + tabPaid;
 
       const enriched = {
@@ -391,18 +400,22 @@ export async function GET(
       attachTab(tab);
     }
 
-    // Process Tab Transactions (Payments & Settlements)
+    // Process Tab Transactions (Payments & Reversals)
     for (const tx of tabTxnRows || []) {
-      if (tx.type === "payment") {
+      const isVoid = tx.type === "void" || tx.method === "void";
+      if (tx.type === "payment" || isVoid) {
         const c = upsertCustomer(tx.customer_phone, tx.customer_name);
         const paidAmt = Number(tx.amount || 0);
-        c.total_paid = (c.total_paid || 0) + paidAmt;
+        // A void is a negative payment: adding it back would double-count the
+        // money the voided sale had originally put on the tab.
+        const delta = isVoid ? -paidAmt : paidAmt;
+        c.total_paid = (c.total_paid || 0) + delta;
         c.payments.push({
           id: Number(tx.id),
           tab_id: Number(tx.tab_id),
           sale_id: tx.sale_id ? Number(tx.sale_id) : null,
-          type: tx.type,
-          amount: paidAmt,
+          type: isVoid ? "void" : tx.type,
+          amount: delta,
           method: tx.method || "cash",
           mpesa_ref: tx.mpesa_ref || "",
           operator_id: tx.operator_id ? Number(tx.operator_id) : null,

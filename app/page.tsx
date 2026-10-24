@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchActiveEvent, fetchEventDetails, fetchTicketTiers, fetchAllEvents, getEventById, isEventSellable } from "@/lib/supabase-db";
 import { publicState, canonicalStatus, isHiddenFromSite } from "@/lib/event-availability";
 import { resolveEventFlyer, resolveEventVideo } from "@/lib/event-flyer";
+import { resolveStoryMedia } from "@/lib/story-media";
 import { SITE_NAME, TWITTER_HANDLE, buildEventSeo, siteUrl } from "@/lib/seo";
 import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
@@ -160,6 +161,7 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
     till_number: targetEvent.till_number,
     flyer_url: resolveEventFlyer(targetEvent),
     video_url: resolveEventVideo(targetEvent),
+    story_media: resolveStoryMedia(targetEvent),
     regulations: targetEvent.regulations,
     ticker_text: targetEvent.ticker_text,
     logo_url: targetEvent.logo_url,

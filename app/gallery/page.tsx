@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Flame, ArrowLeft, Download, Share2, X, Maximize2 } from "lucide-react";
-import Image from "next/image";
+import { Flame, ArrowLeft, Download, Share2, X, Maximize2, Play } from "lucide-react";
+import { isVideoGalleryItem, isVideoMediaUrl } from "@/lib/gallery-media";
 
 interface GalleryImage {
   id: number;
@@ -12,6 +12,7 @@ interface GalleryImage {
   thumbnail_url: string;
   caption: string;
   tag: string;
+  media_type?: "image" | "video";
 }
 
 export default function GalleryPage() {
@@ -61,15 +62,40 @@ export default function GalleryPage() {
           </div>
         ) : (
           <div className="columns-1 sm:columns-2 md:columns-3 gap-6 space-y-6">
-            {filteredImages.map((img) => (
+            {filteredImages.map((img) => {
+              const isVideo = isVideoGalleryItem(img);
+              const poster = img.thumbnail_url && !isVideoMediaUrl(img.thumbnail_url) ? img.thumbnail_url : "";
+              return (
               <div 
                 key={img.id} 
                 className="break-inside-avoid border-4 border-brand-navy bg-brand-off-white p-2 shadow-(--shadow-brut-md) hover:shadow-(--shadow-brut-xl) hover:-translate-y-1 transition-all group cursor-pointer"
                 onClick={() => setLightboxImage(img)}
               >
                 <div className="relative w-full aspect-auto overflow-hidden bg-brand-navy/10">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.thumbnail_url || img.image_url} alt={img.caption || "Festival Photo"} className="w-full h-auto object-cover group-hover:scale-105 transition-all duration-300" />
+                  {isVideo ? (
+                    poster ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={poster} alt={img.caption || "Festival Video"} className="w-full h-auto object-cover group-hover:scale-105 transition-all duration-300" />
+                    ) : (
+                      <video
+                        src={img.image_url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-auto object-cover pointer-events-none group-hover:scale-105 transition-all duration-300"
+                      />
+                    )
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={img.thumbnail_url || img.image_url} alt={img.caption || "Festival Photo"} className="w-full h-auto object-cover group-hover:scale-105 transition-all duration-300" />
+                  )}
+                  {isVideo && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="bg-brand-navy/80 text-brand-off-white border-2 border-brand-off-white p-3 shadow-(--shadow-brut-sm)">
+                        <Play className="w-6 h-6" fill="currentColor" />
+                      </span>
+                    </div>
+                  )}
                   <div className="absolute top-2 right-2 bg-brand-navy text-brand-off-white text-[10px] font-bold px-2 py-1 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
                     <Maximize2 className="w-3 h-3" />
                   </div>
@@ -80,10 +106,11 @@ export default function GalleryPage() {
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
             {filteredImages.length === 0 && (
               <div className="col-span-full py-12 text-center font-mono uppercase text-brand-navy/60">
-                No photos found for {selectedTag}.
+                No media found for {selectedTag}.
               </div>
             )}
           </div>
@@ -104,13 +131,23 @@ export default function GalleryPage() {
           </div>
           
           <div className="flex-1 relative flex items-center justify-center min-h-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src={lightboxImage.image_url} 
-              alt="Lightbox" 
-              className="max-w-full max-h-full object-contain border-4 border-brand-navy shadow-(--shadow-brut-2xl)" 
-            />
-            
+            {isVideoGalleryItem(lightboxImage) ? (
+              <video
+                src={lightboxImage.image_url}
+                poster={lightboxImage.thumbnail_url && !isVideoMediaUrl(lightboxImage.thumbnail_url) ? lightboxImage.thumbnail_url : undefined}
+                controls
+                autoPlay
+                playsInline
+                className="max-w-full max-h-full object-contain border-4 border-brand-navy shadow-(--shadow-brut-2xl) bg-black"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img 
+                src={lightboxImage.image_url} 
+                alt="Lightbox" 
+                className="max-w-full max-h-full object-contain border-4 border-brand-navy shadow-(--shadow-brut-2xl)" 
+              />
+            )}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
               <a 
                 href={lightboxImage.image_url} 
@@ -119,7 +156,7 @@ export default function GalleryPage() {
                 rel="noreferrer"
                 className="flex items-center gap-2 bg-brand-accent text-brand-navy font-bold uppercase tracking-widest px-6 py-3 border-4 border-brand-navy shadow-(--shadow-brut-sm) hover:bg-brand-off-white transition-colors cursor-pointer"
               >
-                <Download className="w-5 h-5" /> High-Res
+                <Download className="w-5 h-5" /> {isVideoGalleryItem(lightboxImage) ? "Download" : "High-Res"}
               </a>
               <button 
                 onClick={() => {

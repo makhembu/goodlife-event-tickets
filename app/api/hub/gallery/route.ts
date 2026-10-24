@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchEventGallery, neonQuery } from '@/lib/supabase-db';
 import { requireAdmin } from "@/lib/admin-auth";
+import { resolveGalleryMediaType } from "@/lib/gallery-media";
 
 export async function GET(req: Request) {
   try {
@@ -25,14 +26,27 @@ export async function POST(req: Request) {
   if (authError) return authError;
   try {
     const body = await req.json();
-    const { event_id, image_url, thumbnail_url, caption } = body;
+    const { event_id, image_url, thumbnail_url, caption, tag, media_type } = body;
+
+    if (!event_id || !image_url || typeof image_url !== 'string') {
+      return NextResponse.json({ error: 'event_id and image_url are required' }, { status: 400 });
+    }
+
+    const resolvedType = resolveGalleryMediaType(media_type, image_url);
 
     const query = `
-      INSERT INTO event_gallery (event_id, image_url, thumbnail_url, caption)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO event_gallery (event_id, image_url, thumbnail_url, caption, tag, media_type)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
-    const params = [event_id, image_url, thumbnail_url || image_url, caption || ''];
+    const params = [
+      event_id,
+      image_url,
+      thumbnail_url || image_url,
+      caption || '',
+      tag || 'PHOTO',
+      resolvedType,
+    ];
 
     const { rows } = await neonQuery(query, params);
 

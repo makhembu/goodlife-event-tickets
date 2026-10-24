@@ -1,28 +1,50 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { Volume2, VolumeX, Maximize2, Sparkles, Film, Image as ImageIcon, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import {
+  Volume2,
+  VolumeX,
+  Maximize2,
+  Film,
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+} from "lucide-react";
 import { HapticFeedback } from "@/components/ui/haptic-feedback";
+import {
+  resolveStoryMedia,
+  normalizeStoryMedia,
+  type StoryMediaItem,
+} from "@/lib/story-media";
 
 export interface StoryDeckHeroProps {
   posterUrl: string;
   videoUrl?: string | null;
+  /** Ordered slides. Empty/undefined falls back to posterUrl + videoUrl. */
+  media?: StoryMediaItem[] | null;
   eventTitle: string;
   tag?: string;
   subtitle?: string;
   scheduleText?: string;
-  onExpand?: (mode: "poster" | "video") => void;
+  onExpand?: (item: StoryMediaItem) => void;
   isExpanded?: boolean;
   className?: string;
 }
 
-const POSTER_DURATION = 5000; // 5s auto-countdown on poster before teaser autoplay
+/** Poster slides advance after this long; video slides advance on `ended`. */
+const POSTER_DURATION = 5000;
+/** Give the browser this long to paint a poster before starting its timer. */
+const POSTER_READY_FALLBACK = 2500;
+/** Delay before warming the next video's metadata. Never preloads the deck. */
+const NEXT_VIDEO_WARM_DELAY = 1200;
 
 export default function StoryDeckHero({
   posterUrl,
   videoUrl,
+  media,
   eventTitle,
   tag,
   subtitle,
@@ -31,106 +53,144 @@ export default function StoryDeckHero({
   isExpanded = false,
   className = "",
 }: StoryDeckHeroProps) {
-  const hasVideo = Boolean(videoUrl && videoUrl.trim() !== "");
-  const [activeIndex, setActiveIndex] = useState<0 | 1>(0);
+  const slides = useMemo(() => {
+    const custom = normalizeStoryMedia(media);
+    if (custom.length > 0) return custom;
+    return resolveStoryMedia({ flyer_url: posterUrl, video_url: videoUrl });
+  }, [media, posterUrl, videoUrl]);
+
+  const [activeIndex, setActiveIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(hasVideo);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [loadedPosterUrl, setLoadedPosterUrl] = useState<string | null>(null);
+  const [posterDeadlineUrl, setPosterDeadlineUrl] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
+  const [warmVideoIndex, setWarmVideoIndex] = useState<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const animFrameRef = useRef<number | null>(null);
 
-  // 1. Story Countdown Timer on Poster (paused if lightbox is open)
+  const activeSlide = slides[activeIndex];
+  const deckPoster = slides.find((s) => s.kind === "poster")?.url || posterUrl;
+  const hasMultiple = slides.length > 1;
+  const isVideo = activeSlide?.kind === "video";
+
+  // Wait for the active poster before starting its clock. Without this, a slow
+  // image eats the 5 seconds and the deck advances on a blank frame. Readiness
+  // is derived rather than stored so a slide change cannot leave a stale flag
+  // behind (and so the effect never has to setState synchronously).
   useEffect(() => {
-    if (!hasVideo || !autoAdvanceEnabled || activeIndex !== 0 || isExpanded) {
-      setProgress(activeIndex === 1 ? 100 : 0);
-      return;
-    }
+    if (!activeSlide || activeSlide.kind !== "poster") return;
+    const url = activeSlide.url;
+    const timer = setTimeout(() => setPosterDeadlineUrl(url), POSTER_READY_FALLBACK);
+    return () => clearTimeout(timer);
+  }, [activeSlide]);
 
-    const startTime = performance.now();
+  const posterReady =
+    !activeSlide ||
+    activeSlide.kind !== "poster" ||
+    loadedPosterUrl === activeSlide.url ||
+    posterDeadlineUrl === activeSlide.url;
+
+  const goToSlide = useCallback(
+    (index: number, manual = true) => {
+      if (index < 0 || index >= slides.length) return;
+      if (manual) HapticFeedback.trigger("confirmation");
+      if (index === activeIndex) {
+        if (manual) setAutoAdvanceEnabled(true);
+        return;
+      }
+      videoRef.current?.pause();
+      setActiveIndex(index);
+      setProgress(0);
+      setAutoAdvanceEnabled(true);
+    },
+    [activeIndex, slides]
+  );
+
+  const advance = useCallback(() => {
+    if (activeIndex < slides.length - 1) {
+      goToSlide(activeIndex + 1, false);
+    } else {
+      setProgress(100);
+      setAutoAdvanceEnabled(false);
+    }
+  }, [activeIndex, goToSlide, slides.length]);
+
+  // Poster countdown. Pauses for the lightbox, off-screen scrolling and once
+  // the deck has reached its last slide.
+  useEffect(() => {
+    if (!activeSlide || activeSlide.kind !== "poster") return;
+    if (!autoAdvanceEnabled || isExpanded || !isVisible || !posterReady) return;
+
+    const start = performance.now();
+    let frame = 0;
 
     const tick = (now: number) => {
-      const elapsed = now - startTime;
-      const pct = Math.min(100, (elapsed / POSTER_DURATION) * 100);
+      const pct = Math.min(100, ((now - start) / POSTER_DURATION) * 100);
       setProgress(pct);
-
-      if (elapsed < POSTER_DURATION) {
-        animFrameRef.current = requestAnimationFrame(tick);
+      if (pct < 100) {
+        frame = requestAnimationFrame(tick);
       } else {
         HapticFeedback.trigger("confirmation");
-        setActiveIndex(1);
-        setProgress(100);
+        advance();
       }
     };
 
-    animFrameRef.current = requestAnimationFrame(tick);
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [activeIndex, activeSlide, autoAdvanceEnabled, isExpanded, isVisible, posterReady, advance]);
 
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [hasVideo, autoAdvanceEnabled, activeIndex, isExpanded]);
-
-  // 2. Play / Pause video based on active slide, lightbox expanded state & viewport visibility
+  // Play only the active video, and only while the deck is visible.
   useEffect(() => {
-    if (!hasVideo || !videoRef.current) return;
+    const video = videoRef.current;
+    if (!video || !isVideo) return;
 
-    if (isExpanded) {
-      // Immediately pause and silence inline video while lightbox modal is active to prevent audio overlap
-      videoRef.current.pause();
+    if (isExpanded || !isVisible) {
+      video.pause();
       return;
     }
 
-    if (activeIndex === 1) {
-      videoRef.current.play().catch(() => {
-        // Autoplay policy fallback: keep muted and retry
-        if (videoRef.current) {
-          videoRef.current.muted = true;
-          setIsMuted(true);
-          videoRef.current.play().catch(() => {});
-        }
-      });
-    } else {
-      videoRef.current.pause();
-    }
-  }, [activeIndex, hasVideo, isExpanded]);
+    video.play().catch(() => {
+      // Autoplay policy fallback: keep muted and retry.
+      video.muted = true;
+      setIsMuted(true);
+      video.play().catch(() => {});
+    });
+  }, [activeIndex, isVideo, isExpanded, isVisible]);
 
-  // 3. Viewport Visibility Observer (pause when attendee scrolls to tickets)
+  // Pause when the attendee scrolls down to the tickets.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !hasVideo) return;
-
+    if (!el) return;
     const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting && videoRef.current) {
-            videoRef.current.pause();
-          } else if (entry.isIntersecting && activeIndex === 1 && videoRef.current) {
-            videoRef.current.play().catch(() => {});
-          }
-        });
-      },
+      (entries) => setIsVisible(entries[0]?.isIntersecting ?? true),
       { threshold: 0.25 }
     );
-
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasVideo, activeIndex]);
+  }, []);
 
-  const handleSelectPoster = (e?: React.MouseEvent) => {
+  // Warm exactly one slide ahead. Posters are warmed through the Next image
+  // optimizer (same URL the active slide uses, so it lands in the HTTP cache);
+  // videos are only asked for metadata, and only after the current slide has
+  // had time to paint. Slide +2 and beyond are never fetched.
+  useEffect(() => {
+    const next = slides[activeIndex + 1];
+    if (!next || next.kind !== "video") return;
+    const timer = setTimeout(() => setWarmVideoIndex(activeIndex + 1), NEXT_VIDEO_WARM_DELAY);
+    return () => clearTimeout(timer);
+  }, [activeIndex, slides]);
+
+  const handlePrev = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    HapticFeedback.trigger("confirmation");
-    setAutoAdvanceEnabled(false); // User manually took control
-    setActiveIndex(0);
+    goToSlide(activeIndex - 1);
   };
 
-  const handleSelectVideo = (e?: React.MouseEvent) => {
+  const handleNext = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!hasVideo) return;
-    HapticFeedback.trigger("confirmation");
-    setAutoAdvanceEnabled(false);
-    setActiveIndex(1);
+    goToSlide(activeIndex + 1);
   };
 
   const handleToggleSound = (e: React.MouseEvent) => {
@@ -146,13 +206,18 @@ export default function StoryDeckHero({
   };
 
   const handleTriggerExpand = () => {
+    if (!activeSlide) return;
     HapticFeedback.trigger("confirmation");
-    if (videoRef.current) {
-      videoRef.current.pause();
-    }
-    if (onExpand) {
-      onExpand(activeIndex === 0 ? "poster" : "video");
-    }
+    videoRef.current?.pause();
+    onExpand?.(activeSlide);
+  };
+
+  if (!activeSlide) return null;
+
+  const progressFor = (index: number) => {
+    if (index < activeIndex) return 100;
+    if (index > activeIndex) return 0;
+    return progress;
   };
 
   return (
@@ -161,37 +226,36 @@ export default function StoryDeckHero({
       className={`relative w-full max-md:aspect-[390/551] max-md:max-h-[52dvh] md:aspect-[707/1000] border-2 border-brand-navy shadow-(--shadow-brut-sm-strong) overflow-hidden bg-brand-navy group select-none ${className}`}
     >
       {/* A. STORY DECK SEGMENT PROGRESS BARS (TOP) */}
-      {hasVideo && (
-        <div className="absolute top-1.5 inset-x-2 z-30 flex items-center gap-1.5 h-1 pointer-events-none">
-          {/* Segment 0: Poster */}
-          <div className="flex-1 h-full bg-white/25 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
-            <div
-              className="h-full bg-brand-accent transition-none rounded-full"
-              style={{
-                width: activeIndex === 0 ? `${progress}%` : "100%",
+      {hasMultiple && (
+        <div className="absolute top-1 inset-x-2 z-30 flex items-center gap-1.5 h-3">
+          {slides.map((slide, index) => (
+            <button
+              key={`${slide.kind}-${slide.url}-${index}`}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                goToSlide(index);
               }}
-            />
-          </div>
-
-          {/* Segment 1: Teaser Video */}
-          <div className="flex-1 h-full bg-white/25 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs">
-            <div
-              className="h-full bg-brand-accent transition-none rounded-full"
-              style={{
-                width: activeIndex === 1 ? "100%" : "0%",
-              }}
-            />
-          </div>
+              className="flex-1 h-3 flex items-center cursor-pointer group/segment"
+              aria-label={`Go to story ${index + 1} of ${slides.length}`}
+              aria-current={index === activeIndex ? "true" : undefined}
+              title={slide.kind === "video" ? `Story ${index + 1}: teaser video` : `Story ${index + 1}: poster`}
+            >
+              <span className="block w-full h-1 bg-white/25 backdrop-blur-xs rounded-full overflow-hidden border border-black/20 shadow-xs group-hover/segment:bg-white/40 transition-colors">
+                <span
+                  className="block h-full bg-brand-accent rounded-full"
+                  style={{ width: `${progressFor(index)}%` }}
+                />
+              </span>
+            </button>
+          ))}
         </div>
       )}
 
       {/* B. MAIN MEDIA VIEWPORT
-          One gesture, one meaning: tapping (or Enter/Space) anywhere on the media
-          opens the lightbox on whatever is currently on screen. This is the ONLY
-          path to `onExpand("poster")`, so it must never be intercepted by an
-          overlay. The removed 30/70 tap zones used to sit on top at z-20 and their
-          poster branch called handleSelectVideo instead of expanding, which made
-          the poster lightbox unreachable without going through the video first. */}
+          Tap (or Enter/Space) anywhere on the media opens the lightbox on the
+          slide that is currently on screen. Navigation lives in the dock and
+          the segment bars, never in invisible tap zones. */}
       <div
         onClick={handleTriggerExpand}
         onKeyDown={(e) => {
@@ -202,59 +266,91 @@ export default function StoryDeckHero({
         }}
         role="button"
         tabIndex={0}
-        aria-label={`Open full view of ${activeIndex === 0 ? "the event poster" : "the teaser video"}`}
+        aria-label={`Open full view of ${isVideo ? "the teaser video" : "the event poster"}`}
         className="w-full h-full relative cursor-pointer group/viewport overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         title="Tap to enlarge full resolution"
       >
-        {/* SLIDE 0: POSTER IMAGE */}
         <AnimatePresence initial={false}>
-          {activeIndex === 0 && (
-            <motion.div
-              key="poster"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
-              className="absolute inset-0 w-full h-full overflow-hidden"
-            >
+          <motion.div
+            key={`${activeSlide.kind}-${activeSlide.url}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="absolute inset-0 w-full h-full overflow-hidden"
+          >
+            {isVideo ? (
+              <video
+                ref={videoRef}
+                src={activeSlide.url}
+                poster={activeSlide.poster_url || deckPoster}
+                autoPlay
+                playsInline
+                muted={isMuted}
+                preload="auto"
+                onTimeUpdate={(e) => {
+                  const v = e.currentTarget;
+                  if (v.duration > 0) {
+                    setProgress(Math.min(100, (v.currentTime / v.duration) * 100));
+                  }
+                }}
+                onEnded={() => {
+                  if (autoAdvanceEnabled) advance();
+                }}
+                onError={() => {
+                  if (autoAdvanceEnabled) advance();
+                }}
+                className="w-full h-full object-cover scale-[1.02] pointer-events-none"
+              />
+            ) : (
               <Image
-                src={posterUrl}
+                src={activeSlide.url}
                 alt={`${eventTitle} Poster`}
                 fill
-                priority
+                priority={activeIndex === 0}
                 sizes="(max-width: 768px) 100vw, 420px"
                 className="object-cover"
                 referrerPolicy="no-referrer"
+                onLoad={() => setLoadedPosterUrl(activeSlide.url)}
               />
-            </motion.div>
-          )}
+            )}
+          </motion.div>
         </AnimatePresence>
 
-        {/* SLIDE 1: TEASER VIDEO */}
-        {hasVideo && (
-          <div
-            className={`absolute inset-0 w-full h-full transition-opacity duration-500 overflow-hidden ${
-              activeIndex === 1 ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-            }`}
-          >
-            <video
-              ref={videoRef}
-              src={videoUrl!}
-              autoPlay
-              playsInline
-              loop
-              muted={isMuted}
-              preload="metadata"
-              className="w-full h-full object-cover scale-[1.02] pointer-events-none"
+        {/* One-slide lookahead: the next poster goes through the same image
+            optimizer as the active one, so it is already in cache when its
+            segment starts. Invisible and non-interactive. */}
+        {slides[activeIndex + 1]?.kind === "poster" && (
+          <div className="absolute inset-0 opacity-0 pointer-events-none" aria-hidden="true">
+            <Image
+              src={slides[activeIndex + 1].url}
+              alt=""
+              fill
+              loading="eager"
+              sizes="(max-width: 768px) 100vw, 420px"
+              className="object-cover"
+              referrerPolicy="no-referrer"
             />
           </div>
+        )}
+
+        {/* One-slide lookahead for a video: metadata only, after a delay. */}
+        {warmVideoIndex === activeIndex + 1 && slides[warmVideoIndex]?.kind === "video" && (
+          <video
+            src={slides[warmVideoIndex].url}
+            preload="metadata"
+            muted
+            playsInline
+            aria-hidden="true"
+            className="absolute w-px h-px opacity-0 pointer-events-none"
+          />
         )}
       </div>
 
       {/* D. LOWER-THIRD BROADCAST SCRIM (Smart Adaptive HUD - Option A) */}
       <div
         className={`absolute bottom-0 inset-x-0 z-25 pointer-events-none transition-opacity duration-300 md:hidden ${
-          activeIndex === 1 ? "opacity-100" : "opacity-0"
+          isVideo ? "opacity-100" : "opacity-0"
         }`}
       >
         <div className="w-full bg-gradient-to-t from-black/95 via-black/60 to-transparent pt-16 pb-12 px-3 flex flex-col justify-end text-white">
@@ -283,46 +379,43 @@ export default function StoryDeckHero({
 
       {/* E. FLOATING CONTROLS (BOTTOM DOCK) */}
       <div className="absolute bottom-2 inset-x-2 sm:bottom-2.5 sm:inset-x-2.5 z-30 flex items-center justify-between pointer-events-none gap-2">
-        {/* Left: Media Switcher Pill (Poster / Teaser) */}
-        {hasVideo ? (
+        {/* Left: deck navigator, or the media type when there is only one slide */}
+        {hasMultiple ? (
           <div className="pointer-events-auto flex items-center bg-black/60 border border-white/20 backdrop-blur-md p-0.5 shadow-sm rounded-sm">
             <button
               type="button"
-              onClick={handleSelectPoster}
-              className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer rounded-[2px] ${
-                activeIndex === 0
-                  ? "bg-brand-accent text-brand-navy shadow-xs font-black"
-                  : "text-white/70 hover:text-white"
-              }`}
-              title="View Event Poster"
+              onClick={handlePrev}
+              disabled={activeIndex === 0}
+              aria-label="Previous story"
+              title="Previous story"
+              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white disabled:opacity-30 disabled:cursor-default cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
-              <ImageIcon className="w-2.5 h-2.5" />
-              <span>POSTER</span>
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
+            <span className="px-1 text-[9px] font-mono font-black text-white tabular-nums">
+              {activeIndex + 1}/{slides.length}
+            </span>
             <button
               type="button"
-              onClick={handleSelectVideo}
-              className={`px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer rounded-[2px] ${
-                activeIndex === 1
-                  ? "bg-brand-accent text-brand-navy shadow-xs font-black"
-                  : "text-white/70 hover:text-white"
-              }`}
-              title="Watch Video Teaser"
+              onClick={handleNext}
+              disabled={activeIndex === slides.length - 1}
+              aria-label="Next story"
+              title="Next story"
+              className="w-6.5 h-6.5 sm:w-7 sm:h-7 flex items-center justify-center text-white/80 hover:text-white disabled:opacity-30 disabled:cursor-default cursor-pointer rounded-[2px] relative before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
-              <Film className="w-2.5 h-2.5" />
-              <span>TEASER</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
-          <div className="pointer-events-auto bg-black/60 text-white/80 border border-white/20 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase backdrop-blur-md rounded-sm">
-            POSTER
+          <div className="pointer-events-auto bg-black/60 text-white/80 border border-white/20 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase backdrop-blur-md rounded-sm flex items-center gap-1">
+            {isVideo ? <Film className="w-2.5 h-2.5" /> : <ImageIcon className="w-2.5 h-2.5" />}
+            {isVideo ? "TEASER" : "POSTER"}
           </div>
         )}
 
-        {/* Right: Audio and Fullscreen Icon Actions */}
+        {/* Right: audio and fullscreen icon actions */}
         <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Sound Toggle (Only on Video slide) */}
-          {hasVideo && activeIndex === 1 && (
+          {isVideo && (
             <button
               type="button"
               onClick={handleToggleSound}
@@ -334,15 +427,10 @@ export default function StoryDeckHero({
                   : "bg-brand-accent text-brand-navy border-brand-accent shadow-xs"
               }`}
             >
-              {isMuted ? (
-                <VolumeX className="w-3 h-3" />
-              ) : (
-                <Volume2 className="w-3 h-3" />
-              )}
+              {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
             </button>
           )}
 
-          {/* Fullscreen Expand Icon Button */}
           <button
             type="button"
             onClick={handleTriggerExpand}

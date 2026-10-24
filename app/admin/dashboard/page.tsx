@@ -49,7 +49,6 @@ import {
   Store,
   Receipt,
   DollarSign,
-  Users,
   ExternalLink,
   Key,
   MessageSquare,
@@ -60,8 +59,8 @@ import Link from "next/link";
 import BoxOfficeMetrics from "@/components/admin/BoxOfficeMetrics";
 import TierSalesBreakdown from "@/components/admin/TierSalesBreakdown";
 import EventSelector from "@/components/EventSelector";
-import PosterUploader from "@/components/admin/PosterUploader";
-import VideoUploader from "@/components/admin/VideoUploader";
+import StoryMediaManager from "@/components/admin/StoryMediaManager";
+import { normalizeStoryMedia } from "@/lib/story-media";
 // `canonicalStatus` folds the legacy `'active'` spelling of "live". It lives in
 // lib/event-availability, a pure module, so it is safe in a client component -
 // and using it here means this badge, the lifecycle dropdown and the payment
@@ -189,8 +188,6 @@ export default function AdminDashboardPage() {
 
   // Event details editing states
   const [eventDetails, setEventDetails] = useState<EventDetails | null>(null);
-  const [isEditingEvent, setIsEditingEvent] = useState(false);
-  const [eventFormState, setEventFormState] = useState<Partial<EventDetails>>({});
 
   // Ticket editing states
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
@@ -352,7 +349,6 @@ export default function AdminDashboardPage() {
   };
 
   const closeAllModals = () => {
-    setIsEditingEvent(false);
     setEditingTicket(null);
     setIsCreatingTicket(false);
     setIsCreatingTier(false);
@@ -446,29 +442,6 @@ export default function AdminDashboardPage() {
     loadDashboardMetrics(undefined, next);
   };
 
-  const loadEventDetails = async () => {
-    try {
-      const details = await fetchEventDetails();
-      setEventDetails(details);
-      
-      setEventFormState({
-        ...details,
-        whatsapp_message: details.whatsapp_message?.trim()
-          ? details.whatsapp_message
-          : getDefaultWhatsAppTemplate(),
-        payment_contact: details.payment_contact || "",
-        whatsapp_operator_template: details.whatsapp_operator_template?.trim()
-          ? details.whatsapp_operator_template
-          : getDefaultOperatorTemplate(),
-        whatsapp_scan_template: details.whatsapp_scan_template?.trim()
-          ? details.whatsapp_scan_template
-          : getDefaultScanTemplate(),
-        operator_notifications_enabled: details.operator_notifications_enabled ?? false
-      });
-    } catch (err) {
-      console.error("Failed to load event details:", err);
-    }
-  };
 
   const loadTicketTiers = async (eventId?: number) => {
     try {
@@ -1009,7 +982,6 @@ Tickets exist the moment you approve, and the customer is sent them on WhatsApp.
         .catch(() => boot(null));
     }
 
-    loadEventDetails();
     loadPaymentLogs();
     loadPendingPayments();
     loadTillPayments();
@@ -1024,32 +996,6 @@ Tickets exist the moment you approve, and the customer is sent them on WhatsApp.
     };
   }, []);
 
-  const handleToggleSimulators = async () => {
-    const isCurrentlyEnabled = eventFormState.simulators_enabled !== false;
-    if (isCurrentlyEnabled) {
-      setEventFormState({ ...eventFormState, simulators_enabled: false });
-    } else {
-      const pw = prompt("Enter developer password to enable checkout simulators:");
-      if (pw !== null) {
-        try {
-          const res = await fetch("/api/admin/verify-simulator-password", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password: pw }),
-          });
-          if (res.ok) {
-            setEventFormState({ ...eventFormState, simulators_enabled: true });
-            alert("Developer simulators enabled successfully.");
-          } else {
-            alert("Incorrect developer password. Access denied.");
-          }
-        } catch {
-          alert("Failed to verify password. Try again.");
-        }
-      }
-    }
-  };
-
   const handleToggleEventLifecycle = async () => {
     if (!selectedEventId || selectedEventId <= 0) {
       alert("Please select a specific event edition before ending or re-opening it.");
@@ -1058,27 +1004,6 @@ Tickets exist the moment you approve, and the customer is sent them on WhatsApp.
     const currentEvent = (metrics?.allEvents || []).find((e: any) => e.id === selectedEventId);
     const curStatus = canonicalStatus(currentEvent?.status);
 
-    // Two bugs lived here.
-    //
-    // 1. "Is it currently closed?" was answered with `status === 'closed' ||
-    //    is_active === false`. `createEvent` writes `is_active = FALSE` for a
-    //    schedule-only event, so a freshly created SCHEDULED flagship was
-    //    reported as closed and the button offered to "re-open" it - which
-    //    would have flipped it straight to live and hijacked the homepage slot.
-    //
-    // 2. The close branch called `archiveEvent`, which stamps `archived_at`.
-    //    Concluding an edition therefore also HID it: `/` started returning 404
-    //    and the event vanished from the editions switcher, which is the
-    //    opposite of the "visitors will see the Event Concluded page" the
-    //    confirm dialog promised. Closing and archiving are separate actions and
-    //    the route now takes an explicit `mode`.
-    // An ARCHIVED event is deliberately NOT re-opened by this button.
-    // `mode: "activate"` clears `archived_at`, so treating archived as "closed"
-    // meant one tap on a button labelled "Re-open" silently un-hid an event
-    // that had been retired on purpose — and the admin was told it was now LIVE.
-    // Archived is the correct resting state for a finished edition; un-retiring
-    // one is a deliberate act, done in the event editor where it is labelled
-    // as such.
     const isArchivedEvent = !!currentEvent?.archived_at || curStatus === ("archived" as string);
     const isCurrentlyClosed = !isArchivedEvent && curStatus === "closed";
 
@@ -1116,11 +1041,6 @@ ${
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "activate" })
         });
-        // `fetch` only rejects on a network fault. An HTTP 500 resolves
-        // normally, so the old `await fetch(...)` with no status check reported
-        // "is now LIVE" after the server had refused. That is the "clicking
-        // close does nothing" symptom: the alert said it worked, nothing
-        // changed, and the operator re-tapped.
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body?.error || `Server refused the request (HTTP ${res.status}).`);
@@ -1149,8 +1069,6 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "close" })
         });
-        // See the note on the activate branch above: without a status check this
-        // announced success on an HTTP 500 and changed nothing.
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body?.error || `Server refused the request (HTTP ${res.status}).`);
@@ -1161,68 +1079,6 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
         alert(`Failed to close event: ${err.message}`);
       }
     }
-  };
-
-  const handleSaveEventDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving("event");
-    try {
-      // Resolve the status ONCE and use the same value for both writes. The old
-      // code fell back to the string "active", which is not a status anything
-      // downstream understands, so picking the green option in the dropdown
-      // published an event that rendered checkout and then refused payment.
-      const nextStatus = normalizeLifecycleStatus(
-        (eventFormState as any).status,
-        (eventFormState as any).is_active
-      );
-
-      const updated = await updateEventDetails(eventFormState);
-      setEventDetails(updated);
-
-      const targetEventId = (selectedEventId && selectedEventId > 0)
-        ? selectedEventId
-        : (metrics?.allEvents?.[0]?.id || 2);
-
-      if (targetEventId && targetEventId > 0) {
-        const res = await fetch(`/api/events/${targetEventId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: eventFormState.title,
-            subtitle: eventFormState.subtitle,
-            tag: eventFormState.tag,
-            venue: eventFormState.venue,
-            event_date: eventFormState.event_date,
-            maps_url: eventFormState.maps_url,
-            till_number: eventFormState.till_number,
-            flyer_url: eventFormState.flyer_url,
-            video_url: (eventFormState as any).video_url || null,
-            ticker_text: eventFormState.ticker_text,
-            logo_url: eventFormState.logo_url,
-            // The sales window and the recap/next-edition copy live on `events`,
-            // not on the `event_details` singleton, so they are only saved here.
-            sales_open_date: (eventFormState as any).sales_open_date || null,
-            sales_close_date: (eventFormState as any).sales_close_date || null,
-            next_event_title: (eventFormState as any).next_event_title || null,
-            status: nextStatus,
-            is_active: nextStatus === "live",
-            custom_schedule_text: (eventFormState as any).custom_schedule_text || null
-          })
-        });
-        if (!res.ok) {
-          // Silently swallowed before: a failed PUT still closed the editor and
-          // the admin saw no error, so the form looked saved when it was not.
-          const detail = await res.json().catch(() => null);
-          throw new Error(detail?.error || `Event update failed (HTTP ${res.status})`);
-        }
-      }
-
-      setIsEditingEvent(false);
-      loadDashboardMetrics();
-    } catch (err: any) {
-      console.error("Failed to update event details:", err);
-      alert(`Failed to save event: ${err?.message || err}`);
-    } finally { setSaving(null); }
   };
 
   const handleEditTicketClick = (ticket: Ticket) => {
@@ -1270,12 +1126,6 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
         for (const id of selectedTrashTicketIds) {
           await permanentlyDeleteTicket(id);
         }
-        // Permanent delete of a tier is irreversible and there is no undo, so
-        // the event scope must be resolved from the trashed row and anything
-        // unresolvable is reported rather than skipped. `permanentlyDeleteTicketTier`
-        // refuses an unscoped call by design - `ticket_tiers`' key is
-        // `(id, event_id)`, so an unscoped delete removed the same tier id from
-        // every event it appeared on.
         let deleted = 0;
         const refused: string[] = [];
         for (const id of selectedTrashTierIds) {
@@ -1731,13 +1581,33 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               );
             })()}
 
+            {/* Gate access lives with the event status, not with page navigation:
+                it is a credential + steward dispatch console, not just a settings link.
+                The PIN itself stays masked until the modal opens. */}
+            <button
+              type="button"
+              onClick={() => {
+                loadGateScannerData();
+                setShowGatePinModal(true);
+              }}
+              title="Gate access PIN, steward dispatch and recent scan activity"
+              className="text-[10px] font-mono font-black uppercase px-2.5 py-1 border-2 border-[var(--brand-navy)] flex items-center gap-1.5 shadow-(--shadow-brut-xs) bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors cursor-pointer"
+            >
+              <Key className="w-3 h-3 shrink-0" />
+              <span>GATE STAFF</span>
+              <span className="opacity-60 tracking-tighter">PIN ••••</span>
+            </button>
 
           </div>
 
           {/* Right: Operational Tool Buttons — grouped by purpose */}
-          <div className="flex flex-col gap-2 w-full lg:w-auto">
+          <div className="flex flex-col gap-2.5 w-full lg:w-auto">
             {/* LIVE OPS: primary high-contrast action buttons */}
-            <div className="flex flex-wrap items-stretch gap-2">
+            <div>
+              <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-[var(--brand-navy)]/50 mb-1">
+                Live Ops
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <Link
                 href="/scanner"
                 className="text-xs font-black uppercase bg-[var(--brand-navy)] text-[var(--brand-off-white)] px-3 py-2 sm:py-1.5 hover:bg-[var(--brand-navy-light)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
@@ -1754,85 +1624,50 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               </Link>
               <Link
                 href="/admin/settlements"
-                className="text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
+                className="col-span-2 sm:col-span-1 text-xs font-black uppercase border-2 border-[var(--brand-navy)] px-3 py-2 sm:py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1.5 shadow-(--shadow-brut-xs)"
               >
                 <Receipt className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">SETTLEMENTS</span>
               </Link>
+              </div>
             </div>
-            {/* CONFIG: secondary configuration buttons */}
-            <div className="flex flex-wrap items-stretch gap-1.5">
-              <button
-                onClick={() => {
-                  setIsEditingEvent(true);
-                  const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
-                  setEventFormState({
-                    ...eventDetails,
-                    title: cur?.title || eventDetails?.title,
-                    subtitle: cur?.subtitle || eventDetails?.subtitle,
-                    tag: cur?.tag || eventDetails?.tag,
-                    venue: cur?.venue || eventDetails?.venue,
-                    event_date: cur?.event_date || eventDetails?.event_date,
-                    maps_url: cur?.maps_url || eventDetails?.maps_url,
-                    till_number: cur?.till_number || eventDetails?.till_number,
-                    flyer_url: cur?.flyer_url || eventDetails?.flyer_url,
-                    video_url: cur?.video_url ?? (eventDetails as any)?.video_url ?? "",
-                    ticker_text: cur?.ticker_text || eventDetails?.ticker_text,
-                    logo_url: cur?.logo_url || eventDetails?.logo_url,
-                    status: normalizeLifecycleStatus(cur?.status, cur?.is_active),
-                    sales_open_date: cur?.sales_open_date ?? null,
-                    sales_close_date: cur?.sales_close_date ?? null,
-                    next_event_title: cur?.next_event_title ?? null,
-                    whatsapp_message: eventDetails?.whatsapp_message?.trim()
-                      ? eventDetails.whatsapp_message
-                      : getDefaultWhatsAppTemplate(),
-                    payment_contact: eventDetails?.payment_contact || "",
-                    whatsapp_operator_template: eventDetails?.whatsapp_operator_template?.trim()
-                      ? eventDetails.whatsapp_operator_template
-                      : getDefaultOperatorTemplate(),
-                    whatsapp_scan_template: eventDetails?.whatsapp_scan_template?.trim()
-                      ? eventDetails.whatsapp_scan_template
-                      : getDefaultScanTemplate(),
-                    operator_notifications_enabled: eventDetails?.operator_notifications_enabled ?? false
-                  } as any);
-                }}
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 bg-white shadow-(--shadow-brut-xs) cursor-pointer"
+            {/* SETUP: secondary configuration buttons — fixed grid so GALLERY
+                can never wrap onto a row by itself. */}
+            <div>
+              <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-[var(--brand-navy)]/50 mb-1">
+                Setup
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <Link
+                href={selectedEventId ? `/admin/events/${selectedEventId}/edit` : "/admin/events/-1/edit"}
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 bg-white shadow-(--shadow-brut-xs)"
               >
                 <Edit className="w-3 h-3 shrink-0" />
                 <span>EDIT EVENT</span>
-              </button>
+              </Link>
               <Link
                 href={selectedEventId ? `/admin/budget?eventId=${selectedEventId}` : "/admin/budget"}
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
               >
                 <DollarSign className="w-3 h-3 shrink-0" />
                 <span>BUDGET &amp; P&amp;L</span>
               </Link>
-              <button
-                onClick={() => {
-                  loadGateScannerData();
-                  setShowGatePinModal(true);
-                }}
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-yellow-300 text-[var(--brand-navy)] hover:bg-[var(--brand-navy)] hover:text-white transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs) cursor-pointer"
-              >
-                <Key className="w-3 h-3 shrink-0" />
-                <span>GATE PIN</span>
-              </button>
-              <Link
-                href="/admin/whatsapp"
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
-                title="Open WhatsApp Gateway pairing QR code and live status"
-              >
-                <MessageSquare className="w-3 h-3 shrink-0" />
-                <span>WHATSAPP QR</span>
-              </Link>
               <Link
                 href="/admin/gallery"
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2.5 py-1.5 bg-brand-accent text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1 shadow-(--shadow-brut-xs)"
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
                 title="Manage event gallery photos and posters"
               >
                 <span>📷 GALLERY</span>
               </Link>
+              <Link
+                href="/admin/whatsapp"
+                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
+                title="WhatsApp gateway pairing, status and test console"
+              >
+                <MessageSquare className="w-3 h-3 shrink-0" />
+                <span>WHATSAPP</span>
+              </Link>
+              </div>
             </div>
             {/* DANGER ZONE: END / REOPEN EVENT — isolated at bottom */}
             {selectedEventId && selectedEventId > 0 && (() => {
@@ -1940,42 +1775,6 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
           ticketTiers={ticketTiers}
           audience={audience}
         />
-
-        {/* STAFF & VENDOR POS WAR ROOM CARD */}
-        <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] p-4 md:p-5 shadow-(--shadow-brut-md) flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Store className="w-5 h-5 text-[var(--brand-navy)]" />
-              <h3 className="font-display text-lg md:text-xl uppercase text-[var(--brand-navy)] font-black tracking-wide">
-                STAFF & VENDOR POS STALLS
-              </h3>
-            </div>
-            <p className="font-mono text-xs uppercase text-[var(--brand-navy)]/80">
-              Manage festival bar/food vendor stalls, assign operator staff PINs, review customer tabs & process payouts.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Link
-              href="/admin/vendors?add=true"
-              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-brand-accent text-[var(--brand-navy)] font-mono text-xs font-black uppercase hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5 shadow-(--shadow-brut-xs)"
-            >
-              <Plus className="w-3.5 h-3.5" /> ADD POS STALL
-            </Link>
-            <Link
-              href="/admin/vendors"
-              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-[var(--brand-off-white)] text-[var(--brand-navy)] font-mono text-xs font-black uppercase hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center gap-1.5"
-            >
-              <Users className="w-3.5 h-3.5" /> VIEW STAFF & TABS
-            </Link>
-            <Link
-              href="/vendor/sell"
-              target="_blank"
-              className="px-3.5 py-2 border-2 border-[var(--brand-navy)] bg-[var(--brand-navy)] text-[var(--brand-off-white)] font-mono text-xs font-black uppercase hover:bg-brand-accent hover:text-[var(--brand-navy)] transition-colors flex items-center gap-1.5"
-            >
-              <ExternalLink className="w-3.5 h-3.5" /> OPEN POS TERMINAL
-            </Link>
-          </div>
-        </div>
 
         {/* TABS SELECTION BAR */}
         <div className="flex flex-col sm:flex-row border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] shadow-(--shadow-brut-md) overflow-hidden">
@@ -3488,376 +3287,6 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
 
       </div>
 
-      {/* EVENT DETAILS EDIT MODAL */}
-      {isEditingEvent && (
-        <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }} className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90vh] flex flex-col p-6 relative shadow-(--shadow-brut-xl)">
-            <button
-              autoFocus
-              onClick={() => setIsEditingEvent(false)}
-              className="absolute top-4 right-4 p-2 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-10 min-w-[44px] min-h-[44px] flex items-center justify-center"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <h3 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-4 shrink-0">
-              Edit Event Metadata
-            </h3>
-            <form onSubmit={handleSaveEventDetails} className="space-y-4 overflow-y-auto flex-1 pr-1">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1 col-span-2 p-2.5 bg-brand-accent/20 border-2 border-[var(--brand-navy)]">
-                  <label className="text-xs font-black uppercase flex items-center justify-between text-[var(--brand-navy)]">
-                    <span>Event Lifecycle Status</span>
-                    <span className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/80">Controls checkout vs waitlist vs closed</span>
-                  </label>
-                  {/* The option values MUST be the exact strings the rest of the
-                      system tests for. This dropdown used to offer
-                      `<option value="active">` for "live", which wrote
-                      `status = 'active'` - a value `getEventAvailability` rejects
-                      (`event.status !== "live" && event.status !== "scheduled"`),
-                      so picking the green "Active / Live" option produced an event
-                      that rendered a full checkout page and then refused every
-                      payment as "not live". 'live' is the value that means live. */}
-                  <select
-                    value={normalizeLifecycleStatus((eventFormState as any).status, (eventFormState as any).is_active)}
-                    onChange={(e) => {
-                      const newStatus = e.target.value;
-                      setEventFormState({
-                        ...(eventFormState as any),
-                        status: newStatus,
-                        // `is_active` is the legacy flag and has to follow
-                        // `status`, or the old `is_active` checks keep
-                        // disagreeing with the status-driven ones.
-                        is_active: newStatus === "live"
-                      });
-                    }}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-black text-xs bg-white shadow-(--shadow-brut-xs)"
-                  >
-                    <option value="live">🟢 Live (Ticket sales open)</option>
-                    <option value="scheduled">🟡 Scheduled / Coming Soon (Announced, not on sale yet)</option>
-                    <option value="closed">🔴 Concluded / Closed (Past event, recap page)</option>
-                    <option value="archived">⚫ Archived (Hidden from the public site entirely)</option>
-                  </select>
-                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/80 mt-1.5 leading-snug">
-                    Leave on <strong>Scheduled</strong> for a one-off edition you are announcing: the site
-                    shows a coming-soon page with a countdown, then switches itself to checkout on its
-                    own once &ldquo;Tickets Open&rdquo; below has passed and passes exist. Mini sessions
-                    are recurring series — whether one is on is computed from their recurrence rules,
-                    so this field does not control them.
-                  </p>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase">Event Title</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.title || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, title: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Subtitle</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.subtitle || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, subtitle: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Organizer Tag</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.tag || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, tag: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Event Date</label>
-                  <input
-                    type="date"
-                    value={eventFormState.event_date || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, event_date: e.target.value || null })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                {/* SALES WINDOW.
-                    Both columns already existed in the schema and
-                    `getEventAvailability` already enforced them, but there was NO
-                    input for them anywhere in the admin UI - setting an open date
-                    required hand-writing a SQL script, which made the whole
-                    `scheduled` -> coming-soon -> live flow unreachable in practice.
-
-                    `datetime-local` (not `date`) because the value is stored and
-                    compared as a naive EAT string; the admin enters Kenya time, not
-                    the laptop's local zone. */}
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Tickets Open</label>
-                  <input
-                    type="datetime-local"
-                    value={toDatetimeLocal(eventFormState.sales_open_date)}
-                    onChange={(e) => setEventFormState({ ...eventFormState, sales_open_date: e.target.value || null })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/70">
-                    Kenya time. Before this moment the site shows the countdown instead of checkout.
-                    Leave empty for &ldquo;as soon as it goes live&rdquo;.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Tickets Close</label>
-                  <input
-                    type="datetime-local"
-                    value={toDatetimeLocal(eventFormState.sales_close_date)}
-                    onChange={(e) => setEventFormState({ ...eventFormState, sales_close_date: e.target.value || null })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                  <p className="text-[10px] font-mono normal-case text-[var(--brand-navy)]/70">
-                    Kenya time. After this moment payment is refused and the page says sales have
-                    closed.
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Venue Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.venue || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, venue: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-black uppercase">Google Maps Pin Link *</label>
-                    {eventFormState.maps_url && (
-                      <a
-                        href={eventFormState.maps_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] font-mono font-bold text-brand-navy hover:text-brand-accent underline flex items-center gap-0.5"
-                      >
-                        Test Pin ↗
-                      </a>
-                    )}
-                  </div>
-                  <input
-                    type="url"
-                    required
-                    value={eventFormState.maps_url || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, maps_url: e.target.value })}
-                    placeholder="https://maps.app.goo.gl/... or dropped pin"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs font-mono"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Till Number</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.till_number || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, till_number: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Schedule / Vibe Text</label>
-                  <input
-                    type="text"
-                    value={(eventFormState as any).custom_schedule_text || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, custom_schedule_text: e.target.value } as any)}
-                    placeholder="e.g. GATES OPEN 2PM • OVERNIGHT CAMPING"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                  <p className="text-[10px] text-[var(--brand-navy-light)] font-bold uppercase">Shown in the date/time info box on the homepage. Leave blank to auto-derive from event date.</p>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Payment Contact (for till users)</label>
-                  <input
-                    type="text"
-                    value={eventFormState.payment_contact || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, payment_contact: e.target.value })}
-                    placeholder="e.g. +254 700 000 000"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <PosterUploader
-                    value={eventFormState.flyer_url || ""}
-                    onChange={(url) => setEventFormState({ ...eventFormState, flyer_url: url })}
-                    label="Poster Image / Artwork"
-                    required
-                  />
-                </div>
-                <div className="col-span-2">
-                  <VideoUploader
-                    value={(eventFormState as any).video_url || ""}
-                    onChange={(url) => setEventFormState({ ...eventFormState, video_url: url } as any)}
-                    label="Hero Teaser Video"
-                  />
-                  <span className="text-[10px] text-[var(--brand-navy-light)] opacity-70 block mt-1">Autoplays in Story Deck after 5s or when switched to teaser</span>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase">Scrolling Marquee Text (Ticker)</label>
-                  <input
-                    type="text"
-                    required
-                    value={eventFormState.ticker_text || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, ticker_text: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase">Custom Logo Image Path / URL (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. /custom-logo.png"
-                    value={eventFormState.logo_url || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, logo_url: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-black uppercase block">Developer Simulators Panel</span>
-                      <span className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase block">Toggle local checkout bypass simulators on homepage</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleToggleSimulators}
-                      className={`text-xs font-black px-4 py-2 border-2 uppercase transition-all cursor-pointer ${
-                        eventFormState.simulators_enabled !== false
-                          ? "bg-green-600 border-green-600 text-white"
-                          : "bg-red-600 border-red-600 text-white"
-                      }`}
-                    >
-                      {eventFormState.simulators_enabled !== false ? "ENABLED" : "DISABLED"}
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-black uppercase block">Operator WhatsApp Notifications</span>
-                      <span className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase block">Enable or disable operator broadcast alerts</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setEventFormState({
-                        ...eventFormState,
-                        operator_notifications_enabled: !eventFormState.operator_notifications_enabled
-                      })}
-                      className={`text-xs font-black px-4 py-2 border-2 uppercase transition-all cursor-pointer ${
-                        eventFormState.operator_notifications_enabled !== false
-                          ? "bg-green-600 border-green-600 text-white"
-                          : "bg-red-600 border-red-600 text-white"
-                      }`}
-                    >
-                      {eventFormState.operator_notifications_enabled !== false ? "ENABLED" : "DISABLED"}
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase">Regulations & Advisories</label>
-                  <textarea
-                    required
-                    rows={4}
-                    value={eventFormState.regulations || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, regulations: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Footer Title</label>
-                  <input
-                    type="text"
-                    value={eventFormState.footer_title || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, footer_title: e.target.value })}
-                    placeholder="e.g. GOODLIFE TICKETING"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase">Footer Legal Line</label>
-                  <input
-                    type="text"
-                    value={eventFormState.footer_legal || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, footer_legal: e.target.value })}
-                    placeholder="e.g. STRICTLY 18+ NO OUTSIDE DRINKS"
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
-                  <label className="text-xs font-black uppercase flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 0C5.385 0 0 5.385 0 12.031c0 2.127.551 4.2 1.597 6.03L.085 23.593l5.688-1.492A11.968 11.968 0 0012.03 24c6.646 0 12.031-5.385 12.031-12.031S18.677 0 12.031 0z"/></svg>
-                    WhatsApp Message Template (optional)
-                  </label>
-                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{phoneNumber}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{pdfUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventTitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventSubtitle}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventVenue}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventMapsUrl}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{eventRegulations}}'}</code>
-                  </p>
-                  <textarea
-                    rows={4}
-                    value={eventFormState.whatsapp_message || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_message: e.target.value })}
-                    placeholder="Leave empty to use the default template."
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
-                  <label className="text-xs font-black uppercase flex items-center gap-2">
-                    Operator WhatsApp Template (optional)
-                  </label>
-                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{quantity}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{amountPaid}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{reference}}'}</code>
-                  </p>
-                  <textarea
-                    rows={3}
-                    value={eventFormState.whatsapp_operator_template || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_operator_template: e.target.value })}
-                    placeholder="Leave empty to use the default operator template."
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2 pt-2 border-t border-[var(--brand-navy)]/10">
-                  <label className="text-xs font-black uppercase flex items-center gap-2">
-                    Scan Notification Template (optional)
-                  </label>
-                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase leading-tight">
-                    Available variables: <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{buyerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketType}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{ticketId}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{scannerName}}'}</code> <code className="bg-[var(--brand-navy)]/5 px-1 font-mono text-[11px]">{'{{scanTime}}'}</code>
-                  </p>
-                  <textarea
-                    rows={3}
-                    value={eventFormState.whatsapp_scan_template || ""}
-                    onChange={(e) => setEventFormState({ ...eventFormState, whatsapp_scan_template: e.target.value })}
-                    placeholder="Leave empty to use the default scan template."
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-4 border-t border-[var(--brand-navy)]/15 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsEditingEvent(false)}
-                  className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase transition-all duration-150 active:scale-95"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving === "event"}
-                  className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {saving === "event" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> SAVING...</> : <><Save className="w-3.5 h-3.5" /> Save Changes</>}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
 
       {/* TICKET EDIT MODAL */}
       {editingTicket && (
