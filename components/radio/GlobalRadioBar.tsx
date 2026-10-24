@@ -60,7 +60,8 @@ export default function GlobalRadioBar() {
   if (!currentSet && !isLive) return null;
   if (isDedicatedRadioPage || isScannerPage) return null;
 
-  // MINIMIZED FLOATING PILL
+  // HYBRID STATE: Shown as floating FAB when explicitly minimized OR when paused/inactive
+  // When music is playing, it automatically expands into the full collapsible bottom bar.
   if (isMinimized) {
     return (
       <aside
@@ -69,27 +70,50 @@ export default function GlobalRadioBar() {
           isCheckoutPage ? "bottom-20 sm:bottom-4" : "bottom-4"
         }`}
       >
-        <button
-          onClick={toggleMinimized}
-          className="group relative flex items-center gap-2 p-2.5 bg-brand-navy text-brand-off-white border-3 border-brand-accent shadow-(--shadow-brut-md) hover:bg-brand-accent hover:text-brand-navy transition-all cursor-pointer"
-          title="Expand GOODLIFE Radio Player"
-        >
-          <div
-            className={`w-7 h-7 rounded-full border-2 border-current flex items-center justify-center ${
-              isPlaying ? "animate-spin" : ""
-            }`}
+        <div className="flex items-center bg-brand-navy text-brand-off-white border-3 border-brand-accent shadow-(--shadow-brut-md)">
+          {/* Quick Play/Pause on the FAB */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePlay();
+            }}
+            className="p-2.5 bg-brand-accent text-brand-navy hover:bg-brand-off-white transition-colors cursor-pointer flex items-center justify-center border-r-2 border-brand-navy"
+            aria-label={isPlaying ? "Pause Radio" : "Play Radio"}
+            title={isPlaying ? "Pause Radio" : "Play Radio"}
           >
-            <Radio className="w-3.5 h-3.5" />
-          </div>
+            {isPlaying ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 fill-current translate-x-0.5" />
+            )}
+          </button>
 
-          <span className="font-mono text-xs font-black uppercase tracking-wider hidden sm:inline">
-            {isLive ? "LIVE STAGE" : "RADIO"}
-          </span>
+          {/* Expand to full bar */}
+          <button
+            onClick={toggleMinimized}
+            className="flex items-center gap-2 px-3 py-2 hover:bg-brand-navy/90 transition-all cursor-pointer text-left"
+            title="Expand Full Radio Bar"
+          >
+            <div
+              className={`w-6 h-6 rounded-full border-2 border-brand-accent flex items-center justify-center shrink-0 ${
+                isPlaying ? "animate-spin" : ""
+              }`}
+            >
+              <Radio className="w-3 h-3 text-brand-accent" />
+            </div>
 
-          {isPlaying && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </button>
+            <div className="flex flex-col min-w-0 max-w-[130px] sm:max-w-[200px]">
+              <span className="font-mono text-[9px] text-brand-accent uppercase tracking-wider font-bold">
+                {isLive ? "LIVE STAGE" : "GOODLIFE RADIO"}
+              </span>
+              <span className="font-sans text-xs font-bold truncate text-white">
+                {currentSet?.title || "Festival Anthems"}
+              </span>
+            </div>
+
+            <ChevronDown className="w-3.5 h-3.5 text-brand-accent/70 rotate-180 shrink-0 ml-1" />
+          </button>
+        </div>
       </aside>
     );
   }

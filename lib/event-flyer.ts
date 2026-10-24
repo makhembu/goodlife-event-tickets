@@ -1,7 +1,18 @@
+const R2_DOMAIN = (
+  process.env.NEXT_PUBLIC_R2_DOMAIN ||
+  process.env.R2_PUBLIC_DOMAIN ||
+  "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev"
+).replace(/\/+$/, "");
+
+export const DEFAULT_FLAGSHIP_FLYER = `${R2_DOMAIN}/posters/flyer.png`;
+export const DEFAULT_MINI_FLYER = `${R2_DOMAIN}/posters/flyer-park-chill.png`;
+export const DEFAULT_FLAGSHIP_VIDEO = `${R2_DOMAIN}/videos/goodlife-hype.mp4`;
+export const DEFAULT_MINI_VIDEO = `${R2_DOMAIN}/videos/park-chill-speakers.mp4`;
+
 /**
  * Resolves the appropriate flyer/poster URL for an event.
- * Automatically maps Sunday Chill / mini events to `/flyer-park-chill.png`
- * and main flagship events to `/flyer.png` unless a custom non-default flyer URL is provided.
+ * Automatically maps Sunday Chill / mini events to Cloudflare R2 bucket flyer
+ * and main flagship events to Cloudflare R2 bucket flyer unless a custom non-default flyer URL is provided.
  */
 export function resolveEventFlyer(event?: {
   flyer_url?: string | null;
@@ -9,10 +20,13 @@ export function resolveEventFlyer(event?: {
   title?: string | null;
   subtitle?: string | null;
 } | null): string {
-  if (!event) return "/flyer.png";
+  if (!event) return DEFAULT_FLAGSHIP_FLYER;
 
   const custom = event.flyer_url?.trim();
-  // If an event explicitly configured a flyer URL (including '/flyer.png'), use it directly
+  // Transparently migrate legacy hardcoded local paths to Cloudflare R2 bucket URLs
+  if (custom === "/flyer.png") return DEFAULT_FLAGSHIP_FLYER;
+  if (custom === "/flyer-park-chill.png") return DEFAULT_MINI_FLYER;
+
   if (custom && custom !== "") {
     return custom;
   }
@@ -26,16 +40,16 @@ export function resolveEventFlyer(event?: {
     text.includes("sunday");
 
   if (isSundayChill) {
-    return "/flyer-park-chill.png";
+    return DEFAULT_MINI_FLYER;
   }
 
-  return "/flyer.png";
+  return DEFAULT_FLAGSHIP_FLYER;
 }
 
 /**
  * Resolves the appropriate teaser/hype video URL for an event.
- * Automatically maps Sunday Park & Chill to `/videos/park-chill-speakers.mp4`
- * and main flagship events to `/videos/goodlife-hype.mp4` unless a custom video URL is provided.
+ * Automatically maps Sunday Park & Chill to Cloudflare R2 bucket video
+ * and main flagship events to R2 bucket video unless a custom video URL is provided.
  */
 export function resolveEventVideo(event?: {
   id?: number | null;
@@ -44,9 +58,12 @@ export function resolveEventVideo(event?: {
   title?: string | null;
   subtitle?: string | null;
 } | null): string {
-  if (!event) return "/videos/goodlife-hype.mp4";
+  if (!event) return DEFAULT_FLAGSHIP_VIDEO;
 
   const custom = event.video_url?.trim();
+  if (custom === "/videos/goodlife-hype.mp4") return DEFAULT_FLAGSHIP_VIDEO;
+  if (custom === "/videos/park-chill-speakers.mp4") return DEFAULT_MINI_VIDEO;
+
   if (custom && custom !== "") {
     return custom;
   }
@@ -60,9 +77,9 @@ export function resolveEventVideo(event?: {
     text.includes("sunday");
 
   if (isSundayChill) {
-    return "/videos/park-chill-speakers.mp4";
+    return DEFAULT_MINI_VIDEO;
   }
 
-  return "/videos/goodlife-hype.mp4";
+  return DEFAULT_FLAGSHIP_VIDEO;
 }
 

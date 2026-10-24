@@ -233,11 +233,11 @@ export default function VideoUploader({
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="e.g. /videos/goodlife-hype.mp4 or https://files.catbox.moe/..."
+            placeholder="e.g. https://...r2.dev/videos/... or https://files.catbox.moe/..."
             className="w-full px-2.5 py-1.5 border-2 border-brand-navy font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent bg-white"
           />
           <span className="text-[10px] text-brand-navy/60 font-mono mt-0.5 block">
-            Direct local path (e.g. <code>/videos/goodlife-hype.mp4</code>) or cloud CDN URL.
+            Cloudflare R2 or CDN video URL.
           </span>
         </div>
       )}

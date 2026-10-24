@@ -6,6 +6,12 @@ import { X, Sparkles, Calendar, Layers, Tent, MapPin, Tag } from "lucide-react";
 import { Event } from "@/lib/supabase-db-types";
 import PosterUploader from "@/components/admin/PosterUploader";
 import VideoUploader from "@/components/admin/VideoUploader";
+import {
+  DEFAULT_FLAGSHIP_FLYER,
+  DEFAULT_MINI_FLYER,
+  DEFAULT_FLAGSHIP_VIDEO,
+  DEFAULT_MINI_VIDEO,
+} from "@/lib/event-flyer";
 
 /** Must stay in sync with the patterns lib/event-availability.ts schedules. */
 type RecurrencePattern = "none" | "daily" | "weekly" | "biweekly";
@@ -48,8 +54,8 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   const [venue, setVenue] = useState("");
   const [mapsUrl, setMapsUrl] = useState("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
   const [tillNumber, setTillNumber] = useState("");
-  const [flyerUrl, setFlyerUrl] = useState("/flyer.png");
-  const [videoUrl, setVideoUrl] = useState("/videos/goodlife-hype.mp4");
+  const [flyerUrl, setFlyerUrl] = useState(DEFAULT_FLAGSHIP_FLYER);
+  const [videoUrl, setVideoUrl] = useState(DEFAULT_FLAGSHIP_VIDEO);
   const [eventDate, setEventDate] = useState("");
   const [status, setStatus] = useState<"live" | "scheduled">("scheduled");
   const [salesOpenDate, setSalesOpenDate] = useState("");
@@ -76,8 +82,8 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setTag("GOODLIFE MINI SESSIONS");
       setVenue("RIVERFRONT GARDEN, MARARA CAMP, THIKA");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
-      setFlyerUrl("/flyer-park-chill.png");
-      setVideoUrl("/videos/park-chill-speakers.mp4");
+      setFlyerUrl(DEFAULT_MINI_FLYER);
+      setVideoUrl(DEFAULT_MINI_VIDEO);
       setMaxTentInventory(0);
       setMaxSharedBeds(0);
       setRecurrencePattern("weekly");
@@ -91,8 +97,8 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
       setTag("SMWHR INC / MARARA CAMP");
       setVenue("");
       setMapsUrl("https://www.google.com/maps/search/?api=1&query=Marara+Camp+Ventures+Thika");
-      setFlyerUrl("/flyer.png");
-      setVideoUrl("/videos/goodlife-hype.mp4");
+      setFlyerUrl(DEFAULT_FLAGSHIP_FLYER);
+      setVideoUrl(DEFAULT_FLAGSHIP_VIDEO);
       setMaxTentInventory(30);
       setMaxSharedBeds(12);
       setRecurrencePattern("none");

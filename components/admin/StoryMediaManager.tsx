@@ -482,7 +482,7 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
             onChange={(e) => setUrlValue(e.target.value)}
             placeholder={
               urlKind === "video"
-                ? "https://files.catbox.moe/teaser.mp4 or /videos/goodlife-hype.mp4"
+                ? "https://...r2.dev/videos/... or https://files.catbox.moe/teaser.mp4"
                 : "https://i.ibb.co/poster.jpg or /flyer.png"
             }
             className="w-full px-2.5 py-1.5 border-2 border-brand-navy font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-accent"

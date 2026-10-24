@@ -1,4 +1,11 @@
-import { resolveEventFlyer, resolveEventVideo } from "../lib/event-flyer";
+import {
+  resolveEventFlyer,
+  resolveEventVideo,
+  DEFAULT_FLAGSHIP_FLYER,
+  DEFAULT_MINI_FLYER,
+  DEFAULT_FLAGSHIP_VIDEO,
+  DEFAULT_MINI_VIDEO,
+} from "../lib/event-flyer";
 import { MAX_STORY_ITEMS, normalizeStoryMedia, resolveStoryMedia } from "../lib/story-media";
 
 let failures = 0;
@@ -20,8 +27,8 @@ const flagshipDefault = resolveEventVideo({
   video_url: null,
 });
 assert(
-  flagshipDefault === "/videos/goodlife-hype.mp4",
-  `Flagship event defaults to /videos/goodlife-hype.mp4 (got: ${flagshipDefault})`
+  flagshipDefault === DEFAULT_FLAGSHIP_VIDEO,
+  `Flagship event defaults to R2 bucket video (got: ${flagshipDefault})`
 );
 
 // 2. Default Park & Chill Video Resolution
@@ -32,8 +39,8 @@ const miniDefault = resolveEventVideo({
   video_url: null,
 });
 assert(
-  miniDefault === "/videos/park-chill-speakers.mp4",
-  `Mini event defaults to /videos/park-chill-speakers.mp4 (got: ${miniDefault})`
+  miniDefault === DEFAULT_MINI_VIDEO,
+  `Mini event defaults to R2 bucket video (got: ${miniDefault})`
 );
 
 // 3. Custom Video URL Override
@@ -50,8 +57,19 @@ assert(
 // 4. Null / Undefined Event Handling
 const nullEvent = resolveEventVideo(null);
 assert(
-  nullEvent === "/videos/goodlife-hype.mp4",
-  `Null event defaults safely to /videos/goodlife-hype.mp4 (got: ${nullEvent})`
+  nullEvent === DEFAULT_FLAGSHIP_VIDEO,
+  `Null event defaults safely to R2 bucket video (got: ${nullEvent})`
+);
+
+// 4b. Legacy local path migration
+const legacyEvent = resolveEventVideo({
+  id: 5,
+  title: "Legacy Event",
+  video_url: "/videos/goodlife-hype.mp4",
+});
+assert(
+  legacyEvent === DEFAULT_FLAGSHIP_VIDEO,
+  `Legacy /videos/goodlife-hype.mp4 path translates to Cloudflare R2 bucket (got: ${legacyEvent})`
 );
 
 // 5. Default Flagship Flyer Resolution (Unset flyer_url)
@@ -61,8 +79,8 @@ const flagshipDefaultFlyer = resolveEventFlyer({
   flyer_url: null,
 });
 assert(
-  flagshipDefaultFlyer === "/flyer.png",
-  `Flagship event defaults to /flyer.png (got: ${flagshipDefaultFlyer})`
+  flagshipDefaultFlyer === DEFAULT_FLAGSHIP_FLYER,
+  `Flagship event defaults to R2 bucket poster (got: ${flagshipDefaultFlyer})`
 );
 
 // 6. Default Park & Chill Flyer Resolution (Unset flyer_url)
@@ -72,11 +90,11 @@ const miniDefaultFlyer = resolveEventFlyer({
   flyer_url: null,
 });
 assert(
-  miniDefaultFlyer === "/flyer-park-chill.png",
-  `Mini event defaults to /flyer-park-chill.png (got: ${miniDefaultFlyer})`
+  miniDefaultFlyer === DEFAULT_MINI_FLYER,
+  `Mini event defaults to R2 bucket poster (got: ${miniDefaultFlyer})`
 );
 
-// 7. Explicit /flyer.png with "Sunday" in Subtitle (Sentinel trap prevention)
+// 7. Explicit /flyer.png legacy path translation
 const flagshipSundayFlyer = resolveEventFlyer({
   title: "GOODLIFE 4",
   subtitle: "Live on Sunday",
@@ -84,8 +102,8 @@ const flagshipSundayFlyer = resolveEventFlyer({
   flyer_url: "/flyer.png",
 });
 assert(
-  flagshipSundayFlyer === "/flyer.png",
-  `Explicit /flyer.png is preserved even if subtitle mentions Sunday (got: ${flagshipSundayFlyer})`
+  flagshipSundayFlyer === DEFAULT_FLAGSHIP_FLYER,
+  `Explicit /flyer.png translates to Cloudflare R2 bucket poster (got: ${flagshipSundayFlyer})`
 );
 
 // 8. Custom Flyer URL Override
@@ -101,8 +119,8 @@ assert(
 // 9. Null / Undefined Event Flyer Handling
 const nullFlyer = resolveEventFlyer(null);
 assert(
-  nullFlyer === "/flyer.png",
-  `Null event flyer defaults safely to /flyer.png (got: ${nullFlyer})`
+  nullFlyer === DEFAULT_FLAGSHIP_FLYER,
+  `Null event flyer defaults safely to R2 bucket poster (got: ${nullFlyer})`
 );
 
 // 10. Custom story media keeps its saved order and its extracted video poster.
@@ -134,7 +152,7 @@ assert(
     fallbackStory[0].kind === "poster" &&
     fallbackStory[0].url === "https://i.ibb.co/custom-poster.jpg" &&
     fallbackStory[1].kind === "video" &&
-    fallbackStory[1].url === "/videos/goodlife-hype.mp4",
+    fallbackStory[1].url === DEFAULT_FLAGSHIP_VIDEO,
   "No story_media preserves the legacy poster + default teaser behaviour"
 );
 

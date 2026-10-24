@@ -41,7 +41,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
   const [quality, setQuality] = useState<AudioQuality>("standard");
   const [mode, setMode] = useState<BroadcastMode>("curated");
   const [liveStreamUrl, setLiveStreamUrl] = useState("");
@@ -227,6 +227,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
+      setIsMinimized(false);
       notifyOtherTabsPlay();
       audioRef.current
         .play()
@@ -240,6 +241,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (idx !== -1) {
       setCurrentSetIndex(idx);
     }
+    setIsMinimized(false);
     notifyOtherTabsPlay();
     setIsPlaying(true);
     setMode("curated");

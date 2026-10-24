@@ -3,7 +3,9 @@ import crypto from "crypto";
 const BRIDGE_BASE_URL = (
   process.env.RADIO_BRIDGE_URL || "https://invidious-bridge.darajadigital.com"
 ).replace(/\/+$/, "");
-const BRIDGE_SECRET = process.env.RADIO_BRIDGE_SECRET || "goodlife_bridge_secret_dev";
+const BRIDGE_SECRET =
+  process.env.RADIO_BRIDGE_SECRET ||
+  "7688c2f3c3243106ff2dc49df4c6b28722ce007ae6bc8d24389ca28f97e262b0";
 
 function signRequest(body: string): { timestamp: string; signature: string } {
   const timestamp = Math.floor(Date.now() / 1000).toString();

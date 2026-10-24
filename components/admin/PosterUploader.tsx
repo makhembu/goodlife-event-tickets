@@ -224,11 +224,11 @@ export default function PosterUploader({
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="e.g. /flyer.png or https://i.ibb.co/..."
+            placeholder="e.g. https://...r2.dev/posters/... or https://i.ibb.co/..."
             className="w-full px-2.5 py-1.5 border-2 border-brand-navy font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent bg-white"
           />
           <span className="text-[10px] text-brand-navy/60 font-mono mt-0.5 block">
-            Direct local path (e.g. <code>/flyer.png</code>) or hosted CDN URL.
+            Cloudflare R2 or hosted CDN poster image URL.
           </span>
         </div>
       )}
