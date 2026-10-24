@@ -1672,7 +1672,8 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
             {/* DANGER ZONE: END / REOPEN EVENT — isolated at bottom */}
             {selectedEventId && selectedEventId > 0 && (() => {
               const cur = (data?.allEvents || []).find((e: any) => e.id === selectedEventId);
-              const isClosed = cur?.status === "closed" || cur?.is_active === false;
+              const curStatus = canonicalStatus(cur?.status);
+              const isClosed = curStatus === "closed";
               return (
                 <div className="border-t-2 border-dashed border-red-400/60 pt-2">
                   <button
