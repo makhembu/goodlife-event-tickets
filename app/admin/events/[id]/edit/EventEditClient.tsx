@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  CheckCircle2,
   Loader2,
   MessageSquare,
   Save,
@@ -18,7 +19,12 @@ import {
   seedStoryMediaFromLegacy,
 } from "@/lib/story-media";
 import { updateEvent, updateEventDetails } from "@/lib/supabase-db";
-import { toDatetimeLocal, normalizeLifecycleStatus } from "./edit-utils";
+import {
+  toDateInput,
+  toDatetimeLocal,
+  fromDatetimeLocal,
+  normalizeLifecycleStatus,
+} from "./edit-utils";
 import StoryMediaManager from "@/components/admin/StoryMediaManager";
 import { LIFECYCLE_STATUSES } from "./edit-constants";
 import {
@@ -56,8 +62,12 @@ export default function EventEditClient({
   const [statusError, setStatusError] = useState("");
   const [formError, setFormError] = useState("");
   const [unsaved, setUnsaved] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<{
+    timestamp: number;
+    timeStr: string;
+    title: string;
+  } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const unsavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Seed the deck from legacy fields when story_media is empty, so the editor
   // does not open blank on events that still use flyer_url/video_url.
@@ -71,7 +81,7 @@ export default function EventEditClient({
     subtitle: initialEvent.subtitle,
     tag: initialEvent.tag,
     venue: initialEvent.venue,
-    event_date: initialEvent.event_date,
+    event_date: toDateInput(initialEvent.event_date),
     maps_url: initialEvent.maps_url,
     till_number: initialEvent.till_number,
     flyer_url: initialEvent.flyer_url,
@@ -80,8 +90,8 @@ export default function EventEditClient({
     ticker_text: initialEvent.ticker_text,
     logo_url: initialEvent.logo_url,
     status: normalizeLifecycleStatus(initialEvent.status, initialEvent.is_active),
-    sales_open_date: initialEvent.sales_open_date ?? null,
-    sales_close_date: initialEvent.sales_close_date ?? null,
+    sales_open_date: toDatetimeLocal(initialEvent.sales_open_date),
+    sales_close_date: toDatetimeLocal(initialEvent.sales_close_date),
     next_event_title: initialEvent.next_event_title,
     custom_schedule_text: initialEvent.custom_schedule_text,
     payment_contact: details.payment_contact || "",
@@ -101,17 +111,11 @@ export default function EventEditClient({
     operator_notifications_enabled: details.operator_notifications_enabled ?? false,
   });
 
-  useEffect(() => {
-    if (!unsaved) return;
-    if (unsavedTimerRef.current) clearTimeout(unsavedTimerRef.current);
-    unsavedTimerRef.current = setTimeout(() => setUnsaved(false), 3500);
-    return () => {
-      if (unsavedTimerRef.current) clearTimeout(unsavedTimerRef.current);
-    };
-  }, [unsaved]);
-
   const trackChange = useCallback(() => {
-    if (!saving) setUnsaved(true);
+    if (!saving) {
+      setUnsaved(true);
+      setSaveSuccess(null);
+    }
   }, [saving]);
 
   const set = useCallback(
@@ -196,8 +200,8 @@ export default function EventEditClient({
         story_media: storyMedia,
         ticker_text: form.ticker_text as string,
         logo_url: form.logo_url as string,
-        sales_open_date: (form.sales_open_date as string | null) ?? null,
-        sales_close_date: (form.sales_close_date as string | null) ?? null,
+        sales_open_date: fromDatetimeLocal(form.sales_open_date as string | null),
+        sales_close_date: fromDatetimeLocal(form.sales_close_date as string | null),
         next_event_title: (form.next_event_title as string) ?? null,
         status: nextStatus,
         is_active: nextStatus === "live",
@@ -220,8 +224,23 @@ export default function EventEditClient({
         logo_url: updated.logo_url,
         maps_url: updated.maps_url || "",
       }));
-      setForm((f) => ({ ...f, status: normalizeLifecycleStatus(updated.status, updated.is_active) }));
+      setForm((f) => ({
+        ...f,
+        status: normalizeLifecycleStatus(updated.status, updated.is_active),
+        event_date: toDateInput(updated.event_date),
+        sales_open_date: toDatetimeLocal(updated.sales_open_date),
+        sales_close_date: toDatetimeLocal(updated.sales_close_date),
+      }));
       setUnsaved(false);
+      setSaveSuccess({
+        timestamp: Date.now(),
+        timeStr: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        title: updated.title,
+      });
     } catch (err: any) {
       setFormError(err?.message || "Failed to save event.");
     } finally {
@@ -246,16 +265,22 @@ export default function EventEditClient({
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {saveSuccess && !unsaved && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                SAVED {saveSuccess.timeStr}
+              </span>
+            )}
             {unsaved && (
               <span className="text-xs font-mono text-[var(--brand-off-white)]/80">
-                Unsaved changes
+                ● Unsaved changes
               </span>
             )}
             <button
               type="button"
               onClick={() => formRef.current?.requestSubmit()}
-              disabled={!unsaved || saving !== null}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 border-2 border-[var(--brand-off-white)] text-[var(--brand-off-white)] text-xs font-black uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--brand-off-white)]/10"
+              disabled={saving !== null}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border-2 border-[var(--brand-off-white)] bg-brand-accent text-brand-navy hover:bg-white text-xs font-black uppercase transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               {saving === "form" ? (
                 <>
@@ -277,6 +302,30 @@ export default function EventEditClient({
         <h1 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-3 mb-6">
           Edit Event: {event.title}
         </h1>
+
+        {saveSuccess && (
+          <div className="mb-6 rounded border-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-emerald-900 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide">
+                  Changes Saved Successfully!
+                </p>
+                <p className="text-[11px] font-mono text-emerald-800">
+                  Updated at {saveSuccess.timeStr} — Event metadata, dates and story deck are synced with the live site.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSaveSuccess(null)}
+              className="p-1 text-emerald-700 hover:text-emerald-950 font-mono text-xs cursor-pointer font-bold"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {formError && (
           <div className="mb-6 rounded border-2 border-red-600 bg-red-600/10 px-4 py-3 text-xs font-bold text-red-700">
@@ -358,7 +407,7 @@ export default function EventEditClient({
                   <label className={LABEL_CLASS}>Event Date</label>
                   <input
                     type="date"
-                    value={(form.event_date as string) || ""}
+                    value={toDateInput(form.event_date)}
                     onChange={(e) => set("event_date", e.target.value || null)}
                     className={FIELD_CLASS}
                     disabled={saving !== null}

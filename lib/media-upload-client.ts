@@ -230,3 +230,75 @@ export async function extractVideoPoster(file: File): Promise<ExtractedPosterMet
     video.load();
   });
 }
+
+/**
+ * Extract a poster frame from an existing video URL (e.g. seeded video or URL item)
+ * and upload it directly to R2 as the poster image.
+ */
+export async function extractPosterFromVideoUrl(videoUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+
+    const timeout = setTimeout(() => {
+      video.src = "";
+      reject(new Error("Timeout extracting poster frame"));
+    }, 12000);
+
+    video.onloadeddata = () => {
+      try {
+        video.currentTime = Math.min(Math.max((video.duration || 1) * 0.1, 0.4), 2);
+      } catch (err) {
+        clearTimeout(timeout);
+        reject(err);
+      }
+    };
+
+    video.onseeked = () => {
+      try {
+        const width = video.videoWidth || 720;
+        const height = video.videoHeight || 1280;
+        const scale = Math.min(1, 720 / width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Could not create canvas context");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          async (blob) => {
+            clearTimeout(timeout);
+            video.src = "";
+            if (!blob) return reject(new Error("Empty canvas frame"));
+            try {
+              const url = await uploadImageFile(
+                new File([blob], "video-poster.jpg", { type: "image/jpeg" })
+              );
+              resolve(url);
+            } catch (err) {
+              reject(err);
+            }
+          },
+          "image/jpeg",
+          0.85
+        );
+      } catch (err) {
+        clearTimeout(timeout);
+        video.src = "";
+        reject(err);
+      }
+    };
+
+    video.onerror = () => {
+      clearTimeout(timeout);
+      video.src = "";
+      reject(new Error("Failed to load video for frame extraction"));
+    };
+
+    video.src = videoUrl;
+    video.load();
+  });
+}

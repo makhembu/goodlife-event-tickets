@@ -46,7 +46,9 @@ export async function fetchAllEvents(): Promise<Event[]> {
       ...r,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-      event_date: r.event_date ? new Date(r.event_date).toISOString() : null
+      event_date: r.event_date ? new Date(r.event_date).toISOString() : null,
+      sales_open_date: r.sales_open_date ? new Date(r.sales_open_date).toISOString() : null,
+      sales_close_date: r.sales_close_date ? new Date(r.sales_close_date).toISOString() : null
     }));
   } catch (err) {
     console.error("Neon fetchAllEvents error:", err);
@@ -113,7 +115,9 @@ export async function fetchActiveEvent(): Promise<Event | null> {
       ...r,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-      event_date: r.event_date ? new Date(r.event_date).toISOString() : null
+      event_date: r.event_date ? new Date(r.event_date).toISOString() : null,
+      sales_open_date: r.sales_open_date ? new Date(r.sales_open_date).toISOString() : null,
+      sales_close_date: r.sales_close_date ? new Date(r.sales_close_date).toISOString() : null
     };
   } catch (err) {
     console.error("Neon fetchActiveEvent error:", err);
@@ -141,7 +145,9 @@ export async function getEventById(id: number): Promise<Event | null> {
       ...r,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-      event_date: r.event_date ? new Date(r.event_date).toISOString() : null
+      event_date: r.event_date ? new Date(r.event_date).toISOString() : null,
+      sales_open_date: r.sales_open_date ? new Date(r.sales_open_date).toISOString() : null,
+      sales_close_date: r.sales_close_date ? new Date(r.sales_close_date).toISOString() : null
     };
   } catch (err) {
     console.error("Neon getEventById error:", err);
@@ -445,7 +451,9 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
       ...r,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
-      event_date: r.event_date ? new Date(r.event_date).toISOString() : null
+      event_date: r.event_date ? new Date(r.event_date).toISOString() : null,
+      sales_open_date: r.sales_open_date ? new Date(r.sales_open_date).toISOString() : null,
+      sales_close_date: r.sales_close_date ? new Date(r.sales_close_date).toISOString() : null
     };
   } catch (err) {
     console.error("Neon updateEvent error:", err);

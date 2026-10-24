@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Camera,
   Film,
   Image as ImageIcon,
   Link2,
@@ -17,6 +18,7 @@ import {
   type StoryMediaItem,
 } from "@/lib/story-media";
 import {
+  extractPosterFromVideoUrl,
   extractVideoPoster,
   uploadImageFile,
   uploadVideoFile,
@@ -60,6 +62,9 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
 
   const posterInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const videoPosterInputRef = useRef<HTMLInputElement | null>(null);
+  const [targetPosterIndex, setTargetPosterIndex] = useState<number | null>(null);
+  const [extractingIndex, setExtractingIndex] = useState<number | null>(null);
 
   const items = Array.isArray(value) ? value : [];
   const atCap = items.length >= MAX_STORY_ITEMS;
@@ -125,6 +130,51 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
     } finally {
       setUploading(null);
       if (videoInputRef.current) videoInputRef.current.value = "";
+    }
+  };
+
+  const handleExtractFrame = async (index: number) => {
+    const target = items[index];
+    if (!target || target.kind !== "video") return;
+    setError("");
+    setExtractingIndex(index);
+    setStatus("Extracting poster frame from video...");
+    try {
+      const posterUrl = await extractPosterFromVideoUrl(target.url);
+      const updated = [...items];
+      updated[index] = { ...target, poster_url: posterUrl };
+      onChange(updated);
+      setStatus("");
+    } catch (err: any) {
+      setError(
+        "Could not automatically extract frame (video may have restrictive CORS). Please click 'Upload Poster' to select an image."
+      );
+    } finally {
+      setExtractingIndex(null);
+    }
+  };
+
+  const handleVideoPosterUpload = async (file: File) => {
+    if (targetPosterIndex === null || targetPosterIndex >= items.length) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Choose a PNG, JPG or WEBP image.");
+      return;
+    }
+    setError("");
+    setUploading({ kind: "poster", progress: 0 });
+    setStatus("Uploading poster image...");
+    try {
+      const url = await uploadImageFile(file);
+      const updated = [...items];
+      updated[targetPosterIndex] = { ...updated[targetPosterIndex], poster_url: url };
+      onChange(updated);
+      setStatus("");
+    } catch (err: any) {
+      setError(err?.message || "Poster upload failed.");
+    } finally {
+      setUploading(null);
+      setTargetPosterIndex(null);
+      if (videoPosterInputRef.current) videoPosterInputRef.current.value = "";
     }
   };
 
@@ -223,6 +273,16 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
           if (file) handleVideoFile(file);
         }}
       />
+      <input
+        ref={videoPosterInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleVideoPosterUpload(file);
+        }}
+      />
 
       {items.length === 0 ? (
         <div className="border-2 border-dashed border-brand-navy/40 bg-white p-3 text-center">
@@ -252,39 +312,45 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
                   <span className="w-5 shrink-0 text-center text-[10px] font-mono font-black text-brand-navy/60">
                     {index + 1}
                   </span>
-                  <div className="shrink-0 border border-brand-navy bg-brand-navy overflow-hidden flex items-center justify-center relative"
-                        style={{ width: Math.min(maxW, 200), height: Math.min(previewH, 112) }}>
-                    {item.kind === "video" && thumb ? (
-                      <video
-                        src={thumb}
-                        className="w-full h-full object-cover"
-                        muted
-                        loop
-                        autoPlay
-                        playsInline
-                        
-                        onError={(e) => {
-                          const target = e.currentTarget as HTMLVideoElement;
-                          target.style.display = "none";
-                          const parent = target.parentElement;
-                          if (parent) {
-                            parent.classList.add("flex");
-                          }
-                        }}
-                      />
-                    ) : thumb ? (
+                  <div
+                    className="shrink-0 border border-brand-navy bg-brand-navy overflow-hidden flex items-center justify-center relative"
+                    style={{ width: Math.min(maxW, 200), height: Math.min(previewH, 112) }}
+                  >
+                    {thumb ? (
                       // Admin-only preview. Plain <img> because custom hosts are
                       // not guaranteed to be in next.config remotePatterns.
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb} alt="" className="w-full h-full object-cover" />
+                      <img
+                        src={thumb}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          target.style.display = "none";
+                          const parent = target.parentElement;
+                          if (parent) parent.classList.add("flex");
+                        }}
+                      />
                     ) : item.kind === "video" ? (
-                      <Film className="w-4 h-4 text-white/70" />
+                      <video
+                        src={`${item.url}#t=0.5`}
+                        className="w-full h-full object-cover pointer-events-none"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
                     ) : (
                       <ImageIcon className="w-4 h-4 text-white/70" />
                     )}
+
+                    {item.kind === "video" && (
+                      <span className="absolute bottom-1 right-1 bg-brand-navy/85 text-white text-[8px] font-mono px-1 py-0.5 rounded flex items-center gap-0.5 pointer-events-none shadow-xs">
+                        <Film className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span
                         className={`text-[9px] font-mono font-black uppercase px-1 py-0.5 border border-brand-navy ${
                           item.kind === "video"
@@ -300,18 +366,49 @@ export default function StoryMediaManager({ value, onChange }: StoryMediaManager
                         </span>
                       )}
                       {!thumb && item.kind === "video" && (
-                        <span className="text-[9px] font-mono text-amber-700">
+                        <span className="text-[9px] font-mono text-amber-700 bg-amber-50 px-1 py-0.5 border border-amber-300 rounded">
                           no poster frame
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] font-mono text-brand-navy/70 truncate" title={item.url}>
+                    <p className="text-[10px] font-mono text-brand-navy/70 truncate mt-0.5" title={item.url}>
                       {item.url}
                     </p>
                     {item.kind === "video" && item.poster_url && (
-                      <p className="text-[9px] font-mono text-brand-navy/45 truncate" title={item.poster_url}>
+                      <p className="text-[9px] font-mono text-brand-navy/55 truncate" title={item.poster_url}>
                         poster: {item.poster_url}
                       </p>
+                    )}
+                    {item.kind === "video" && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        <button
+                          type="button"
+                          disabled={!!uploading || extractingIndex === index}
+                          onClick={() => handleExtractFrame(index)}
+                          className="px-1.5 py-0.5 bg-brand-sand/50 border border-brand-navy/40 hover:bg-brand-navy hover:text-white text-[9px] font-mono flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                          title="Extract a frame from the video as its poster"
+                        >
+                          {extractingIndex === index ? (
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          ) : (
+                            <Camera className="w-2.5 h-2.5" />
+                          )}
+                          {item.poster_url ? "Re-extract Frame" : "Extract Frame"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!!uploading || extractingIndex === index}
+                          onClick={() => {
+                            setTargetPosterIndex(index);
+                            videoPosterInputRef.current?.click();
+                          }}
+                          className="px-1.5 py-0.5 bg-white border border-brand-navy/40 hover:bg-brand-navy hover:text-white text-[9px] font-mono flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                          title="Upload a custom poster image for this video"
+                        >
+                          <ImageIcon className="w-2.5 h-2.5" />
+                          {item.poster_url ? "Change Poster" : "Upload Poster"}
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">

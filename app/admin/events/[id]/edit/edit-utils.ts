@@ -1,34 +1,75 @@
 /**
- * `YYYY-MM-DDTHH:mm` for a `<input type="datetime-local">`.
+ * Date and lifecycle helpers for the admin event editor.
  *
- * The DB stores these as naive EAT strings, so a plain `slice(0, 16)` is correct
- * and a `toISOString()` round-trip would be wrong — it would shift the value by
- * the browser's offset and move the sales window. Anything with a real timezone
- * offset is converted to EAT first so a value written by a script in UTC still
- * shows the right wall-clock time.
+ * All public-facing event and ticket dates operate in Kenya time (EAT, UTC+3).
  */
-export function toDatetimeLocal(
-  value: string | null | undefined
-): string {
+
+export const KENYA_TZ_OFFSET_HOURS = 3;
+export const KENYA_TZ_OFFSET_MS = KENYA_TZ_OFFSET_HOURS * 60 * 60 * 1000;
+
+/**
+ * Format a DB date / ISO timestamp / Date object to `YYYY-MM-DD` for `<input type="date">`.
+ * Ensures the date reflects Kenya wall-clock date.
+ */
+export function toDateInput(value: unknown): string {
   if (!value) return "";
-  const trimmed = String(value).trim();
-  if (!trimmed) return "";
-  // Already naive: no `Z` and no `+HH:MM` suffix.
-  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) return trimmed.slice(0, 16);
-  const d = new Date(trimmed);
-  if (Number.isNaN(d.getTime())) return trimmed.slice(0, 16);
-  const eat = new Date(d.getTime() + 3 * 60 * 60 * 1000);
-  return eat.toISOString().slice(0, 16);
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const eat = new Date(value.getTime() + KENYA_TZ_OFFSET_MS);
+    return eat.toISOString().slice(0, 10);
+  }
+  const str = String(value).trim();
+  if (!str) return "";
+  if (str.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(str)) {
+    const d = new Date(str);
+    if (!Number.isNaN(d.getTime())) {
+      const eat = new Date(d.getTime() + KENYA_TZ_OFFSET_MS);
+      return eat.toISOString().slice(0, 10);
+    }
+  }
+  return str.slice(0, 10);
+}
+
+/**
+ * Format a DB timestamp / ISO string / Date object to `YYYY-MM-DDTHH:mm`
+ * for `<input type="datetime-local">` in Kenya time (EAT, UTC+3).
+ */
+export function toDatetimeLocal(value: unknown): string {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const eat = new Date(value.getTime() + KENYA_TZ_OFFSET_MS);
+    return eat.toISOString().slice(0, 16);
+  }
+  const str = String(value).trim();
+  if (!str) return "";
+  if (str.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(str)) {
+    const d = new Date(str);
+    if (!Number.isNaN(d.getTime())) {
+      const eat = new Date(d.getTime() + KENYA_TZ_OFFSET_MS);
+      return eat.toISOString().slice(0, 16);
+    }
+  }
+  return str.replace(" ", "T").slice(0, 16);
+}
+
+/**
+ * Convert a `<input type="datetime-local">` value (entered as Kenya time `YYYY-MM-DDTHH:mm`)
+ * to a standardized ISO UTC string for database persistence.
+ */
+export function fromDatetimeLocal(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
+    const d = new Date(`${str.slice(0, 16)}:00+03:00`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return str;
 }
 
 /**
  * Normalize a lifecycle status the same way the dashboard does.
- *
- * The option values MUST be the exact strings the rest of the system tests for.
- * This dropdown used to offer `<option value="active">` for "live", which wrote
- * `status = 'active'` — a value `getEventAvailability` rejects, so picking the
- * green "Active / Live" option produced an event that rendered checkout and then
- * refused every payment. `'live'` is the value that means live.
  */
 export function normalizeLifecycleStatus(
   status: unknown,
