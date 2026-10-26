@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
+import { cleanTrackInfo } from "@/lib/radio/utils";
 
 export default function GlobalRadioBar() {
   const pathname = usePathname();
@@ -60,6 +61,10 @@ export default function GlobalRadioBar() {
   useEffect(() => {
     setImgError(false);
   }, [currentSet?.id]);
+
+  const cleanedTrack = useMemo(() => {
+    return cleanTrackInfo(isLive ? liveTitle : currentSet?.title, currentSet?.dj_name);
+  }, [isLive, liveTitle, currentSet?.title, currentSet?.dj_name]);
 
   if (!currentSet && !isLive) return null;
   if (isDedicatedRadioPage || isScannerPage) return null;
@@ -144,10 +149,10 @@ export default function GlobalRadioBar() {
             </div>
             <div className="min-w-0 flex-1 truncate">
               <p className="font-display font-black text-xs uppercase tracking-wide truncate text-white leading-tight">
-                {isLive ? liveTitle : currentSet?.title}
+                {isLive ? liveTitle : cleanedTrack.title}
               </p>
               <p className="text-[9px] text-brand-accent uppercase font-bold truncate">
-                {isLive ? "🔴 LIVE BROADCAST" : currentSet?.dj_name || "RESIDENT DJ"}
+                {isLive ? "🔴 LIVE BROADCAST" : cleanedTrack.artist}
               </p>
             </div>
           </div>
@@ -252,10 +257,10 @@ export default function GlobalRadioBar() {
 
             <div className="truncate min-w-0">
               <p className="font-display font-black text-sm uppercase tracking-wide truncate leading-tight text-white">
-                {isLive ? liveTitle : currentSet?.title}
+                {isLive ? liveTitle : cleanedTrack.title}
               </p>
               <p className="text-xs text-brand-accent uppercase font-bold truncate">
-                {isLive ? "🔴 MAIN STAGE BROADCAST" : `BY ${currentSet?.dj_name}`}
+                {isLive ? "🔴 MAIN STAGE BROADCAST" : `BY ${cleanedTrack.artist}`}
               </p>
             </div>
           </div>

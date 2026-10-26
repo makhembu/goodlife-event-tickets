@@ -14,6 +14,7 @@ interface RadioContextType {
   duration: number;
   progress: number;
   isMuted: boolean;
+  volume: number;
   isMinimized: boolean;
   queue: RadioSet[];
   liveDropFallback: boolean;
@@ -24,6 +25,7 @@ interface RadioContextType {
   prevTrack: () => void;
   seek: (percent: number) => void;
   toggleMute: () => void;
+  setVolume: (v: number) => void;
   toggleMinimized: () => void;
   switchQuality: (q: AudioQuality) => void;
   switchToLive: () => void;
@@ -66,6 +68,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const [isMinimized, setIsMinimized] = useState(true);
   const [quality, setQuality] = useState<AudioQuality>("standard");
   const [mode, setMode] = useState<BroadcastMode>("curated");
@@ -516,6 +519,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const setVolume = (val: number) => {
+    const clamped = Math.max(0, Math.min(1, val));
+    setVolumeState(clamped);
+    if (audioRef.current) {
+      audioRef.current.volume = clamped;
+      if (clamped > 0 && isMuted) {
+        audioRef.current.muted = false;
+        setIsMuted(false);
+      }
+    }
+  };
+
   const toggleMinimized = () => {
     setIsMinimized((prev) => !prev);
   };
@@ -619,6 +634,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         duration,
         progress,
         isMuted,
+        volume,
         isMinimized,
         queue: sets,
         liveDropFallback,
@@ -629,6 +645,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         prevTrack,
         seek,
         toggleMute,
+        setVolume,
         toggleMinimized,
         switchQuality,
         switchToLive,
