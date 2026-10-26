@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Flame,
@@ -15,6 +15,7 @@ import {
   RadioTower,
   Music2,
   Check,
+  Disc3,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
@@ -39,6 +40,12 @@ export default function RadioPage() {
     toggleMute,
     switchQuality,
   } = useRadio();
+
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [currentSet?.id]);
 
   return (
     <div className="min-h-screen bg-brand-bg py-8 px-4 md:px-12 text-brand-navy font-sans relative">
@@ -110,21 +117,26 @@ export default function RadioPage() {
               
               {/* Player Artwork */}
               <div className="w-full md:w-1/2 aspect-square border-4 border-brand-navy shadow-(--shadow-brut-2xl) bg-brand-navy p-4 relative overflow-hidden flex items-center justify-center">
-                {currentSet?.cover_url ? (
+                {currentSet?.cover_url && !imgError ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={currentSet.cover_url}
                     alt="Cover"
+                    onError={() => setImgError(true)}
                     className={`w-full h-full object-cover transition-transform duration-[10000ms] ${
                       isPlaying && !isLive ? "scale-110" : "scale-100"
                     }`}
                   />
                 ) : (
                   <div
-                    className={`w-3/4 h-3/4 rounded-full border-8 border-brand-navy/50 border-t-brand-accent transition-all duration-1000 ${
+                    className={`w-3/4 h-3/4 rounded-full border-8 border-brand-navy/60 border-t-brand-accent transition-all duration-1000 relative flex items-center justify-center bg-black/30 shadow-inner ${
                       isPlaying && !isLive ? "animate-spin" : ""
                     }`}
-                  />
+                  >
+                    <div className="w-1/3 h-1/3 rounded-full bg-brand-accent border-4 border-brand-navy flex items-center justify-center shadow-md">
+                      <Disc3 className="w-6 h-6 text-brand-navy" />
+                    </div>
+                  </div>
                 )}
 
                 <div className="absolute top-4 left-4 bg-brand-accent text-brand-navy font-bold text-[10px] px-2 py-1 uppercase tracking-widest border-2 border-brand-navy shadow-(--shadow-brut-xs) flex items-center gap-1.5">

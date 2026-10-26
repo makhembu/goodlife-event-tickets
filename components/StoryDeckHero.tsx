@@ -19,6 +19,7 @@ import {
   normalizeStoryMedia,
   type StoryMediaItem,
 } from "@/lib/story-media";
+import { resolveMediaUrl } from "@/lib/event-flyer";
 
 export interface StoryDeckHeroProps {
   posterUrl: string;
@@ -55,8 +56,12 @@ export default function StoryDeckHero({
 }: StoryDeckHeroProps) {
   const slides = useMemo(() => {
     const custom = normalizeStoryMedia(media);
-    if (custom.length > 0) return custom;
-    return resolveStoryMedia({ flyer_url: posterUrl, video_url: videoUrl });
+    const resolved = custom.length > 0 ? custom : resolveStoryMedia({ flyer_url: posterUrl, video_url: videoUrl });
+    return resolved.map((s) => ({
+      ...s,
+      url: resolveMediaUrl(s.url),
+      poster_url: s.poster_url ? resolveMediaUrl(s.poster_url) : s.poster_url,
+    }));
   }, [media, posterUrl, videoUrl]);
 
   const [activeIndex, setActiveIndex] = useState(0);

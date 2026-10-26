@@ -26,6 +26,7 @@ export function resolveEventFlyer(event?: {
   // Transparently migrate legacy hardcoded local paths to Cloudflare R2 bucket URLs
   if (custom === "/flyer.png") return DEFAULT_FLAGSHIP_FLYER;
   if (custom === "/flyer-park-chill.png") return DEFAULT_MINI_FLYER;
+  if (custom === "/goodlife-xp-camp-vibes.png") return `${R2_DOMAIN}/posters/goodlife-xp-camp-vibes.png`;
 
   if (custom && custom !== "") {
     return custom;
@@ -81,5 +82,19 @@ export function resolveEventVideo(event?: {
   }
 
   return DEFAULT_FLAGSHIP_VIDEO;
+}
+
+/**
+ * Maps known local static asset paths to Cloudflare R2 bucket URLs.
+ */
+export function resolveMediaUrl(url?: string | null): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (trimmed === "/flyer.png") return DEFAULT_FLAGSHIP_FLYER;
+  if (trimmed === "/flyer-park-chill.png") return DEFAULT_MINI_FLYER;
+  if (trimmed === "/goodlife-xp-camp-vibes.png") return `${R2_DOMAIN}/posters/goodlife-xp-camp-vibes.png`;
+  if (trimmed === "/videos/goodlife-hype.mp4") return DEFAULT_FLAGSHIP_VIDEO;
+  if (trimmed === "/videos/park-chill-speakers.mp4") return DEFAULT_MINI_VIDEO;
+  return trimmed;
 }
 

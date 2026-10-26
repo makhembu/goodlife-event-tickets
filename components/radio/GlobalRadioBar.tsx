@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -55,6 +55,11 @@ export default function GlobalRadioBar() {
   const isCheckoutPage = useMemo(() => {
     return pathname === "/" || pathname?.startsWith("/events/");
   }, [pathname]);
+
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => {
+    setImgError(false);
+  }, [currentSet?.id]);
 
   if (!currentSet && !isLive) return null;
   if (isDedicatedRadioPage || isScannerPage) return null;
@@ -126,8 +131,13 @@ export default function GlobalRadioBar() {
               }`}
               style={{ animationDuration: "8s" }}
             >
-              {currentSet?.cover_url ? (
-                <img src={currentSet.cover_url} alt="" className="w-full h-full object-cover" />
+              {currentSet?.cover_url && !imgError ? (
+                <img
+                  src={currentSet.cover_url}
+                  alt=""
+                  onError={() => setImgError(true)}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <Radio className="w-4 h-4 text-brand-accent" />
               )}

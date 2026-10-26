@@ -25,7 +25,20 @@ export async function GET() {
       WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
       ORDER BY display_order ASC, created_at DESC
     `);
-    const sets = setsRes.rows || [];
+    const rawSets = setsRes.rows || [];
+    const sets = rawSets.map((s: any) => {
+      let cover = s.cover_url || "";
+      if (cover.includes("192.168.")) {
+        const m = cover.match(/\/vi\/([a-zA-Z0-9_-]+)\//);
+        cover = m && m[1] ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : "/flyer.png";
+      } else if (!cover) {
+        cover = "/flyer.png";
+      }
+      return {
+        ...s,
+        cover_url: cover,
+      };
+    });
 
     // 3. Fallback set if live mode
     let fallbackSet = null;
