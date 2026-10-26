@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "prebuild": "npm run clean",
+    "build": "npm run clean && next build",
     "start": "next start",
     "lint": "eslint .",
     "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});require('fs').rmSync('tsconfig.tsbuildinfo',{force:true});console.log('removed .next and tsconfig.tsbuildinfo')\""
