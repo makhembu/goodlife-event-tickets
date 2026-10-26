@@ -39,6 +39,14 @@ export interface RadioSettings {
   updated_at: string;
 }
 
+export interface RadioBroadcastSchedule {
+  active_index: number;
+  active_set_id: number;
+  offset_sec: number;
+  server_time: number;
+  total_duration_sec: number;
+}
+
 export interface RadioPublicState {
   mode: BroadcastMode;
   live: {
@@ -46,6 +54,7 @@ export interface RadioPublicState {
     stream_url: string;
     fallback_set: RadioSet | null;
   };
+  broadcast?: RadioBroadcastSchedule | null;
   sets: RadioSet[];
 }
 

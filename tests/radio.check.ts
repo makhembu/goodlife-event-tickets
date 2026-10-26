@@ -109,6 +109,12 @@ async function runTests() {
   check("Play-event endpoint hashes session ID for Kenya DPA privacy compliance", playEventCode.includes('.createHash("sha256")') || playEventCode.includes(".createHash('sha256')"));
   check("Play-event endpoint enforces minimum listen threshold before counting play", playEventCode.includes("secondsListened >= 30"));
 
+  // 10. 24/7 Synchronized Broadcast Timeline Engine
+  check("State endpoint computes 24/7 broadcast timeline", stateApiCode.includes("broadcastSchedule") && stateApiCode.includes("totalDurationSec"));
+  check("RadioContext exports computeLiveTimeline function", radioContextCode.includes("export function computeLiveTimeline"));
+  check("RadioContext implements isSyncedToBroadcast state", radioContextCode.includes("isSyncedToBroadcast") && radioContextCode.includes("snapToBroadcast"));
+  check("Radio page renders 24/7 ON AIR indicator", radioPageCode.includes("24/7 ON AIR"));
+
   // Summary
   console.log(`\n================================`);
   console.log(`Total checks: ${pass + failures.length}`);

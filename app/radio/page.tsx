@@ -24,6 +24,7 @@ export default function RadioPage() {
     currentSet,
     isPlaying,
     isLive,
+    isSyncedToBroadcast,
     liveTitle,
     quality,
     progress,
@@ -31,6 +32,7 @@ export default function RadioPage() {
     queue,
     togglePlay,
     playSet,
+    snapToBroadcast,
     nextTrack,
     prevTrack,
     seek,
@@ -62,10 +64,24 @@ export default function RadioPage() {
             </Link>
             <div className="flex items-center gap-2">
               <span className="font-display text-2xl tracking-wide uppercase">GOODLIFE RADIO</span>
-              {isLive && (
+              {isLive ? (
                 <span className="bg-red-600 text-white font-mono text-[10px] font-black px-2 py-0.5 animate-pulse uppercase">
                   LIVE STAGE
                 </span>
+              ) : isSyncedToBroadcast ? (
+                <span className="bg-emerald-600 text-white font-mono text-[10px] font-black px-2 py-0.5 uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  24/7 ON AIR
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={snapToBroadcast}
+                  className="bg-brand-accent hover:bg-white text-brand-navy border border-brand-navy font-mono text-[10px] font-black px-2 py-0.5 uppercase flex items-center gap-1 cursor-pointer transition-colors shadow-(--shadow-brut-xs)"
+                  title="Snap back to 24/7 synchronized broadcast"
+                >
+                  ⚡ SNAP TO LIVE
+                </button>
               )}
             </div>
           </div>

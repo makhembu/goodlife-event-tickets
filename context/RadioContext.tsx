@@ -7,6 +7,7 @@ interface RadioContextType {
   currentSet: RadioSet | null;
   isPlaying: boolean;
   isLive: boolean;
+  isSyncedToBroadcast: boolean;
   liveTitle: string;
   quality: AudioQuality;
   currentTime: number;
@@ -18,6 +19,7 @@ interface RadioContextType {
   liveDropFallback: boolean;
   togglePlay: () => void;
   playSet: (set: RadioSet) => void;
+  snapToBroadcast: () => void;
   nextTrack: () => void;
   prevTrack: () => void;
   seek: (percent: number) => void;
@@ -33,6 +35,29 @@ const RadioContext = createContext<RadioContextType | null>(null);
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 
+// Calculates deterministic 24/7 global timeline position across all active tracks
+export function computeLiveTimeline(setsList: RadioSet[]): { index: number; offsetSec: number } {
+  if (!setsList || setsList.length === 0) return { index: 0, offsetSec: 0 };
+  let totalDurationSec = 0;
+  for (const s of setsList) {
+    totalDurationSec += s.duration_sec && s.duration_sec > 0 ? s.duration_sec : 180;
+  }
+  if (totalDurationSec === 0) return { index: 0, offsetSec: 0 };
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cycleSec = nowSec % totalDurationSec;
+  let cumulative = 0;
+
+  for (let i = 0; i < setsList.length; i++) {
+    const dur = setsList[i].duration_sec && setsList[i].duration_sec > 0 ? setsList[i].duration_sec : 180;
+    if (cumulative + dur > cycleSec) {
+      return { index: i, offsetSec: cycleSec - cumulative };
+    }
+    cumulative += dur;
+  }
+  return { index: 0, offsetSec: 0 };
+}
+
 export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [sets, setSets] = useState<RadioSet[]>([]);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
@@ -47,6 +72,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [liveStreamUrl, setLiveStreamUrl] = useState("");
   const [liveTitle, setLiveTitle] = useState("GOODLIFE MAIN STAGE LIVE");
   const [liveDropFallback, setLiveDropFallback] = useState(false);
+  const [isSyncedToBroadcast, setIsSyncedToBroadcast] = useState(true);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -54,6 +80,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const lastStateSaveRef = useRef<number>(0);
   const secondsListenedRef = useRef<number>(0);
   const lastTimeUpdateRef = useRef<number>(0);
+  const isSyncedRef = useRef(true);
+  const initialBroadcastSyncRef = useRef(false);
+
+  isSyncedRef.current = isSyncedToBroadcast;
 
   // 1. Load Initial State from LocalStorage
   useEffect(() => {
@@ -67,20 +97,25 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (savedState) {
         const parsed = JSON.parse(savedState);
         if (parsed.isMinimized) setIsMinimized(true);
-        if (typeof parsed.position === "number") setCurrentTime(parsed.position);
+        // Only restore position if user specifically saved an on-demand session
+        if (parsed.isSynced === false && typeof parsed.position === "number") {
+          setIsSyncedToBroadcast(false);
+          isSyncedRef.current = false;
+          setCurrentTime(parsed.position);
+        }
       }
     } catch {}
   }, []);
 
-  // 2. Fetch Radio Public State with Dynamic Playlist Streaming
+  // 2. Fetch Radio Public State with Dynamic Playlist Streaming & Live Sync
   const fetchRadioState = useCallback(async () => {
     try {
       const res = await fetch("/api/radio/state");
       if (!res.ok) return;
       const data: RadioPublicState = await res.json();
       const newSets = data.sets || [];
-      
-      // Update sets smoothly without interrupting current track if new tracks stream in
+
+      // Update sets smoothly without interrupting current track
       setSets((prevSets) => {
         if (prevSets.length > 0 && currentSetIndex < prevSets.length) {
           const currentId = prevSets[currentSetIndex]?.id;
@@ -97,8 +132,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setMode(data.mode || "curated");
       setLiveStreamUrl(data.live?.stream_url || "");
       setLiveTitle(data.live?.title || "GOODLIFE MAIN STAGE LIVE");
+
+      // Synchronize initial broadcast playhead if in 24/7 live mode
+      if (data.mode !== "live" && isSyncedRef.current && newSets.length > 0) {
+        const live = computeLiveTimeline(newSets);
+        if (!initialBroadcastSyncRef.current) {
+          initialBroadcastSyncRef.current = true;
+          setCurrentSetIndex(live.index);
+          setCurrentTime(live.offsetSec);
+          const dur = newSets[live.index]?.duration_sec || 0;
+          setDuration(dur);
+          setProgress(dur > 0 ? (live.offsetSec / dur) * 100 : 0);
+
+          if (audioRef.current) {
+            const track = newSets[live.index];
+            const src = quality === "high" && track.audio_high_url ? track.audio_high_url : track.audio_url;
+            if (audioRef.current.src !== src) {
+              audioRef.current.src = src;
+            }
+            if (audioRef.current.readyState >= 1) {
+              try {
+                audioRef.current.currentTime = live.offsetSec;
+              } catch {}
+            } else {
+              const onMeta = () => {
+                if (audioRef.current) {
+                  try {
+                    audioRef.current.currentTime = live.offsetSec;
+                  } catch {}
+                }
+              };
+              audioRef.current.addEventListener("loadedmetadata", onMeta, { once: true });
+            }
+          }
+        }
+      }
     } catch {}
-  }, [currentSetIndex]);
+  }, [currentSetIndex, quality]);
 
   useEffect(() => {
     fetchRadioState();
@@ -294,6 +364,36 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             switchToCurated();
           });
       } else {
+        // In 24/7 Virtual Synchronized Broadcast Mode: Snap playhead to live station second
+        if (isSyncedRef.current && sets.length > 0) {
+          const live = computeLiveTimeline(sets);
+          const targetTrack = sets[live.index];
+          const streamSrc = quality === "high" && targetTrack?.audio_high_url ? targetTrack.audio_high_url : targetTrack?.audio_url;
+
+          if (currentSetIndex !== live.index) {
+            setCurrentSetIndex(live.index);
+          }
+          if (streamSrc && (!audioRef.current.src || !audioRef.current.src.includes(streamSrc))) {
+            audioRef.current.src = streamSrc;
+          }
+
+          if (audioRef.current.readyState >= 1) {
+            try {
+              audioRef.current.currentTime = live.offsetSec;
+            } catch {}
+          } else {
+            const onMeta = () => {
+              if (audioRef.current) {
+                try {
+                  audioRef.current.currentTime = live.offsetSec;
+                } catch {}
+              }
+            };
+            audioRef.current.addEventListener("loadedmetadata", onMeta, { once: true });
+          }
+          setCurrentTime(live.offsetSec);
+        }
+
         audioRef.current
           .play()
           .then(() => setIsPlaying(true))
@@ -302,7 +402,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const snapToBroadcast = useCallback(() => {
+    setIsSyncedToBroadcast(true);
+    isSyncedRef.current = true;
+    if (sets.length === 0) return;
+    const live = computeLiveTimeline(sets);
+    setCurrentSetIndex(live.index);
+    setCurrentTime(live.offsetSec);
+    const targetTrack = sets[live.index];
+    const streamSrc = quality === "high" && targetTrack?.audio_high_url ? targetTrack.audio_high_url : targetTrack?.audio_url;
+
+    if (audioRef.current && streamSrc) {
+      audioRef.current.src = streamSrc;
+      if (audioRef.current.readyState >= 1) {
+        try {
+          audioRef.current.currentTime = live.offsetSec;
+        } catch {}
+      } else {
+        const onMeta = () => {
+          if (audioRef.current) {
+            try {
+              audioRef.current.currentTime = live.offsetSec;
+            } catch {}
+          }
+        };
+        audioRef.current.addEventListener("loadedmetadata", onMeta, { once: true });
+      }
+      audioRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+    }
+  }, [sets, quality]);
+
   const playSet = (set: RadioSet) => {
+    // User explicitly chose a set from Vault (on-demand mode)
+    setIsSyncedToBroadcast(false);
+    isSyncedRef.current = false;
     const idx = sets.findIndex((s) => s.id === set.id);
     if (idx !== -1) {
       setCurrentSetIndex(idx);
@@ -327,6 +463,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const nextTrack = () => {
     if (sets.length === 0) return;
+    setIsSyncedToBroadcast(false);
+    isSyncedRef.current = false;
     const nextIdx = (currentSetIndex + 1) % sets.length;
     setCurrentSetIndex(nextIdx);
     const nextSet = sets[nextIdx];
@@ -344,6 +482,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const prevTrack = () => {
     if (sets.length === 0) return;
+    setIsSyncedToBroadcast(false);
+    isSyncedRef.current = false;
     const prevIdx = (currentSetIndex - 1 + sets.length) % sets.length;
     setCurrentSetIndex(prevIdx);
     const prevSet = sets[prevIdx];
@@ -360,6 +500,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const seek = (percent: number) => {
+    setIsSyncedToBroadcast(false);
+    isSyncedRef.current = false;
     if (!audioRef.current || !audioRef.current.duration) return;
     const target = (percent / 100) * audioRef.current.duration;
     audioRef.current.currentTime = target;
@@ -470,6 +612,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         currentSet,
         isPlaying,
         isLive: mode === "live",
+        isSyncedToBroadcast,
         liveTitle,
         quality,
         currentTime,
@@ -481,6 +624,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         liveDropFallback,
         togglePlay,
         playSet,
+        snapToBroadcast,
         nextTrack,
         prevTrack,
         seek,

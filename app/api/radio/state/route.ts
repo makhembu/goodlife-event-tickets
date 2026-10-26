@@ -35,6 +35,41 @@ export async function GET() {
       fallbackSet = sets[0];
     }
 
+    // 4. 24/7 Virtual Synchronized Broadcast Schedule
+    let broadcastSchedule = null;
+    if (sets.length > 0) {
+      let totalDurationSec = 0;
+      for (const s of sets) {
+        totalDurationSec += (s.duration_sec && s.duration_sec > 0) ? s.duration_sec : 180;
+      }
+
+      if (totalDurationSec > 0) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const cycleSec = nowSec % totalDurationSec;
+        let cumulative = 0;
+        let activeIdx = 0;
+        let offsetSec = 0;
+
+        for (let i = 0; i < sets.length; i++) {
+          const trackDur = (sets[i].duration_sec && sets[i].duration_sec > 0) ? sets[i].duration_sec : 180;
+          if (cumulative + trackDur > cycleSec) {
+            activeIdx = i;
+            offsetSec = cycleSec - cumulative;
+            break;
+          }
+          cumulative += trackDur;
+        }
+
+        broadcastSchedule = {
+          active_index: activeIdx,
+          active_set_id: sets[activeIdx]?.id,
+          offset_sec: offsetSec,
+          server_time: nowSec,
+          total_duration_sec: totalDurationSec,
+        };
+      }
+    }
+
     const payload = {
       mode: settings.broadcast_mode || "curated",
       live: {
@@ -42,6 +77,7 @@ export async function GET() {
         stream_url: settings.live_stream_url || "",
         fallback_set: fallbackSet,
       },
+      broadcast: broadcastSchedule,
       sets,
     };
 
