@@ -54,7 +54,7 @@ export function extractR2Key(keyOrUrl: string): string | null {
     if (!isR2Host) return null;
 
     let pathname = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-    const bucket = process.env.R2_BUCKET_NAME || "goodlife";
+    const bucket = (process.env.R2_BUCKET_NAME || "goodlife").replace(/['"]/g, "").trim();
     if (pathname.startsWith(`${bucket}/`)) {
       pathname = pathname.slice(bucket.length + 1);
     }
