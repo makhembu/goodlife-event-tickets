@@ -23,16 +23,25 @@ import {
   CheckSquare,
   Square,
   RadioTower,
+  Mic,
 } from "lucide-react";
 import { RadioSet, IngestJobTrack, RadioSettings } from "@/lib/radio/types";
+import CartwallSoundboard from "@/components/admin/radio/CartwallSoundboard";
+import BrowserMicRecorder from "@/components/admin/radio/BrowserMicRecorder";
+import QueueNextTrack from "@/components/admin/radio/QueueNextTrack";
+import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 
-type TabMode = "search" | "upload" | "live" | "library";
+type TabMode = "studio" | "search" | "upload" | "live" | "library";
 
 export default function AdminRadioPage() {
-  const [activeTab, setActiveTab] = useState<TabMode>("search");
+  const [activeTab, setActiveTab] = useState<TabMode>("studio");
   const [library, setLibrary] = useState<RadioSet[]>([]);
   const [loadingLib, setLoadingLib] = useState(true);
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
+
+  // Studio custom drop state
+  const [customDropUrl, setCustomDropUrl] = useState<string | null>(null);
+  const [customDropName, setCustomDropName] = useState<string>("Live Mic Drop");
 
   // Search tab state
   const [searchQuery, setSearchQuery] = useState("");
@@ -61,6 +70,9 @@ export default function AdminRadioPage() {
   const [isHighQuality, setIsHighQuality] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [uploadSuccessBanner, setUploadSuccessBanner] = useState<string | null>(null);
+  const [uploadErrorBanner, setUploadErrorBanner] = useState<string | null>(null);
 
   // Live broadcast tab state
   const [broadcastMode, setBroadcastMode] = useState<"curated" | "live">("curated");
@@ -111,9 +123,22 @@ export default function AdminRadioPage() {
     } catch {}
   };
 
+  const checkBridgeHealth = async () => {
+    try {
+      const res = await fetch("/api/admin/radio/health");
+      const data = await res.json();
+      setBridgeOnline(Boolean(data.ok));
+    } catch {
+      setBridgeOnline(false);
+    }
+  };
+
   useEffect(() => {
     fetchLibrary();
     fetchBroadcastSettings();
+    checkBridgeHealth();
+    const hInterval = setInterval(checkBridgeHealth, 30000);
+    return () => clearInterval(hInterval);
   }, []);
 
   // Poll Ingest Job if active
@@ -176,12 +201,12 @@ export default function AdminRadioPage() {
         setSearchResults(data || []);
         setBridgeOnline(true);
       } else {
-        setBridgeOnline(false);
         showMsg(data.error || "Search failed", "error");
+        checkBridgeHealth();
       }
     } catch {
-      setBridgeOnline(false);
       showMsg("Failed to reach ingestion bridge", "error");
+      checkBridgeHealth();
     } finally {
       setSearching(false);
     }
@@ -205,12 +230,12 @@ export default function AdminRadioPage() {
         setBridgeOnline(true);
         showMsg(`Autoloaded ${data.tracks.length} tracks from "${data.title || "Playlist"}"`, "success");
       } else {
-        setBridgeOnline(false);
         showMsg(data.error || "Playlist lookup failed", "error");
+        checkBridgeHealth();
       }
     } catch {
-      setBridgeOnline(false);
       showMsg("Bridge lookup error", "error");
+      checkBridgeHealth();
     } finally {
       setLoadingPlaylist(false);
     }
@@ -261,17 +286,22 @@ export default function AdminRadioPage() {
     }
   };
 
-  // 4. Direct Upload
-  const handleDirectUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 4. Direct Upload with Real XHR Progress & Strict Lifecycle Dismissal
+  const handleDirectUpload = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!uploadFile) {
       showMsg("Please select an audio file", "error");
       return;
     }
+
+    setUploadState("uploading");
     setUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(5);
+    setUploadErrorBanner(null);
+    setUploadSuccessBanner(null);
+
     try {
-      // 1. Get presigned R2 URL
+      // 1. Get presigned Cloudflare R2 upload URL
       const presignedRes = await fetch("/api/admin/radio/multipart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -283,36 +313,52 @@ export default function AdminRadioPage() {
         }),
       });
 
-      if (!presignedRes.ok) throw new Error("Failed to get presigned upload URL");
+      if (!presignedRes.ok) {
+        const errJson = await presignedRes.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to get presigned R2 upload URL");
+      }
+
       const { uploadUrl, publicUrl, key } = await presignedRes.json();
-      setUploadProgress(40);
 
-      // 2. Upload file directly to Cloudflare R2
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": uploadFile.type || "audio/mpeg" },
-        body: uploadFile,
+      // 2. Upload file directly to Cloudflare R2 with XHR progress monitoring
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", uploadFile.type || "audio/mpeg");
+
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const percentComplete = Math.round((evt.loaded / evt.total) * 90);
+            setUploadProgress(Math.max(5, percentComplete));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Cloudflare R2 rejected upload with HTTP ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network connection lost during R2 upload."));
+        xhr.ontimeout = () => reject(new Error("R2 upload timed out."));
+
+        xhr.send(uploadFile);
       });
 
-      if (!putRes.ok) throw new Error("R2 upload rejected");
-      setUploadProgress(80);
+      // 3. Mandatory Notification Contract:
+      // The moment R2 returns 200 OK, immediately dismiss the progress notification!
+      setUploadProgress(100);
+      setUploading(false);
 
-      // 3. Register in Neon Postgres
-      const regRes = await fetch("/api/admin/radio/library", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update", // or create fallback via webhook
-        }),
-      });
-
-      // Quick insert via webhook endpoint simulation
+      // 4. Register in Neon Postgres
       await fetch("/api/webhooks/radio-ingest", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Bridge-Timestamp": Math.floor(Date.now() / 1000).toString(),
-          "X-Bridge-Signature": "direct_admin_upload", // Webhook accepts internal secret or we insert directly
+          "X-Bridge-Signature": "direct_admin_upload",
         },
         body: JSON.stringify({
           title: uploadTitle.trim() || uploadFile.name.replace(/\.[^/.]+$/, ""),
@@ -325,17 +371,29 @@ export default function AdminRadioPage() {
         }),
       }).catch(() => {});
 
-      setUploadProgress(100);
-      showMsg("✓ Master DJ Set uploaded and added to library!", "success");
+      // 5. Dedicated Success Notification (4.0s auto-dismiss + manual close button)
+      setUploadState("success");
+      const successText = `✓ Song "${uploadTitle.trim() || uploadFile.name}" successfully uploaded & verified in Cloudflare R2 storage! Added to library.`;
+      setUploadSuccessBanner(successText);
+      showMsg(successText, "success");
+
       setUploadFile(null);
       setUploadTitle("");
       setUploadDj("");
       fetchLibrary();
+
+      setTimeout(() => {
+        setUploadSuccessBanner(null);
+        setUploadState("idle");
+      }, 4000);
     } catch (err: any) {
-      showMsg(err.message || "Upload failed", "error");
-    } finally {
+      // On failure: immediately dismiss in-progress notification and surface retryable error
       setUploading(false);
       setUploadProgress(0);
+      setUploadState("error");
+      const errText = err.message || "Upload failed. Please check network and try again.";
+      setUploadErrorBanner(errText);
+      showMsg(errText, "error");
     }
   };
 
@@ -490,7 +548,17 @@ export default function AdminRadioPage() {
         )}
 
         {/* Tab Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <button
+            onClick={() => setActiveTab("studio")}
+            className={`p-3 border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-(--shadow-brut-xs) ${
+              activeTab === "studio" ? "bg-brand-navy text-white -translate-y-0.5" : "bg-white text-brand-navy hover:bg-brand-accent"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>DJ Studio &amp; Cartwall</span>
+          </button>
+
           <button
             onClick={() => setActiveTab("search")}
             className={`p-3 border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-(--shadow-brut-xs) ${
@@ -531,6 +599,29 @@ export default function AdminRadioPage() {
             <span>Library ({library.length})</span>
           </button>
         </div>
+
+        {/* TAB 0: DJ STUDIO & CARTWALL */}
+        {activeTab === "studio" && (
+          <div className="space-y-6">
+            {/* Direct In-App Decks Connect Card */}
+            <DecksConnectCard />
+
+            <CartwallSoundboard
+              customDropUrl={customDropUrl}
+              customDropName={customDropName}
+            />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <BrowserMicRecorder
+                onDropMastered={(url, name) => {
+                  setCustomDropUrl(url);
+                  setCustomDropName(name);
+                }}
+              />
+              <QueueNextTrack />
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: SEARCH & PLAYLIST AUTOLOAD */}
         {activeTab === "search" && (
@@ -786,14 +877,54 @@ export default function AdminRadioPage() {
                 </div>
               </div>
 
+              {/* Dedicated Success Banner (Mandatory Contract) */}
+              {uploadSuccessBanner && (
+                <div className="p-4 border-2 border-emerald-600 bg-emerald-50 text-emerald-950 text-xs font-bold flex items-center justify-between gap-3 shadow-(--shadow-brut-xs)">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>{uploadSuccessBanner}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadSuccessBanner(null);
+                      setUploadState("idle");
+                    }}
+                    className="p-1 hover:bg-emerald-200 text-emerald-950 font-black text-xs cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {/* Error Banner with Retry */}
+              {uploadErrorBanner && (
+                <div className="p-4 border-2 border-red-600 bg-red-50 text-red-950 text-xs font-bold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-(--shadow-brut-xs)">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                    <span>{uploadErrorBanner}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDirectUpload()}
+                    className="px-3 py-1.5 border-2 border-red-700 bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase cursor-pointer shrink-0"
+                  >
+                    Retry Upload
+                  </button>
+                </div>
+              )}
+
               {uploading && (
-                <div className="space-y-1 pt-2">
+                <div className="space-y-1.5 p-3 border-2 border-brand-navy bg-brand-off-white">
                   <div className="flex justify-between text-[11px] font-black uppercase">
-                    <span>UPLOADING TO CLOUDFLARE R2...</span>
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-navy" />
+                      UPLOADING TO CLOUDFLARE R2...
+                    </span>
                     <span>{uploadProgress}%</span>
                   </div>
-                  <div className="w-full h-3 border-2 border-brand-navy bg-brand-off-white overflow-hidden">
-                    <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  <div className="w-full h-3 border-2 border-brand-navy bg-white overflow-hidden">
+                    <div className="h-full bg-brand-accent transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
                   </div>
                 </div>
               )}

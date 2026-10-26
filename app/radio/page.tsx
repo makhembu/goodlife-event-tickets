@@ -17,6 +17,7 @@ import {
   Check,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
+import FestivalSetVault from "@/components/radio/FestivalSetVault";
 
 export default function RadioPage() {
   const {
@@ -239,6 +240,9 @@ export default function RadioPage() {
                 </div>
               </div>
             )}
+
+            {/* FESTIVAL SET VAULT (ARCHIVED LIVE RECORDINGS) */}
+            <FestivalSetVault />
           </div>
         )}
       </div>

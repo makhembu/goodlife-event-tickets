@@ -1,11 +1,22 @@
 import crypto from "crypto";
 
+const rawBridgeUrl = process.env.RADIO_BRIDGE_URL?.trim();
 const BRIDGE_BASE_URL = (
-  process.env.RADIO_BRIDGE_URL || "https://invidious-bridge.darajadigital.com"
+  rawBridgeUrl && rawBridgeUrl !== '""' && rawBridgeUrl !== "''"
+    ? rawBridgeUrl
+    : "https://invidious-bridge.darajadigital.com"
 ).replace(/\/+$/, "");
+
+const rawBridgeSecret = process.env.RADIO_BRIDGE_SECRET?.trim();
+if (!rawBridgeSecret || rawBridgeSecret === '""' || rawBridgeSecret === "''") {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("RADIO_BRIDGE_SECRET environment variable is required in production");
+  }
+}
 const BRIDGE_SECRET =
-  process.env.RADIO_BRIDGE_SECRET ||
-  "7688c2f3c3243106ff2dc49df4c6b28722ce007ae6bc8d24389ca28f97e262b0";
+  rawBridgeSecret && rawBridgeSecret !== '""' && rawBridgeSecret !== "''"
+    ? rawBridgeSecret
+    : "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
 
 function signRequest(body: string): { timestamp: string; signature: string } {
   const timestamp = Math.floor(Date.now() / 1000).toString();
@@ -34,6 +45,8 @@ async function requestBridge<T>(
         "Content-Type": "application/json",
         "X-Bridge-Timestamp": timestamp,
         "X-Bridge-Signature": signature,
+        "X-Goodlife-Timestamp": timestamp,
+        "X-Goodlife-Radio-Key": signature,
       },
       body: method !== "GET" ? bodyStr : undefined,
       signal: controller.signal,
@@ -68,7 +81,7 @@ export async function bridgeSearch(query: string) {
     artist: string;
     duration_sec: number;
     thumbnail_url: string;
-  }>>(`/invidious/search?q=${encodeURIComponent(query)}`);
+  }>>(`/invidious/search?q=${encodeURIComponent(query)}`, { timeoutMs: 15000 });
 }
 
 export async function bridgePlaylistPreview(playlistUrl: string) {
@@ -82,7 +95,7 @@ export async function bridgePlaylistPreview(playlistUrl: string) {
       duration_sec: number;
       thumbnail_url: string;
     }>;
-  }>(`/invidious/playlist?url=${encodeURIComponent(playlistUrl)}`);
+  }>(`/invidious/playlist?url=${encodeURIComponent(playlistUrl)}`, { timeoutMs: 30000 });
 }
 
 export async function bridgeQueueIngest(payload: {
@@ -113,3 +126,34 @@ export async function bridgeGetJob(jobId: string) {
     tracks: Array<any>;
   }>(`/jobs/${encodeURIComponent(jobId)}`);
 }
+
+export async function bridgeQueueNext(payload: {
+  url: string;
+  custom_drop_text?: string;
+  voice_preference?: "male" | "female";
+}) {
+  return requestBridge<{
+    status: string;
+    artist: string;
+    title: string;
+    drop_script: string;
+    media_id: number;
+    queued_as_up_next: boolean;
+  }>("/api/radio/queue-next", {
+    method: "POST",
+    body: payload,
+    timeoutMs: 45000,
+  });
+}
+
+export async function bridgeGetNowPlaying() {
+  return requestBridge<{
+    status: string;
+    station: string;
+    server_time: string;
+    azuracast_online: boolean;
+    now_playing: string;
+  }>("/health", { timeoutMs: 5000 });
+}
+
+export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };

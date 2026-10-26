@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { neonQuery } from "@/lib/supabase-db";
 
+const rawSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
 const BRIDGE_SECRET =
-  process.env.RADIO_BRIDGE_SECRET ||
-  "7688c2f3c3243106ff2dc49df4c6b28722ce007ae6bc8d24389ca28f97e262b0";
+  rawSecret && rawSecret.length > 0
+    ? rawSecret
+    : "7688c2f3c3243106ff2dc49df4c6b28722ce007ae6bc8d24389ca28f97e262b0";
 
 export async function POST(req: NextRequest) {
   try {

@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  azuracast_web:
+    image: ghcr.io/azuracast/azuracast_web:latest
+    container_name: azuracast_web
+    restart: unless-stopped
+    environment:
+      - APPLICATION_ENV=production
+      - AUTO_ASSIGN_PORT=false
+      - BASE_DIR=/var/azuracast
+      - TZ=Africa/Nairobi
+      - ENABLE_REDIS=true
+      - HTTP_PORT=80
+      - HTTPS_PORT=443
+      - HARBOR_PASSWORD=${HARBOR_PASSWORD:-}
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD:-}
+    ports:
+      # AzuraCast Web UI & Public HTTP Playout
+      - "8055:80"
+      - "8443:443"
+      # Icecast / Liquidsoap DJ Harbor Ingest (Direct Port-Forward for DJ Hardware)
+      - "8005:8005"
+      # Station Public Streaming Mounts
+      - "8000:8000"
+    volumes:
+      - azuracast_station_data:/var/azuracast/stations
+      - azuracast_db_data:/var/lib/mysql
+      - azuracast_redis_data:/data
+      # Local storage mount for master recordings and drops
+      - /var/goodlife/recordings:/var/goodlife/recordings
+      - /var/goodlife/drops:/var/goodlife/drops
+      - ./liquidsoap/goodlife-station.liq:/var/azuracast/stations/goodlife_radio_254/config/liquidsoap.liq:ro
+      - ./liquidsoap/on-disconnect.sh:/usr/local/bin/on-disconnect.sh:ro
+    networks:
+      - goodlife_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  goodlife_daemon:
+    build:
+      context: ./daemon
+      dockerfile: Dockerfile
+    container_name: goodlife_daemon
+    restart: unless-stopped
+    env_file:
+      - ./daemon/.env
+    ports:
+      - "8060:8060"
+    volumes:
+      - /var/goodlife/recordings:/var/goodlife/recordings
+      - /var/goodlife/drops:/var/goodlife/drops
+      - /tmp/goodlife-processing:/tmp/goodlife-processing
+    networks:
+      - goodlife_net
+    depends_on:
+      - azuracast_web
+
+networks:
+  goodlife_net:
+    driver: bridge
+
+volumes:
+  azuracast_station_data:
+    name: goodlife_azuracast_station_data
+  azuracast_db_data:
+    name: goodlife_azuracast_db_data
+  azuracast_redis_data:
+    name: goodlife_azuracast_redis_data

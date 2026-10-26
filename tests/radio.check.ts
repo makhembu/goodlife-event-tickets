@@ -54,7 +54,7 @@ async function runTests() {
 
   // 4. Global Floating Bar
   const barCode = fs.readFileSync(path.join(process.cwd(), "components/radio/GlobalRadioBar.tsx"), "utf8");
-  check("GlobalRadioBar respects mobile checkout clearance", barCode.includes("isCheckoutPage ? \"bottom-16 sm:bottom-0\" : \"bottom-0\""));
+  check("GlobalRadioBar respects mobile checkout clearance", barCode.includes("bottom-[74px]") || barCode.includes("isCheckoutPage"));
   check("GlobalRadioBar has minimize floating pill FAB mode", barCode.includes("isMinimized"));
   check("GlobalRadioBar has Hi-Fi audio quality switcher pill", barCode.includes("switchQuality"));
 

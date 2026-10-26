@@ -49,9 +49,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [liveDropFallback, setLiveDropFallback] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
   const hlsRef = useRef<any>(null);
   const lastStateSaveRef = useRef<number>(0);
   const secondsListenedRef = useRef<number>(0);
+  const lastTimeUpdateRef = useRef<number>(0);
 
   // 1. Load Initial State from LocalStorage
   useEffect(() => {
@@ -70,27 +72,60 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
-  // 2. Fetch Radio Public State
+  // 2. Fetch Radio Public State with Dynamic Playlist Streaming
   const fetchRadioState = useCallback(async () => {
     try {
       const res = await fetch("/api/radio/state");
       if (!res.ok) return;
       const data: RadioPublicState = await res.json();
-      setSets(data.sets || []);
+      const newSets = data.sets || [];
+      
+      // Update sets smoothly without interrupting current track if new tracks stream in
+      setSets((prevSets) => {
+        if (prevSets.length > 0 && currentSetIndex < prevSets.length) {
+          const currentId = prevSets[currentSetIndex]?.id;
+          if (currentId) {
+            const matchedIdx = newSets.findIndex((s) => s.id === currentId);
+            if (matchedIdx !== -1 && matchedIdx !== currentSetIndex) {
+              setCurrentSetIndex(matchedIdx);
+            }
+          }
+        }
+        return newSets;
+      });
+
       setMode(data.mode || "curated");
       setLiveStreamUrl(data.live?.stream_url || "");
       setLiveTitle(data.live?.title || "GOODLIFE MAIN STAGE LIVE");
     } catch {}
-  }, []);
+  }, [currentSetIndex]);
 
   useEffect(() => {
     fetchRadioState();
-    // Poll state every 20s to detect live stage switches
-    const pollInterval = setInterval(fetchRadioState, 20000);
+    // Poll state every 15s to detect live stage switches and newly ingested tracks
+    const pollInterval = setInterval(fetchRadioState, 15000);
     return () => clearInterval(pollInterval);
   }, [fetchRadioState]);
 
   const currentSet = sets[currentSetIndex] || null;
+
+  // Next Track Preloader for 0ms Instant Playback Transitions
+  useEffect(() => {
+    if (typeof window === "undefined" || sets.length <= 1) return;
+    const nextIdx = (currentSetIndex + 1) % sets.length;
+    const nextSet = sets[nextIdx];
+    if (!nextSet) return;
+
+    const nextSrc = quality === "high" && nextSet.audio_high_url ? nextSet.audio_high_url : nextSet.audio_url;
+    if (!preloadAudioRef.current) {
+      preloadAudioRef.current = new Audio();
+    }
+    preloadAudioRef.current.preload = "auto";
+    if (preloadAudioRef.current.src !== nextSrc) {
+      preloadAudioRef.current.src = nextSrc;
+      preloadAudioRef.current.load();
+    }
+  }, [currentSetIndex, sets, quality]);
 
   // 3. Multi-Tab Conflict Resolution (BroadcastChannel)
   useEffect(() => {
@@ -216,7 +251,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setCurrentTime(cur);
     setDuration(dur);
     setProgress(dur > 0 ? (cur / dur) * 100 : 0);
-    secondsListenedRef.current += 0.25;
+
+    // Track actual elapsed playback delta (ignoring seeking jumps > 2s)
+    const delta = cur - lastTimeUpdateRef.current;
+    if (delta > 0 && delta < 2.0) {
+      secondsListenedRef.current += delta;
+    }
+    lastTimeUpdateRef.current = cur;
     saveStateToStorage(cur);
   };
 
@@ -224,15 +265,40 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const togglePlay = () => {
     if (!audioRef.current) return;
     if (isPlaying) {
-      audioRef.current.pause();
+      if (mode === "live") {
+        // Broadcast Contract: Pause = Disconnect (release data stream buffer)
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current.load();
+      } else {
+        audioRef.current.pause();
+      }
       setIsPlaying(false);
     } else {
       setIsMinimized(false);
       notifyOtherTabsPlay();
-      audioRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+
+      if (mode === "live") {
+        // Broadcast Contract: Play = Snap to Live second (fresh playhead with cache buster)
+        const snapUrl = liveStreamUrl.includes("?")
+          ? `${liveStreamUrl}&t=${Date.now()}`
+          : `${liveStreamUrl}?t=${Date.now()}`;
+        audioRef.current.src = snapUrl;
+        audioRef.current.load();
+        audioRef.current
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {
+            // If live stream is unreachable, fallback to curated set
+            setLiveDropFallback(true);
+            switchToCurated();
+          });
+      } else {
+        audioRef.current
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => setIsPlaying(false));
+      }
     }
   };
 
@@ -330,10 +396,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       audioRef.current.pause();
       audioRef.current.src = newSrc;
-      audioRef.current.currentTime = curPos;
-      if (wasPlaying) {
-        audioRef.current.play().catch(() => {});
-      }
+
+      // Wait for canplay before seeking to avoid dropped seeks
+      audioRef.current.addEventListener(
+        "canplay",
+        () => {
+          if (audioRef.current) {
+            audioRef.current.currentTime = curPos;
+            if (wasPlaying) {
+              audioRef.current.play().catch(() => {});
+            }
+          }
+        },
+        { once: true }
+      );
+      audioRef.current.load();
     }
   };
 
@@ -359,11 +436,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
           });
-          hls.on(Hls.Events.ERROR, () => {
-            // Live stream drop detected: auto-fallback
-            setLiveDropFallback(true);
-            setMode("curated");
-            nextTrack();
+          hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+            // Live stream drop detected: auto-fallback on fatal error
+            if (data?.fatal) {
+              setLiveDropFallback(true);
+              setMode("curated");
+              if (sets.length > 0) {
+                nextTrack();
+              } else {
+                setIsPlaying(false);
+              }
+            }
           });
           hlsRef.current = hls;
         }
@@ -415,6 +498,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         ref={audioRef}
         src={currentSet ? (quality === "high" && currentSet.audio_high_url ? currentSet.audio_high_url : currentSet.audio_url) : undefined}
         onTimeUpdate={handleTimeUpdate}
+        onError={() => {
+          // If a track encounters a network glitch, auto-recover to next track smoothly
+          if (isPlaying && sets.length > 1) {
+            setTimeout(() => nextTrack(), 1000);
+          }
+        }}
         onEnded={() => {
           if (currentSet) {
             navigator.sendBeacon?.(
@@ -429,7 +518,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           nextTrack();
         }}
-        preload="metadata"
+        preload="auto"
       />
     </RadioContext.Provider>
   );

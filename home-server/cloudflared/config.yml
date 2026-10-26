@@ -1,0 +1,31 @@
+# ==============================================================================
+# Cloudflare Tunnel Configuration for GOODLIFE Radio 254
+# Path on Server: /etc/cloudflared/config.yml
+# ==============================================================================
+
+tunnel: ${CLOUDFLARE_TUNNEL_ID}
+credentials-file: /etc/cloudflared/${CLOUDFLARE_TUNNEL_ID}.json
+
+# Ingress Rules
+# Note: Icecast Harbor (Port 8005) uses raw TCP SOURCE method and must be routed
+# directly via router port-forwarding or Tailscale VPN, NOT through this HTTP tunnel.
+ingress:
+  # Public Station Stream, Web DJ (WebSocket/WebRTC) and AzuraCast Web UI
+  - hostname: radio.darajadigital.com
+    service: http://127.0.0.1:8055
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: true
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      http2Origin: false
+
+  # Internal Goodlife Radio Daemon API (Guarded by HMAC header)
+  - hostname: radio-api.darajadigital.com
+    service: http://127.0.0.1:8060
+    originRequest:
+      connectTimeout: 15s
+      noTLSVerify: true
+
+  # Catch-all fallback
+  - service: http_status:404
