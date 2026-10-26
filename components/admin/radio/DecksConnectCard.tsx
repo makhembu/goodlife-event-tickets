@@ -41,7 +41,18 @@ export default function DecksConnectCard({
   }, []);
 
   const copyToClipboard = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text);
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        } catch {}
+      });
+    }
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 2500);
   };
@@ -54,7 +65,18 @@ Mountpoint: ${harborMount}
 User: ${harborUser}
 Password: ${harborPass}
 Format: MP3 320kbps (or 256kbps)`;
-    navigator.clipboard.writeText(text);
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        } catch {}
+      });
+    }
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 3000);
   };
