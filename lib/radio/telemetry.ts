@@ -20,9 +20,9 @@ export interface RadioTelemetry {
  * time-calibrated Nairobi arterial traffic (Thika Rd to Marara Camp, Expressway),
  * active listeners count, and festival venue context.
  */
-export async function getRadioTelemetry(): Promise<RadioTelemetry> {
-  // 1. Calculate Kenya Time (EAT = UTC + 3)
-  const now = new Date();
+export async function getRadioTelemetry(targetAirTimeMs?: number): Promise<RadioTelemetry> {
+  // 1. Calculate Kenya Time (EAT = UTC + 3) for the predicted air time
+  const now = typeof targetAirTimeMs === "number" && targetAirTimeMs > 0 ? new Date(targetAirTimeMs) : new Date();
   const utcHours = now.getUTCHours();
   const eatHours = (utcHours + 3) % 24;
   const eatMinutes = now.getUTCMinutes();

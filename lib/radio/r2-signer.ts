@@ -10,12 +10,17 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { extractR2Key } from "@/lib/r2-storage";
 
+function cleanEnv(val?: string): string {
+  if (!val) return "";
+  return val.replace(/[\uFEFF\u200B\r\n\t]/g, "").replace(/^["']|["']$/g, "").trim();
+}
+
 function getR2() {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  const bucket = process.env.R2_BUCKET_NAME || "goodlife";
-  const publicDomain = (process.env.R2_PUBLIC_DOMAIN || "").replace(/\/+$/, "");
+  const accountId = cleanEnv(process.env.R2_ACCOUNT_ID);
+  const accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
+  const secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
+  const bucket = cleanEnv(process.env.R2_BUCKET_NAME) || "goodlife";
+  const publicDomain = cleanEnv(process.env.R2_PUBLIC_DOMAIN).replace(/\/+$/, "");
 
   if (!accountId || !accessKeyId || !secretAccessKey || !publicDomain) {
     return null;

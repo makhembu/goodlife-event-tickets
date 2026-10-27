@@ -83,6 +83,8 @@ export interface GenerateDropParams {
   timingType?: "intro" | "mid_song" | "outro";
   preferredMood?: "hype" | "sensual" | "comedic" | "stoic";
   forceNew?: boolean;
+  secondsUntilAir?: number;
+  targetAirTimeMs?: number;
 }
 
 export interface DynamicDropResult {
@@ -94,9 +96,14 @@ export interface DynamicDropResult {
   timingType: "intro" | "mid_song" | "outro";
 }
 
+function cleanEnv(val?: string): string {
+  if (!val) return "";
+  return val.replace(/[\uFEFF\u200B\r\n\t]/g, "").replace(/^["']|["']$/g, "").trim();
+}
+
 export async function generateDynamicDrop(params: GenerateDropParams): Promise<DynamicDropResult> {
-  const nvidiaKey = process.env.NVIDIA_API_KEY;
-  const fishKey = process.env.FISH_AUDIO_KEY;
+  const nvidiaKey = cleanEnv(process.env.NVIDIA_API_KEY);
+  const fishKey = cleanEnv(process.env.FISH_AUDIO_KEY);
 
   const nextTitle = params.nextTrackTitle || "Marara Festival Anthem";
   const nextArtist = params.nextTrackArtist || "Nairobi Sound";
@@ -105,19 +112,35 @@ export async function generateDynamicDrop(params: GenerateDropParams): Promise<D
   const currentArtist = params.currentTrackArtist || "Marara Allstars";
   const timing = params.timingType || "outro";
 
-  // 1. Fetch live telemetry (listener count, Nairobi time, traffic, weather, festival mood)
+  // 1. Calculate target air time (predict when the song will actually end in Kenya Time)
+  const nowMs = Date.now();
+  let targetAirTimeMs = params.targetAirTimeMs;
+  if (!targetAirTimeMs && typeof params.secondsUntilAir === "number") {
+    targetAirTimeMs = nowMs + Math.max(0, params.secondsUntilAir) * 1000;
+  }
+  if (!targetAirTimeMs) {
+    targetAirTimeMs = nowMs;
+  }
+
+  // Fetch live telemetry (listener count, Nairobi predicted air time, traffic, weather, festival mood)
   let telemetry: RadioTelemetry;
   try {
-    telemetry = await getRadioTelemetry();
+    telemetry = await getRadioTelemetry(targetAirTimeMs);
   } catch {
+    const d = new Date(targetAirTimeMs);
+    const eatH = (d.getUTCHours() + 3) % 24;
+    const eatM = d.getUTCMinutes();
+    const p = eatH >= 12 ? "PM" : "AM";
+    const dh = eatH % 12 || 12;
+    const fallback12h = `${dh}:${eatM.toString().padStart(2, "0")} ${p}`;
     telemetry = {
       listenersCount: 0,
-      nairobiTimeEAT: "21:00",
-      nairobiTime12h: "9:00 PM",
-      timeSlot: "sunset_vibes",
-      timeSlotLabel: "Sunset Golden Hour at Marara Camp",
-      weather: "23°C clear evening skies in Nairobi",
-      trafficBulletin: "Thika Superhighway moving steady outbound past Juja towards Marara Camp",
+      nairobiTimeEAT: `${eatH.toString().padStart(2, "0")}:${eatM.toString().padStart(2, "0")}`,
+      nairobiTime12h: fallback12h,
+      timeSlot: "midnight_rave",
+      timeSlotLabel: "Late Night Airwaves at Marara Camp",
+      weather: "22°C clear night skies in Nairobi",
+      trafficBulletin: "Thika Superhighway moving fast and clear straight to Marara Camp",
       entertainmentNews: "Nairobi music scene buzzing with sold-out shows and festival excitement",
       activeCities: ["Nairobi", "Thika", "Eldoret"],
       venue: "Marara Camp, Thika",
@@ -125,13 +148,15 @@ export async function generateDynamicDrop(params: GenerateDropParams): Promise<D
     };
   }
 
-  // Check shared broadcast cache in DB for this upcoming track (prevents rate limit burn & ensures audience sync)
+  // Check shared broadcast cache in DB for this upcoming track
+  // Only use cached drop if it was generated within the last 5 minutes
+  // so time-of-day / clock announcements never sound outdated!
   if (params.nextTrackId && !params.forceNew) {
     try {
       const { rows } = await neonQuery(
         `SELECT persona, mood, title, script, audio_url, timing_type
          FROM radio_drops
-         WHERE target_track_id = $1 AND created_at > NOW() - INTERVAL '30 minutes'
+         WHERE target_track_id = $1 AND created_at > NOW() - INTERVAL '5 minutes'
          ORDER BY created_at DESC LIMIT 1`,
         [params.nextTrackId]
       );

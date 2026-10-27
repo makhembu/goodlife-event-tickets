@@ -506,6 +506,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (isFetchingDropRef.current) return;
     isFetchingDropRef.current = true;
     try {
+      const cur = audioRef.current?.currentTime || 0;
+      const dur = audioRef.current?.duration || currentTrack?.duration_sec || 180;
+      // An outro drop triggers ~8 seconds before track finishes
+      const secondsUntilTransition = Math.max(0, dur - cur - 8);
+      const targetAirTimeMs = Date.now() + Math.round(secondsUntilTransition) * 1000;
+
       const res = await fetch("/api/radio/drops/dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -517,6 +523,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           currentTrackTitle: currentTrack?.title || "GOODLIFE Anthem",
           currentTrackArtist: currentTrack?.dj_name || "Marara Allstars",
           timingType,
+          secondsUntilAir: Math.round(secondsUntilTransition),
+          targetAirTimeMs,
         }),
       });
       if (res.ok) {

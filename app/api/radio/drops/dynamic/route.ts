@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
       timingType,
       preferredMood,
       forceNew,
+      secondsUntilAir,
+      targetAirTimeMs,
     } = body;
 
     const result = await generateDynamicDrop({
@@ -28,6 +30,8 @@ export async function POST(req: NextRequest) {
       timingType: timingType === "intro" || timingType === "mid_song" ? timingType : "outro",
       preferredMood,
       forceNew: Boolean(forceNew),
+      secondsUntilAir: typeof secondsUntilAir === "number" ? secondsUntilAir : undefined,
+      targetAirTimeMs: typeof targetAirTimeMs === "number" ? targetAirTimeMs : undefined,
     });
 
     return NextResponse.json(result, { status: 200 });

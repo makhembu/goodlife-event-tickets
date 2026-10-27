@@ -146,7 +146,7 @@ export async function GET() {
           const dropRes = await neonQuery(
             `SELECT persona, mood, title, script, audio_url as drop_url, target_track_id
              FROM radio_drops
-             WHERE target_track_id = $1
+             WHERE target_track_id = $1 AND created_at > NOW() - INTERVAL '5 minutes'
              ORDER BY created_at DESC
              LIMIT 1`,
             [nextTrack.id]
