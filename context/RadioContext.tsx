@@ -36,6 +36,12 @@ const RadioContext = createContext<RadioContextType | null>(null);
 
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
+const DEFAULT_LIVE_STREAM_URL =
+  process.env.NEXT_PUBLIC_RADIO_STREAM_URL ||
+  "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/hls/stream.m3u8";
+const DEFAULT_METADATA_URL =
+  process.env.NEXT_PUBLIC_RADIO_METADATA_URL ||
+  "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/hls/now-playing.json";
 
 // Calculates deterministic 24/7 global timeline position across all active tracks
 export function computeLiveTimeline(setsList: RadioSet[]): { index: number; offsetSec: number } {
@@ -72,7 +78,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [isMinimized, setIsMinimized] = useState(true);
   const [quality, setQuality] = useState<AudioQuality>("standard");
   const [mode, setMode] = useState<BroadcastMode>("curated");
-  const [liveStreamUrl, setLiveStreamUrl] = useState("");
+  const [liveStreamUrl, setLiveStreamUrl] = useState(DEFAULT_LIVE_STREAM_URL);
   const [liveTitle, setLiveTitle] = useState("GOODLIFE MAIN STAGE LIVE");
   const [liveDropFallback, setLiveDropFallback] = useState(false);
   const [isSyncedToBroadcast, setIsSyncedToBroadcast] = useState(true);
@@ -133,7 +139,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       });
 
       setMode(data.mode || "curated");
-      setLiveStreamUrl(data.live?.stream_url || "");
+      setLiveStreamUrl(data.live?.stream_url || DEFAULT_LIVE_STREAM_URL);
       setLiveTitle(data.live?.title || "GOODLIFE MAIN STAGE LIVE");
 
       // Synchronize initial broadcast playhead if in 24/7 live mode
@@ -182,9 +188,41 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const currentSet = sets[currentSetIndex] || null;
 
+  // Edge Live Metadata Poller (sub-second R2 updates directly from CDN edge)
+  useEffect(() => {
+    if (mode !== "live" || !isPlaying) return;
+    const fetchLiveMeta = async () => {
+      try {
+        const res = await fetch(`${DEFAULT_METADATA_URL}?_t=${Date.now()}`);
+        if (res.ok) {
+          const meta = await res.json();
+          if (meta.title) {
+            setLiveTitle(meta.artist ? `${meta.title} · ${meta.artist}` : meta.title);
+          }
+        }
+      } catch {}
+    };
+    fetchLiveMeta();
+    const interval = setInterval(fetchLiveMeta, 8000);
+    return () => clearInterval(interval);
+  }, [mode, isPlaying]);
+
   // Next Track Preloader for 0ms Instant Playback Transitions
+  // Mobile data saver: ONLY preload when audio is actively playing AND <= 20s remaining in track
   useEffect(() => {
     if (typeof window === "undefined" || sets.length <= 1) return;
+
+    if (!isPlaying || mode === "live") {
+      if (preloadAudioRef.current) {
+        preloadAudioRef.current.removeAttribute("src");
+        preloadAudioRef.current.load();
+      }
+      return;
+    }
+
+    const timeLeft = duration - currentTime;
+    if (timeLeft > 20 || timeLeft <= 0) return;
+
     const nextIdx = (currentSetIndex + 1) % sets.length;
     const nextSet = sets[nextIdx];
     if (!nextSet) return;
@@ -198,7 +236,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       preloadAudioRef.current.src = nextSrc;
       preloadAudioRef.current.load();
     }
-  }, [currentSetIndex, sets, quality]);
+  }, [isPlaying, currentTime, duration, currentSetIndex, sets, quality, mode]);
 
   // 3. Multi-Tab Conflict Resolution (BroadcastChannel)
   useEffect(() => {
@@ -438,6 +476,41 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sets, quality]);
 
+  const advanceBroadcastTrack = useCallback(() => {
+    if (sets.length === 0) return;
+    setIsSyncedToBroadcast(true);
+    isSyncedRef.current = true;
+    const live = computeLiveTimeline(sets);
+    setCurrentSetIndex(live.index);
+    setCurrentTime(live.offsetSec);
+    const targetTrack = sets[live.index];
+    const streamSrc = quality === "high" && targetTrack?.audio_high_url ? targetTrack.audio_high_url : targetTrack?.audio_url;
+
+    if (audioRef.current && streamSrc) {
+      if (audioRef.current.src !== streamSrc) {
+        audioRef.current.src = streamSrc;
+      }
+      if (audioRef.current.readyState >= 1) {
+        try {
+          audioRef.current.currentTime = live.offsetSec;
+        } catch {}
+      } else {
+        const onMeta = () => {
+          if (audioRef.current) {
+            try {
+              audioRef.current.currentTime = live.offsetSec;
+            } catch {}
+          }
+        };
+        audioRef.current.addEventListener("loadedmetadata", onMeta, { once: true });
+      }
+      audioRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+    }
+  }, [sets, quality]);
+
   const playSet = (set: RadioSet) => {
     // User explicitly chose a set from Vault (on-demand mode)
     setIsSyncedToBroadcast(false);
@@ -599,7 +672,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               setLiveDropFallback(true);
               setMode("curated");
               if (sets.length > 0) {
-                nextTrack();
+                if (isSyncedRef.current) {
+                  advanceBroadcastTrack();
+                } else {
+                  nextTrack();
+                }
               } else {
                 setIsPlaying(false);
               }
@@ -660,9 +737,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         src={currentSet ? (quality === "high" && currentSet.audio_high_url ? currentSet.audio_high_url : currentSet.audio_url) : undefined}
         onTimeUpdate={handleTimeUpdate}
         onError={() => {
-          // If a track encounters a network glitch, auto-recover to next track smoothly
+          // If a track encounters a network glitch, auto-recover smoothly without dropping sync
           if (isPlaying && sets.length > 1) {
-            setTimeout(() => nextTrack(), 1000);
+            setTimeout(() => {
+              if (isSyncedRef.current) {
+                advanceBroadcastTrack();
+              } else {
+                nextTrack();
+              }
+            }, 1000);
           }
         }}
         onEnded={() => {
@@ -677,9 +760,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               })
             );
           }
-          nextTrack();
+          if (isSyncedRef.current) {
+            advanceBroadcastTrack();
+          } else {
+            nextTrack();
+          }
         }}
-        preload="auto"
+        preload="none"
+        playsInline
       />
     </RadioContext.Provider>
   );

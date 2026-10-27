@@ -223,10 +223,10 @@ export default function RadioPage() {
               </div>
 
               {/* Main Deck Interior (Vinyl Turntable + Controls) */}
-              <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+              <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-8 items-center">
                 
-                {/* 1. Left Side: Vinyl Turntable & Sleeve (5 Cols) */}
-                <div className="md:col-span-5 flex justify-center">
+                {/* 1. Left Side: Full Vinyl Turntable & Sleeve (Desktop md:flex only) */}
+                <div className="hidden md:flex md:col-span-5 justify-center">
                   <div className="relative w-64 h-64 sm:w-72 sm:h-72 group">
                     {/* Rotating Vinyl Record Peeking Out */}
                     <div
@@ -294,10 +294,49 @@ export default function RadioPage() {
                   </div>
                 </div>
 
-                {/* 2. Right Side: Track Metadata, Scrubber & Controls (7 Cols) */}
-                <div className="md:col-span-7 flex flex-col justify-between space-y-6">
-                  {/* Cleaned Title & Artist Info */}
-                  <div>
+                {/* 2. Controls & Metadata Column (7 Cols on desktop, Full width on mobile) */}
+                <div className="md:col-span-7 flex flex-col justify-between space-y-4 md:space-y-6">
+                  {/* 2A. Mobile View: Compact Horizontal Deck (<340px Total Above-The-Fold) */}
+                  <div className="flex md:hidden items-center gap-3.5">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl border-3 border-brand-navy-light bg-neutral-900 overflow-hidden shadow-lg flex items-center justify-center">
+                      {currentSet?.cover_url && !imgError ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={currentSet.cover_url}
+                          alt="Cover"
+                          onError={() => setImgError(true)}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-black text-center p-2">
+                          <Disc3 className={`w-8 h-8 text-brand-accent ${isPlaying && !isLive ? "animate-[spin_4s_linear_infinite]" : ""}`} />
+                        </div>
+                      )}
+                      <div className="absolute top-1 left-1 bg-brand-accent text-brand-navy font-mono font-black text-[8px] px-1.5 py-0.5 uppercase tracking-wider border border-brand-navy shadow-xs">
+                        {isLive ? "STAGE" : `#${currentIndex + 1}`}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="px-1.5 py-0.5 border border-brand-accent/40 bg-brand-accent/10 text-brand-accent font-mono text-[9px] font-bold uppercase tracking-wider rounded">
+                          {isLive ? "LIVE VENUE" : (currentSet?.genre || "FESTIVAL EXCLUSIVE")}
+                        </span>
+                        <span className="px-1.5 py-0.5 border border-white/20 bg-white/5 text-white/70 font-mono text-[9px] uppercase rounded">
+                          {quality === "high" ? "320K" : "192K"}
+                        </span>
+                      </div>
+                      <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-wide text-brand-off-white leading-tight line-clamp-2">
+                        {cleanedCurrent.title}
+                      </h2>
+                      <p className="font-mono text-xs font-bold tracking-wider uppercase text-brand-accent mt-0.5 truncate">
+                        BY {cleanedCurrent.artist}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 2B. Desktop View: Full Cleaned Title & Artist Info */}
+                  <div className="hidden md:block">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="px-2 py-0.5 border border-brand-accent/40 bg-brand-accent/10 text-brand-accent font-mono text-[10px] font-bold uppercase tracking-widest rounded">
                         {isLive ? "LIVE VENUE" : (currentSet?.genre || "FESTIVAL EXCLUSIVE")}
@@ -326,52 +365,65 @@ export default function RadioPage() {
                     </p>
                   </div>
 
-                  {/* Scrubber & Timeline Progress */}
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between font-mono text-xs text-white/60">
-                      <span className="text-brand-accent font-bold">
-                        {formatTime(effectiveCurrentTime)}
-                      </span>
-                      <span>
-                        {formatTime(effectiveDuration)}
-                      </span>
-                    </div>
-
-                    <div className="relative flex items-center group">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={progress || 0}
-                        onChange={(e) => seek(Number(e.target.value))}
-                        disabled={isLive}
-                        className="w-full h-3 bg-white/15 rounded-full appearance-none cursor-pointer accent-brand-accent transition-all hover:bg-white/25 focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Broadcast Synchronization Indicator */}
-                    <div className="flex items-center justify-between font-mono text-[10px] text-white/50 pt-0.5">
-                      {isSyncedToBroadcast ? (
-                        <span className="text-emerald-400 flex items-center gap-1 font-bold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          SYNCED TO 24/7 GLOBAL NAIROBI TIMECODE
+                  {/* Scrubber & Timeline Progress (Vault/Curated mode) vs Live Stream Banner (Live mode) */}
+                  {!isLive ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between font-mono text-xs text-white/60">
+                        <span className="text-brand-accent font-bold">
+                          {formatTime(effectiveCurrentTime)}
                         </span>
-                      ) : (
-                        <span className="text-amber-400 flex items-center gap-1">
-                          <span>ON-DEMAND PREVIEW MODE</span>
-                          <button
-                            type="button"
-                            onClick={snapToBroadcast}
-                            className="text-brand-accent underline hover:text-white font-bold ml-1 cursor-pointer"
-                          >
-                            [SNAP BACK TO BROADCAST]
-                          </button>
+                        <span>
+                          {formatTime(effectiveDuration)}
                         </span>
-                      )}
-                      <span>{isLive ? "LIVE FEED" : "BROADCAST CLOCK"}</span>
+                      </div>
+
+                      <div className="relative flex items-center group">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={progress || 0}
+                          onChange={(e) => seek(Number(e.target.value))}
+                          className="w-full h-3 bg-white/15 rounded-full appearance-none cursor-pointer accent-brand-accent transition-all hover:bg-white/25 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Broadcast Synchronization Indicator */}
+                      <div className="flex items-center justify-between font-mono text-[10px] text-white/50 pt-0.5">
+                        {isSyncedToBroadcast ? (
+                          <span className="text-emerald-400 flex items-center gap-1 font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            SYNCED TO 24/7 GLOBAL NAIROBI TIMECODE
+                          </span>
+                        ) : (
+                          <span className="text-amber-400 flex items-center gap-1">
+                            <span>ON-DEMAND PREVIEW MODE</span>
+                            <button
+                              type="button"
+                              onClick={snapToBroadcast}
+                              className="text-brand-accent underline hover:text-white font-bold ml-1 cursor-pointer"
+                            >
+                              [SNAP BACK TO BROADCAST]
+                            </button>
+                          </span>
+                        )}
+                        <span>BROADCAST CLOCK</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="py-2.5 px-4 rounded-xl bg-black/50 border border-brand-accent/30 flex items-center justify-between font-mono text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
+                        <span className="font-bold text-brand-off-white tracking-wider">
+                          LIVE STAGE FEED · CONTINUOUS 24/7 HLS BROADCAST
+                        </span>
+                      </div>
+                      <span className="text-brand-accent font-black text-[11px] uppercase tracking-widest bg-brand-accent/10 px-2 py-0.5 rounded border border-brand-accent/20">
+                        CLOUD CDN
+                      </span>
+                    </div>
+                  )}
 
                   {/* Master Transport Controls */}
                   <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
@@ -488,7 +540,7 @@ export default function RadioPage() {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search tracks, DJs, or genres..."
-                        className="w-full pl-10 pr-4 py-2 bg-brand-off-white border-2 border-brand-navy font-mono text-xs placeholder:text-brand-navy/40 focus:outline-none focus:bg-white rounded"
+                        className="w-full pl-10 pr-4 py-2 bg-brand-off-white border-2 border-brand-navy font-mono text-base sm:text-xs placeholder:text-brand-navy/40 focus:outline-none focus:bg-white rounded"
                       />
                       {searchQuery && (
                         <button

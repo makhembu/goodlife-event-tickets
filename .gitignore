@@ -61,3 +61,7 @@ backups/
 
 # Sample generated ticket files
 public/sample-tickets/
+
+# Local testing scratch and audits
+scratch/
+audit/

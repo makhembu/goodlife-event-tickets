@@ -146,6 +146,24 @@ export async function bridgeQueueNext(payload: {
   });
 }
 
+export async function bridgeGenerateAiDrop(payload: {
+  prompt?: string;
+  theme?: string;
+  custom_text?: string;
+  voice_id?: string;
+}) {
+  return requestBridge<{
+    success: boolean;
+    script: string;
+    drop_url: string;
+    mastered_file: string;
+  }>("/api/radio/drops/generate", {
+    method: "POST",
+    body: payload,
+    timeoutMs: 35000,
+  });
+}
+
 export async function bridgeGetNowPlaying() {
   return requestBridge<{
     status: string;

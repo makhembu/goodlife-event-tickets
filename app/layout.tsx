@@ -6,8 +6,6 @@ export const viewport: Viewport = {
   themeColor: '#142B4C',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 const spaceGrotesk = Space_Grotesk({

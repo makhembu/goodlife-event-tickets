@@ -28,6 +28,7 @@ import {
 import { RadioSet, IngestJobTrack, RadioSettings } from "@/lib/radio/types";
 import CartwallSoundboard from "@/components/admin/radio/CartwallSoundboard";
 import BrowserMicRecorder from "@/components/admin/radio/BrowserMicRecorder";
+import AiDropGenerator from "@/components/admin/radio/AiDropGenerator";
 import QueueNextTrack from "@/components/admin/radio/QueueNextTrack";
 import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 
@@ -353,12 +354,10 @@ export default function AdminRadioPage() {
       setUploading(false);
 
       // 4. Register in Neon Postgres
-      await fetch("/api/webhooks/radio-ingest", {
+      const regRes = await fetch("/api/admin/radio/register-upload", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Bridge-Timestamp": Math.floor(Date.now() / 1000).toString(),
-          "X-Bridge-Signature": "direct_admin_upload",
         },
         body: JSON.stringify({
           title: uploadTitle.trim() || uploadFile.name.replace(/\.[^/.]+$/, ""),
@@ -368,8 +367,14 @@ export default function AdminRadioPage() {
           genre: uploadGenre,
           file_size: uploadFile.size,
           bitrate: isHighQuality ? 320 : 192,
+          is_high_quality: isHighQuality,
         }),
-      }).catch(() => {});
+      });
+
+      if (!regRes.ok) {
+        const errData = await regRes.json().catch(() => ({}));
+        throw new Error(errData.error || `Failed to register track in database (HTTP ${regRes.status})`);
+      }
 
       // 5. Dedicated Success Notification (4.0s auto-dismiss + manual close button)
       setUploadState("success");
@@ -611,7 +616,13 @@ export default function AdminRadioPage() {
               customDropName={customDropName}
             />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <AiDropGenerator
+                onDropGenerated={(url, name) => {
+                  setCustomDropUrl(url);
+                  setCustomDropName(name);
+                }}
+              />
               <BrowserMicRecorder
                 onDropMastered={(url, name) => {
                   setCustomDropUrl(url);

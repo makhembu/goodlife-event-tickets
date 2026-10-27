@@ -41,10 +41,17 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: "Order array required" }, { status: 400 });
       }
 
-      for (let i = 0; i < order.length; i++) {
+      const ids: number[] = order.map((id: any) => parseInt(String(id), 10)).filter((id: number) => !isNaN(id));
+      if (ids.length > 0) {
+        const orders: number[] = ids.map((_, idx) => idx);
         await neonQuery(
-          "UPDATE radio_sets SET display_order = $1 WHERE id = $2",
-          [i, order[i]]
+          `UPDATE radio_sets AS r
+           SET display_order = u.new_order
+           FROM (
+             SELECT unnest($1::int[]) AS id, unnest($2::int[]) AS new_order
+           ) AS u
+           WHERE r.id = u.id`,
+          [ids, orders]
         );
       }
       return NextResponse.json({ success: true });

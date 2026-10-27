@@ -115,6 +115,39 @@ async function runTests() {
   check("RadioContext implements isSyncedToBroadcast state", radioContextCode.includes("isSyncedToBroadcast") && radioContextCode.includes("snapToBroadcast"));
   check("Radio page renders 24/7 ON AIR indicator", radioPageCode.includes("24/7 ON AIR"));
 
+  // 11. Admin Upload Registration Security & Error Handling
+  const registerUploadCode = fs.readFileSync(path.join(process.cwd(), "app/api/admin/radio/register-upload/route.ts"), "utf8");
+  check("Admin register-upload endpoint enforces requireAdmin auth", registerUploadCode.includes("requireAdmin"));
+  check("Admin register-upload endpoint uses parameterized SQL insertion", registerUploadCode.includes("INSERT INTO radio_sets"));
+  check("Admin radio console registers uploads via authenticated endpoint", adminRadioCode.includes("/api/admin/radio/register-upload"));
+  check("Admin radio console checks registration response and rejects failed uploads", adminRadioCode.includes("regRes.ok") && adminRadioCode.includes("throw new Error"));
+
+  // 12. Mobile Data Conservation, R2 Stream & Control Surfaces Contract
+  check("RadioContext hidden audio defaults to preload=none for mobile data conservation", radioContextCode.includes('preload="none"'));
+  check("RadioContext next track preloader only activates when playing and near track end", radioContextCode.includes("timeLeft > 20") && radioContextCode.includes("!isPlaying"));
+  check("RadioContext implements advanceBroadcastTrack for seamless continuous playout", radioContextCode.includes("advanceBroadcastTrack") && radioContextCode.includes("isSyncedRef.current"));
+  check("RadioContext defaults live stage stream to Cloudflare R2 distribution", radioContextCode.includes("pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/hls/stream.m3u8") || radioContextCode.includes("NEXT_PUBLIC_RADIO_STREAM_URL"));
+  check("Radio page cleanly hides interactive scrubber in live mode", radioPageCode.includes("!isLive ?") && radioPageCode.includes("LIVE STAGE FEED"));
+  check("GlobalRadioBar provides minimum 40px touch targets on mobile transport controls", barCode.includes("w-10 h-10") && barCode.includes("active:scale-95"));
+
+  // 13. V7 Blueprint: NVIDIA NIM + Fish Audio AI Drop Pipeline & Soundboard Contract
+  check("Admin radio console imports and mounts AiDropGenerator", adminRadioCode.includes("AiDropGenerator") && adminRadioCode.includes("<AiDropGenerator"));
+  check("Admin radio console binds generated AI drops to Soundboard Pad #8", adminRadioCode.includes("onDropGenerated={(url, name) => {") && adminRadioCode.includes("setCustomDropUrl(url)"));
+  check("Bridge client exports bridgeGenerateAiDrop", bridgeClientCode.includes("export async function bridgeGenerateAiDrop"));
+  check("Bridge client exports bridgeQueueNext", bridgeClientCode.includes("export async function bridgeQueueNext"));
+
+  const generateDropRoute = fs.readFileSync(path.join(process.cwd(), "app/api/admin/radio/drops/generate/route.ts"), "utf8");
+  check("Generate AI drop API route enforces requireAdmin auth", generateDropRoute.includes("requireAdmin"));
+  check("Generate AI drop API route delegates to bridgeGenerateAiDrop", generateDropRoute.includes("bridgeGenerateAiDrop"));
+
+  const queueNextRoute = fs.readFileSync(path.join(process.cwd(), "app/api/admin/radio/queue-next/route.ts"), "utf8");
+  check("Queue next API route enforces requireAdmin auth", queueNextRoute.includes("requireAdmin"));
+  check("Queue next API route delegates to bridgeQueueNext", queueNextRoute.includes("bridgeQueueNext"));
+
+  const diyDropRoute = fs.readFileSync(path.join(process.cwd(), "app/api/admin/radio/drops/diy/route.ts"), "utf8");
+  check("DIY mic drop route enforces requireAdmin auth", diyDropRoute.includes("requireAdmin"));
+  check("DIY mic drop route forwards mastered recording to daemon", diyDropRoute.includes("/api/radio/drops/diy"));
+
   // Summary
   console.log(`\n================================`);
   console.log(`Total checks: ${pass + failures.length}`);

@@ -163,21 +163,21 @@ export default function GlobalRadioBar() {
               <button
                 onClick={prevTrack}
                 aria-label="Previous Track"
-                className="p-1 hover:text-brand-accent transition-colors cursor-pointer"
+                className="w-10 h-10 flex items-center justify-center hover:text-brand-accent transition-colors cursor-pointer active:scale-95"
               >
-                <SkipBack className="w-3.5 h-3.5 fill-current" />
+                <SkipBack className="w-4 h-4 fill-current" />
               </button>
             )}
 
             <button
               onClick={togglePlay}
               aria-label={isPlaying ? "Pause Radio" : "Play Radio"}
-              className="w-7 h-7 bg-brand-accent text-brand-navy border-2 border-brand-navy flex items-center justify-center hover:bg-brand-off-white transition-colors cursor-pointer"
+              className="w-10 h-10 bg-brand-accent text-brand-navy border-2 border-brand-navy flex items-center justify-center hover:bg-brand-off-white active:scale-95 transition-all cursor-pointer shadow-(--shadow-brut-xs)"
             >
               {isPlaying ? (
-                <Pause className="w-3.5 h-3.5 fill-current" />
+                <Pause className="w-4 h-4 fill-current" />
               ) : (
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                <Play className="w-4 h-4 fill-current ml-0.5" />
               )}
             </button>
 
@@ -185,9 +185,9 @@ export default function GlobalRadioBar() {
               <button
                 onClick={nextTrack}
                 aria-label="Next Track"
-                className="p-1 hover:text-brand-accent transition-colors cursor-pointer"
+                className="w-10 h-10 flex items-center justify-center hover:text-brand-accent transition-colors cursor-pointer active:scale-95"
               >
-                <SkipForward className="w-3.5 h-3.5 fill-current" />
+                <SkipForward className="w-4 h-4 fill-current" />
               </button>
             )}
 
@@ -195,7 +195,7 @@ export default function GlobalRadioBar() {
             <button
               onClick={toggleMinimized}
               aria-label="Minimize Player"
-              className="p-1 text-brand-off-white/80 hover:text-brand-accent transition-colors cursor-pointer ml-1"
+              className="w-10 h-10 flex items-center justify-center text-brand-off-white/80 hover:text-brand-accent transition-colors cursor-pointer"
               title="Minimize to Box"
             >
               <ChevronDown className="w-4 h-4" />

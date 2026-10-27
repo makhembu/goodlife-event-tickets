@@ -230,6 +230,7 @@ export default function CartwallSoundboard({
   // Stable keyboard listener (keys 1 to 8)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
