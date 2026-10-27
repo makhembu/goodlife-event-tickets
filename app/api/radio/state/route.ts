@@ -84,11 +84,11 @@ export async function GET() {
       }
     }
 
-    // 5. Active Dynamic Sheng & Festival Station Drops with 4 Voice Personas
+    // 5. Active Dynamic Sheng & Festival Station Drops with 4 Voice Personas (Neutral Station Sweepers)
     const drops = [
       {
         id: "drop-shax-hype",
-        title: "DJ Shax · Big 7 Vibes",
+        title: "DJ Shax · Nairobi Festival Airwaves",
         audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
         persona: "DJ Shax",
         mood: "HYPE",
@@ -116,6 +116,30 @@ export async function GET() {
       },
     ];
 
+    // 6. Check for shared upcoming drop tailored to the broadcast's next track
+    let upcomingDrop = null;
+    if (broadcastSchedule && sets.length > 0) {
+      const nextIdx = (broadcastSchedule.active_index + 1) % sets.length;
+      const nextTrack = sets[nextIdx];
+      if (nextTrack) {
+        try {
+          const dropRes = await neonQuery(
+            `SELECT persona, mood, title, script, audio_url as drop_url, target_track_id
+             FROM radio_drops
+             WHERE target_track_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [nextTrack.id]
+          );
+          if (dropRes.rows.length > 0) {
+            upcomingDrop = dropRes.rows[0];
+          }
+        } catch (e) {
+          console.warn("[api/radio/state] Error checking upcoming drop:", e);
+        }
+      }
+    }
+
     const payload = {
       mode: settings.broadcast_mode || "curated",
       live: {
@@ -126,6 +150,7 @@ export async function GET() {
       broadcast: broadcastSchedule,
       sets,
       drops,
+      upcoming_drop: upcomingDrop,
     };
 
     return NextResponse.json(payload, {

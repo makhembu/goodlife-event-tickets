@@ -36,7 +36,9 @@ export async function GET(request: NextRequest) {
     const tiers = await fetchTicketTiers(eventId);
     // An empty array is the honest answer for an event with no tiers. Callers
     // (`app/page.tsx`, the admin tiers tab) already handle it.
-    return NextResponse.json(tiers, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(tiers, {
+      headers: { "Cache-Control": "public, s-maxage=10, stale-while-revalidate=45" },
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

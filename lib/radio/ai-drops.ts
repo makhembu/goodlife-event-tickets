@@ -1,5 +1,6 @@
 import { uploadDropBufferToR2 } from "./r2-signer";
 import { getRadioTelemetry, RadioTelemetry } from "./telemetry";
+import { neonQuery } from "@/lib/supabase-db";
 
 export interface RadioPersona {
   id: string;
@@ -45,34 +46,35 @@ const FALLBACK_DROPS = [
   {
     persona: "DJ Shax",
     mood: "HYPE",
-    title: "DJ Shax · Big 7 Vibes",
+    title: "DJ Shax · Nairobi Festival Airwaves",
     url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
-    script: "[excited] [shouting] It's time to cheza kama wewe, 1,270 listeners locked in, MASSIVE vibe coming up next... Big 7, BIG 7, let's go... TURN IT UP, Marara Camp is getting lit...",
+    script: "[excited] [shouting] GOODLIFE Radio 98.4 FM! Nairobi Live Festival Airwave, Marara Camp is locked in... TURN IT UP!",
   },
   {
     persona: "Amina",
-    mood: "HYPE",
+    mood: "SENSUAL",
     title: "Amina · Sunset Frequency",
     url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
-    script: "[excited] [shouting] MANZE, 1,275 listeners let's GO! Cheza kama wewe, it's Sunset at Marara Camp, Thika... TURN IT UP on the 98.4 FM airwaves! Wazi, the beat drops...",
+    script: "[whispering] [sensual] You're tuned into the official frequency. GOODLIFE 98.4 FM, feeling the sunset breeze at Marara Camp... wazi.",
   },
   {
     persona: "MC Cheche",
     mood: "BANTER",
     title: "MC Cheche · Nairobi Sound",
     url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
-    script: "[laughing] Yo Nairobi, that tune went crazy! Keep it locked right here on GOODLIFE Radio 254, manze cheza kama wewe!",
+    script: "[laughing] Yo Nairobi, keep it locked right here on GOODLIFE Radio 254, manze cheza kama wewe!",
   },
   {
     persona: "Wigman",
     mood: "STOIC",
     title: "Wigman · 98.4 FM Live",
     url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-    script: "[confident] [calm] GOODLIFE 98.4 FM live at Marara Camp! Pure frequency, zero static. Let's go!",
+    script: "[confident] [calm] GOODLIFE 98.4 FM live at Marara Camp! Pure frequency, zero static. The heartbeat of Kenya festivals.",
   },
 ];
 
 export interface GenerateDropParams {
+  nextTrackId?: number;
   nextTrackTitle?: string;
   nextTrackArtist?: string;
   nextTrackGenre?: string;
@@ -80,6 +82,7 @@ export interface GenerateDropParams {
   currentTrackArtist?: string;
   timingType?: "intro" | "mid_song" | "outro";
   preferredMood?: "hype" | "sensual" | "comedic" | "stoic";
+  forceNew?: boolean;
 }
 
 export interface DynamicDropResult {
@@ -120,6 +123,32 @@ export async function generateDynamicDrop(params: GenerateDropParams): Promise<D
       venue: "Marara Camp, Thika",
       frequency: "98.4 FM",
     };
+  }
+
+  // Check shared broadcast cache in DB for this upcoming track (prevents rate limit burn & ensures audience sync)
+  if (params.nextTrackId && !params.forceNew) {
+    try {
+      const { rows } = await neonQuery(
+        `SELECT persona, mood, title, script, audio_url, timing_type
+         FROM radio_drops
+         WHERE target_track_id = $1 AND created_at > NOW() - INTERVAL '30 minutes'
+         ORDER BY created_at DESC LIMIT 1`,
+        [params.nextTrackId]
+      );
+      if (rows && rows.length > 0) {
+        const cached = rows[0];
+        return {
+          drop_url: cached.audio_url,
+          script: cached.script,
+          title: cached.title,
+          persona: cached.persona,
+          mood: cached.mood,
+          timingType: cached.timing_type || timing,
+        };
+      }
+    } catch (e) {
+      console.warn("[ai-drops] DB cache check skipped:", e);
+    }
   }
 
   // 2. Select dynamic on-air persona (alternating randomly among all 4)
@@ -265,6 +294,28 @@ HUMAN RADIO IMAGING & EMOTION TAG RULES:
     });
 
     const finalUrl = dropUrl || FALLBACK_DROPS[0].url;
+
+    // 6. Save to radio_drops for shared broadcast synchronization & admin telemetry
+    try {
+      await neonQuery(
+        `INSERT INTO radio_drops 
+          (persona, mood, title, script, audio_url, target_track_id, target_track_title, target_artist, timing_type, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+        [
+          persona.name,
+          detectedMood,
+          `${persona.name} · ${nextArtist} - ${nextTitle}`,
+          script,
+          finalUrl,
+          params.nextTrackId || null,
+          nextTitle,
+          nextArtist,
+          timing,
+        ]
+      );
+    } catch (dbErr) {
+      console.warn("[ai-drops] DB record insert skipped:", dbErr);
+    }
 
     return {
       drop_url: finalUrl,

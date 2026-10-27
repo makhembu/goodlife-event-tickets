@@ -131,9 +131,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const initialBroadcastSyncRef = useRef(false);
   const currentSetIndexRef = useRef(0);
   const isTransitioningRef = useRef(false);
+  const isPlayingRef = useRef(false);
 
   isSyncedRef.current = isSyncedToBroadcast;
   currentSetIndexRef.current = currentSetIndex;
+  isPlayingRef.current = isPlaying;
 
   // 1. Load Initial State & Seed Cached Sets from LocalStorage (0ms Instant Load)
   useEffect(() => {
@@ -190,6 +192,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (data.drops && data.drops.length > 0) {
         setDrops(data.drops);
       }
+      if ((data as any).upcoming_drop) {
+        upcomingDropRef.current = (data as any).upcoming_drop;
+      }
 
       // Save valid sets to cache for 0ms instant future loads
       if (newSets.length > 0) {
@@ -229,7 +234,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           setDuration(dur);
           setProgress(dur > 0 ? (live.offsetSec / dur) * 100 : 0);
 
-          if (audioRef.current) {
+          // Only attach audio source if actively playing (prevents heavy background audio buffering on initial page load)
+          if (audioRef.current && isPlayingRef.current) {
             const track = newSets[live.index];
             const src = quality === "high" && track.audio_high_url ? track.audio_high_url : track.audio_url;
             if (audioRef.current.src !== src) {
@@ -504,6 +510,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          nextTrackId: nextTrack.id,
           nextTrackTitle: nextTrack.title,
           nextTrackArtist: nextTrack.dj_name,
           nextTrackGenre: nextTrack.genre || "Afrobeats",
@@ -1050,7 +1057,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         ref={dropAudioRef}
         onEnded={handleDropEnded}
         onError={handleDropEnded}
-        preload="auto"
+        preload="none"
         playsInline
       />
     </RadioContext.Provider>

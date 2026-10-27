@@ -4,7 +4,11 @@ import { fetchAllEvents, createEvent } from "@/lib/supabase-db";
 export async function GET(request: NextRequest) {
   try {
     const events = await fetchAllEvents();
-    return NextResponse.json(events);
+    return NextResponse.json(events, {
+      headers: {
+        "Cache-Control": "public, s-maxage=10, stale-while-revalidate=45",
+      },
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -7,6 +7,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const {
+      nextTrackId,
       nextTrackTitle,
       nextTrackArtist,
       nextTrackGenre,
@@ -14,9 +15,11 @@ export async function POST(req: NextRequest) {
       currentTrackArtist,
       timingType,
       preferredMood,
+      forceNew,
     } = body;
 
     const result = await generateDynamicDrop({
+      nextTrackId: typeof nextTrackId === "number" ? nextTrackId : Number(nextTrackId) || undefined,
       nextTrackTitle: nextTrackTitle?.toString().slice(0, 100),
       nextTrackArtist: nextTrackArtist?.toString().slice(0, 100),
       nextTrackGenre: nextTrackGenre?.toString().slice(0, 50),
@@ -24,6 +27,7 @@ export async function POST(req: NextRequest) {
       currentTrackArtist: currentTrackArtist?.toString().slice(0, 100),
       timingType: timingType === "intro" || timingType === "mid_song" ? timingType : "outro",
       preferredMood,
+      forceNew: Boolean(forceNew),
     });
 
     return NextResponse.json(result, { status: 200 });

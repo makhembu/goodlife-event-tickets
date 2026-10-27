@@ -9,7 +9,7 @@ import TicketCheckoutPage from "./CheckoutClientPage";
 import ClosedEventClientPage from "./ClosedEventClientPage";
 import ScheduledEventClientPage from "./ScheduledEventClientPage";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 10;
 
 /**
  * Page-level metadata, so `/?event=3` is titled for event 3.

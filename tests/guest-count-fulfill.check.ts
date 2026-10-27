@@ -174,6 +174,7 @@ async function runTest() {
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
+  process.exit(0);
 }
 
 runTest().catch(e => {

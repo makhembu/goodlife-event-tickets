@@ -42,6 +42,12 @@ if (typeof window === "undefined") {
 // Short TTL in-memory request deduplication cache to prevent Neon database connection saturation
 let _allEventsCache: { data: Event[]; ts: number } | null = null;
 let _eventDetailsCache: { data: EventDetails; ts: number } | null = null;
+let _ticketTiersCache: Map<number, { data: TicketTier[]; ts: number }> = new Map();
+
+export function clearTicketTiersCache(eventId?: number) {
+  if (eventId) _ticketTiersCache.delete(eventId);
+  else _ticketTiersCache.clear();
+}
 
 // Fetch all events
 export async function fetchAllEvents(): Promise<Event[]> {
@@ -157,6 +163,13 @@ export async function getEventById(id: number): Promise<Event | null> {
       console.warn("API getEventById failed.", e);
     }
     return null;
+  }
+
+  // Fast path: reuse recent all-events in-memory cache
+  const now = Date.now();
+  if (_allEventsCache && now - _allEventsCache.ts < 5000) {
+    const cached = _allEventsCache.data.find((e) => e.id === id);
+    if (cached) return cached;
   }
 
   try {
@@ -1117,6 +1130,7 @@ export async function createTicket(ticket: Omit<Ticket, "purchase_time" | "is_sc
         campingType
       ]
     );
+    clearTicketTiersCache(resolvedEventId);
     return {
       ...newTicket,
       event_id: resolvedEventId,
@@ -2063,12 +2077,18 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     return [];
   }
 
-  // Server side - Neon SQL
+  // Server side - Neon SQL with 15s in-memory cache
   try {
     let resolvedEventId = eventId;
     if (!resolvedEventId) {
       const active = await fetchActiveEvent();
       resolvedEventId = active?.id || 1;
+    }
+
+    const now = Date.now();
+    const cached = _ticketTiersCache.get(resolvedEventId);
+    if (cached && now - cached.ts < 15000) {
+      return cached.data;
     }
 
     const query = `
@@ -2088,7 +2108,9 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     `;
 
     const { rows } = await neonQuery(query, [resolvedEventId]);
-    return formatTierRows(rows);
+    const formatted = formatTierRows(rows);
+    _ticketTiersCache.set(resolvedEventId, { data: formatted, ts: now });
+    return formatted;
   } catch (err) {
     console.error("Neon fetchTicketTiers error:", err);
     // A database error must not surface as an invented price list either.
@@ -2168,6 +2190,7 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
         JSON.stringify(tier.tour_media_urls || [])
       ]
     );
+    clearTicketTiersCache(eventId);
     return { ...tier, event_id: eventId };
   } catch (err) {
     console.error("Neon createTicketTier error:", err);
@@ -2310,6 +2333,7 @@ export async function updateTicketTier(
     );
     if (rows.length === 0) return null;
     const r = rows[0];
+    clearTicketTiersCache(scopedEventId);
     return {
       ...r,
       price: Number(r.price),
