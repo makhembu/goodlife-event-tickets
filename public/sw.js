@@ -1,6 +1,6 @@
-// GOODLIFE Progressive Web App Service Worker (v2)
+// GOODLIFE Progressive Web App Service Worker (v3)
 // Strictly offline-capable with explicit security boundaries for financial transactions
-const CACHE_VERSION = 'goodlife-v2';
+const CACHE_VERSION = 'goodlife-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -57,6 +57,12 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+
+  // 0. NEVER INTERCEPT CROSS-ORIGIN REQUESTS (e.g. YouTube thumbnails, external CDNs, third-party media)
+  // Let the browser handle external assets natively without Service Worker thread choking
+  if (url.origin !== self.location.origin) {
+    return;
+  }
 
   // 1. NEVER INTERCEPT OR CACHE FINANCIAL / AUTHENTICATED PATHS
   // Strictly bypass service worker for:

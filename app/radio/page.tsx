@@ -59,10 +59,15 @@ export default function RadioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<"playlist" | "vault">("playlist");
+  const [visibleCount, setVisibleCount] = useState(25);
 
   useEffect(() => {
     setImgError(false);
   }, [currentSet?.id]);
+
+  useEffect(() => {
+    setVisibleCount(25);
+  }, [searchQuery, selectedGenre]);
 
   // Clean current track information
   const cleanedCurrent = useMemo(() => {
@@ -94,6 +99,10 @@ export default function RadioPage() {
       return matchSearch && matchGenre;
     });
   }, [queue, searchQuery, selectedGenre]);
+
+  const displayedQueue = useMemo(() => {
+    return filteredQueue.slice(0, visibleCount);
+  }, [filteredQueue, visibleCount]);
 
   // Calculate current track index
   const currentIndex = useMemo(() => {
@@ -635,91 +644,107 @@ export default function RadioPage() {
                         No festival tracks match &quot;{searchQuery}&quot;
                       </div>
                     ) : (
-                      filteredQueue.map((track, i) => {
-                        const isSelected = currentSet?.id === track.id;
-                        const cleaned = cleanTrackInfo(track.title, track.dj_name);
+                      <>
+                        {displayedQueue.map((track, i) => {
+                          const isSelected = currentSet?.id === track.id;
+                          const cleaned = cleanTrackInfo(track.title, track.dj_name);
 
-                        return (
-                          <div
-                            key={track.id}
-                            onClick={() => playSet(track)}
-                            className={`flex items-center justify-between p-3 rounded-lg transition-all cursor-pointer group ${
-                              isSelected
-                                ? "bg-brand-accent/25 border-2 border-brand-navy font-bold shadow-(--shadow-brut-xs)"
-                                : "hover:bg-brand-off-white hover:translate-x-0.5 border-2 border-transparent"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3.5 min-w-0">
-                              {/* Position or Playing Equalizer Animation */}
-                              <div className="w-6 flex items-center justify-center shrink-0">
-                                {isSelected && isPlaying ? (
-                                  <div className="flex items-end gap-0.5 h-4">
-                                    <span className="w-1 bg-brand-navy animate-[pulse_0.4s_ease-in-out_infinite_alternate] h-full rounded" />
-                                    <span className="w-1 bg-brand-navy animate-[pulse_0.6s_ease-in-out_infinite_alternate] h-3/4 rounded" />
-                                    <span className="w-1 bg-brand-navy animate-[pulse_0.5s_ease-in-out_infinite_alternate] h-1/2 rounded" />
-                                  </div>
-                                ) : isSelected ? (
-                                  <Check className="w-4 h-4 text-brand-navy" />
-                                ) : (
-                                  <span className="text-xs font-mono text-brand-navy/50 font-semibold">
-                                    {i + 1}
+                          return (
+                            <div
+                              key={track.id}
+                              onClick={() => playSet(track)}
+                              className={`flex items-center justify-between p-3 rounded-lg transition-all cursor-pointer group ${
+                                isSelected
+                                  ? "bg-brand-accent/25 border-2 border-brand-navy font-bold shadow-(--shadow-brut-xs)"
+                                  : "hover:bg-brand-off-white hover:translate-x-0.5 border-2 border-transparent"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3.5 min-w-0">
+                                {/* Position or Playing Equalizer Animation */}
+                                <div className="w-6 flex items-center justify-center shrink-0">
+                                  {isSelected && isPlaying ? (
+                                    <div className="flex items-end gap-0.5 h-4">
+                                      <span className="w-1 bg-brand-navy animate-[pulse_0.4s_ease-in-out_infinite_alternate] h-full rounded" />
+                                      <span className="w-1 bg-brand-navy animate-[pulse_0.6s_ease-in-out_infinite_alternate] h-3/4 rounded" />
+                                      <span className="w-1 bg-brand-navy animate-[pulse_0.5s_ease-in-out_infinite_alternate] h-1/2 rounded" />
+                                    </div>
+                                  ) : isSelected ? (
+                                    <Check className="w-4 h-4 text-brand-navy" />
+                                  ) : (
+                                    <span className="text-xs font-mono text-brand-navy/50 font-semibold">
+                                      {i + 1}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Small Track Thumbnail */}
+                                <div className="w-10 h-10 rounded border border-brand-navy/30 overflow-hidden bg-brand-navy shrink-0 relative flex items-center justify-center">
+                                  {track.cover_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={track.cover_url}
+                                      alt=""
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <Disc3 className="w-5 h-5 text-brand-accent" />
+                                  )}
+                                </div>
+
+                                {/* Track Title and Artist */}
+                                <div className="truncate min-w-0">
+                                  <p className="text-sm font-bold uppercase truncate text-brand-navy leading-tight">
+                                    {cleaned.title}
+                                  </p>
+                                  <p className="text-[11px] text-brand-navy/60 uppercase font-mono tracking-wide mt-0.5 truncate">
+                                    {cleaned.artist}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Genre Pill, Duration & Play Hover Action */}
+                              <div className="flex items-center gap-3 shrink-0 ml-3">
+                                {track.genre && (
+                                  <span className="hidden sm:inline px-2 py-0.5 border border-brand-navy/20 bg-brand-off-white text-[10px] font-mono uppercase font-bold text-brand-navy/70 rounded">
+                                    {track.genre}
                                   </span>
                                 )}
-                              </div>
-
-                              {/* Small Track Thumbnail */}
-                              <div className="w-10 h-10 rounded border border-brand-navy/30 overflow-hidden bg-brand-navy shrink-0 relative flex items-center justify-center">
-                                {track.cover_url ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={track.cover_url}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <Disc3 className="w-5 h-5 text-brand-accent" />
-                                )}
-                              </div>
-
-                              {/* Track Title and Artist */}
-                              <div className="truncate min-w-0">
-                                <p className="text-sm font-bold uppercase truncate text-brand-navy leading-tight">
-                                  {cleaned.title}
-                                </p>
-                                <p className="text-[11px] text-brand-navy/60 uppercase font-mono tracking-wide mt-0.5 truncate">
-                                  {cleaned.artist}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Genre Pill, Duration & Play Hover Action */}
-                            <div className="flex items-center gap-3 shrink-0 ml-3">
-                              {track.genre && (
-                                <span className="hidden sm:inline px-2 py-0.5 border border-brand-navy/20 bg-brand-off-white text-[10px] font-mono uppercase font-bold text-brand-navy/70 rounded">
-                                  {track.genre}
+                                <span className="font-mono text-xs text-brand-navy/60 font-semibold">
+                                  {track.duration || "3:30"}
                                 </span>
-                              )}
-                              <span className="font-mono text-xs text-brand-navy/60 font-semibold">
-                                {track.duration || "3:30"}
-                              </span>
 
-                              <button
-                                className={`w-8 h-8 rounded-full border border-brand-navy flex items-center justify-center transition-all ${
-                                  isSelected
-                                    ? "bg-brand-navy text-brand-off-white"
-                                    : "bg-white text-brand-navy group-hover:bg-brand-accent"
-                                }`}
-                              >
-                                {isSelected && isPlaying ? (
-                                  <Pause className="w-3.5 h-3.5 fill-current" />
-                                ) : (
-                                  <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                                )}
-                              </button>
+                                <button
+                                  className={`w-8 h-8 rounded-full border border-brand-navy flex items-center justify-center transition-all ${
+                                    isSelected
+                                      ? "bg-brand-navy text-brand-off-white"
+                                      : "bg-white text-brand-navy group-hover:bg-brand-accent"
+                                  }`}
+                                >
+                                  {isSelected && isPlaying ? (
+                                    <Pause className="w-3.5 h-3.5 fill-current" />
+                                  ) : (
+                                    <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                                  )}
+                                </button>
+                              </div>
                             </div>
+                          );
+                        })}
+
+                        {visibleCount < filteredQueue.length && (
+                          <div className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setVisibleCount((prev) => prev + 25)}
+                              className="px-4 py-2 border-2 border-brand-navy bg-white hover:bg-brand-accent text-brand-navy font-mono text-xs font-bold uppercase shadow-(--shadow-brut-xs) transition-all cursor-pointer"
+                            >
+                              Load More Festival Tracks ({filteredQueue.length - visibleCount} remaining)
+                            </button>
                           </div>
-                        );
-                      })
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
