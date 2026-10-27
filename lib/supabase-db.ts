@@ -2079,9 +2079,9 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     return [];
   }
 
-  // Server side - Neon SQL with 15s in-memory cache
+  // Server side - Neon SQL with 60s in-memory cache and stale fallback
+  let resolvedEventId = eventId;
   try {
-    let resolvedEventId = eventId;
     if (!resolvedEventId) {
       const active = await fetchActiveEvent();
       resolvedEventId = active?.id || 1;
@@ -2115,8 +2115,10 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     return formatted;
   } catch (err) {
     console.error("Neon fetchTicketTiers error:", err);
-    const cached = _ticketTiersCache.get(resolvedEventId);
-    if (cached) return cached.data;
+    if (resolvedEventId) {
+      const cached = _ticketTiersCache.get(resolvedEventId);
+      if (cached) return cached.data;
+    }
     // A database error must not surface as an invented price list either.
     return [];
   }
