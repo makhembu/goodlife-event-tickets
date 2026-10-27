@@ -2492,8 +2492,8 @@ export default function TicketCheckoutPage({
                     src={expandedStory?.url || eventDetails.flyer_url} 
                     alt={`${eventDetails.title} Flyer Full`} 
                     fill
-                    priority
-                    sizes="(max-width: 1024px) 100vw, 80vw"
+                    loading="lazy"
+                    sizes="(max-width: 768px) 100vw, 1024px"
                     className="object-contain"
                     referrerPolicy="no-referrer"
                   />

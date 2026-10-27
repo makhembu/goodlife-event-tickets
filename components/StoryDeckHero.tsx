@@ -39,8 +39,8 @@ export interface StoryDeckHeroProps {
 const POSTER_DURATION = 5000;
 /** Give the browser this long to paint a poster before starting its timer. */
 const POSTER_READY_FALLBACK = 2500;
-/** Delay before warming the next video's metadata. Never preloads the deck. */
-const NEXT_VIDEO_WARM_DELAY = 1200;
+/** Delay before warming the next video's metadata (delayed to protect initial page load FCP & TTFB). */
+const NEXT_VIDEO_WARM_DELAY = 3800;
 
 export default function StoryDeckHero({
   posterUrl,

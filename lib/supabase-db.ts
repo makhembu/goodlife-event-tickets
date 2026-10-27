@@ -12,7 +12,10 @@ if (typeof window === "undefined") {
   try {
     // Directly require pg here so bundler keeps it server-only
     const { Pool } = require("pg");
-    let connStr = process.env.DATABASE_URL || "";
+    let connStr = (process.env.DATABASE_URL || "").trim();
+    if ((connStr.startsWith('"') && connStr.endsWith('"')) || (connStr.startsWith("'") && connStr.endsWith("'"))) {
+      connStr = connStr.slice(1, -1).trim();
+    }
     // Automatically route to Neon's high-concurrency PgBouncer pooler to eliminate cold connection queuing
     if (connStr && connStr.includes(".neon.tech") && !connStr.includes("-pooler.")) {
       try {
@@ -21,14 +24,16 @@ if (typeof window === "undefined") {
         parts[0] = `${parts[0]}-pooler`;
         u.hostname = parts.join(".");
         connStr = u.toString();
-      } catch {}
+      } catch (err) {
+        console.warn("[supabase-db] URL pooler transformation skipped:", err);
+      }
     }
     const _pool = new Pool({
       connectionString: connStr,
       ssl: { rejectUnauthorized: false },
-      max: 4,
-      idleTimeoutMillis: 15000,
-      connectionTimeoutMillis: 5000
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 8000
     });
     neonQuery = (text: string, params?: any[]) => _pool.query(text, params);
     neonConnect = () => _pool.connect();

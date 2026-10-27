@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         drop_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-        script: "[excited] [shouting] Over 1,200 people locked in! Turn the volume all the way UP on 98.4 FM!",
+        script: "[excited] [shouting] Nairobi live airwaves! Turn the volume all the way UP on 98.4 FM!",
         title: "DJ Shax · GOODLIFE Hype",
         persona: "DJ Shax",
         mood: "HYPE",

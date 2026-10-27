@@ -1,6 +1,6 @@
-// GOODLIFE Progressive Web App Service Worker (v3)
+// GOODLIFE Progressive Web App Service Worker (v4)
 // Strictly offline-capable with explicit security boundaries for financial transactions
-const CACHE_VERSION = 'goodlife-v3';
+const CACHE_VERSION = 'goodlife-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27,10 +27,8 @@ self.addEventListener('install', (event) => {
       return cache.addAll(PRECACHE_ASSETS).catch((err) => {
         console.warn('PWA Precache failed non-critically:', err);
       });
-    })
+    }).then(() => self.skipWaiting())
   );
-  // Do NOT self.skipWaiting() here automatically if active payment might be in flight!
-  // Wait for postMessage skipWaiting triggered by UI when safe.
 });
 
 self.addEventListener('activate', (event) => {
@@ -58,21 +56,23 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // 0. NEVER INTERCEPT CROSS-ORIGIN REQUESTS (e.g. YouTube thumbnails, external CDNs, third-party media)
-  // Let the browser handle external assets natively without Service Worker thread choking
+  // 0. NEVER INTERCEPT CROSS-ORIGIN REQUESTS (e.g. YouTube, Catbox, Cloudflare R2, ImgBB, CDNs)
+  // Let the browser handle external media natively at full bandwidth
   if (url.origin !== self.location.origin) {
     return;
   }
 
-  // 1. NEVER INTERCEPT OR CACHE FINANCIAL / AUTHENTICATED PATHS
+  // 1. NEVER INTERCEPT DYNAMIC / FINANCIAL / AUTH / NEXT.JS BUNDLES
   // Strictly bypass service worker for:
-  // - /api/* (all dynamic backend endpoints, STK push, payments, webhooks, callbacks)
+  // - /api/* (all dynamic backend endpoints, STK push, payments, webhooks, radio state)
+  // - /_next/* (Next.js JS chunks, CSS, optimized images - let browser handle via HTTP/2 directly)
   // - /vendor/* (vendor operator POS and credentials)
   // - /admin/* (admin dashboard and session management)
   // - /scanner/* (gate scanner and session auth)
   // - /pay/* (tab remote self-pay)
   if (
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/') ||
     url.pathname.startsWith('/vendor') ||
     url.pathname.startsWith('/admin') ||
     url.pathname.startsWith('/scanner') ||
@@ -112,34 +112,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Static Next.js Bundles (/_next/static/*) -> Cache-First (content-hashed, immutable)
-  if (url.pathname.startsWith('/_next/static/')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(STATIC_CACHE).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return networkResponse;
-        });
-      })
-    );
-    return;
-  }
-
-  // 4. Static Images, Fonts, Icons -> Stale-While-Revalidate
+  // 3. Static Shell Assets (Icons, Fonts) -> Stale-While-Revalidate
   if (
     url.pathname.startsWith('/icons/') ||
-    url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.jpg') ||
-    url.pathname.endsWith('.jpeg') ||
-    url.pathname.endsWith('.webp') ||
-    url.pathname.endsWith('.svg') ||
-    url.pathname.endsWith('.ttf')
+    url.pathname === '/favicon.svg' ||
+    url.pathname === '/icon.png' ||
+    url.pathname === '/apple-touch-icon.png' ||
+    url.pathname === '/BebasNeue.ttf'
   ) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
@@ -161,6 +140,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 5. Default fallback to standard fetch
-  event.respondWith(fetch(event.request));
+  // 4. Default: DO NOT INTERCEPT. Allow native browser fetch pipeline to handle request without SW overhead.
+  return;
 });

@@ -61,14 +61,14 @@ export default function RadioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<"playlist" | "vault">("playlist");
-  const [visibleCount, setVisibleCount] = useState(25);
+  const [visibleCount, setVisibleCount] = useState(12);
 
   useEffect(() => {
     setImgError(false);
   }, [currentSet?.id]);
 
   useEffect(() => {
-    setVisibleCount(25);
+    setVisibleCount(12);
   }, [searchQuery, selectedGenre]);
 
   // Clean current track information

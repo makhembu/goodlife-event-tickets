@@ -100,21 +100,21 @@ export async function getRadioTelemetry(): Promise<RadioTelemetry> {
     }
   } catch {}
 
-  // 5. Fetch active listeners and top listener cities
-  let listenersCount = 1240;
-  let activeCities = ["Nairobi", "Thika", "Eldoret", "Nakuru", "Mombasa"];
+  // 5. Fetch honest active listeners and top listener cities (ZERO fabricated numbers)
+  let listenersCount = 0;
+  let activeCities = ["Nairobi", "Thika", "Mombasa", "Eldoret"];
   try {
     const res = await neonQuery(
-      `SELECT COUNT(DISTINCT session_hash) as active_listeners 
+      `SELECT COUNT(DISTINCT session_hash)::int as active_listeners 
        FROM radio_plays 
        WHERE created_at >= NOW() - INTERVAL '30 minutes'`
     );
     const dbCount = parseInt(res.rows?.[0]?.active_listeners || "0", 10);
-    const baseHourMultiplier = eatHours >= 18 && eatHours <= 23 ? 1.4 : 1.0;
-    listenersCount = Math.max(dbCount, Math.floor((950 + (eatMinutes * 7)) * baseHourMultiplier));
+    // Honest count only — never simulate or inflate listeners
+    listenersCount = dbCount;
 
     const cityRes = await neonQuery(
-      `SELECT listener_city, COUNT(*) as c
+      `SELECT listener_city, COUNT(*)::int as c
        FROM radio_plays
        WHERE created_at >= NOW() - INTERVAL '48 hours' AND listener_city IS NOT NULL AND listener_city != ''
        GROUP BY listener_city
@@ -124,8 +124,8 @@ export async function getRadioTelemetry(): Promise<RadioTelemetry> {
     if (cityRes.rows && cityRes.rows.length > 0) {
       activeCities = cityRes.rows.map((r: any) => r.listener_city).filter(Boolean);
     }
-  } catch {
-    listenersCount = 1180 + (eatMinutes * 5);
+  } catch (err) {
+    console.warn("[telemetry] DB query for active listeners/cities failed non-critically:", err);
   }
 
   return {

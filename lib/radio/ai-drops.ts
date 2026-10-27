@@ -111,9 +111,9 @@ export async function generateDynamicDrop(params: GenerateDropParams): Promise<D
     telemetry = await getRadioTelemetry();
   } catch {
     telemetry = {
-      listenersCount: 1350,
-      nairobiTimeEAT: "17:25",
-      nairobiTime12h: "5:25 PM",
+      listenersCount: 0,
+      nairobiTimeEAT: "21:00",
+      nairobiTime12h: "9:00 PM",
       timeSlot: "sunset_vibes",
       timeSlotLabel: "Sunset Golden Hour at Marara Camp",
       weather: "23°C clear evening skies in Nairobi",
@@ -181,7 +181,7 @@ REAL-TIME BROADCAST TELEMETRY & LOCAL NAIROBI DATA:
 - Live Temperature & Weather: ${telemetry.weather}
 - Entertainment Scene Buzz: "${telemetry.entertainmentNews}"
 - Active Listener Hotspots: ${telemetry.activeCities.join(", ")}
-- Active Listeners Count: ${telemetry.listenersCount.toLocaleString()} listeners locked in across Kenya right now
+${telemetry.listenersCount > 50 ? `- Active Listeners Count: ${telemetry.listenersCount.toLocaleString()} verified listeners locked in` : `- Active Listeners: Audience count hidden (keep broadcast focused on Nairobi vibe, weather, and time)`}
 - Time Slot & Atmosphere: ${telemetry.timeSlotLabel}
 - Drop Timing Slot: ${timing.toUpperCase()} (${timing === "intro" ? "Intro Ramp over opening beat" : timing === "mid_song" ? "Mid-Song Power Stager during instrumental bridge" : "Outro Transition teasing next track"})
 - Current Track: "${currentTitle}" by ${currentArtist}
@@ -194,17 +194,17 @@ HUMAN RADIO IMAGING & EMOTION TAG RULES:
    - For playful banter or jokes: "[laughing]"
    - For station authority, deep bass drops: "[confident] [calm]"
 2. WEAVE IN ONE FAMOUS HOOK, VIRAL LYRIC, OR CULTURAL TAGLINE of "${nextTitle}" by ${nextArtist} (e.g. signature catchphrases, viral TikTok lines, or famous chorus hooks).
-3. PERSONAL LOCAL REAL-TIME TOUCH: Incorporate AT LEAST ONE of:
+3. PERSONAL LOCAL REAL-TIME TOUCH (TRUTHFUL & ACCURATE ONLY — NEVER INVENT FAKE STATS): Incorporate AT LEAST ONE of:
    - Exact Nairobi time: e.g. "It's ${telemetry.nairobiTime12h} in the 254" or "Just past ${telemetry.nairobiTime12h} on 98.4 FM"
    - Quick traffic shoutout: e.g. "Thika Superhighway is clear all the way to Marara Camp"
-   - City shoutout to listeners: e.g. "Big up our crew tuning in from ${telemetry.activeCities[0]} and ${telemetry.activeCities[1] || 'Eldoret'}"
-   - Active crowd count: e.g. "${telemetry.listenersCount.toLocaleString()} people locked in"
+   - City shoutout to listeners: e.g. "Big up our crew tuning in from ${telemetry.activeCities[0]} and ${telemetry.activeCities[1] || 'Mombasa'}"
+   ${telemetry.listenersCount > 50 ? `- Verified listener count: "${telemetry.listenersCount.toLocaleString()} listeners locked in"` : `- CRITICAL: Do NOT invent, guess, or state any listener counts or numbers. Keep it focused on the music, Nairobi time, and vibe.`}
 4. NATURAL HUMAN CADENCE:
    - Use ellipses (...) for breathless anticipation.
    - Use em dashes (—) for rhythmic syncopation.
    - Capitalize 1-2 key hype words (e.g. "TURN IT UP", "MASSIVE", "LETS GO").
 5. LANGUAGE MIX: 70% fluent urban English mixed seamlessly with 30% natural Nairobi Sheng slang (manze, cheza kama wewe, wazi, rada safi, twende kazi).
-6. LENGTH: 12 to 24 words maximum. Output ONLY the spoken words with the opening bracket tag. No markdown, quotes, emojis, or asterisks.`;
+6. LENGTH: 18 to 32 words. MUST conclude with a complete thought explicitly stating "${nextTitle}" by "${nextArtist}". Never stop mid-sentence. Output ONLY the spoken words starting with the opening bracket emotion tag. No markdown, quotes, emojis, or asterisks.`;
 
     try {
       const nvRes = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
@@ -222,10 +222,10 @@ HUMAN RADIO IMAGING & EMOTION TAG RULES:
             },
             {
               role: "user",
-              content: `Drop transition for "${nextTitle}" by ${nextArtist}. Hype the crowd!`,
+              content: `Create a 20-word radio transition drop that specifically hypes and announces "${nextTitle}" by ${nextArtist}. You MUST state the song name "${nextTitle}" and artist "${nextArtist}". Keep it punchy and under 25 words.`,
             },
           ],
-          max_tokens: 60,
+          max_tokens: 100,
           temperature: 0.82,
         }),
       });
@@ -244,11 +244,20 @@ HUMAN RADIO IMAGING & EMOTION TAG RULES:
 
     if (!script) {
       const presets = [
-        `[excited] [shouting] Over ${telemetry.listenersCount.toLocaleString()} people locked in! Here comes ${nextTitle} by ${nextArtist}, turn it UP Nairobi!`,
+        `[excited] [shouting] It's ${telemetry.nairobiTime12h} on 98.4 FM! Here comes ${nextTitle} by ${nextArtist}, turn it UP Nairobi!`,
         `[laughing] Yo Nairobi, that last tune went crazy! Coming up next we got ${nextArtist} with ${nextTitle}, manze cheza kama wewe!`,
         `[confident] [calm] GOODLIFE 98.4 FM live at Marara Camp! Next up is ${nextTitle} by ${nextArtist}, let's go!`,
       ];
       script = presets[Math.floor(Math.random() * presets.length)];
+    }
+
+    // Guarantee: Ensure upcoming song or artist is explicitly stated
+    const lowerScript = script.toLowerCase();
+    const titleTokens = nextTitle.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+    const mentionsTitle = titleTokens.some((token) => lowerScript.includes(token));
+    const mentionsArtist = lowerScript.includes(nextArtist.toLowerCase());
+    if (!mentionsTitle && !mentionsArtist) {
+      script = `${script.replace(/[.!?\s]+$/, "")}... get ready for ${nextTitle} by ${nextArtist}!`;
     }
 
     // Ensure Fish Audio opening tag exists

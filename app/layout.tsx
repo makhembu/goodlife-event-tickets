@@ -1,3 +1,4 @@
+import React, { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import { Space_Grotesk, Bebas_Neue } from 'next/font/google';
 import './globals.css'; // Global styles
@@ -109,7 +110,9 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
     <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
       <body className="font-sans antialiased bg-brand-bg text-brand-black min-h-screen" suppressHydrationWarning>
         <RadioProvider>
-          <SeoStructuredData />
+          <Suspense fallback={null}>
+            <SeoStructuredData />
+          </Suspense>
           <PwaUpdatePrompt />
           {children}
           <GlobalRadioBar />
