@@ -143,3 +143,22 @@ export async function deleteRadioAudioKeys(keys: Array<string | null | undefined
     }
   }
 }
+
+export async function uploadDropBufferToR2(params: {
+  buffer: Buffer | Uint8Array;
+  filename: string;
+}): Promise<string | null> {
+  const r2 = getR2();
+  if (!r2) return null;
+
+  const key = `radio/drops/${Date.now()}-${params.filename}`;
+  await r2.s3.send(
+    new PutObjectCommand({
+      Bucket: r2.bucket,
+      Key: key,
+      Body: params.buffer,
+      ContentType: "audio/mpeg",
+    })
+  );
+  return `${r2.publicDomain}/${key}`;
+}

@@ -47,6 +47,13 @@ export interface RadioBroadcastSchedule {
   total_duration_sec: number;
 }
 
+export interface RadioDrop {
+  id: string;
+  title: string;
+  audio_url: string;
+  theme?: string;
+}
+
 export interface RadioPublicState {
   mode: BroadcastMode;
   live: {
@@ -56,6 +63,7 @@ export interface RadioPublicState {
   };
   broadcast?: RadioBroadcastSchedule | null;
   sets: RadioSet[];
+  drops?: RadioDrop[];
 }
 
 export interface IngestJobTrack {

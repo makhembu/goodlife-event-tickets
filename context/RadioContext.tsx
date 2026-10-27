@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
-import { RadioSet, RadioPublicState, AudioQuality, BroadcastMode } from "@/lib/radio/types";
+import { RadioSet, RadioPublicState, AudioQuality, BroadcastMode, RadioDrop } from "@/lib/radio/types";
 
 interface RadioContextType {
   currentSet: RadioSet | null;
@@ -18,6 +18,10 @@ interface RadioContextType {
   isMinimized: boolean;
   queue: RadioSet[];
   liveDropFallback: boolean;
+  hasLoaded: boolean;
+  isDropPlaying: boolean;
+  activeDropTitle: string | null;
+  fetchRadioState: () => Promise<void>;
   togglePlay: () => void;
   playSet: (set: RadioSet) => void;
   snapToBroadcast: () => void;
@@ -83,8 +87,27 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [liveDropFallback, setLiveDropFallback] = useState(false);
   const [isSyncedToBroadcast, setIsSyncedToBroadcast] = useState(true);
 
+  // Dynamic Radio Sheng Drops & Station Sweepers
+  const [drops, setDrops] = useState<RadioDrop[]>([
+    {
+      id: "drop-marara-vibes",
+      title: "Marara Camp Vibes 254",
+      audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
+    },
+    {
+      id: "drop-nairobi-sound",
+      title: "Nairobi Sound In The Building",
+      audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
+    },
+  ]);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [isDropPlaying, setIsDropPlaying] = useState(false);
+  const [activeDropTitle, setActiveDropTitle] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
+  const dropAudioRef = useRef<HTMLAudioElement | null>(null);
+  const dropTriggeredTrackIdRef = useRef<number | null>(null);
   const hlsRef = useRef<any>(null);
   const lastStateSaveRef = useRef<number>(0);
   const secondsListenedRef = useRef<number>(0);
@@ -119,10 +142,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // 2. Fetch Radio Public State with Dynamic Playlist Streaming & Live Sync
   const fetchRadioState = useCallback(async () => {
     try {
-      const res = await fetch("/api/radio/state");
-      if (!res.ok) return;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch("/api/radio/state", { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        setHasLoaded(true);
+        return;
+      }
       const data: RadioPublicState = await res.json();
       const newSets = data.sets || [];
+      if (data.drops && data.drops.length > 0) {
+        setDrops(data.drops);
+      }
 
       // Update sets smoothly without interrupting current track
       setSets((prevSets) => {
@@ -176,7 +208,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn("[RadioContext] fetchRadioState failed:", e);
+    } finally {
+      setHasLoaded(true);
+    }
   }, [currentSetIndex, quality]);
 
   useEffect(() => {
@@ -354,7 +390,42 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("pagehide", handlePageHide);
   }, [currentSet, isMinimized, quality]);
 
-  // 6. Time Update Handler
+  // 6. Dynamic Radio Drop Pre-fetch & Playout Engine
+  const upcomingDropRef = useRef<{ drop_url: string; title: string; script: string } | null>(null);
+  const isFetchingDropRef = useRef(false);
+
+  const fetchUpcomingDrop = async (nextTrack: RadioSet) => {
+    if (isFetchingDropRef.current) return;
+    isFetchingDropRef.current = true;
+    try {
+      const res = await fetch("/api/radio/drops/dynamic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nextTrackTitle: nextTrack.title,
+          nextTrackArtist: nextTrack.dj_name,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        upcomingDropRef.current = data;
+      }
+    } catch (e) {
+      console.warn("[RadioContext] Dynamic drop prefetch failed:", e);
+    } finally {
+      isFetchingDropRef.current = false;
+    }
+  };
+
+  const handleDropEnded = () => {
+    setIsDropPlaying(false);
+    setActiveDropTitle(null);
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+  };
+
+  // 7. Time Update Handler & Dynamic Drop Injection
   const handleTimeUpdate = () => {
     if (!audioRef.current) return;
     const cur = audioRef.current.currentTime;
@@ -362,6 +433,51 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setCurrentTime(cur);
     setDuration(dur);
     setProgress(dur > 0 ? (cur / dur) * 100 : 0);
+
+    const timeLeft = dur - cur;
+
+    // A. Prefetch dynamic Kenyan AI DJ drop early while current track is playing so it never misses
+    if (
+      isPlaying &&
+      mode !== "live" &&
+      !upcomingDropRef.current &&
+      !isFetchingDropRef.current &&
+      sets.length > 1
+    ) {
+      const nextIdx = (currentSetIndex + 1) % sets.length;
+      const nextTrack = sets[nextIdx];
+      if (nextTrack) {
+        fetchUpcomingDrop(nextTrack);
+      }
+    }
+
+    // B. Trigger dynamic drop injection during outro instrumental transition (~8-9s before track end)
+    if (
+      isPlaying &&
+      mode !== "live" &&
+      dur >= 15 &&
+      timeLeft <= 9 &&
+      timeLeft > 1 &&
+      currentSet &&
+      dropTriggeredTrackIdRef.current !== currentSet.id
+    ) {
+      dropTriggeredTrackIdRef.current = currentSet.id;
+      const dropToPlay = upcomingDropRef.current || (drops.length > 0 ? drops[Math.floor(Math.random() * drops.length)] : null);
+      const dropUrl = (dropToPlay as any)?.drop_url || (dropToPlay as any)?.audio_url;
+      if (dropUrl && dropAudioRef.current) {
+        setIsDropPlaying(true);
+        setActiveDropTitle((dropToPlay as any)?.title || "KENYAN DJ DROP");
+
+        // Sidechain Ducking: duck background instrumental beat to -12dB (0.25) so vocal cuts through cleanly
+        if (audioRef.current) {
+          audioRef.current.volume = isMuted ? 0 : volume * 0.25;
+        }
+
+        dropAudioRef.current.src = dropUrl;
+        dropAudioRef.current.volume = isMuted ? 0 : volume;
+        dropAudioRef.current.play().catch(() => {});
+      }
+    }
 
     // Track actual elapsed playback delta (ignoring seeking jumps > 2s)
     const delta = cur - lastTimeUpdateRef.current;
@@ -372,25 +488,27 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     saveStateToStorage(cur);
   };
 
-  // 7. Playback Controls
+  // 8. Playback Controls & Continuous Autoplay Pipeline
   const togglePlay = () => {
     if (!audioRef.current) return;
     if (isPlaying) {
       if (mode === "live") {
-        // Broadcast Contract: Pause = Disconnect (release data stream buffer)
         audioRef.current.pause();
         audioRef.current.src = "";
         audioRef.current.load();
       } else {
         audioRef.current.pause();
       }
+      if (dropAudioRef.current) {
+        dropAudioRef.current.pause();
+      }
       setIsPlaying(false);
+      setIsDropPlaying(false);
     } else {
       setIsMinimized(false);
       notifyOtherTabsPlay();
 
       if (mode === "live") {
-        // Broadcast Contract: Play = Snap to Live second (fresh playhead with cache buster)
         const snapUrl = liveStreamUrl.includes("?")
           ? `${liveStreamUrl}&t=${Date.now()}`
           : `${liveStreamUrl}?t=${Date.now()}`;
@@ -400,12 +518,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           .play()
           .then(() => setIsPlaying(true))
           .catch(() => {
-            // If live stream is unreachable, fallback to curated set
             setLiveDropFallback(true);
             switchToCurated();
           });
       } else {
-        // In 24/7 Virtual Synchronized Broadcast Mode: Snap playhead to live station second
         if (isSyncedRef.current && sets.length > 0) {
           const live = computeLiveTimeline(sets);
           const targetTrack = sets[live.index];
@@ -446,6 +562,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const snapToBroadcast = useCallback(() => {
     setIsSyncedToBroadcast(true);
     isSyncedRef.current = true;
+    dropTriggeredTrackIdRef.current = null;
+    upcomingDropRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+
     if (sets.length === 0) return;
     const live = computeLiveTimeline(sets);
     setCurrentSetIndex(live.index);
@@ -474,47 +596,51 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         .then(() => setIsPlaying(true))
         .catch(() => {});
     }
-  }, [sets, quality]);
+  }, [sets, quality, volume, isMuted]);
 
+  // Advance to next broadcast track sequentially with seamless mobile autoplay
   const advanceBroadcastTrack = useCallback(() => {
     if (sets.length === 0) return;
     setIsSyncedToBroadcast(true);
     isSyncedRef.current = true;
-    const live = computeLiveTimeline(sets);
-    setCurrentSetIndex(live.index);
-    setCurrentTime(live.offsetSec);
-    const targetTrack = sets[live.index];
-    const streamSrc = quality === "high" && targetTrack?.audio_high_url ? targetTrack.audio_high_url : targetTrack?.audio_url;
+    dropTriggeredTrackIdRef.current = null;
+    upcomingDropRef.current = null;
+
+    // Restore full audio volume
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+
+    // Natural sequential progression through the airwave playlist
+    const nextIdx = (currentSetIndex + 1) % sets.length;
+    setCurrentSetIndex(nextIdx);
+    setCurrentTime(0);
+    setProgress(0);
+
+    const nextTrack = sets[nextIdx];
+    const streamSrc = quality === "high" && nextTrack?.audio_high_url ? nextTrack.audio_high_url : nextTrack?.audio_url;
 
     if (audioRef.current && streamSrc) {
-      if (audioRef.current.src !== streamSrc) {
-        audioRef.current.src = streamSrc;
+      audioRef.current.src = streamSrc;
+      audioRef.current.load();
+      const p = audioRef.current.play();
+      if (p !== undefined) {
+        p.then(() => setIsPlaying(true)).catch(() => {
+          const onCanPlay = () => {
+            audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+          };
+          audioRef.current?.addEventListener("canplay", onCanPlay, { once: true });
+        });
       }
-      if (audioRef.current.readyState >= 1) {
-        try {
-          audioRef.current.currentTime = live.offsetSec;
-        } catch {}
-      } else {
-        const onMeta = () => {
-          if (audioRef.current) {
-            try {
-              audioRef.current.currentTime = live.offsetSec;
-            } catch {}
-          }
-        };
-        audioRef.current.addEventListener("loadedmetadata", onMeta, { once: true });
-      }
-      audioRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {});
     }
-  }, [sets, quality]);
+  }, [sets, currentSetIndex, quality, volume, isMuted]);
 
   const playSet = (set: RadioSet) => {
-    // User explicitly chose a set from Vault (on-demand mode)
     setIsSyncedToBroadcast(false);
     isSyncedRef.current = false;
+    dropTriggeredTrackIdRef.current = null;
+    upcomingDropRef.current = null;
+
     const idx = sets.findIndex((s) => s.id === set.id);
     if (idx !== -1) {
       setCurrentSetIndex(idx);
@@ -525,15 +651,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setMode("curated");
     setLiveDropFallback(false);
 
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+
     const streamSrc = quality === "high" && set.audio_high_url ? set.audio_high_url : set.audio_url;
     if (audioRef.current) {
-      audioRef.current.pause();
       audioRef.current.src = streamSrc;
       audioRef.current.load();
-      audioRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+      const p = audioRef.current.play();
+      if (p !== undefined) {
+        p.then(() => setIsPlaying(true)).catch(() => {
+          const onCanPlay = () => {
+            audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+          };
+          audioRef.current?.addEventListener("canplay", onCanPlay, { once: true });
+        });
+      }
     }
   };
 
@@ -541,18 +675,35 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (sets.length === 0) return;
     setIsSyncedToBroadcast(false);
     isSyncedRef.current = false;
+    dropTriggeredTrackIdRef.current = null;
+    upcomingDropRef.current = null;
+
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+
     const nextIdx = (currentSetIndex + 1) % sets.length;
     setCurrentSetIndex(nextIdx);
+    setCurrentTime(0);
+    setProgress(0);
+
     const nextSet = sets[nextIdx];
     notifyOtherTabsPlay();
     setIsPlaying(true);
     const streamSrc = quality === "high" && nextSet.audio_high_url ? nextSet.audio_high_url : nextSet.audio_url;
 
-    if (audioRef.current) {
-      audioRef.current.pause();
+    if (audioRef.current && streamSrc) {
       audioRef.current.src = streamSrc;
       audioRef.current.load();
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      const p = audioRef.current.play();
+      if (p !== undefined) {
+        p.then(() => setIsPlaying(true)).catch(() => {
+          const onCanPlay = () => {
+            audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+          };
+          audioRef.current?.addEventListener("canplay", onCanPlay, { once: true });
+        });
+      }
     }
   };
 
@@ -560,18 +711,35 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (sets.length === 0) return;
     setIsSyncedToBroadcast(false);
     isSyncedRef.current = false;
+    dropTriggeredTrackIdRef.current = null;
+    upcomingDropRef.current = null;
+
+    if (audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume;
+    }
+
     const prevIdx = (currentSetIndex - 1 + sets.length) % sets.length;
     setCurrentSetIndex(prevIdx);
+    setCurrentTime(0);
+    setProgress(0);
+
     const prevSet = sets[prevIdx];
     notifyOtherTabsPlay();
     setIsPlaying(true);
     const streamSrc = quality === "high" && prevSet.audio_high_url ? prevSet.audio_high_url : prevSet.audio_url;
 
-    if (audioRef.current) {
-      audioRef.current.pause();
+    if (audioRef.current && streamSrc) {
       audioRef.current.src = streamSrc;
       audioRef.current.load();
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      const p = audioRef.current.play();
+      if (p !== undefined) {
+        p.then(() => setIsPlaying(true)).catch(() => {
+          const onCanPlay = () => {
+            audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+          };
+          audioRef.current?.addEventListener("canplay", onCanPlay, { once: true });
+        });
+      }
     }
   };
 
@@ -586,9 +754,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
     if (audioRef.current) {
-      audioRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
+      audioRef.current.muted = nextMuted;
+    }
+    if (dropAudioRef.current) {
+      dropAudioRef.current.muted = nextMuted;
     }
   };
 
@@ -600,6 +772,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (clamped > 0 && isMuted) {
         audioRef.current.muted = false;
         setIsMuted(false);
+      }
+    }
+    if (dropAudioRef.current) {
+      dropAudioRef.current.volume = clamped;
+      if (clamped > 0 && isMuted) {
+        dropAudioRef.current.muted = false;
       }
     }
   };
@@ -715,6 +893,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         isMinimized,
         queue: sets,
         liveDropFallback,
+        hasLoaded,
+        isDropPlaying,
+        activeDropTitle,
+        fetchRadioState,
         togglePlay,
         playSet,
         snapToBroadcast,
@@ -731,10 +913,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
 
-      {/* Global Hidden Audio Element */}
+      {/* Global Hidden Audio Element - Managed imperatively to prevent React DOM reconciliation aborts on mobile */}
       <audio
         ref={audioRef}
-        src={currentSet ? (quality === "high" && currentSet.audio_high_url ? currentSet.audio_high_url : currentSet.audio_url) : undefined}
         onTimeUpdate={handleTimeUpdate}
         onError={() => {
           // If a track encounters a network glitch, auto-recover smoothly without dropping sync
@@ -767,6 +948,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         preload="none"
+        playsInline
+      />
+
+      {/* Dynamic Kenyan Sheng AI Radio Drop Audio Player */}
+      <audio
+        ref={dropAudioRef}
+        onEnded={handleDropEnded}
+        onError={handleDropEnded}
+        preload="auto"
         playsInline
       />
     </RadioContext.Provider>

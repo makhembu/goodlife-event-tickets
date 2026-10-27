@@ -20,6 +20,7 @@ import {
   Sparkles,
   Zap,
   SlidersHorizontal,
+  RotateCw,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
@@ -39,6 +40,10 @@ export default function RadioPage() {
     isMuted,
     volume = 1,
     queue,
+    hasLoaded,
+    isDropPlaying,
+    activeDropTitle,
+    fetchRadioState,
     togglePlay,
     playSet,
     snapToBroadcast,
@@ -183,10 +188,55 @@ export default function RadioPage() {
         {/* HERO DECK CONSOLE (THE CENTERPIECE)                                       */}
         {/* ========================================================================= */}
         {!currentSet && !isLive ? (
-          <div className="h-64 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) flex flex-col items-center justify-center font-mono text-sm uppercase tracking-widest text-brand-navy/60 p-6 text-center space-y-3">
-            <Radio className="w-10 h-10 animate-bounce text-brand-accent" />
-            <p>Tuning to Nairobi Frequency... No sets found.</p>
-          </div>
+          !hasLoaded ? (
+            <div className="border-4 border-brand-navy bg-brand-navy text-white shadow-(--shadow-brut-xl) rounded-2xl p-8 sm:p-12 text-center space-y-6 relative overflow-hidden">
+              <div className="absolute -top-16 -left-16 w-80 h-80 bg-brand-accent/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col items-center justify-center space-y-4">
+                <div className="relative">
+                  <div className="w-16 h-16 rounded-full bg-brand-accent/20 flex items-center justify-center border-2 border-brand-accent animate-ping absolute inset-0" />
+                  <div className="w-16 h-16 rounded-full bg-brand-accent flex items-center justify-center border-2 border-brand-navy relative z-10 shadow-(--shadow-brut-sm)">
+                    <Radio className="w-8 h-8 text-brand-navy animate-pulse" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 bg-brand-accent/20 border border-brand-accent px-3 py-1 rounded-full text-brand-accent font-mono text-xs font-bold tracking-widest">
+                    <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
+                    <span>TUNING 98.4 MHZ · NAIROBI FREQUENCY</span>
+                  </div>
+                  <h3 className="font-bebas text-3xl sm:text-4xl tracking-wider text-white">
+                    CONNECTING LIVE BROADCAST FEED
+                  </h3>
+                  <p className="font-mono text-xs text-white/70 max-w-md mx-auto">
+                    Synchronizing 24/7 Marara Camp stage timeline, dynamic Kenyan drops & audio streams...
+                  </p>
+                </div>
+                {/* Simulated frequency tuner dial */}
+                <div className="w-full max-w-sm h-3 bg-black/40 border border-white/20 rounded-full overflow-hidden p-0.5">
+                  <div className="h-full bg-brand-accent rounded-full animate-pulse w-3/4" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-2xl p-8 text-center space-y-4 font-mono">
+              <Radio className="w-12 h-12 text-brand-navy/40 mx-auto" />
+              <div className="space-y-1">
+                <h3 className="font-bebas text-2xl text-brand-navy tracking-wider">
+                  STATION OFFLINE · NO BROADCAST SETS FOUND
+                </h3>
+                <p className="text-xs text-brand-navy/60 max-w-md mx-auto">
+                  Unable to reach the live Nairobi broadcast playlist. Check your internet connection or reload the airwaves.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchRadioState()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-accent hover:bg-brand-accent-hover text-brand-navy border-2 border-brand-navy font-bold text-xs uppercase shadow-(--shadow-brut-xs) cursor-pointer"
+              >
+                <RotateCw className="w-4 h-4" />
+                <span>Retry Frequency Connection</span>
+              </button>
+            </div>
+          )
         ) : (
           <div className="space-y-8">
             <div className="relative border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl) rounded-2xl p-6 sm:p-8 overflow-hidden">
@@ -202,6 +252,14 @@ export default function RadioPage() {
                     {isLive ? "VENUES ON AIR · MARARA CAMP LIVE" : "VIRTUAL DECK 254 · LIVE BROADCAST ENGINE"}
                   </span>
                 </div>
+
+                {/* Dynamic On-Air DJ Drop Banner */}
+                {isDropPlaying && (
+                  <div className="flex items-center gap-2 bg-brand-accent text-brand-navy border-2 border-brand-navy px-3 py-1 rounded-full font-mono text-xs font-black uppercase tracking-wider animate-bounce shadow-(--shadow-brut-xs)">
+                    <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
+                    <span>🎙️ DJ DROP: {activeDropTitle || "KENYAN SHENG VIBES"}</span>
+                  </div>
+                )}
 
                 {/* Animated Equalizer Bar Spectrum */}
                 <div className="flex items-end gap-1 h-5 px-3 py-1 rounded bg-black/40 border border-white/10">

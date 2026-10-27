@@ -83,6 +83,22 @@ export async function GET() {
       }
     }
 
+    // 5. Active Dynamic Sheng & Festival Station Drops
+    const drops = [
+      {
+        id: "drop-marara-vibes",
+        title: "Marara Camp Vibes 254",
+        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
+        theme: "Festival Hype",
+      },
+      {
+        id: "drop-nairobi-sound",
+        title: "Nairobi Sound In The Building",
+        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
+        theme: "Station ID",
+      },
+    ];
+
     const payload = {
       mode: settings.broadcast_mode || "curated",
       live: {
@@ -92,6 +108,7 @@ export async function GET() {
       },
       broadcast: broadcastSchedule,
       sets,
+      drops,
     };
 
     return NextResponse.json(payload, {
