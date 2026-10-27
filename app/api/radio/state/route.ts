@@ -24,6 +24,7 @@ export async function GET() {
       FROM radio_sets
       WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
       ORDER BY display_order ASC, created_at DESC
+      LIMIT 60
     `);
     const rawSets = setsRes.rows || [];
     const sets = rawSets.map((s: any) => {

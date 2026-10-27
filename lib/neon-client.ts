@@ -1,6 +1,15 @@
 import { Pool } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
+let connectionString = process.env.DATABASE_URL;
+if (connectionString && connectionString.includes(".neon.tech") && !connectionString.includes("-pooler.")) {
+  try {
+    const u = new URL(connectionString);
+    const parts = u.hostname.split(".");
+    parts[0] = `${parts[0]}-pooler`;
+    u.hostname = parts.join(".");
+    connectionString = u.toString();
+  } catch {}
+}
 
 let pool: Pool;
 
