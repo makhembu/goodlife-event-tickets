@@ -145,7 +145,11 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
   const eventParam = searchParams?.event;
   const tierParam = searchParams?.tier;
 
-  const allEvents = await fetchAllEvents();
+  // Concurrent pre-fetch cuts initial SSR waterfall latency in half
+  const [allEvents, siteDetails] = await Promise.all([
+    fetchAllEvents(),
+    fetchEventDetails(),
+  ]);
 
   let targetEvent = null;
   if (eventParam) {
@@ -183,9 +187,6 @@ export default async function Page(props: { searchParams?: Promise<{ event?: str
       targetEvent = routable[0];
     }
   }
-
-  // No event at all → fallback to eventDetails
-  const siteDetails = await fetchEventDetails();
 
   if (!targetEvent) {
     return <ClosedEventClientPage eventDetails={siteDetails as any} />;

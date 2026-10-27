@@ -62,7 +62,7 @@ export async function fetchAllEvents(): Promise<Event[]> {
   }
 
   const now = Date.now();
-  if (_allEventsCache && now - _allEventsCache.ts < 5000) {
+  if (_allEventsCache && now - _allEventsCache.ts < 60000) {
     return _allEventsCache.data;
   }
 
@@ -80,6 +80,7 @@ export async function fetchAllEvents(): Promise<Event[]> {
     return result;
   } catch (err) {
     console.error("Neon fetchAllEvents error:", err);
+    if (_allEventsCache) return _allEventsCache.data;
     return [];
   }
 }
@@ -167,7 +168,7 @@ export async function getEventById(id: number): Promise<Event | null> {
 
   // Fast path: reuse recent all-events in-memory cache
   const now = Date.now();
-  if (_allEventsCache && now - _allEventsCache.ts < 5000) {
+  if (_allEventsCache && now - _allEventsCache.ts < 60000) {
     const cached = _allEventsCache.data.find((e) => e.id === id);
     if (cached) return cached;
   }
@@ -1408,9 +1409,9 @@ export async function fetchEventDetails(): Promise<EventDetails> {
     return getLocalEventDetails();
   }
 
-  // Server side - Neon SQL with 5s memory cache
+  // Server side - Neon SQL with 60s memory cache and stale fallback
   const now = Date.now();
-  if (_eventDetailsCache && now - _eventDetailsCache.ts < 5000) {
+  if (_eventDetailsCache && now - _eventDetailsCache.ts < 60000) {
     return _eventDetailsCache.data;
   }
 
@@ -1422,6 +1423,7 @@ export async function fetchEventDetails(): Promise<EventDetails> {
     return res;
   } catch (err) {
     console.error("Neon fetchEventDetails error:", err);
+    if (_eventDetailsCache) return _eventDetailsCache.data;
     return localEventDetails;
   }
 }
@@ -2087,7 +2089,7 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
 
     const now = Date.now();
     const cached = _ticketTiersCache.get(resolvedEventId);
-    if (cached && now - cached.ts < 15000) {
+    if (cached && now - cached.ts < 60000) {
       return cached.data;
     }
 
@@ -2113,6 +2115,8 @@ export async function fetchTicketTiers(eventId?: number): Promise<TicketTier[]> 
     return formatted;
   } catch (err) {
     console.error("Neon fetchTicketTiers error:", err);
+    const cached = _ticketTiersCache.get(resolvedEventId);
+    if (cached) return cached.data;
     // A database error must not surface as an invented price list either.
     return [];
   }
