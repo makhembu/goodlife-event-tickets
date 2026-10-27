@@ -110,9 +110,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
     <html lang="en" className={`${spaceGrotesk.variable} ${bebasNeue.variable}`}>
       <body className="font-sans antialiased bg-brand-bg text-brand-black min-h-screen" suppressHydrationWarning>
         <RadioProvider>
-          <Suspense fallback={null}>
-            <SeoStructuredData />
-          </Suspense>
+          <SeoStructuredData />
           <PwaUpdatePrompt />
           {children}
           <GlobalRadioBar />
