@@ -43,6 +43,8 @@ export default function RadioPage() {
     hasLoaded,
     isDropPlaying,
     activeDropTitle,
+    activePersona,
+    activeMood,
     fetchRadioState,
     togglePlay,
     playSet,
@@ -266,7 +268,9 @@ export default function RadioPage() {
                 {isDropPlaying && (
                   <div className="flex items-center gap-2 bg-brand-accent text-brand-navy border-2 border-brand-navy px-3 py-1 rounded-full font-mono text-xs font-black uppercase tracking-wider animate-bounce shadow-(--shadow-brut-xs)">
                     <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
-                    <span>🎙️ DJ DROP: {activeDropTitle || "KENYAN SHENG VIBES"}</span>
+                    <span>
+                      🎙️ {activePersona ? `${activePersona.toUpperCase()}` : "ON AIR"} {activeMood ? `[${activeMood}]` : ""}: {activeDropTitle || "KENYAN AIRWAVE DROP"}
+                    </span>
                   </div>
                 )}
 

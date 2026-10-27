@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 15;
 
 export async function GET() {
   try {
@@ -83,19 +83,35 @@ export async function GET() {
       }
     }
 
-    // 5. Active Dynamic Sheng & Festival Station Drops
+    // 5. Active Dynamic Sheng & Festival Station Drops with 4 Voice Personas
     const drops = [
       {
-        id: "drop-marara-vibes",
-        title: "Marara Camp Vibes 254",
-        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-        theme: "Festival Hype",
+        id: "drop-shax-hype",
+        title: "DJ Shax · Big 7 Vibes",
+        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
+        persona: "DJ Shax",
+        mood: "HYPE",
       },
       {
-        id: "drop-nairobi-sound",
-        title: "Nairobi Sound In The Building",
+        id: "drop-amina-sunset",
+        title: "Amina · Sunset Frequency",
+        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
+        persona: "Amina",
+        mood: "SENSUAL",
+      },
+      {
+        id: "drop-cheche-sheng",
+        title: "MC Cheche · Nairobi Sound",
         audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
-        theme: "Station ID",
+        persona: "MC Cheche",
+        mood: "BANTER",
+      },
+      {
+        id: "drop-wigman-live",
+        title: "Wigman · 98.4 FM Live",
+        audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
+        persona: "Wigman",
+        mood: "STOIC",
       },
     ];
 
@@ -113,7 +129,7 @@ export async function GET() {
 
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "s-maxage=10, stale-while-revalidate=20",
+        "Cache-Control": "public, s-maxage=10, stale-while-revalidate=45",
       },
     });
   } catch (err: any) {

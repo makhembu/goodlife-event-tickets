@@ -28,6 +28,10 @@ if (typeof window === "undefined") {
 
 // ==================== EVENT CRUD FUNCTIONS ====================
 
+// Short TTL in-memory request deduplication cache to prevent Neon database connection saturation
+let _allEventsCache: { data: Event[]; ts: number } | null = null;
+let _eventDetailsCache: { data: EventDetails; ts: number } | null = null;
+
 // Fetch all events
 export async function fetchAllEvents(): Promise<Event[]> {
   if (typeof window !== "undefined") {
@@ -40,9 +44,14 @@ export async function fetchAllEvents(): Promise<Event[]> {
     return [];
   }
 
+  const now = Date.now();
+  if (_allEventsCache && now - _allEventsCache.ts < 5000) {
+    return _allEventsCache.data;
+  }
+
   try {
     const { rows } = await neonQuery("SELECT * FROM events ORDER BY created_at DESC");
-    return rows.map((r: any) => ({
+    const result = rows.map((r: any) => ({
       ...r,
       created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
@@ -50,6 +59,8 @@ export async function fetchAllEvents(): Promise<Event[]> {
       sales_open_date: r.sales_open_date ? new Date(r.sales_open_date).toISOString() : null,
       sales_close_date: r.sales_close_date ? new Date(r.sales_close_date).toISOString() : null
     }));
+    _allEventsCache = { data: result, ts: now };
+    return result;
   } catch (err) {
     console.error("Neon fetchAllEvents error:", err);
     return [];
@@ -1372,11 +1383,18 @@ export async function fetchEventDetails(): Promise<EventDetails> {
     return getLocalEventDetails();
   }
 
-  // Server side - Neon SQL
+  // Server side - Neon SQL with 5s memory cache
+  const now = Date.now();
+  if (_eventDetailsCache && now - _eventDetailsCache.ts < 5000) {
+    return _eventDetailsCache.data;
+  }
+
   try {
     const { rows } = await neonQuery("SELECT * FROM event_details WHERE id = 1 LIMIT 1");
     if (rows.length === 0) return localEventDetails;
-    return rows[0] as EventDetails;
+    const res = rows[0] as EventDetails;
+    _eventDetailsCache = { data: res, ts: now };
+    return res;
   } catch (err) {
     console.error("Neon fetchEventDetails error:", err);
     return localEventDetails;
@@ -1384,6 +1402,7 @@ export async function fetchEventDetails(): Promise<EventDetails> {
 }
 
 export async function updateEventDetails(details: Partial<EventDetails>): Promise<EventDetails> {
+  _eventDetailsCache = null;
   const current = await fetchEventDetails();
   const updated = { ...current, ...details };
 
