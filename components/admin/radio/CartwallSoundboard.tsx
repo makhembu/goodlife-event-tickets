@@ -16,15 +16,18 @@ interface SoundPad {
 interface CartwallSoundboardProps {
   customDropUrl?: string | null;
   customDropName?: string;
+  onFireOnAir?: (padName: string, audioUrl?: string) => void;
 }
 
 export default function CartwallSoundboard({
   customDropUrl,
   customDropName = "Custom Mic Drop",
+  onFireOnAir,
 }: CartwallSoundboardProps) {
   const [activePad, setActivePad] = useState<number | null>(null);
   const [volume, setVolume] = useState<number>(0.85);
   const [muted, setMuted] = useState<boolean>(false);
+  const [broadcastMode, setBroadcastMode] = useState<"local" | "on_air">("on_air");
   const audioCtxRef = useRef<AudioContext | null>(null);
   const customAudioRef = useRef<HTMLAudioElement | null>(null);
   const sampleBufferRef = useRef<Map<number, AudioBuffer>>(new Map());
@@ -208,6 +211,10 @@ export default function CartwallSoundboard({
     setActivePad(pad.id);
     setTimeout(() => setActivePad(null), 300);
 
+    if (broadcastMode === "on_air" && onFireOnAir) {
+      onFireOnAir(pad.name, pad.audioUrl);
+    }
+
     if (pad.soundType === "audio" && pad.audioUrl) {
       if (!customAudioRef.current) {
         customAudioRef.current = new Audio();
@@ -255,8 +262,31 @@ export default function CartwallSoundboard({
           </h2>
         </div>
 
-        {/* Volume controls */}
+        {/* Volume & Mode controls */}
         <div className="flex items-center gap-3">
+          {/* Target Mode Toggle */}
+          <div className="flex items-center border-2 border-brand-navy p-0.5 bg-brand-off-white text-[10px] font-black uppercase">
+            <button
+              type="button"
+              onClick={() => setBroadcastMode("local")}
+              className={`px-2 py-1 transition-colors ${
+                broadcastMode === "local" ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-brand-navy/10"
+              }`}
+            >
+              Headphones
+            </button>
+            <button
+              type="button"
+              onClick={() => setBroadcastMode("on_air")}
+              className={`px-2 py-1 flex items-center gap-1 transition-colors ${
+                broadcastMode === "on_air" ? "bg-red-600 text-white animate-pulse" : "text-brand-navy hover:bg-red-500/20"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+              On-Air (Duck -6dB)
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => setMuted(!muted)}

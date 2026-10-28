@@ -53,7 +53,7 @@ app = FastAPI(
 # Read allowed origins from env so production/dev differ without code changes
 _CORS_ORIGINS_RAW = os.getenv(
     "DAEMON_CORS_ORIGINS",
-    "https://goodlife.co.ke,https://invidious-bridge.darajadigital.com"
+    "https://goodlife.co.ke,https://invidious-bridge.darajadigital.com,https://goodlife.smwhr.space,http://localhost:3000,http://127.0.0.1:3000"
 )
 _CORS_ORIGINS = [o.strip() for o in _CORS_ORIGINS_RAW.split(",") if o.strip()]
 
@@ -61,8 +61,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Goodlife-Radio-Key", "X-Goodlife-Timestamp"],
+    allow_methods=["POST", "GET", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Goodlife-Radio-Key", "X-Goodlife-Timestamp", "X-Bridge-Signature", "X-Bridge-Timestamp"],
 )
 
 # Services
@@ -287,3 +287,39 @@ async def retry_pending_archives_endpoint(background_tasks: BackgroundTasks):
     """
     background_tasks.add_task(session_archiver.retry_failed_archives)
     return {"status": "retry_scheduled"}
+
+
+# ------------------------------------------------------------------------------
+# Direct AzuraCast Station Control Endpoints
+# ------------------------------------------------------------------------------
+@app.get("/api/azuracast/nowplaying", dependencies=[Depends(verify_hmac_auth)])
+async def get_azuracast_nowplaying():
+    """Returns real-time playing metadata, listener count, and queue preview from AzuraCast."""
+    data = await azuracast_client.get_now_playing()
+    return data or {"status": "offline", "listeners": {"total": 0}, "now_playing": {}}
+
+
+@app.post("/api/azuracast/skip", dependencies=[Depends(verify_hmac_auth)])
+async def skip_azuracast_track():
+    """Skips currently playing track immediately."""
+    success = await azuracast_client.skip_track()
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to skip track on AzuraCast")
+    return {"status": "success", "action": "skipped"}
+
+
+@app.get("/api/azuracast/queue", dependencies=[Depends(verify_hmac_auth)])
+async def get_azuracast_queue():
+    """Returns upcoming queued tracks from AzuraCast."""
+    queue = await azuracast_client.get_queue()
+    return {"queue": queue}
+
+
+@app.delete("/api/azuracast/queue/{queue_id}", dependencies=[Depends(verify_hmac_auth)])
+async def delete_azuracast_queue_item(queue_id: int):
+    """Removes a track from the upcoming queue."""
+    success = await azuracast_client.delete_queue_item(queue_id)
+    if not success:
+        raise HTTPException(status_code=500, detail=f"Failed to remove queue item {queue_id}")
+    return {"status": "success", "removed_id": queue_id}
+

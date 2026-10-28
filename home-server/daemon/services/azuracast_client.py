@@ -40,6 +40,39 @@ class AzuraCastClient:
             logger.error(f"Failed to fetch now playing: {res.status_code} - {res.text}")
             return {}
 
+    async def skip_track(self) -> bool:
+        """Skips the currently playing track via AzuraCast Backend API."""
+        url = f"{self.base_url}/api/station/{self.station_id}/backend/skip"
+        logger.info(f"Issuing skip command to AzuraCast station {self.station_id}...")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, headers=self._headers())
+            if res.status_code in (200, 204):
+                logger.info("Successfully skipped track.")
+                return True
+            logger.error(f"Skip failed HTTP {res.status_code}: {res.text}")
+            return False
+
+    async def get_queue(self) -> list:
+        """Retrieves upcoming song queue for the station."""
+        url = f"{self.base_url}/api/station/{self.station_id}/queue"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(url, headers=self._headers())
+            if res.status_code == 200:
+                return res.json()
+            logger.error(f"Failed to fetch station queue: {res.status_code} - {res.text}")
+            return []
+
+    async def delete_queue_item(self, queue_id: int) -> bool:
+        """Removes a queued song item from upcoming queue."""
+        url = f"{self.base_url}/api/station/{self.station_id}/queue/{queue_id}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.delete(url, headers=self._headers())
+            if res.status_code in (200, 204):
+                logger.info(f"Removed item {queue_id} from queue.")
+                return True
+            logger.error(f"Failed to delete queue item {queue_id}: {res.status_code} - {res.text}")
+            return False
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
     async def upload_media_file(self, file_path: str, destination_dir: str = "on_demand_inserts") -> int:
         """

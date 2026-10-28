@@ -34,6 +34,8 @@ import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
 import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
+import RadioHeader from "@/components/admin/radio/RadioHeader";
+import AzuraCastQueueCard from "@/components/admin/radio/AzuraCastQueueCard";
 
 type TabMode = "studio" | "drops" | "overrides" | "telemetry" | "search" | "upload" | "live" | "library";
 
@@ -270,7 +272,7 @@ export default function AdminRadioPage() {
         body: JSON.stringify({
           tracks: tracksToQueue,
           genre: importGenre,
-          event_id: 2,
+          event_id: null,
         }),
       });
       const data = await res.json();
@@ -656,13 +658,24 @@ export default function AdminRadioPage() {
         {/* TAB 0: DJ STUDIO & CARTWALL */}
         {activeTab === "studio" && (
           <div className="space-y-6">
-            {/* Direct In-App Decks Connect Card */}
-            <DecksConnectCard />
+            {/* Real-time Broadcast Control & Headphone Monitor */}
+            <RadioHeader />
 
-            <CartwallSoundboard
-              customDropUrl={customDropUrl}
-              customDropName={customDropName}
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left 2 Cols: Cartwall & Decks */}
+              <div className="lg:col-span-2 space-y-6">
+                <DecksConnectCard />
+                <CartwallSoundboard
+                  customDropUrl={customDropUrl}
+                  customDropName={customDropName}
+                />
+              </div>
+
+              {/* Right 1 Col: Live AzuraCast Upcoming Queue */}
+              <div className="lg:col-span-1">
+                <AzuraCastQueueCard />
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <AiDropGenerator

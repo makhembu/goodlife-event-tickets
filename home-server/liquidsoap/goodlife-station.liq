@@ -105,6 +105,31 @@ radio_stream = fallback(
   [live_dj, autodj_source, emergency_track]
 )
 
+# 5b. On-Air Live Voice Drops / Jingle Harbor (Port 8006, Mount /drops)
+# Enables admin cartwall/DIY drops to play over the live broadcast with -6dB auto-ducking
+drops_harbor_user = environment.get("DROPS_HARBOR_USER", default="drops")
+drops_harbor_pass = environment.get("DROPS_HARBOR_PASSWORD", default="goodlife_drops_pass")
+
+def auth_drops(user, password) =
+  user == drops_harbor_user and password == drops_harbor_pass
+end
+
+drops_stream = input.harbor(
+  "/drops",
+  port=8006,
+  auth=auth_drops,
+  buffer=0.5,
+  max=5.0,
+  id="harbor_voice_drops"
+)
+
+# Duck radio_stream by -6dB when drops_stream has audio
+radio_stream = smooth_add(
+  normal=radio_stream,
+  special=drops_stream,
+  p=0.5 # Attenuates main stream by 6dB (half power) during voice drop
+)
+
 # Apply dynamic audio processing / limiter (AGC + soft-knee limiter)
 radio_stream = normalize(target=-14.0, window=0.03, radio_stream)
 radio_stream = compress.exponential(mu=2.0, radio_stream)
@@ -120,7 +145,7 @@ output.icecast(
   name="GOODLIFE Radio 254 (192k MP3 Direct)",
   description="Afrobeats, Amapiano & Festival Anthems Live from Nairobi",
   genre="Afro-House, Amapiano, Urban",
-  url="https://radio.darajadigital.com",
+  url="https://dj.darajadigital.com",
   public=true,
   radio_stream
 )

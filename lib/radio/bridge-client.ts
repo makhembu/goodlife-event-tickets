@@ -174,4 +174,29 @@ export async function bridgeGetNowPlaying() {
   }>("/health", { timeoutMs: 5000 });
 }
 
+export async function bridgeGetAzuracastNowPlaying() {
+  return requestBridge<any>("/api/azuracast/nowplaying", { timeoutMs: 5000 });
+}
+
+export async function bridgeSkipTrack() {
+  return requestBridge<{ status: string; action: string }>("/api/azuracast/skip", {
+    method: "POST",
+    timeoutMs: 10000,
+  });
+}
+
+export async function bridgeGetAzuracastQueue() {
+  return requestBridge<{ queue: any[] }>("/api/azuracast/queue", { timeoutMs: 6000 });
+}
+
+export async function bridgeDeleteQueueItem(queueId: number | string) {
+  return requestBridge<{ status: string; removed_id: number }>(
+    `/api/azuracast/queue/${encodeURIComponent(queueId)}`,
+    {
+      method: "DELETE",
+      timeoutMs: 8000,
+    }
+  );
+}
+
 export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };
