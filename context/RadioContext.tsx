@@ -188,7 +188,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // Runtime kill switch & configuration
   const [radioEnabled, setRadioEnabled] = useState(true);
-  const [liveStreamUrl, setLiveStreamUrl] = useState<string>("");
+  const [liveStreamUrl, setLiveStreamUrl] = useState<string>(
+    process.env.NEXT_PUBLIC_RADIO_STREAM_URL || ""
+  );
   const [broadcastMode, setBroadcastMode] = useState<BroadcastMode>("autodj");
   const broadcastModeRef = useRef<BroadcastMode>("autodj");
   broadcastModeRef.current = broadcastMode;
