@@ -160,7 +160,7 @@ export async function bridgeGenerateAiDrop(payload: {
   }>("/api/radio/drops/generate", {
     method: "POST",
     body: payload,
-    timeoutMs: 35000,
+    timeoutMs: 4000,
   });
 }
 
