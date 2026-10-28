@@ -84,7 +84,7 @@ Copy `home-server/cloudflared/config.yml` to `/etc/cloudflared/config.yml` on th
 ```bash
 sudo systemctl restart cloudflared
 ```
-* Traffic to `https://radio.darajadigital.com` routes cleanly through Cloudflare edge to `http://127.0.0.1:8055`.
+* Traffic to `https://dj.darajadigital.com` routes cleanly through Cloudflare edge to `http://127.0.0.1:8052`.
 
 ### B. Live DJ Harbor Ingress (TCP Port 8005)
 Because BUTT / Rekordbox use raw Icecast `SOURCE` handshakes over TCP (which Cloudflare HTTP reverse proxies reject):

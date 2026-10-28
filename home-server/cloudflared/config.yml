@@ -11,14 +11,18 @@ credentials-file: /etc/cloudflared/${CLOUDFLARE_TUNNEL_ID}.json
 # directly via router port-forwarding or Tailscale VPN, NOT through this HTTP tunnel.
 ingress:
   # Public Station Stream, Web DJ (WebSocket/WebRTC) and AzuraCast Web UI
-  - hostname: radio.darajadigital.com
-    service: http://127.0.0.1:8055
+  - hostname: dj.darajadigital.com
+    service: http://127.0.0.1:8052
     originRequest:
       connectTimeout: 30s
       noTLSVerify: true
       keepAliveConnections: 100
       keepAliveTimeout: 90s
       http2Origin: false
+
+  # Ingestion & Drop Generation Bridge
+  - hostname: invidious-bridge.darajadigital.com
+    service: http://127.0.0.1:8283
 
   # Internal Goodlife Radio Daemon API (Guarded by HMAC header)
   - hostname: radio-api.darajadigital.com

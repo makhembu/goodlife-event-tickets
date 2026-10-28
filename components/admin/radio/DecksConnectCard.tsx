@@ -18,7 +18,7 @@ export default function DecksConnectCard({
   harborMount = "/live",
   harborUser = "source",
   harborPass = "",
-  webDjUrl = "https://radio.darajadigital.com",
+  webDjUrl = "https://dj.darajadigital.com",
 }: DecksConnectCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);

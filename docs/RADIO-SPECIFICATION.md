@@ -31,7 +31,7 @@ flowchart TD
     end
 
     subgraph Cloudflare_Edge["3. Cloudflare Edge & Storage"]
-        CF_TUNNEL["Cloudflare Tunnel (cloudflared)\nradio.darajadigital.com -> 127.0.0.1:8055\n(HTTP/WSS only)"]
+        CF_TUNNEL["Cloudflare Tunnel (cloudflared)\ndj.darajadigital.com -> 127.0.0.1:8052\n(HTTP/WSS only)"]
         CF_CDN["Cloudflare Global CDN\n(Nairobi NBO Edge Cached)"]
         R2["Cloudflare R2 Bucket (goodlife)\n- radio/recordings/ (Live Festival Sets)\n- radio/drops/ (Mastered Voice Jingles)\n- radio/emergency/ (Offline Looping Mix)"]
     end
@@ -227,8 +227,8 @@ sequenceDiagram
 The public radio player on `goodlife.co.ke/radio` adheres to real broadcast engineering principles:
 1. **Zero Scrubber on Live Stream:** Listeners cannot scrub back in time on the live broadcast; it represents the shared collective moment.
 2. **Dual-Stream Selection:**
-   - **Primary:** `https://radio.darajadigital.com/listen/goodlife/live.mp3` (192kbps MP3 chunked HTTP, ultra-low latency, $<2\text{s}$ live snap).
-   - **Fallback:** `https://radio.darajadigital.com/hls/goodlife/live.m3u8` (HLS 4s chunks for unstable high-packet-loss cellular).
+   - **Primary:** `https://dj.darajadigital.com/listen/goodlife/live.mp3` (192kbps MP3 chunked HTTP, ultra-low latency, $<2\text{s}$ live snap).
+   - **Fallback:** `https://dj.darajadigital.com/hls/goodlife/live.m3u8` (HLS 4s chunks for unstable high-packet-loss cellular).
 3. **Pause = Disconnect, Play = Instant Live Snap:**
    - Pausing stops all network buffering.
    - Playing issues `audio.src = streamUrl + '?t=' + Date.now()` to immediately attach to the live edge without playing old buffered audio.
@@ -243,7 +243,7 @@ The public radio player on `goodlife.co.ke/radio` adheres to real broadcast engi
 
 ### 7.1 Port Ingress & Network Architecture
 * **Cloudflare Tunnel (`cloudflared`)**:
-  - Exposes port `8055` (AzuraCast Web UI & public audio stream) via `radio.darajadigital.com`.
+  - Exposes port `8055` (AzuraCast Web UI & public audio stream) via `dj.darajadigital.com`.
   - Enables WebSocket support for Web DJ streaming and station status polling.
 * **DJ Ingest Harbor (Port `8005`)**:
   - Cloudflare HTTP Tunnel **cannot** handle raw Icecast `SOURCE` handshakes.
@@ -273,7 +273,7 @@ The public radio player on `goodlife.co.ke/radio` adheres to real broadcast engi
   - Stream 1: MP3 192kbps (`/listen/goodlife/live.mp3`).
   - Stream 2: HLS 192kbps (`/hls/goodlife/live.m3u8`).
   - AutoDJ Clock Wheel playlists (Sunrise, Daily, Sunset, Quiver Madness, Afterhours).
-- [ ] Configure `cloudflared` tunnel for `radio.darajadigital.com` $\rightarrow$ `http://127.0.0.1:8055`.
+- [ ] Configure `cloudflared` tunnel for `dj.darajadigital.com` $\rightarrow$ `http://127.0.0.1:8055`.
 - [ ] Configure Liquidsoap harbor for DJ ingest on TCP port `8005` with raw 320k tap.
 
 ### Phase 2: Dynamic Ingest Daemon & Resilient AI Drops

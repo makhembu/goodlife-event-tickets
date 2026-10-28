@@ -662,17 +662,18 @@ export default function AdminRadioPage() {
         {/* TAB 0: DJ STUDIO & BROADCAST COMMAND DECK */}
         {activeTab === "studio" && (
           <div className="space-y-6">
-            {/* Zone 1 & 2: Primary High-Density Broadcast Console (VU Meters, Waveforms, Playout Transport) */}
+            {/* Zone 1: Primary High-Density Broadcast Console (VU Meters, Waveforms, Playout Transport) */}
             <BroadcastConsole />
 
-            {/* Zone 3 & 4: Performance Deck & On-Air Rundown */}
+            {/* Zone 2 & 3: Performance Deck (Left) & On-Air Operations (Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left 7 Cols: Performance Soundboard & Drop Studio */}
+              {/* Left 7 Cols: Performance Deck & Creation Tools */}
               <div className="lg:col-span-7 space-y-6">
                 <PerformanceSoundboard
                   customDropUrl={customDropUrl}
                   customDropName={customDropName}
                 />
+                
                 <DropStudio
                   onDropReady={(url, name) => {
                     setCustomDropUrl(url);
@@ -680,30 +681,22 @@ export default function AdminRadioPage() {
                     showMsg(`✓ Drop "${name}" loaded directly into Cartwall Pad #8!`, "success");
                   }}
                 />
+
+                {/* Instant Mic Recording Station */}
+                <BrowserMicRecorder
+                  onDropMastered={(url, name) => {
+                    setCustomDropUrl(url);
+                    setCustomDropName(name);
+                  }}
+                />
               </div>
 
-              {/* Right 5 Cols: On-Air Rundown & Instant Track Insert */}
+              {/* Right 5 Cols: Playout Rundown, Ingestion & Live Decks */}
               <div className="lg:col-span-5 space-y-6">
                 <OnAirRundown />
                 <QueueNextTrack />
                 <DecksConnectCard />
               </div>
-            </div>
-
-            {/* Additional Performance Tools */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <BrowserMicRecorder
-                onDropMastered={(url, name) => {
-                  setCustomDropUrl(url);
-                  setCustomDropName(name);
-                }}
-              />
-              <AiDropGenerator
-                onDropGenerated={(url, name) => {
-                  setCustomDropUrl(url);
-                  setCustomDropName(name);
-                }}
-              />
             </div>
           </div>
         )}
