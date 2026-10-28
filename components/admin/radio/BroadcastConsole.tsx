@@ -62,20 +62,26 @@ export default function BroadcastConsole({
     };
   }, [streamUrl]);
 
-  // Telemetry Poller: Checks AzuraCast first, with seamless fallback to internal 24/7 timeline
+  const azuracastPollIntervalRef = useRef(3500);
+
+  // Telemetry Poller: Checks AzuraCast first with exponential backoff on offline, seamlessly falls back to internal 24/7 timeline
   const fetchTelemetry = async () => {
     try {
       const res = await fetch("/api/admin/radio/azuracast/nowplaying");
       if (res.ok) {
         const data = await res.json();
-        if (data && (data.now_playing?.song?.title || data.station)) {
+        if (data && data.online !== false && (data.now_playing?.song?.title || data.station)) {
           setNowPlaying(data);
           setStatusState("live");
           setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+          azuracastPollIntervalRef.current = 3500;
           return;
         }
       }
-    } catch {}
+      azuracastPollIntervalRef.current = Math.min(30000, (azuracastPollIntervalRef.current || 3500) * 1.5);
+    } catch {
+      azuracastPollIntervalRef.current = Math.min(30000, (azuracastPollIntervalRef.current || 3500) * 1.5);
+    }
 
     // Fallback to internal 24/7 Virtual Broadcast Timeline engine
     try {
@@ -123,9 +129,21 @@ export default function BroadcastConsole({
   };
 
   useEffect(() => {
-    fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 3500);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timer: NodeJS.Timeout;
+
+    const runPoll = async () => {
+      await fetchTelemetry();
+      if (!cancelled) {
+        timer = setTimeout(runPoll, azuracastPollIntervalRef.current || 3500);
+      }
+    };
+
+    runPoll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Dynamic Audio VU Meter Animation when live

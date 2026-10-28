@@ -11,10 +11,20 @@ export async function GET() {
   const res = await bridgeGetAzuracastQueue();
   if (!res.ok) {
     return NextResponse.json(
-      { error: res.error || "Failed to fetch AzuraCast queue" },
-      { status: 502 }
+      {
+        online: false,
+        status: "daemon_offline",
+        error: res.error || "AzuraCast queue unreachable",
+        queue: [],
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
     );
   }
 
-  return NextResponse.json(res.data);
+  return NextResponse.json({ ...res.data, online: true });
 }

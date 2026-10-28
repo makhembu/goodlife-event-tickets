@@ -25,7 +25,7 @@ import {
   RadioTower,
   Mic,
 } from "lucide-react";
-import { RadioSet, IngestJobTrack, RadioSettings } from "@/lib/radio/types";
+import { RadioSet, IngestJobTrack, RadioSettings, BroadcastMode } from "@/lib/radio/types";
 import CartwallSoundboard from "@/components/admin/radio/CartwallSoundboard";
 import BrowserMicRecorder from "@/components/admin/radio/BrowserMicRecorder";
 import AiDropGenerator from "@/components/admin/radio/AiDropGenerator";
@@ -85,7 +85,7 @@ export default function AdminRadioPage() {
   const [uploadErrorBanner, setUploadErrorBanner] = useState<string | null>(null);
 
   // Live broadcast tab state
-  const [broadcastMode, setBroadcastMode] = useState<"curated" | "live">("curated");
+  const [broadcastMode, setBroadcastMode] = useState<BroadcastMode>("curated");
   const [liveStreamUrl, setLiveStreamUrl] = useState("");
   const [liveTitle, setLiveTitle] = useState("GOODLIFE MAIN STAGE LIVE");
   const [fallbackSetId, setFallbackSetId] = useState<number | null>(null);

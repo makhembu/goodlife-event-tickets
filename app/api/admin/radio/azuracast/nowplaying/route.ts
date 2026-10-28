@@ -11,10 +11,20 @@ export async function GET() {
   const res = await bridgeGetAzuracastNowPlaying();
   if (!res.ok) {
     return NextResponse.json(
-      { error: res.error || "Failed to fetch AzuraCast now playing" },
-      { status: 502 }
+      {
+        online: false,
+        status: "daemon_offline",
+        error: res.error || "AzuraCast playout daemon unreachable",
+        now_playing: null,
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
     );
   }
 
-  return NextResponse.json(res.data);
+  return NextResponse.json({ ...res.data, online: true });
 }

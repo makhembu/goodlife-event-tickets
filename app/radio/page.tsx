@@ -820,6 +820,16 @@ export default function RadioPage() {
                                     src={resolveCoverArt(item.thumbnail)}
                                     alt=""
                                     className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      const el = e.currentTarget;
+                                      if (el.src.includes("maxresdefault.jpg")) {
+                                        el.src = el.src.replace("maxresdefault.jpg", "hqdefault.jpg");
+                                      } else if (el.src.includes("hqdefault.jpg")) {
+                                        el.src = el.src.replace("hqdefault.jpg", "mqdefault.jpg");
+                                      } else if (!el.src.includes("flyer.png")) {
+                                        el.src = "/flyer.png";
+                                      }
+                                    }}
                                   />
                                 ) : (
                                   <Disc3 className="w-5 h-5 text-brand-navy/40" />

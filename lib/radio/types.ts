@@ -1,5 +1,5 @@
 export type ProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed';
-export type BroadcastMode = 'curated' | 'live';
+export type BroadcastMode = 'curated' | 'live' | 'autodj' | 'mania';
 export type AudioQuality = 'standard' | 'high';
 
 export interface RadioSet {

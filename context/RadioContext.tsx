@@ -188,9 +188,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // Runtime kill switch & configuration
   const [radioEnabled, setRadioEnabled] = useState(true);
-  const [liveStreamUrl, setLiveStreamUrl] = useState<string>(
-    process.env.RADIO_STREAM_URL || process.env.NEXT_PUBLIC_RADIO_STREAM_URL || ""
-  );
+  const [liveStreamUrl, setLiveStreamUrl] = useState<string>("");
+  const [broadcastMode, setBroadcastMode] = useState<BroadcastMode>("autodj");
+  const broadcastModeRef = useRef<BroadcastMode>("autodj");
+  broadcastModeRef.current = broadcastMode;
 
   // Playback Engine State Machine
   const [engineState, setEngineState] = useState<RadioEngineState>("idle");
@@ -260,6 +261,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const isLiveRef = useRef(isLive);
   isLiveRef.current = isLive;
   const isSyncedRef = useRef(true);
+  const nowPlayingTrackRef = useRef(nowPlayingTrack);
+  nowPlayingTrackRef.current = nowPlayingTrack;
+  const backupSetsRef = useRef(backupSets);
+  backupSetsRef.current = backupSets;
+  const isMutedRef = useRef(isMuted);
+  isMutedRef.current = isMuted;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
   // 1. Initialize State & Load Preferences from localStorage
   useEffect(() => {
@@ -299,8 +308,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (data.live?.stream_url && typeof data.live.stream_url === "string") {
-        setLiveStreamUrl(data.live.stream_url.trim());
+      if (data.mode) {
+        setBroadcastMode(data.mode);
+      }
+      if (typeof data.live?.stream_url === "string") {
+        const cleanUrl = data.live.stream_url.trim();
+        if (!cleanUrl.includes("darajadigital")) {
+          setLiveStreamUrl(cleanUrl);
+        } else {
+          setLiveStreamUrl("");
+        }
       }
 
       if (Array.isArray(data.sets) && data.sets.length > 0) {
@@ -333,6 +350,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data: RadioLiveBffResponse = await res.json();
+
+      if ((data as any).mode) {
+        setBroadcastMode((data as any).mode);
+      }
 
       if (data.offline) {
         setIsStale(Boolean(data.stale));
@@ -605,11 +626,28 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     const backupTrack = backupSets[currentBackupIndex % backupSets.length];
     if (backupTrack) {
+      // Synchronize metadata with backup track so visual display and audio match 100%
+      setNowPlayingTrack({
+        title: backupTrack.title,
+        artist: backupTrack.dj_name,
+        thumbnail: backupTrack.cover_url,
+        elapsed: 0,
+        duration: backupTrack.duration_sec || 180,
+        audio_url: backupTrack.audio_url,
+        video_id: `set-${backupTrack.id}`,
+      });
+      setInterpolatedElapsed(0);
+      lastPollElapsedRef.current = 0;
+      lastPollTimestampRef.current = Date.now();
+
       audioRef.current.src = backupTrack.audio_url;
       audioRef.current
         .play()
         .then(() => setIsPlaying(true))
-        .catch(() => setEngineState("error"));
+        .catch(() => {
+          setIsPlaying(false);
+          setEngineState("error");
+        });
     }
 
     // While in backup mix, probe live stream in background to return when live recovers
@@ -631,38 +669,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }, timingConfigRef.current.manifestProbeIntervalMs);
   }, [backupSets, currentBackupIndex]);
 
-  // 10. Live HLS Playback Engine (Native iOS + Dynamic hls.js)
+  // 10. Live Playback Engine: Plays synchronized R2 festival track in autodj/mania; plays HLS in live mode
   const attachAndPlayLiveStream = useCallback(async () => {
-    const streamUrl = liveStreamUrlRef.current;
-
     if (!radioEnabledRef.current) {
-      setEngineState("offline");
-      setIsPlaying(false);
-      return;
-    }
-
-    if (!streamUrl || streamUrl.trim() === "") {
-      const activeAudioUrl = nowPlayingTrack?.audio_url || backupSets[0]?.audio_url;
-      const audio = audioRef.current;
-      if (activeAudioUrl && audio) {
-        teardownPlayback();
-        setEngineState("live");
-        setIsLive(true);
-        audio.src = activeAudioUrl;
-        audio.currentTime = interpolatedElapsed || nowPlayingTrack?.elapsed || 0;
-        audio.volume = isMuted ? 0 : volume;
-        try {
-          await audio.play();
-          setIsPlaying(true);
-          return;
-        } catch (e: any) {
-          if (e?.name === "NotAllowedError") {
-            setEngineState("idle");
-            setIsPlaying(false);
-            return;
-          }
-        }
-      }
       setEngineState("offline");
       setIsPlaying(false);
       return;
@@ -674,6 +683,66 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const streamUrl = liveStreamUrlRef.current;
+    const currentMode = broadcastModeRef.current;
+
+    // Helper: Play the synchronized R2 festival track directly
+    const playCurrentTrackAudio = async () => {
+      let track = nowPlayingTrackRef.current;
+      if (!track || !track.audio_url) {
+        try {
+          const res = await fetch("/api/radio/live");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.now_playing?.audio_url) {
+              track = data.now_playing;
+              setNowPlayingTrack(track);
+            }
+          }
+        } catch {}
+      }
+
+      const activeAudioUrl = track?.audio_url || backupSetsRef.current[0]?.audio_url;
+      const audio = audioRef.current;
+      if (!activeAudioUrl || !audio) {
+        setEngineState("offline");
+        setIsPlaying(false);
+        return;
+      }
+
+      teardownPlayback();
+      setEngineState("live");
+      setIsLive(true);
+      notifyOtherTabsPlay();
+
+      audio.src = activeAudioUrl;
+      const seekOffset = track?.elapsed || 0;
+      try {
+        audio.currentTime = seekOffset;
+      } catch {}
+      audio.volume = isMutedRef.current ? 0 : volumeRef.current;
+
+      try {
+        await audio.play();
+        setIsPlaying(true);
+      } catch (err: any) {
+        if (err?.name === "NotAllowedError") {
+          setEngineState("idle");
+          setIsPlaying(false);
+        } else {
+          setEngineState("error");
+          setIsPlaying(false);
+        }
+      }
+    };
+
+    // If station is in autodj or mania mode, or no live stream is set: play festival track directly
+    if (currentMode !== "live" || !streamUrl || streamUrl.trim() === "" || streamUrl.includes("darajadigital")) {
+      await playCurrentTrackAudio();
+      return;
+    }
+
+    // External Live DJ Stream mode
     teardownPlayback();
     setEngineState("connecting");
     setIsLive(true);
@@ -681,10 +750,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     const audio = audioRef.current;
     if (!audio) return;
+    audio.volume = isMutedRef.current ? 0 : volumeRef.current;
 
-    audio.volume = isMuted ? 0 : volume;
-
-    // A. Native Safari / iOS HLS (canPlayType)
+    // A. Native Safari / iOS HLS
     if (audio.canPlayType("application/vnd.apple.mpegurl")) {
       audio.src = streamUrl;
       try {
@@ -694,34 +762,32 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       } catch (err: any) {
         console.warn("[RadioContext] iOS native play rejected:", err?.name);
         if (err?.name === "NotAllowedError") {
-          // User gesture required or autoplay policy -> revert safely to idle
           setEngineState("idle");
           setIsPlaying(false);
         } else {
-          handleStreamStall();
+          await playCurrentTrackAudio();
         }
       }
       return;
     }
 
-    // B. Dynamic import of hls.js for Chrome / Firefox / Android
+    // B. hls.js for Chrome / Firefox
     try {
       const { default: Hls } = await import("hls.js");
-
       if (!Hls.isSupported()) {
-        console.error("[RadioContext] HLS is not supported in this browser");
-        setEngineState("error");
+        await playCurrentTrackAudio();
         return;
       }
 
       const hls = new Hls({
-        lowLatencyMode: false, // Standard HLS (2.0s segments)
+        lowLatencyMode: false,
         enableWorker: true,
         backBufferLength: 8,
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 6,
       });
 
+      hlsRef.current = hls;
       hls.loadSource(streamUrl);
       hls.attachMedia(audio);
 
@@ -732,80 +798,26 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             setEngineState("live");
             setIsPlaying(true);
           })
-          .catch((err: any) => {
+          .catch(async (err: any) => {
             if (err?.name === "NotAllowedError") {
               setEngineState("idle");
               setIsPlaying(false);
             } else {
-              handleStreamStall();
+              await playCurrentTrackAudio();
             }
           });
       });
 
-      // Dynamically measure live edge latency on every HLS playlist refresh
-      hls.on(Hls.Events.LEVEL_UPDATED, () => {
-        if (typeof hls.latency === "number" && hls.latency > 0) {
-          measuredLatencyRef.current = hls.latency;
-        }
-      });
-
-      // Timed ID3 metadata extraction from HLS TS chunks
-      hls.on(Hls.Events.FRAG_PARSING_METADATA, (_event: any, data: any) => {
-        try {
-          if (Array.isArray(data?.samples)) {
-            for (const sample of data.samples) {
-              // Parse ID3 text frames if present
-              if (sample?.data) {
-                const text = new TextDecoder("utf-8").decode(sample.data);
-                const titleMatch = text.match(/TIT2[^\x00-\x1F]*([A-Za-z0-9\s·\-_,'()]+)/);
-                const artistMatch = text.match(/TPE1[^\x00-\x1F]*([A-Za-z0-9\s·\-_,'()]+)/);
-                if (titleMatch && titleMatch[1]) {
-                  setNowPlayingTrack((prev) => ({
-                    title: titleMatch[1].trim(),
-                    artist: artistMatch && artistMatch[1] ? artistMatch[1].trim() : prev?.artist,
-                    ...prev,
-                  }));
-                }
-              }
-            }
-          }
-        } catch {}
-      });
-
-      // Robust Error Recovery
-      hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
+      hls.on(Hls.Events.ERROR, async (_event: any, data: any) => {
         if (!data?.fatal) return;
-
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            console.warn("[RadioContext] HLS network error, attempting startLoad");
-            hls.startLoad();
-            handleStreamStall();
-            break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            const now = Date.now();
-            if (now - mediaRecoverCooldownRef.current > 5000) {
-              console.warn("[RadioContext] Recovering HLS media error");
-              mediaRecoverCooldownRef.current = now;
-              hls.recoverMediaError();
-            } else {
-              console.warn("[RadioContext] Fatal media error loop, failing over");
-              handleStreamStall();
-            }
-            break;
-          default:
-            console.error("[RadioContext] Unrecoverable HLS fatal error");
-            handleStreamStall();
-            break;
-        }
+        console.warn("[RadioContext] Live stream failed with error, falling over to sync track:", data.type);
+        teardownPlayback();
+        await playCurrentTrackAudio();
       });
-
-      hlsRef.current = hls;
-    } catch (err) {
-      console.error("[RadioContext] Dynamic hls.js import failed:", err);
-      setEngineState("error");
+    } catch {
+      await playCurrentTrackAudio();
     }
-  }, [handleStreamStall, teardownPlayback, volume, isMuted]);
+  }, [teardownPlayback]);
 
   // 11. Stalled playback buffer watchdog (Only runs in 'live' state)
   const handleTimeUpdate = useCallback(() => {
@@ -1087,20 +1099,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         onTimeUpdate={handleTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => {
-          if (engineStateRef.current === "live") {
-            setIsPlaying(false);
-          }
+          setIsPlaying(false);
         }}
         onError={() => {
-          if (engineStateRef.current === "live") {
-            handleStreamStall();
-          }
+          setIsPlaying(false);
+          setEngineState("error");
         }}
         onEnded={() => {
           sendPlayBeaconOnce(true);
-          if (engineStateRef.current === "backup-mix") {
-            advanceBroadcastTrack();
-          }
+          fetchRadioLive();
         }}
         preload="none"
         playsInline

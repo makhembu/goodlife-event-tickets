@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, SkipForward, Volume2, VolumeX, Radio, Users, Activity, AlertTriangle } from "lucide-react";
 
 interface RadioHeaderProps {
@@ -26,25 +26,47 @@ export default function RadioHeader({ streamUrl = "https://dj.darajadigital.com/
     };
   }, [streamUrl]);
 
+  const backoffRef = useRef(4000);
+
   const fetchNowPlaying = async () => {
     try {
       const res = await fetch("/api/admin/radio/azuracast/nowplaying");
       if (res.ok) {
         const data = await res.json();
+        if (data.online === false) {
+          setErrorMsg("AzuraCast Daemon Offline (Internal 24/7 Timeline Active)");
+          backoffRef.current = Math.min(30000, backoffRef.current * 1.5);
+          return;
+        }
         setNowPlaying(data);
         setErrorMsg(null);
+        backoffRef.current = 4000;
       } else {
         setErrorMsg("Station Telemetry Offline");
+        backoffRef.current = Math.min(30000, backoffRef.current * 1.5);
       }
     } catch {
       setErrorMsg("Connection Timeout");
+      backoffRef.current = Math.min(30000, backoffRef.current * 1.5);
     }
   };
 
   useEffect(() => {
-    fetchNowPlaying();
-    const interval = setInterval(fetchNowPlaying, 4000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timer: NodeJS.Timeout;
+
+    const runPoll = async () => {
+      await fetchNowPlaying();
+      if (!cancelled) {
+        timer = setTimeout(runPoll, backoffRef.current);
+      }
+    };
+
+    runPoll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   const togglePlay = () => {

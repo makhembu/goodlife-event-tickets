@@ -55,8 +55,8 @@ export async function GET() {
     if (!cached || now - cached.ts > 5000) {
       // 1. Fetch settings and check for runtime kill-switch flag
       let settings = {
-        broadcast_mode: "live",
-        live_stream_url: process.env.RADIO_STREAM_URL || "",
+        broadcast_mode: "autodj",
+        live_stream_url: "",
         live_title: "GOODLIFE RADIO LIVE",
         live_fallback_set_id: null,
         radio_enabled: true,
@@ -92,9 +92,16 @@ export async function GET() {
         console.warn("[api/radio/state] Error loading radio_settings:", err);
       }
 
-      // Prioritize explicit env stream URL if configured
-      if (process.env.RADIO_STREAM_URL && process.env.RADIO_STREAM_URL.trim() !== "") {
+      // If station broadcast_mode is not 'live', there is no external stream — 24/7 R2 tracks are active
+      if (settings.broadcast_mode !== "live") {
+        settings.live_stream_url = "";
+      } else if (!settings.live_stream_url && process.env.RADIO_STREAM_URL && process.env.RADIO_STREAM_URL.trim() !== "") {
         settings.live_stream_url = process.env.RADIO_STREAM_URL.trim();
+      }
+
+      // Filter out invalid/obsolete stream domains
+      if (settings.live_stream_url && settings.live_stream_url.includes("darajadigital")) {
+        settings.live_stream_url = "";
       }
 
       // 2. Fetch active ready tracks
