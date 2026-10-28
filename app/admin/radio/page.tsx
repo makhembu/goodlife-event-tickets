@@ -36,6 +36,10 @@ import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
 import RadioHeader from "@/components/admin/radio/RadioHeader";
 import AzuraCastQueueCard from "@/components/admin/radio/AzuraCastQueueCard";
+import BroadcastConsole from "@/components/admin/radio/BroadcastConsole";
+import PerformanceSoundboard from "@/components/admin/radio/PerformanceSoundboard";
+import OnAirRundown from "@/components/admin/radio/OnAirRundown";
+import DropStudio from "@/components/admin/radio/DropStudio";
 
 type TabMode = "studio" | "drops" | "overrides" | "telemetry" | "search" | "upload" | "live" | "library";
 
@@ -655,42 +659,51 @@ export default function AdminRadioPage() {
           <RadioTelemetryLogs library={library} />
         )}
 
-        {/* TAB 0: DJ STUDIO & CARTWALL */}
+        {/* TAB 0: DJ STUDIO & BROADCAST COMMAND DECK */}
         {activeTab === "studio" && (
           <div className="space-y-6">
-            {/* Real-time Broadcast Control & Headphone Monitor */}
-            <RadioHeader />
+            {/* Zone 1 & 2: Primary High-Density Broadcast Console (VU Meters, Waveforms, Playout Transport) */}
+            <BroadcastConsole />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left 2 Cols: Cartwall & Decks */}
-              <div className="lg:col-span-2 space-y-6">
-                <DecksConnectCard />
-                <CartwallSoundboard
+            {/* Zone 3 & 4: Performance Deck & On-Air Rundown */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left 7 Cols: Performance Soundboard & Drop Studio */}
+              <div className="lg:col-span-7 space-y-6">
+                <PerformanceSoundboard
                   customDropUrl={customDropUrl}
                   customDropName={customDropName}
                 />
+                <DropStudio
+                  onDropReady={(url, name) => {
+                    setCustomDropUrl(url);
+                    setCustomDropName(name);
+                    showMsg(`✓ Drop "${name}" loaded directly into Cartwall Pad #8!`, "success");
+                  }}
+                />
               </div>
 
-              {/* Right 1 Col: Live AzuraCast Upcoming Queue */}
-              <div className="lg:col-span-1">
-                <AzuraCastQueueCard />
+              {/* Right 5 Cols: On-Air Rundown & Instant Track Insert */}
+              <div className="lg:col-span-5 space-y-6">
+                <OnAirRundown />
+                <QueueNextTrack />
+                <DecksConnectCard />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <AiDropGenerator
-                onDropGenerated={(url, name) => {
-                  setCustomDropUrl(url);
-                  setCustomDropName(name);
-                }}
-              />
+            {/* Additional Performance Tools */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <BrowserMicRecorder
                 onDropMastered={(url, name) => {
                   setCustomDropUrl(url);
                   setCustomDropName(name);
                 }}
               />
-              <QueueNextTrack />
+              <AiDropGenerator
+                onDropGenerated={(url, name) => {
+                  setCustomDropUrl(url);
+                  setCustomDropName(name);
+                }}
+              />
             </div>
           </div>
         )}
