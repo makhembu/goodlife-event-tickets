@@ -64,7 +64,7 @@ export async function GET() {
 
       try {
         const settingsRes = await neonQuery(
-          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id FROM radio_settings WHERE id = 1"
+          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id, active_set_id, active_started_at, radio_enabled FROM radio_settings WHERE id = 1"
         );
         if (settingsRes.rows[0]) {
           settings = { ...settings, ...settingsRes.rows[0] };
@@ -104,7 +104,7 @@ export async function GET() {
           duration, duration_sec, genre, file_size, bitrate, play_count, created_at
         FROM radio_sets
         WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
-        ORDER BY display_order ASC, created_at DESC
+        ORDER BY display_order ASC, id ASC
         LIMIT 60
       `);
       const rawSets = setsRes.rows || [];
@@ -151,29 +151,53 @@ export async function GET() {
     let upcomingDrop = null;
 
     if (sets.length > 0 && totalDurationSec > 0) {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const cycleSec = nowSec % totalDurationSec;
-      let cumulative = 0;
       let activeIdx = 0;
       let offsetSec = 0;
+      const nowSec = Math.floor(Date.now() / 1000);
 
-      for (let i = 0; i < sets.length; i++) {
-        const trackDur = (sets[i].duration_sec && sets[i].duration_sec > 0) ? sets[i].duration_sec : 180;
-        if (cumulative + trackDur > cycleSec) {
-          activeIdx = i;
-          offsetSec = cycleSec - cumulative;
-          break;
+      // Check if DJ MANIA mode is engaged with a manual active set
+      const isMania = settings.broadcast_mode === "mania" && settings.active_set_id;
+      const maniaIdx = isMania ? sets.findIndex((s: any) => s.id === Number(settings.active_set_id)) : -1;
+
+      if (isMania && maniaIdx !== -1) {
+        activeIdx = maniaIdx;
+        const trackDur = (sets[activeIdx].duration_sec && sets[activeIdx].duration_sec > 0) ? sets[activeIdx].duration_sec : 180;
+        const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+        const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+        offsetSec = elapsed % trackDur;
+
+        broadcastSchedule = {
+          active_index: activeIdx,
+          active_set_id: sets[activeIdx].id,
+          offset_sec: offsetSec,
+          server_time: nowSec,
+          total_duration_sec: totalDurationSec,
+          is_mania: true,
+        };
+      } else {
+        // AUTODJ: Virtual Synchronized Playout Loop across festival library
+        const cycleSec = nowSec % totalDurationSec;
+        let cumulative = 0;
+
+        for (let i = 0; i < sets.length; i++) {
+          const trackDur = (sets[i].duration_sec && sets[i].duration_sec > 0) ? sets[i].duration_sec : 180;
+          if (cumulative + trackDur > cycleSec) {
+            activeIdx = i;
+            offsetSec = cycleSec - cumulative;
+            break;
+          }
+          cumulative += trackDur;
         }
-        cumulative += trackDur;
-      }
 
-      broadcastSchedule = {
-        active_index: activeIdx,
-        active_set_id: sets[activeIdx]?.id,
-        offset_sec: offsetSec,
-        server_time: nowSec,
-        total_duration_sec: totalDurationSec,
-      };
+        broadcastSchedule = {
+          active_index: activeIdx,
+          active_set_id: sets[activeIdx]?.id,
+          offset_sec: offsetSec,
+          server_time: nowSec,
+          total_duration_sec: totalDurationSec,
+          is_mania: false,
+        };
+      }
 
       // Check upcoming drop for the next track
       const nextIdx = (activeIdx + 1) % sets.length;
@@ -198,6 +222,7 @@ export async function GET() {
     const payload = {
       enabled: settings.radio_enabled !== false,
       mode: settings.broadcast_mode || "live",
+      listeners_count: 0,
       live: {
         title: settings.live_title || "GOODLIFE RADIO LIVE",
         stream_url: settings.live_stream_url || "",

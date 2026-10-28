@@ -358,6 +358,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           currentTrackIdRef.current = newTrackId;
           secondsListenedRef.current = 0;
           hasSentBeaconRef.current = false;
+
+          // If playing and track advances, update audio src immediately!
+          if (audioRef.current && isPlayingRef.current && track.audio_url) {
+            if (audioRef.current.src !== track.audio_url) {
+              audioRef.current.src = track.audio_url;
+              audioRef.current.currentTime = track.elapsed || 0;
+              audioRef.current.play().catch(() => {});
+            }
+          }
         }
 
         // Anchor local progress interpolation
@@ -626,7 +635,34 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const attachAndPlayLiveStream = useCallback(async () => {
     const streamUrl = liveStreamUrlRef.current;
 
-    if (!radioEnabledRef.current || !streamUrl || streamUrl.trim() === "") {
+    if (!radioEnabledRef.current) {
+      setEngineState("offline");
+      setIsPlaying(false);
+      return;
+    }
+
+    if (!streamUrl || streamUrl.trim() === "") {
+      const activeAudioUrl = nowPlayingTrack?.audio_url || backupSets[0]?.audio_url;
+      const audio = audioRef.current;
+      if (activeAudioUrl && audio) {
+        teardownPlayback();
+        setEngineState("live");
+        setIsLive(true);
+        audio.src = activeAudioUrl;
+        audio.currentTime = interpolatedElapsed || nowPlayingTrack?.elapsed || 0;
+        audio.volume = isMuted ? 0 : volume;
+        try {
+          await audio.play();
+          setIsPlaying(true);
+          return;
+        } catch (e: any) {
+          if (e?.name === "NotAllowedError") {
+            setEngineState("idle");
+            setIsPlaying(false);
+            return;
+          }
+        }
+      }
       setEngineState("offline");
       setIsPlaying(false);
       return;
@@ -976,9 +1012,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [engineState, isStale]);
 
   // Derived display values
-  const displayTitle = formatTrackTitle(nowPlayingTrack?.title);
-  const displayArtist = nowPlayingTrack?.artist || null;
-  const displayCover = resolveCoverArt(nowPlayingTrack?.thumbnail);
+  const displayTitle = formatTrackTitle(nowPlayingTrack?.title || backupSets[0]?.title);
+  const displayArtist = nowPlayingTrack?.artist || backupSets[0]?.dj_name || null;
+  const displayCover = resolveCoverArt(nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url);
   const displayThought = nowPlayingTrack?.thought && nowPlayingTrack.thought.trim() !== "" ? nowPlayingTrack.thought.trim() : null;
   const displayDaypart = nowPlayingTrack?.daypart && nowPlayingTrack.daypart.trim() !== "" ? nowPlayingTrack.daypart.trim() : null;
   const totalDuration = nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : 0;

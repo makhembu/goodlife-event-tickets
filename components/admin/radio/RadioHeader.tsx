@@ -114,7 +114,7 @@ export default function RadioHeader({ streamUrl = "https://dj.darajadigital.com/
             <div className="flex items-center gap-3 text-xs font-mono text-zinc-400 mt-0.5">
               <span className="flex items-center gap-1 text-emerald-400">
                 <Users className="w-3.5 h-3.5" />
-                <strong className="text-white">{listenersCount}</strong> listeners
+                <strong className="text-white">{listenersCount > 0 ? listenersCount : "--"}</strong> listeners
               </span>
               <span>•</span>
               <span className="flex items-center gap-1">

@@ -646,7 +646,16 @@ export default function AdminRadioPage() {
 
         {/* TAB: AI DROPS MANAGER */}
         {activeTab === "drops" && (
-          <DropManagerPanel />
+          <div className="space-y-6">
+            <AiDropGenerator
+              onDropGenerated={(url, name) => {
+                setCustomDropUrl(url);
+                setCustomDropName(name);
+                showMsg(`✓ Drop "${name}" loaded directly into Soundboard Pad #8!`, "success");
+              }}
+            />
+            <DropManagerPanel />
+          </div>
         )}
 
         {/* TAB: EVENT OVERRIDES & LINEUP EDITOR */}
@@ -672,6 +681,16 @@ export default function AdminRadioPage() {
                 <PerformanceSoundboard
                   customDropUrl={customDropUrl}
                   customDropName={customDropName}
+                  onFireOnAir={(name, url) => {
+                    showMsg(`⚡ FIRED ON AIR: ${name}`, "success");
+                    if (url) {
+                      fetch("/api/admin/radio/drops/fire", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name, url }),
+                      }).catch(() => {});
+                    }
+                  }}
                 />
                 
                 <DropStudio

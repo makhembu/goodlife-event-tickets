@@ -47,8 +47,8 @@
     }
   ],
   "daypart_rules": {
-    "morning": { "hours": [6, 12], "default_persona": "zari", "energy_band": [3, 5] },
-    "afternoon": { "hours": [12, 18], "default_persona": "amina", "energy_band": [6, 8] },
+    "morning": { "hours": [6, 12], "default_persona": "amina", "energy_band": [3, 5] },
+    "afternoon": { "hours": [12, 18], "default_persona": "zari", "energy_band": [6, 8] },
     "peak_evening": { "hours": [18, 24], "default_persona": "dj-shax", "energy_band": [8, 10] },
     "deep_overnight": { "hours": [0, 6], "default_persona": "wigman", "energy_band": [5, 7] }
   }

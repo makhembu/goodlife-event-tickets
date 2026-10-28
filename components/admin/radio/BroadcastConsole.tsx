@@ -39,6 +39,8 @@ export default function BroadcastConsole({
   const [statusState, setStatusState] = useState<"connecting" | "live" | "offline">("connecting");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const fallbackAudioUrlRef = useRef<string>("");
+  const currentOffsetRef = useRef<number>(0);
+  const currentTrackIdRef = useRef<number | null>(null);
   const isPlayingRef = useRef<boolean>(false);
   isPlayingRef.current = isPlaying;
 
@@ -49,6 +51,9 @@ export default function BroadcastConsole({
   useEffect(() => {
     const audio = new Audio(streamUrl);
     audio.volume = volume;
+    audio.onended = () => {
+      fetchTelemetry();
+    };
     setAudioEl(audio);
 
     return () => {
@@ -80,17 +85,30 @@ export default function BroadcastConsole({
         const activeSet = stateData.sets?.find((s: any) => s.id === stateData.broadcast?.active_set_id) || stateData.sets?.[0];
         if (activeSet) {
           fallbackAudioUrlRef.current = activeSet.audio_url || stateData.live?.fallback_set?.audio_url || "";
+          currentOffsetRef.current = stateData.broadcast?.offset_sec || 0;
+
+          // CRITICAL: Synchronize audio element whenever the active track changes!
+          if (audioEl && isPlayingRef.current) {
+            if (activeSet.id !== currentTrackIdRef.current) {
+              currentTrackIdRef.current = activeSet.id;
+              audioEl.src = activeSet.audio_url;
+              audioEl.currentTime = stateData.broadcast?.offset_sec || 0;
+              audioEl.play().catch((e) => console.warn("Playout track switch error:", e));
+            }
+          }
+
           setNowPlaying({
             station: { name: "GOODLIFE Radio 254", mounts: [{ bitrate: 192 }] },
-            listeners: { total: 42 },
+            listeners: { total: stateData.listeners_count ?? 0 },
             live: { is_live: false },
+            mode: stateData.mode || "autodj",
             now_playing: {
               song: {
                 title: activeSet.title,
                 artist: activeSet.dj_name,
                 art: activeSet.cover_url,
               },
-              elapsed: stateData.broadcast?.offset_sec || 30,
+              elapsed: stateData.broadcast?.offset_sec || 0,
               duration: activeSet.duration_sec || 240,
             },
           });
@@ -234,13 +252,13 @@ export default function BroadcastConsole({
             <span className={`w-2 h-2 rounded-full ${
               statusState === "live" ? "bg-emerald-400 animate-pulse" : "bg-red-500"
             }`} />
-            <span>{statusState === "live" ? (isLiveDj ? "LIVE DJ GUEST" : "ON AIR · AUTODJ") : "STATION OFFLINE"}</span>
+            <span>{statusState === "live" ? ((nowPlaying as any)?.mode === "mania" ? "ON AIR · MANIA (DJ)" : (isLiveDj ? "LIVE DJ GUEST" : "ON AIR · AUTODJ")) : "STATION OFFLINE"}</span>
           </div>
 
           {/* Listener Count */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300">
             <Users className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="font-bold text-white">{listenersCount}</span>
+            <span className="font-bold text-white">{listenersCount > 0 ? listenersCount : "--"}</span>
             <span className="text-[10px] text-zinc-400">LISTENERS</span>
           </div>
 

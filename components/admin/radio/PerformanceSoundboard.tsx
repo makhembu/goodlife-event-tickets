@@ -44,54 +44,38 @@ export default function PerformanceSoundboard({
   const pads: SoundPad[] = [
     {
       id: 1,
-      name: "Air Horn",
-      emoji: "🎺",
-      soundType: "synth",
-      synthParams: { freq: 440, type: "sawtooth", duration: 0.8 },
-      category: "FX",
+      name: "DJ Shax Hype",
+      emoji: "🔥",
+      soundType: "audio",
+      audioUrl: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
+      category: "VOICE",
     },
     {
       id: 2,
-      name: "Laser Sweep",
-      emoji: "⚡",
-      soundType: "synth",
-      synthParams: { freq: 1200, type: "sine", duration: 0.6 },
-      category: "FX",
+      name: "Amina Sunset",
+      emoji: "🌅",
+      soundType: "audio",
+      audioUrl: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
+      category: "VOICE",
     },
     {
       id: 3,
-      name: "Siren Alert",
-      emoji: "🚨",
-      soundType: "synth",
-      synthParams: { freq: 880, type: "triangle", duration: 1.2 },
-      category: "FX",
+      name: "MC Cheche Sheng",
+      emoji: "🇰🇪",
+      soundType: "audio",
+      audioUrl: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
+      category: "VOICE",
     },
     {
       id: 4,
-      name: "Rewind Spin",
-      emoji: "🔄",
-      soundType: "synth",
-      synthParams: { freq: 600, type: "sawtooth", duration: 0.7 },
-      category: "FX",
+      name: "Wigman Live",
+      emoji: "🎧",
+      soundType: "audio",
+      audioUrl: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
+      category: "VOICE",
     },
     {
       id: 5,
-      name: "Sub Bass Drop",
-      emoji: "💥",
-      soundType: "synth",
-      synthParams: { freq: 80, type: "sine", duration: 1.0 },
-      category: "FX",
-    },
-    {
-      id: 6,
-      name: "Afro Beat Fill",
-      emoji: "🥁",
-      soundType: "synth",
-      synthParams: { freq: 220, type: "triangle", duration: 0.5 },
-      category: "FX",
-    },
-    {
-      id: 7,
       name: "Wazi 254 Hype",
       emoji: "🎙️",
       soundType: "audio",
@@ -99,12 +83,27 @@ export default function PerformanceSoundboard({
       category: "VOICE",
     },
     {
+      id: 6,
+      name: "Festival Puck",
+      emoji: "⚡",
+      soundType: "audio",
+      audioUrl: "/drops/sample_puck.mp3",
+      category: "STATION",
+    },
+    {
+      id: 7,
+      name: "Festival Kore",
+      emoji: "✨",
+      soundType: "audio",
+      audioUrl: "/drops/sample_kore.mp3",
+      category: "STATION",
+    },
+    {
       id: 8,
-      name: customDropUrl ? customDropName : "Live Mic Drop",
+      name: customDropUrl ? customDropName : "Festival Fenrir",
       emoji: "🎤",
-      soundType: customDropUrl ? "audio" : "synth",
-      audioUrl: customDropUrl || undefined,
-      synthParams: customDropUrl ? undefined : { freq: 520, type: "sine", duration: 0.4 },
+      soundType: "audio",
+      audioUrl: customDropUrl || "/drops/sample_fenrir.mp3",
       category: "CUSTOM",
     },
   ];
@@ -177,14 +176,17 @@ export default function PerformanceSoundboard({
       onFireOnAir(pad.name, pad.audioUrl);
     }
 
-    if (pad.soundType === "audio" && pad.audioUrl) {
-      if (!customAudioRef.current) {
-        customAudioRef.current = new Audio();
+    if (pad.audioUrl) {
+      try {
+        const audio = new Audio(pad.audioUrl);
+        audio.volume = muted ? 0 : volume;
+        audio.play().catch((err) => {
+          console.warn("Audio playback fallback:", err);
+          playSynthesizedFx(pad);
+        });
+      } catch {
+        playSynthesizedFx(pad);
       }
-      customAudioRef.current.src = pad.audioUrl;
-      customAudioRef.current.volume = muted ? 0 : volume;
-      customAudioRef.current.currentTime = 0;
-      customAudioRef.current.play().catch(() => {});
     } else {
       playSynthesizedFx(pad);
     }

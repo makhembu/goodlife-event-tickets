@@ -81,6 +81,7 @@ export interface LiveNowPlayingTrack {
   artist?: string;
   genre?: string;
   thumbnail?: string;
+  audio_url?: string;
   duration?: number;
   elapsed?: number;
   video_id?: string;

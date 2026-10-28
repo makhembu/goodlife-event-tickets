@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { neonQuery } from "@/lib/supabase-db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,88 @@ interface LiveCachedState {
 }
 
 let _cachedLiveState: LiveCachedState | null = null;
+
+async function getTimelineFallback() {
+  try {
+    const [setsRes, settingsRes] = await Promise.all([
+      neonQuery(`
+        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+        FROM radio_sets
+        WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
+        ORDER BY display_order ASC, id ASC
+      `),
+      neonQuery(
+        "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
+      ).catch(() => ({ rows: [] })),
+    ]);
+
+    const sets = setsRes.rows || [];
+    if (sets.length === 0) return null;
+
+    const settings = settingsRes.rows[0] || {};
+    const isMania = settings.broadcast_mode === "mania" && settings.active_set_id;
+    const maniaIdx = isMania ? sets.findIndex((s: any) => s.id === Number(settings.active_set_id)) : -1;
+
+    let activeIdx = 0;
+    let offsetSec = 0;
+
+    if (isMania && maniaIdx !== -1) {
+      activeIdx = maniaIdx;
+      const trackDur = (sets[activeIdx].duration_sec && sets[activeIdx].duration_sec > 0) ? sets[activeIdx].duration_sec : 180;
+      const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+      const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+      offsetSec = elapsed % trackDur;
+    } else {
+      const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
+      let cumulative = 0;
+
+      for (let i = 0; i < sets.length; i++) {
+        const dur = sets[i].duration_sec || 180;
+        if (cumulative + dur > cycleSec) {
+          activeIdx = i;
+          offsetSec = cycleSec - cumulative;
+          break;
+        }
+        cumulative += dur;
+      }
+    }
+
+    const currentTrack = sets[activeIdx];
+    const nextTracks = [
+      sets[(activeIdx + 1) % sets.length],
+      sets[(activeIdx + 2) % sets.length],
+      sets[(activeIdx + 3) % sets.length],
+    ].filter(Boolean);
+
+    return {
+      offline: false,
+      stale: false,
+      mode: isMania ? "mania" : "autodj",
+      now_playing: {
+        title: currentTrack.title,
+        artist: currentTrack.dj_name,
+        thumbnail: currentTrack.cover_url,
+        elapsed: offsetSec,
+        duration: currentTrack.duration_sec || 180,
+        audio_url: currentTrack.audio_url,
+        video_id: `set-${currentTrack.id}`,
+      },
+      up_next: nextTracks.map((t: any) => ({
+        title: t.title,
+        artist: t.dj_name,
+        duration: t.duration_sec || 180,
+        thumbnail: t.cover_url,
+      })),
+      history: [],
+      target_duration_sec: 2.0,
+    };
+  } catch (err: any) {
+    console.error("[api/radio/live] Fallback query failed:", err?.message || err);
+    return null;
+  }
+}
 
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
@@ -31,8 +114,18 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
 export async function GET() {
   const upstreamBase = process.env.RADIO_UPSTREAM_URL;
 
-  // If no upstream server is configured in environment, fail-closed to honest offline state
+  // If no upstream server is configured, smoothly fall back to 24/7 virtual schedule
   if (!upstreamBase || upstreamBase.trim() === "") {
+    const fallback = await getTimelineFallback();
+    if (fallback) {
+      return NextResponse.json(fallback, {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+        },
+      });
+    }
+
     return NextResponse.json(
       {
         offline: true,
@@ -97,8 +190,8 @@ export async function GET() {
   } catch (err: any) {
     console.warn("[api/radio/live] Upstream fetch failed or timed out:", err?.message || err);
 
-    // If we have stale cached data, serve it with stale: true
-    if (_cachedLiveState) {
+    // If we have fresh cached data (< 15s), serve it with stale: true; otherwise advance timeline via fallback
+    if (_cachedLiveState && Date.now() - _cachedLiveState.ts < 15000) {
       return NextResponse.json(
         {
           offline: false,
@@ -115,6 +208,17 @@ export async function GET() {
           },
         }
       );
+    }
+
+    // 24/7 Virtual Playout Timeline Fallback
+    const fallback = await getTimelineFallback();
+    if (fallback) {
+      return NextResponse.json(fallback, {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+        },
+      });
     }
 
     // Completely unavailable without cached fallback -> honest offline state
