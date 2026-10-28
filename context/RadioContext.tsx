@@ -158,6 +158,37 @@ const RadioContext = createContext<RadioContextType | null>(null);
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
+const DEFAULT_STATION_DROPS: RadioDrop[] = [
+  {
+    id: "drop-cheche-sheng",
+    title: "MC Cheche · Nairobi Sound",
+    audio_url: "/drops/wazi-254.mp3",
+    persona: "MC Cheche",
+    mood: "BANTER",
+  },
+  {
+    id: "drop-shax-hype",
+    title: "DJ Shax · Nairobi Festival Airwaves",
+    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
+    persona: "DJ Shax",
+    mood: "HYPE",
+  },
+  {
+    id: "drop-amina-sunset",
+    title: "Amina · Sunset Frequency",
+    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
+    persona: "Amina",
+    mood: "SENSUAL",
+  },
+  {
+    id: "drop-wigman-live",
+    title: "Wigman · Live Frequency",
+    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
+    persona: "Wigman",
+    mood: "STOIC",
+  },
+];
+
 
 /**
  * Inert deterministic timeline math preserved strictly for historical vault set calculations.
@@ -217,6 +248,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [backupSets, setBackupSets] = useState<RadioSet[]>([]);
   const [currentBackupIndex, setCurrentBackupIndex] = useState(0);
   const [hasLoaded, setHasLoaded] = useState(false);
+  // Station Drops Playout State
+  const [isDropPlaying, setIsDropPlaying] = useState(false);
+  const [activeDropTitle, setActiveDropTitle] = useState<string | null>(null);
+  const [activePersona, setActivePersona] = useState<string | null>(null);
+  const [activeMood, setActiveMood] = useState<string | null>(null);
+  const availableDropsRef = useRef<RadioDrop[]>(DEFAULT_STATION_DROPS);
+  const currentDropIndexRef = useRef<number>(0);
+  const isDropPlayingRef = useRef(false);
+  isDropPlayingRef.current = isDropPlaying;
+
 
   // Smooth local progress interpolation anchored at poll time
   const [interpolatedElapsed, setInterpolatedElapsed] = useState(0);
@@ -324,6 +365,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       if (Array.isArray(data.sets) && data.sets.length > 0) {
         setBackupSets(data.sets);
+      if (Array.isArray(data.drops) && data.drops.length > 0) {
+        availableDropsRef.current = data.drops;
+      }
+
         try {
           localStorage.setItem(CACHED_SETS_KEY, JSON.stringify(data.sets.slice(0, 50)));
         } catch {}
@@ -344,7 +389,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch("/api/radio/live", { signal: controller.signal });
+      const res = await fetch(`/api/radio/live?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" });
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -383,7 +428,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           hasSentBeaconRef.current = false;
 
           // If playing and track advances, update audio src immediately!
-          if (audioRef.current && isPlayingRef.current && track.audio_url) {
+          if (audioRef.current && isPlayingRef.current && !isDropPlayingRef.current && track.audio_url) {
             if (audioRef.current.src !== track.audio_url) {
               audioRef.current.src = track.audio_url;
               audioRef.current.currentTime = track.elapsed || 0;
@@ -595,6 +640,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.load();
       } catch {}
     }
+    /* teardownDropSnippet_done */
+    if (dropAudioRef.current) {
+      try {
+        dropAudioRef.current.pause();
+        dropAudioRef.current.removeAttribute("src");
+        dropAudioRef.current.load();
+      } catch {}
+    }
+    setIsDropPlaying(false);
+    setActiveDropTitle(null);
+    setActivePersona(null);
+    setActiveMood(null);
+
   }, []);
 
   // 9. Stale Stream & Reconnect -> Backup Mix Failover Pipeline
@@ -875,6 +933,74 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     navigator.mediaSession.setActionHandler("pause", () => togglePlayDispatcherRef.current());
   }, [nowPlayingTrack]);
 
+  
+  // 12B. Station Voice Drop Playout Pipeline (Airs between songs)
+  const playDropAndAdvance = useCallback(async () => {
+    if (!isPlayingRef.current || !radioEnabledRef.current) {
+      return;
+    }
+
+    const dropAudio = dropAudioRef.current;
+    const drops = availableDropsRef.current.length > 0 ? availableDropsRef.current : DEFAULT_STATION_DROPS;
+    const drop = drops[currentDropIndexRef.current % drops.length];
+    currentDropIndexRef.current += 1;
+
+    const advanceToNextSong = async () => {
+      setIsDropPlaying(false);
+      setActiveDropTitle(null);
+      setActivePersona(null);
+      setActiveMood(null);
+      currentTrackIdRef.current = ""; // Clear current track ID so next song is recognized immediately
+      await fetchRadioLive();
+      if (audioRef.current && isPlayingRef.current && (!audioRef.current.src || audioRef.current.paused)) {
+        attachAndPlayLiveStream();
+      }
+    };
+
+    if (!dropAudio || !drop?.audio_url) {
+      await advanceToNextSong();
+      return;
+    }
+
+    try {
+      setIsDropPlaying(true);
+      setActiveDropTitle(drop.title);
+      setActivePersona(drop.persona || null);
+      setActiveMood(drop.mood || null);
+
+      dropAudio.src = drop.audio_url;
+      dropAudio.volume = isMutedRef.current ? 0 : volumeRef.current;
+
+      const handleDropEnded = async () => {
+        dropAudio.removeEventListener("ended", handleDropEnded);
+        dropAudio.removeEventListener("error", handleDropError);
+        try {
+          dropAudio.removeAttribute("src");
+          dropAudio.load();
+        } catch {}
+        await advanceToNextSong();
+      };
+
+      const handleDropError = async () => {
+        dropAudio.removeEventListener("ended", handleDropEnded);
+        dropAudio.removeEventListener("error", handleDropError);
+        try {
+          dropAudio.removeAttribute("src");
+          dropAudio.load();
+        } catch {}
+        await advanceToNextSong();
+      };
+
+      dropAudio.addEventListener("ended", handleDropEnded);
+      dropAudio.addEventListener("error", handleDropError);
+
+      await dropAudio.play();
+    } catch (err) {
+      console.warn("[RadioContext] Drop play rejected, advancing immediately:", err);
+      await advanceToNextSong();
+    }
+  }, [fetchRadioLive, attachAndPlayLiveStream]);
+
   // 13. Public Control Actions
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -899,6 +1025,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (audioRef.current) {
         audioRef.current.volume = next ? 0 : volume;
       }
+      if (dropAudioRef.current) {
+        dropAudioRef.current.volume = next ? 0 : volume;
+      }
       return next;
     });
   }, [volume]);
@@ -909,6 +1038,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setIsMuted(false);
     if (audioRef.current) {
       audioRef.current.volume = clamped;
+    }
+    if (dropAudioRef.current) {
+      dropAudioRef.current.volume = clamped;
     }
   }, []);
 
@@ -1072,10 +1204,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         liveTitle: displayTitle,
         liveDropFallback: engineState === "backup-mix",
         hasLoaded,
-        activeDropTitle: null,
-        activePersona: null,
-        activeMood: null,
-        isDropPlaying: false,
+        activeDropTitle,
+        activePersona,
+        activeMood,
+        isDropPlaying,
         togglePlay,
         retry,
         toggleMute,
@@ -1109,7 +1241,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onEnded={() => {
           sendPlayBeaconOnce(true);
-          fetchRadioLive();
+          playDropAndAdvance();
         }}
         preload="none"
         playsInline

@@ -32,6 +32,9 @@ export default function GlobalRadioBar() {
     isMuted,
     isMinimized,
     liveDropFallback,
+    isDropPlaying,
+    activeDropTitle,
+    activePersona,
     togglePlay,
     nextTrack,
     prevTrack,
@@ -63,8 +66,14 @@ export default function GlobalRadioBar() {
   }, [currentSet?.id]);
 
   const cleanedTrack = useMemo(() => {
+    if (isDropPlaying) {
+      return {
+        title: activeDropTitle || "STATION DROP",
+        artist: activePersona || "GOODLIFE RADIO",
+      };
+    }
     return cleanTrackInfo(isLive ? liveTitle : currentSet?.title, currentSet?.dj_name);
-  }, [isLive, liveTitle, currentSet?.title, currentSet?.dj_name]);
+  }, [isDropPlaying, activeDropTitle, activePersona, isLive, liveTitle, currentSet?.title, currentSet?.dj_name]);
 
   if (!currentSet && !isLive) return null;
   if (isDedicatedRadioPage || isScannerPage) return null;

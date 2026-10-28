@@ -58,6 +58,9 @@ export default function RadioPage() {
     upNext,
     history,
     isStale,
+    isDropPlaying,
+    activeDropTitle,
+    activePersona,
     volume = 1,
     isMuted,
     togglePlay,
@@ -628,6 +631,19 @@ export default function RadioPage() {
                   {/* DESKTOP METADATA VIEW (>=768px)                                  */}
                   {/* ================================================================= */}
                   <div className="hidden md:block space-y-2">
+
+                    {isDropPlaying && (
+                      <div className="bg-brand-accent text-brand-navy font-mono text-xs sm:text-sm font-black uppercase px-3 py-1.5 rounded-lg flex items-center gap-2 border-2 border-brand-navy shadow-(--shadow-brut-xs) animate-pulse w-fit">
+                        <Sparkles className="w-4 h-4 fill-brand-navy shrink-0" />
+                        <span>STATION DROP: {activeDropTitle || "GOODLIFE VOICE"}</span>
+                        {activePersona && (
+                          <span className="bg-brand-navy text-brand-accent px-2 py-0.5 rounded text-[11px] font-bold">
+                            {activePersona}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl uppercase tracking-wide text-brand-off-white leading-[1.05] line-clamp-2">
                       {displayTitle}
                     </h2>
@@ -672,7 +688,9 @@ export default function RadioPage() {
                           }`}
                         />
                         <span className="font-bold text-brand-off-white text-xs sm:text-sm tracking-wider">
-                          {isPlaying
+                          {isDropPlaying
+                            ? "STATION DROP ACTIVE"
+                            : isPlaying
                             ? engineState === "live"
                               ? false /* Broadcast is 24/7 continuous AutoDJ; suppressed unless broadcast_mode === 'stage' */
                                 ? "LIVE STAGE FEED ACTIVE"

@@ -52,6 +52,8 @@ export interface RadioDrop {
   title: string;
   audio_url: string;
   theme?: string;
+  persona?: string;
+  mood?: string;
 }
 
 export interface RadioPublicState {
