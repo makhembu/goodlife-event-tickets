@@ -15,12 +15,30 @@ function cleanEnv(val?: string): string {
   return val.replace(/[\uFEFF\u200B\r\n\t]/g, "").replace(/^["']|["']$/g, "").trim();
 }
 
+import fs from "fs";
+import path from "path";
+
+function readEnvLocal(key: string): string {
+  if (process.env[key]) return process.env[key]!;
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf8");
+      for (const line of content.split(/\r?\n/)) {
+        const m = line.match(new RegExp(`^\\s*${key}\\s*=\\s*"?([^"#\\r\\n]+?)"?\\s*$`));
+        if (m) return m[1].trim();
+      }
+    }
+  } catch {}
+  return "";
+}
+
 function getR2() {
-  const accountId = cleanEnv(process.env.R2_ACCOUNT_ID);
-  const accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
-  const secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
-  const bucket = cleanEnv(process.env.R2_BUCKET_NAME) || "goodlife";
-  const publicDomain = cleanEnv(process.env.R2_PUBLIC_DOMAIN).replace(/\/+$/, "");
+  const accountId = cleanEnv(readEnvLocal("R2_ACCOUNT_ID"));
+  const accessKeyId = cleanEnv(readEnvLocal("R2_ACCESS_KEY_ID"));
+  const secretAccessKey = cleanEnv(readEnvLocal("R2_SECRET_ACCESS_KEY"));
+  const bucket = cleanEnv(readEnvLocal("R2_BUCKET_NAME")) || "goodlife";
+  const publicDomain = cleanEnv(readEnvLocal("R2_PUBLIC_DOMAIN")).replace(/\/+$/, "");
 
   if (!accountId || !accessKeyId || !secretAccessKey || !publicDomain) {
     return null;

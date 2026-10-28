@@ -334,7 +334,7 @@ async function callCascadingLlm(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "nvidia/nemotron-3.5-bolt-e4b",
+          model: "meta/llama-3.2-11b-vision-instruct",
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
@@ -350,7 +350,7 @@ async function callCascadingLlm(
         const j = await res.json();
         const content = j.choices?.[0]?.message?.content || "";
         if (content) {
-          return { text: content, provider: "nvidia", model_id: "nvidia/nemotron-3.5-bolt-e4b", latency_ms: Date.now() - t0 };
+          return { text: content, provider: "nvidia", model_id: "meta/llama-3.2-11b-vision-instruct", latency_ms: Date.now() - t0 };
         }
       }
     } catch (e: any) {
@@ -545,7 +545,7 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   // 5. Audio Synthesis & Loudnorm Mastering (if not explicitly skipped)
   if (!req.skipAudioSynthesis) {
     try {
-      const voiceId = finalDrop.voice_id || persona.voice_id;
+      const voiceId = finalDrop.voice_id || persona.voice_id || persona.id || "Aoede";
       const rawAudio = await synthesizeVoiceAudio(finalDrop.script, voiceId);
 
       if (rawAudio) {

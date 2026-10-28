@@ -3,7 +3,7 @@
     {
       "id": "dj-shax",
       "name": "DJ Shax",
-      "voice_id": "ed2dfca6b6f440869006f9d3e721f3a3",
+      "voice_id": "Puck",
       "style": "Booming festival hype, energetic, commanding",
       "dayparts": ["afternoon", "peak_evening", "late_night"],
       "energy_range": [7, 10],
@@ -12,7 +12,7 @@
     {
       "id": "mc-cheche",
       "name": "MC Cheche",
-      "voice_id": "6801890ec345469d8818129e5bdd50dd",
+      "voice_id": "Fenrir",
       "style": "Slick Nairobi Sheng selector, sharp, fast, youth culture",
       "dayparts": ["morning", "afternoon", "peak_evening"],
       "energy_range": [5, 9],
@@ -21,7 +21,7 @@
     {
       "id": "amina",
       "name": "Amina",
-      "voice_id": "3520fc5bdf414830a3c46f8dc7f29b04",
+      "voice_id": "Aoede",
       "style": "Smooth, warm, atmospheric, late-night grooves and sunrise",
       "dayparts": ["morning", "afternoon", "deep_overnight"],
       "energy_range": [3, 7],
@@ -30,16 +30,25 @@
     {
       "id": "wigman",
       "name": "Wigman",
-      "voice_id": "d4483baa705e4ff5bfe1831b6960359f",
+      "voice_id": "Charon",
       "style": "Confident, authoritative festival commander, crisp transitions",
       "dayparts": ["afternoon", "peak_evening", "deep_overnight"],
       "energy_range": [6, 10],
       "tags": ["[confident]"]
+    },
+    {
+      "id": "zari",
+      "name": "Zari",
+      "voice_id": "Kore",
+      "style": "Chill, breezy, soulful daytime selector, smooth flow",
+      "dayparts": ["morning", "afternoon"],
+      "energy_range": [3, 6],
+      "tags": ["[calm]"]
     }
   ],
   "daypart_rules": {
-    "morning": { "hours": [6, 12], "default_persona": "amina", "energy_band": [3, 5] },
-    "afternoon": { "hours": [12, 18], "default_persona": "mc-cheche", "energy_band": [6, 8] },
+    "morning": { "hours": [6, 12], "default_persona": "zari", "energy_band": [3, 5] },
+    "afternoon": { "hours": [12, 18], "default_persona": "amina", "energy_band": [6, 8] },
     "peak_evening": { "hours": [18, 24], "default_persona": "dj-shax", "energy_band": [8, 10] },
     "deep_overnight": { "hours": [0, 6], "default_persona": "wigman", "energy_band": [5, 7] }
   }
