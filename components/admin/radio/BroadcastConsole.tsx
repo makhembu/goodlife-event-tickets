@@ -26,7 +26,7 @@ interface BroadcastConsoleProps {
 }
 
 export default function BroadcastConsole({
-  streamUrl = "https://dj.darajadigital.com/listen/goodlife/live.mp3",
+  streamUrl = "",
   onMicToggle,
   isMicActive = false,
 }: BroadcastConsoleProps) {
@@ -49,7 +49,7 @@ export default function BroadcastConsole({
   const [meterRight, setMeterRight] = useState(12);
 
   useEffect(() => {
-    const audio = new Audio(streamUrl);
+    const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
     audio.volume = volume;
     audio.onended = () => {
       fetchTelemetry();

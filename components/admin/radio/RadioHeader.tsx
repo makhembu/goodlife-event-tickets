@@ -8,7 +8,7 @@ interface RadioHeaderProps {
   onRefresh?: () => void;
 }
 
-export default function RadioHeader({ streamUrl = "https://dj.darajadigital.com/listen/goodlife/live.mp3", onRefresh }: RadioHeaderProps) {
+export default function RadioHeader({ streamUrl = "", onRefresh }: RadioHeaderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
@@ -17,7 +17,7 @@ export default function RadioHeader({ streamUrl = "https://dj.darajadigital.com/
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const audio = new Audio(streamUrl);
+    const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
     setAudioEl(audio);
 
     return () => {
