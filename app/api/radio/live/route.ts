@@ -35,14 +35,23 @@ async function getTimelineFallback() {
 
     let activeIdx = 0;
     let offsetSec = 0;
+    let activeMode: "autodj" | "mania" = "autodj";
 
     if (isMania && maniaIdx !== -1) {
-      activeIdx = maniaIdx;
-      const trackDur = (sets[activeIdx].duration_sec && sets[activeIdx].duration_sec > 0) ? sets[activeIdx].duration_sec : 180;
+      const trackDur = (sets[maniaIdx].duration_sec && sets[maniaIdx].duration_sec > 0) ? sets[maniaIdx].duration_sec : 180;
       const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
       const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-      offsetSec = elapsed % trackDur;
-    } else {
+
+      if (elapsed < trackDur) {
+        activeIdx = maniaIdx;
+        offsetSec = elapsed;
+        activeMode = "mania";
+      } else {
+        neonQuery("UPDATE radio_settings SET broadcast_mode = 'autodj', active_set_id = NULL, updated_at = NOW() WHERE id = 1").catch(() => {});
+      }
+    }
+
+    if (activeMode === "autodj") {
       const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
       const nowSec = Math.floor(Date.now() / 1000);
       const cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
@@ -69,7 +78,7 @@ async function getTimelineFallback() {
     return {
       offline: false,
       stale: false,
-      mode: isMania ? "mania" : "autodj",
+      mode: activeMode,
       now_playing: {
         title: currentTrack.title,
         artist: currentTrack.dj_name,
