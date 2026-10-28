@@ -950,10 +950,47 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setActiveDropTitle(null);
       setActivePersona(null);
       setActiveMood(null);
+      const endedTrackId = currentTrackIdRef.current;
       currentTrackIdRef.current = ""; // Clear current track ID so next song is recognized immediately
       await fetchRadioLive();
-      if (audioRef.current && isPlayingRef.current && (!audioRef.current.src || audioRef.current.paused)) {
-        attachAndPlayLiveStream();
+
+      const audio = audioRef.current;
+      if (audio && (audio.paused || audio.ended)) {
+        let nextTrack = null;
+        if (backupSetsRef.current.length > 0) {
+          const currentIdx = backupSetsRef.current.findIndex(
+            (s) => String(s.id) === endedTrackId || s.audio_url === audio.src || (s.external_id && s.external_id === endedTrackId)
+          );
+          const nextIdx = (currentIdx + 1) % backupSetsRef.current.length;
+          nextTrack = backupSetsRef.current[nextIdx];
+        }
+
+        if (nextTrack && nextTrack.audio_url) {
+          setNowPlayingTrack({
+            title: nextTrack.title,
+            artist: nextTrack.dj_name,
+            thumbnail: nextTrack.cover_url,
+            elapsed: 0,
+            duration: nextTrack.duration_sec || 180,
+            audio_url: nextTrack.audio_url,
+            video_id: `set-${nextTrack.id}`,
+          });
+          currentTrackIdRef.current = `set-${nextTrack.id}`;
+          setInterpolatedElapsed(0);
+          lastPollElapsedRef.current = 0;
+          lastPollTimestampRef.current = Date.now();
+          audio.src = nextTrack.audio_url;
+          audio.currentTime = 0;
+          try {
+            await audio.play();
+            setIsPlaying(true);
+            setEngineState("live");
+          } catch {
+            attachAndPlayLiveStream();
+          }
+        } else {
+          attachAndPlayLiveStream();
+        }
       }
     };
 
