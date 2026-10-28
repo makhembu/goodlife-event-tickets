@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Loader2,
   MessageSquare,
+  Radio,
   Save,
   Upload,
   Video,
@@ -109,6 +110,8 @@ export default function EventEditClient({
     regulations: initialEvent.regulations,
     simulators_enabled: details.simulators_enabled ?? false,
     operator_notifications_enabled: details.operator_notifications_enabled ?? false,
+    lineup: (initialEvent.lineup || []).join(", "),
+    lineup_confirmed: initialEvent.lineup_confirmed ?? false,
   });
 
   const derivedScheduleText = React.useMemo(() => {
@@ -220,6 +223,10 @@ export default function EventEditClient({
         is_active: nextStatus === "live",
         custom_schedule_text: (form.custom_schedule_text as string) ?? null,
         regulations: (form.regulations as string) ?? "",
+        lineup: typeof form.lineup === "string"
+          ? (form.lineup as string).split(",").map((s) => s.trim()).filter(Boolean)
+          : ((form.lineup as string[]) || []),
+        lineup_confirmed: Boolean(form.lineup_confirmed),
       });
 
       if (!updated) throw new Error("Event update returned no data.");
@@ -243,6 +250,8 @@ export default function EventEditClient({
         event_date: toDateInput(updated.event_date),
         sales_open_date: toDatetimeLocal(updated.sales_open_date),
         sales_close_date: toDatetimeLocal(updated.sales_close_date),
+        lineup: (updated.lineup || []).join(", "),
+        lineup_confirmed: updated.lineup_confirmed ?? false,
       }));
       setUnsaved(false);
       setSaveSuccess({
@@ -629,6 +638,45 @@ export default function EventEditClient({
                     className={FIELD_CLASS}
                     disabled={saving !== null}
                   />
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-white border-2 border-[var(--brand-navy)] p-4 space-y-4">
+              <h2 className="text-xs font-black uppercase border-b border-[var(--brand-navy)]/20 pb-2 flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5 text-brand-accent" />
+                Artist Lineup (Broadcast & Radio Drops)
+              </h2>
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className={LABEL_CLASS}>Confirmed Artists & DJs (Comma Separated)</label>
+                  <input
+                    type="text"
+                    value={(form.lineup as string) || ""}
+                    onChange={(e) => set("lineup", e.target.value)}
+                    placeholder="e.g. DJ Makuu, DJ Fusion, DJ AP, LRRY"
+                    className={FIELD_CLASS}
+                    disabled={saving !== null}
+                  />
+                  <p className="text-[11px] text-[var(--brand-navy-light)] font-bold">
+                    Names of performers separated by commas.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/30 p-3 rounded">
+                  <input
+                    type="checkbox"
+                    id="lineup_confirmed"
+                    checked={Boolean(form.lineup_confirmed)}
+                    onChange={(e) => set("lineup_confirmed", e.target.checked)}
+                    disabled={saving !== null}
+                    className="h-4 w-4 mt-0.5 rounded border-2 border-[var(--brand-navy)] accent-[var(--brand-navy)] cursor-pointer"
+                  />
+                  <label htmlFor="lineup_confirmed" className="text-xs font-bold text-[var(--brand-navy)] cursor-pointer leading-tight">
+                    <span>Lineup is officially confirmed for broadcast</span>
+                    <span className="block text-[11px] text-amber-900/80 font-normal mt-0.5">
+                      Required safety gate: Drop Engine will NEVER announce artist names on air unless this box is checked.
+                    </span>
+                  </label>
                 </div>
               </div>
             </section>

@@ -29,6 +29,8 @@ export interface Event {
   max_tent_inventory?: number;
   max_shared_beds?: number;
   maps_url?: string;
+  lineup?: string[] | null;
+  lineup_confirmed?: boolean;
   created_at: string;
   archived_at: string | null;
   is_active: boolean;

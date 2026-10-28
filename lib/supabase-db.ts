@@ -448,7 +448,7 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
       'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
       'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
       'custom_schedule_text', 'max_tent_inventory', 'max_shared_beds', 'maps_url',
-      'archived_at', 'budget_allocated', 'story_media'
+      'archived_at', 'budget_allocated', 'story_media', 'lineup', 'lineup_confirmed'
     ]);
 
     const fields = Object.keys(updates).filter((k) => MUTABLE_EVENT_FIELDS.has(k));

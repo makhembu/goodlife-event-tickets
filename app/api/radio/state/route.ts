@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
+import { resolveCoverArt } from "@/lib/radio/media-helpers";
 
-export const revalidate = 15;
+export const revalidate = 5;
 
-// In-memory serverless cache to eliminate cold database latency & connection exhaustion
+// In-memory serverless cache (short 5s cache to ensure kill-switch and stream switchers react promptly)
 let _stateDbCache: {
   settings: any;
   sets: any[];
@@ -11,6 +12,9 @@ let _stateDbCache: {
   totalDurationSec: number;
   ts: number;
 } | null = null;
+
+// Module-level schema cache: checked once per serverless worker instance (0 DB queries on subsequent calls)
+let _hasRadioEnabledColumn: boolean | null = null;
 
 // Neutral Station Sweepers with 4 Personas
 const DROPS = [
@@ -37,7 +41,7 @@ const DROPS = [
   },
   {
     id: "drop-wigman-live",
-    title: "Wigman · 98.4 FM Live",
+    title: "Wigman · Live Frequency",
     audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
     persona: "Wigman",
     mood: "STOIC",
@@ -48,17 +52,50 @@ export async function GET() {
   const now = Date.now();
   try {
     let cached = _stateDbCache;
-    if (!cached || now - cached.ts > 20000) {
-      // 1. Fetch settings
-      const settingsRes = await neonQuery(
-        "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id FROM radio_settings WHERE id = 1"
-      );
-      const settings = settingsRes.rows[0] || {
-        broadcast_mode: "curated",
-        live_stream_url: "",
-        live_title: "GOODLIFE MAIN STAGE LIVE",
+    if (!cached || now - cached.ts > 5000) {
+      // 1. Fetch settings and check for runtime kill-switch flag
+      let settings = {
+        broadcast_mode: "live",
+        live_stream_url: process.env.RADIO_STREAM_URL || "",
+        live_title: "GOODLIFE RADIO LIVE",
         live_fallback_set_id: null,
+        radio_enabled: true,
       };
+
+      try {
+        const settingsRes = await neonQuery(
+          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id FROM radio_settings WHERE id = 1"
+        );
+        if (settingsRes.rows[0]) {
+          settings = { ...settings, ...settingsRes.rows[0] };
+        }
+
+        // Check if radio_enabled column exists in DB (cached at module level)
+        if (_hasRadioEnabledColumn === null) {
+          try {
+            const colRes = await neonQuery(
+              "SELECT column_name FROM information_schema.columns WHERE table_name = 'radio_settings' AND column_name = 'radio_enabled'"
+            );
+            _hasRadioEnabledColumn = colRes.rows.length > 0;
+          } catch {
+            _hasRadioEnabledColumn = false;
+          }
+        }
+
+        if (_hasRadioEnabledColumn) {
+          const flagRes = await neonQuery("SELECT radio_enabled FROM radio_settings WHERE id = 1");
+          if (flagRes.rows[0]?.radio_enabled !== undefined) {
+            settings.radio_enabled = Boolean(flagRes.rows[0].radio_enabled);
+          }
+        }
+      } catch (err) {
+        console.warn("[api/radio/state] Error loading radio_settings:", err);
+      }
+
+      // Prioritize explicit env stream URL if configured
+      if (process.env.RADIO_STREAM_URL && process.env.RADIO_STREAM_URL.trim() !== "") {
+        settings.live_stream_url = process.env.RADIO_STREAM_URL.trim();
+      }
 
       // 2. Fetch active ready tracks
       const setsRes = await neonQuery(`
@@ -72,12 +109,12 @@ export async function GET() {
       `);
       const rawSets = setsRes.rows || [];
       const sets = rawSets.map((s: any) => {
-        let cover = s.cover_url || "";
-        if (cover.includes("192.168.")) {
+        let cover = resolveCoverArt(s.cover_url);
+        if (cover.includes("/vi/")) {
           const m = cover.match(/\/vi\/([a-zA-Z0-9_-]+)\//);
-          cover = m && m[1] ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : "/flyer.png";
-        } else if (!cover) {
-          cover = "/flyer.png";
+          if (m && m[1]) {
+            cover = `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
+          }
         }
         return {
           ...s,
@@ -159,9 +196,10 @@ export async function GET() {
     }
 
     const payload = {
-      mode: settings.broadcast_mode || "curated",
+      enabled: settings.radio_enabled !== false,
+      mode: settings.broadcast_mode || "live",
       live: {
-        title: settings.live_title || "GOODLIFE MAIN STAGE LIVE",
+        title: settings.live_title || "GOODLIFE RADIO LIVE",
         stream_url: settings.live_stream_url || "",
         fallback_set: fallbackSet,
       },
@@ -173,7 +211,7 @@ export async function GET() {
 
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "public, s-maxage=10, stale-while-revalidate=45",
+        "Cache-Control": "public, s-maxage=10, stale-while-revalidate=15",
       },
     });
   } catch (err: any) {

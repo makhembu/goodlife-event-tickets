@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateDynamicDrop } from "@/lib/radio/ai-drops";
+import { generateDropEngineV2 } from "@/lib/radio/drop-engine";
+import { selectGenericReviewedDrop } from "@/lib/radio/drop-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -11,40 +12,54 @@ export async function POST(req: NextRequest) {
       nextTrackTitle,
       nextTrackArtist,
       nextTrackGenre,
-      currentTrackTitle,
-      currentTrackArtist,
-      timingType,
-      preferredMood,
-      forceNew,
-      secondsUntilAir,
-      targetAirTimeMs,
+      preferredPersonaId,
+      introSeconds,
     } = body;
 
-    const result = await generateDynamicDrop({
-      nextTrackId: typeof nextTrackId === "number" ? nextTrackId : Number(nextTrackId) || undefined,
-      nextTrackTitle: nextTrackTitle?.toString().slice(0, 100),
-      nextTrackArtist: nextTrackArtist?.toString().slice(0, 100),
-      nextTrackGenre: nextTrackGenre?.toString().slice(0, 50),
-      currentTrackTitle: currentTrackTitle?.toString().slice(0, 100),
-      currentTrackArtist: currentTrackArtist?.toString().slice(0, 100),
-      timingType: timingType === "intro" || timingType === "mid_song" ? timingType : "outro",
-      preferredMood,
-      forceNew: Boolean(forceNew),
-      secondsUntilAir: typeof secondsUntilAir === "number" ? secondsUntilAir : undefined,
-      targetAirTimeMs: typeof targetAirTimeMs === "number" ? targetAirTimeMs : undefined,
+    const nextTrack =
+      nextTrackTitle && nextTrackArtist
+        ? {
+            id: typeof nextTrackId === "number" ? nextTrackId : Number(nextTrackId) || undefined,
+            title: nextTrackTitle.toString().slice(0, 100),
+            artist: nextTrackArtist.toString().slice(0, 100),
+            genre: nextTrackGenre?.toString().slice(0, 50),
+          }
+        : undefined;
+
+    const drop = await generateDropEngineV2({
+      nextTrack,
+      preferredPersonaId,
+      introSeconds: typeof introSeconds === "number" ? introSeconds : 10,
     });
 
-    return NextResponse.json(result, { status: 200 });
-  } catch (err: any) {
-    console.error("[api/radio/drops/dynamic] Error:", err.message);
     return NextResponse.json(
       {
-        drop_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-        script: "[excited] [shouting] Nairobi live airwaves! Turn the volume all the way UP on 98.4 FM!",
-        title: "DJ Shax · GOODLIFE Hype",
-        persona: "DJ Shax",
-        mood: "HYPE",
+        drop_url: drop.audio_url,
+        script: drop.script,
+        title: `${drop.persona_name} · GOODLIFE Drop`,
+        persona: drop.persona_name,
+        mood: drop.tag,
+        timingType: drop.drop_type === "next_track_tease" ? "intro" : "outro",
+        event_id: drop.event_id,
+        valid_until: drop.valid_until,
+        is_fallback: drop.is_generic_fallback,
+        provider: drop.provider,
+        model_id: drop.model_id,
+      },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error("[api/radio/drops/dynamic] Pipeline error:", err.message);
+    const fallback = selectGenericReviewedDrop();
+    return NextResponse.json(
+      {
+        drop_url: fallback.audio_url || "",
+        script: fallback.script,
+        title: `${fallback.persona_name} · GOODLIFE Stager`,
+        persona: fallback.persona_name,
+        mood: fallback.tag,
         timingType: "outro",
+        is_fallback: true,
       },
       { status: 200 }
     );

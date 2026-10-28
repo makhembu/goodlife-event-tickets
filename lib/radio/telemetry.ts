@@ -44,20 +44,20 @@ export async function getRadioTelemetry(targetAirTimeMs?: number): Promise<Radio
     timeSlotLabel = "Afternoon Heat 254";
   } else if (eatHours >= 17 && eatHours < 21) {
     timeSlot = "sunset_vibes";
-    timeSlotLabel = "Sunset Golden Hour at Marara Camp";
+    timeSlotLabel = "Sunset Golden Hour Frequency";
   } else {
     timeSlot = "midnight_rave";
     timeSlotLabel = "Midnight Frequency Rave";
   }
 
-  // 2. Real-time traffic model for Nairobi arterial routes (Thika Highway to Marara Camp)
-  let trafficBulletin = "Thika Superhighway moving steady outbound past Roysambu towards Marara Camp";
+  // 2. Real-time traffic model for Nairobi arterial routes
+  let trafficBulletin = "Major Nairobi express routes moving steady";
   if (eatHours >= 6 && eatHours <= 9) {
-    trafficBulletin = "Thika Superhighway inbound slow at Pangani, outbound clear towards Thika & Marara Camp";
+    trafficBulletin = "Major inbound routes busy, outbound traffic moving clear";
   } else if (eatHours >= 16 && eatHours <= 19) {
-    trafficBulletin = "Thika Superhighway busy near Garden City, opening up past Ruiru towards Marara Camp, Expressway fast";
+    trafficBulletin = "Peak evening outbound traffic active, expressways moving steady";
   } else if (eatHours >= 20 || eatHours <= 4) {
-    trafficBulletin = "All Nairobi superhighways wide open, high-speed cruise straight to Marara Camp, Thika";
+    trafficBulletin = "All arterial city routes wide open, cruising smooth";
   }
 
   // 3. Fetch Live Nairobi Weather from free Open-Meteo API (with 1.5s fallback)

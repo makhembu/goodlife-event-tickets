@@ -32,8 +32,10 @@ import AiDropGenerator from "@/components/admin/radio/AiDropGenerator";
 import QueueNextTrack from "@/components/admin/radio/QueueNextTrack";
 import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
+import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
+import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
 
-type TabMode = "studio" | "telemetry" | "search" | "upload" | "live" | "library";
+type TabMode = "studio" | "drops" | "overrides" | "telemetry" | "search" | "upload" | "live" | "library";
 
 export default function AdminRadioPage() {
   const [activeTab, setActiveTab] = useState<TabMode>("studio");
@@ -554,7 +556,7 @@ export default function AdminRadioPage() {
         )}
 
         {/* Tab Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
           <button
             onClick={() => setActiveTab("studio")}
             className={`p-3 border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-(--shadow-brut-xs) ${
@@ -562,7 +564,27 @@ export default function AdminRadioPage() {
             }`}
           >
             <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>DJ Studio &amp; Cartwall</span>
+            <span>Studio</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("drops")}
+            className={`p-3 border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-(--shadow-brut-xs) ${
+              activeTab === "drops" ? "bg-brand-navy text-white -translate-y-0.5" : "bg-white text-brand-navy hover:bg-brand-accent"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>AI Drops (50)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("overrides")}
+            className={`p-3 border-2 border-brand-navy font-black text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer shadow-(--shadow-brut-xs) ${
+              activeTab === "overrides" ? "bg-brand-navy text-white -translate-y-0.5" : "bg-white text-brand-navy hover:bg-brand-accent"
+            }`}
+          >
+            <RadioTower className="w-4 h-4 text-emerald-400" />
+            <span>Event Overrides</span>
           </button>
 
           <button
@@ -572,7 +594,7 @@ export default function AdminRadioPage() {
             }`}
           >
             <Radio className="w-4 h-4 text-brand-accent" />
-            <span>On-Air Telemetry &amp; Drops</span>
+            <span>Telemetry</span>
           </button>
 
           <button
@@ -582,7 +604,7 @@ export default function AdminRadioPage() {
             }`}
           >
             <Search className="w-4 h-4" />
-            <span>Search &amp; Playlists</span>
+            <span>Search</span>
           </button>
 
           <button
@@ -592,7 +614,7 @@ export default function AdminRadioPage() {
             }`}
           >
             <Upload className="w-4 h-4" />
-            <span>Direct DJ Upload</span>
+            <span>Upload</span>
           </button>
 
           <button
@@ -602,7 +624,7 @@ export default function AdminRadioPage() {
             }`}
           >
             <RadioTower className={`w-4 h-4 ${broadcastMode === "live" ? "text-red-500 animate-pulse" : ""}`} />
-            <span>Live Broadcast {broadcastMode === "live" ? "🔴" : ""}</span>
+            <span>Live {broadcastMode === "live" ? "🔴" : ""}</span>
           </button>
 
           <button
@@ -615,6 +637,16 @@ export default function AdminRadioPage() {
             <span>Library ({library.length})</span>
           </button>
         </div>
+
+        {/* TAB: AI DROPS MANAGER */}
+        {activeTab === "drops" && (
+          <DropManagerPanel />
+        )}
+
+        {/* TAB: EVENT OVERRIDES & LINEUP EDITOR */}
+        {activeTab === "overrides" && (
+          <RadioOverridesEditor />
+        )}
 
         {/* TAB: ON-AIR TELEMETRY & DROPS LOG */}
         {activeTab === "telemetry" && (

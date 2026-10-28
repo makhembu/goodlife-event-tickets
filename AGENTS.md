@@ -177,6 +177,11 @@ There is **one** function that decides which public page an event gets: `publicS
 - Scans are **partial admission**: `tickets.guest_count` vs `admitted_count`, with `is_scanned` flipping only once everyone is in. `processTicketScan` rejects a scan when the scanner passes an `event_id` that doesn't match the ticket's (cross-event gate defense). Multi-ticket amounts are `amountPaid / quantity` per ticket.
 - PDF generation reads `public/BebasNeue.ttf` from `process.cwd()` at runtime — the file must exist or every WhatsApp ticket send fails.
 
+## Radio & Audio Playout
+
+- **`radio.darajadigital.com` is a SEPARATE PROJECT — NEVER USE IT FOR GOODLIFE RADIO.** Do not route public streams, APIs, or metadata through `radio.darajadigital.com`. Goodlife Radio public delivery is powered by Cloudflare R2 (`goodlife` bucket) and Goodlife edge domains (`goodlife.co.ke`).
+- `live-dj.darajadigital.com` is strictly an Icecast/harbor TCP port 8005 ingest host for external DJ equipment (BUTT/Rekordbox), NOT a public listener streaming domain.
+
 ## Route map (non-obvious parts only)
 
 - Public: `/` (checkout), `/events`, `/events/[id]`, `/gallery`, `/radio`, `/pay/tab/[id]`, `/login`.

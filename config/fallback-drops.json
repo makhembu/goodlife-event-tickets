@@ -1,0 +1,229 @@
+[
+  {
+    "id": "gen_morn_01",
+    "persona": "amina",
+    "daypart": "morning",
+    "tag": "[calm]",
+    "script": "Asubuhi njema Nairobi! Amka na vibes safi kabisa hapa kwenye GOODLIFE Radio 254. Baraka tupu kwa hustle yako leo."
+  },
+  {
+    "id": "gen_morn_02",
+    "persona": "amina",
+    "daypart": "morning",
+    "tag": "[calm]",
+    "script": "Kutoka 254 hadi dunia mzima, hii ni GOODLIFE Radio. Piga kahawa moto, shika usukani, na utulie na muziki mtamu asubuhi hii."
+  },
+  {
+    "id": "gen_morn_03",
+    "persona": "mc-cheche",
+    "daypart": "morning",
+    "tag": "[excited]",
+    "script": "Yo Nairobi! Cheche hapa kwa microphone. Amka uchangamke, rada ni safi na ngoma zote kali ziko ndani ya GOODLIFE Radio 254!"
+  },
+  {
+    "id": "gen_morn_04",
+    "persona": "mc-cheche",
+    "daypart": "morning",
+    "tag": "[excited]",
+    "script": "Wasee wote wa morning hustle, fomu imejipa leo! Weka volume juu tukiwa locked kwenye GOODLIFE Radio 254 bila break."
+  },
+  {
+    "id": "gen_morn_05",
+    "persona": "amina",
+    "daypart": "morning",
+    "tag": "[calm]",
+    "script": "Breeze safi ya asubuhi, playlist ya kipekee. Ni Amina akikupitisha kwa safari ya sauti kwenye GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_morn_06",
+    "persona": "mc-cheche",
+    "daypart": "morning",
+    "tag": "[excited]",
+    "script": "Manze cheki hii asubuhi! Nairobi imeamka na sisi tuko set kabisa. Tunashusha bangers moja baada ya ingine hapa GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_morn_07",
+    "persona": "amina",
+    "daypart": "morning",
+    "tag": "[calm]",
+    "script": "Mwanzo mzuri wa siku na frequency ya ukweli. Karibu kwenye familia ya GOODLIFE Radio 254, mahali muziki unaishi."
+  },
+  {
+    "id": "gen_morn_08",
+    "persona": "mc-cheche",
+    "daypart": "morning",
+    "tag": "[excited]",
+    "script": "Amsha baze yako na uambie mbogi fomu iko locked! GOODLIFE Radio 254 inawasha kila kona ya 254 asubuhi hii!"
+  },
+
+  {
+    "id": "gen_aft_01",
+    "persona": "mc-cheche",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Saa sita imegonga na vibe haishuki! Ni MC Cheche nikikurusha hewani hapa GOODLIFE Radio 254. Wapi wasafi wote?"
+  },
+  {
+    "id": "gen_aft_02",
+    "persona": "mc-cheche",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Mchana wa nguvu, beats za moto, na energy ya kitaa. Keep it locked right here on GOODLIFE Radio 254!"
+  },
+  {
+    "id": "gen_aft_03",
+    "persona": "dj-shax",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Turn that radio all the way up! Shax on the decks, tunapiga luku mbaya na muziki safi mchana huu ndani ya GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_aft_04",
+    "persona": "dj-shax",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Heavy bassline, seamless transitions! Popote ulipo Nairobi, hii ndio soundtrack ya siku yako kutoka GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_aft_05",
+    "persona": "mc-cheche",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Hustle ya mchana inahitaji ngoma nzito kama hizi. Cheza kama wewe, shika flow kwenye GOODLIFE Radio 254!"
+  },
+  {
+    "id": "gen_aft_06",
+    "persona": "dj-shax",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Unapata feel ya live festival airwaves moja kwa moja kwa speakers zako! Ni GOODLIFE Radio 254 ikikam through!"
+  },
+  {
+    "id": "gen_aft_07",
+    "persona": "wigman",
+    "daypart": "afternoon",
+    "tag": "[confident]",
+    "script": "Zero static, pure quality. You are tuned to GOODLIFE Radio 254, powering the afternoon sound across the city."
+  },
+  {
+    "id": "gen_aft_08",
+    "persona": "mc-cheche",
+    "daypart": "afternoon",
+    "tag": "[excited]",
+    "script": "Mbogi kali tuko ndani na radar iko fiti sana! Endelea kubounce na playlist kali zaidi mchana huu hapa GOODLIFE Radio 254."
+  },
+
+  {
+    "id": "gen_eve_01",
+    "persona": "dj-shax",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Jioni imefika na sherehe haina holiday! Shax anawasha moto kwenye GOODLIFE Radio 254. Volume kabisa!"
+  },
+  {
+    "id": "gen_eve_02",
+    "persona": "dj-shax",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Nairobi sunset, peak festival energy! We are live, loud, and direct on GOODLIFE Radio 254. Make some noise!"
+  },
+  {
+    "id": "gen_eve_03",
+    "persona": "mc-cheche",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Wasee wote wamesimama kwa grao! Fomu ya jioni imejipa kishenzi hapa GOODLIFE Radio 254. Hakuna kulala leo!"
+  },
+  {
+    "id": "gen_eve_04",
+    "persona": "mc-cheche",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Rudi na squad yako, panda hii frequency. GOODLIFE Radio 254 inashikilia jioni nzima na moto usiozima!"
+  },
+  {
+    "id": "gen_eve_05",
+    "persona": "wigman",
+    "daypart": "peak_evening",
+    "tag": "[confident]",
+    "script": "This is prime time, festival commander style. Maximum output, pure party heat. Locked into GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_eve_06",
+    "persona": "dj-shax",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Kila banger unapenda, kila rhythm unataka. Hii ndio frequency ya Kenya, hii ndio GOODLIFE Radio 254!"
+  },
+  {
+    "id": "gen_eve_07",
+    "persona": "mc-cheche",
+    "daypart": "peak_evening",
+    "tag": "[excited]",
+    "script": "Cheki vile inapiga! Sherehe ya ukweli iko hewani. Jiunge na maelfu ya wasikilizaji ndani ya GOODLIFE Radio 254!"
+  },
+  {
+    "id": "gen_eve_08",
+    "persona": "wigman",
+    "daypart": "peak_evening",
+    "tag": "[confident]",
+    "script": "The rhythm doesn't stop and neither do you. Peak evening rotation strictly curated for the culture on GOODLIFE Radio 254."
+  },
+
+  {
+    "id": "gen_ngt_01",
+    "persona": "wigman",
+    "daypart": "deep_overnight",
+    "tag": "[confident]",
+    "script": "Late night frequencies, deep bass and smooth selections. Wigman in control, cruising through the dark on GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_ngt_02",
+    "persona": "amina",
+    "daypart": "deep_overnight",
+    "tag": "[calm]",
+    "script": "Usiku mzito, jiji limetulia, lakini muziki haukomi. Tulia nami Amina hapa GOODLIFE Radio 254 kwa vibes za kutuliza roho."
+  },
+  {
+    "id": "gen_ngt_03",
+    "persona": "wigman",
+    "daypart": "deep_overnight",
+    "tag": "[confident]",
+    "script": "For the night riders, the night shifters, and the creators awake at three a m. GOODLIFE Radio 254 is your companion."
+  },
+  {
+    "id": "gen_ngt_04",
+    "persona": "amina",
+    "daypart": "deep_overnight",
+    "tag": "[calm]",
+    "script": "Mellow chords and deep grooves keeping you company until dawn. You're locked into the peaceful side of GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_ngt_05",
+    "persona": "wigman",
+    "daypart": "deep_overnight",
+    "tag": "[confident]",
+    "script": "Solid state sound in the after-hours. No fluff, no talk, just pure frequency on GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_ngt_06",
+    "persona": "amina",
+    "daypart": "deep_overnight",
+    "tag": "[calm]",
+    "script": "Hewa imepoa, mawazo yametulia. Asante kwa kuwa nasi usiku huu ndani ya GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_ngt_07",
+    "persona": "wigman",
+    "daypart": "deep_overnight",
+    "tag": "[confident]",
+    "script": "Holding down the overnight session from Nairobi to the globe. Uninterrupted rhythm, right here on GOODLIFE Radio 254."
+  },
+  {
+    "id": "gen_ngt_08",
+    "persona": "amina",
+    "daypart": "deep_overnight",
+    "tag": "[calm]",
+    "script": "Pumzika vizuri lakini usizime radio. Melody nzuri zitaendelea kutiririka hadi asubuhi kupitia GOODLIFE Radio 254."
+  }
+]

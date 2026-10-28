@@ -76,13 +76,45 @@ export interface IngestJobTrack {
   error?: string;
 }
 
-export interface IngestJob {
-  job_id: string;
-  playlist_title?: string;
-  total_tracks: number;
-  completed_tracks: number;
-  status: 'queued' | 'running' | 'completed' | 'failed';
-  tracks: IngestJobTrack[];
-  created_at: string;
-  updated_at: string;
+export interface LiveNowPlayingTrack {
+  title: string;
+  artist?: string;
+  genre?: string;
+  thumbnail?: string;
+  duration?: number;
+  elapsed?: number;
+  video_id?: string;
+  thought?: string;
+  theme?: string;
+  daypart?: string;
+  provenance?: string;
+  state?: string;
+}
+
+export interface LiveQueueItem {
+  video_id: string;
+  title: string;
+  artist: string;
+  duration?: number;
+  thumbnail?: string;
+  dj_note?: string;
+  provenance?: string;
+}
+
+export interface LiveHistoryItem {
+  video_id?: string;
+  title: string;
+  artist?: string;
+  genre?: string;
+  played_at: string;
+}
+
+export interface RadioLiveBffResponse {
+  offline: boolean;
+  stale: boolean;
+  reason?: string;
+  now_playing: LiveNowPlayingTrack | null;
+  up_next: LiveQueueItem[];
+  history: LiveHistoryItem[];
+  target_duration_sec?: number;
 }
