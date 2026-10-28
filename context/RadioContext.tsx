@@ -955,7 +955,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       await fetchRadioLive();
 
       const audio = audioRef.current;
-      if (audio && (audio.paused || audio.ended)) {
+      if (audio) {
         let nextTrack = null;
         if (backupSetsRef.current.length > 0) {
           const currentIdx = backupSetsRef.current.findIndex(
@@ -997,6 +997,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (!dropAudio || !drop?.audio_url) {
       await advanceToNextSong();
       return;
+    }
+
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch {}
     }
 
     try {
