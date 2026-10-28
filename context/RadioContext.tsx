@@ -936,7 +936,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   
   // 12B. Station Voice Drop Playout Pipeline (Airs between songs)
   const playDropAndAdvance = useCallback(async () => {
-    if (!isPlayingRef.current || !radioEnabledRef.current) {
+    if (engineStateRef.current === "paused" || !radioEnabledRef.current) {
       return;
     }
 
@@ -1233,6 +1233,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         onTimeUpdate={handleTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => {
+          if (audioRef.current?.ended || isDropPlayingRef.current) return;
           setIsPlaying(false);
         }}
         onError={() => {
