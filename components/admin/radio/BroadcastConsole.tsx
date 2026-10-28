@@ -38,6 +38,9 @@ export default function BroadcastConsole({
   const [volume, setVolume] = useState(0.85);
   const [statusState, setStatusState] = useState<"connecting" | "live" | "offline">("connecting");
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const fallbackAudioUrlRef = useRef<string>("");
+  const isPlayingRef = useRef<boolean>(false);
+  isPlayingRef.current = isPlaying;
 
   // Simulated VU Meter levels synced to playback / audio state
   const [meterLeft, setMeterLeft] = useState(14);
@@ -76,6 +79,7 @@ export default function BroadcastConsole({
         const stateData = await stateRes.json();
         const activeSet = stateData.sets?.find((s: any) => s.id === stateData.broadcast?.active_set_id) || stateData.sets?.[0];
         if (activeSet) {
+          fallbackAudioUrlRef.current = activeSet.audio_url || stateData.live?.fallback_set?.audio_url || "";
           setNowPlaying({
             station: { name: "GOODLIFE Radio 254", mounts: [{ bitrate: 192 }] },
             listeners: { total: 42 },
@@ -132,7 +136,13 @@ export default function BroadcastConsole({
       audioEl.pause();
       setIsPlaying(false);
     } else {
-      audioEl.play().catch((err) => console.error("Monitor playback error:", err));
+      audioEl.play().catch((err) => {
+        console.warn("Primary stream monitor unreachable, falling back to 24/7 timeline track:", err);
+        if (fallbackAudioUrlRef.current && audioEl.src !== fallbackAudioUrlRef.current) {
+          audioEl.src = fallbackAudioUrlRef.current;
+          audioEl.play().catch((e) => console.error("Fallback track playback error:", e));
+        }
+      });
       setIsPlaying(true);
     }
   };
