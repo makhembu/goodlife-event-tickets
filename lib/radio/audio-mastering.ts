@@ -80,7 +80,7 @@ export async function synthesizeVoiceAudio(
   text: string,
   voiceOrPersonaId = "Aoede"
 ): Promise<Buffer | null> {
-  const geminiKey = getEnv("GEMINI_API_KEY") || "AIzaSyBrb1D4hau6QQW2nsFHwAEXD0TiErVmSrg";
+  const geminiKey = getEnv("GEMINI_API_KEY") || process.env.GEMINI_API_KEY || "";
   if (!geminiKey) {
     console.warn("[audio-mastering] GEMINI_API_KEY not set in environment");
     return null;
@@ -97,11 +97,12 @@ export async function synthesizeVoiceAudio(
   const voiceName: GeminiVoiceName = VOICE_MAP[lookup] || "Aoede";
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent?key=${geminiKey}`;
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent";
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-goog-api-key": geminiKey,
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: cleanText }] }],
