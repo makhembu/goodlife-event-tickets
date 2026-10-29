@@ -255,7 +255,41 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
 async function callCascadingLlm(
   system: string,
   user: string
-): Promise<{ text: string; provider: "groq" | "nvidia" | "pollinations"; model_id: string; latency_ms: number } | null> {
+): Promise<{ text: string; provider: "groq" | "nvidia" | "pollinations" | "gemini"; model_id: string; latency_ms: number } | null> {
+  // Tier 0: Gemini 2.5 Flash (Primary High-Fidelity Broadcast Script Generator)
+  const geminiKey = getEnv("GEMINI_API_KEY") || process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    const t0 = Date.now();
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ parts: [{ text: user }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.7,
+              maxOutputTokens: 250,
+            },
+          }),
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (res.ok) {
+        const j = await res.json();
+        const content = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (content) {
+          return { text: content, provider: "gemini", model_id: "gemini-2.5-flash", latency_ms: Date.now() - t0 };
+        }
+      }
+    } catch (e: any) {
+      console.warn("[drop-engine] Gemini LLM attempt failed, cascading:", e.message);
+    }
+  }
+
   const groqKey = getEnv("GROQ_API_KEY");
   const groqKeyFallback = getEnv("GROQ_API_KEY_FALLBACK");
   const nvidiaKey = getEnv("NVIDIA_API_KEY");
@@ -483,7 +517,7 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   // 3. Inference with cascade
   let chosenScript = "";
   let chosenTag = persona.tags?.[0] || "[excited]";
-  let providerUsed: "groq" | "nvidia" | "pollinations" | "generic_library" = "generic_library";
+  let providerUsed: "groq" | "nvidia" | "pollinations" | "gemini" | "generic_library" = "generic_library";
   let modelIdUsed = "fallback";
   let latencyMs = 0;
   let isFallback = false;

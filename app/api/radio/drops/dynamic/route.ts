@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateDropEngineV2 } from "@/lib/radio/drop-engine";
 import { selectGenericReviewedDrop } from "@/lib/radio/drop-gate";
+import { neonQuery } from "@/lib/supabase-db";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,28 @@ export async function POST(req: NextRequest) {
       preferredPersonaId,
       introSeconds: typeof introSeconds === "number" ? introSeconds : 10,
     });
+
+    if (drop.audio_url) {
+      try {
+        await neonQuery(
+          `INSERT INTO radio_drops (persona, mood, title, script, audio_url, target_track_id, target_track_title, target_artist, timing_type, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+          [
+            drop.persona_name,
+            drop.tag,
+            `${drop.persona_name} · ${nextTrack?.title || "GOODLIFE Drop"}`,
+            drop.script,
+            drop.audio_url,
+            nextTrack?.id || null,
+            nextTrack?.title || null,
+            nextTrack?.artist || null,
+            drop.drop_type === "next_track_tease" ? "intro" : "outro",
+          ]
+        );
+      } catch (dbErr: any) {
+        console.warn("[api/radio/drops/dynamic] Failed to save to radio_drops:", dbErr.message);
+      }
+    }
 
     return NextResponse.json(
       {

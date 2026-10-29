@@ -54,6 +54,9 @@ export interface RadioDrop {
   theme?: string;
   persona?: string;
   mood?: string;
+  target_track_id?: number | string;
+  target_track_title?: string;
+  target_artist?: string;
 }
 
 export interface RadioPublicState {

@@ -257,6 +257,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const currentDropIndexRef = useRef<number>(0);
   const isDropPlayingRef = useRef(false);
   isDropPlayingRef.current = isDropPlaying;
+  const lastPrefetchedTrackKeyRef = useRef<string | null>(null);
+  const isPrefetchingDropRef = useRef<boolean>(false);
 
 
   // Smooth local progress interpolation anchored at poll time
@@ -555,6 +557,57 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       secondsListenedRef.current += 1;
       if (secondsListenedRef.current >= 20 && !hasSentBeaconRef.current) {
         sendPlayBeaconOnce(false);
+      }
+
+      // Background dynamic drop pre-fetch for upcoming track (airs between songs)
+      if (clamped >= 15 && !isPrefetchingDropRef.current) {
+        const nextCandidate = (upNextQueue && upNextQueue.length > 0)
+          ? upNextQueue[0]
+          : (backupSetsRef.current.length > 1 ? backupSetsRef.current[1] : null);
+
+        if (nextCandidate && nextCandidate.title) {
+          const nextKey = `${(nextCandidate as any).id || ""}-${nextCandidate.title}`;
+          if (lastPrefetchedTrackKeyRef.current !== nextKey) {
+            lastPrefetchedTrackKeyRef.current = nextKey;
+            isPrefetchingDropRef.current = true;
+            fetch("/api/radio/drops/dynamic", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nextTrackId: (nextCandidate as any).id,
+                nextTrackTitle: nextCandidate.title,
+                nextTrackArtist: (nextCandidate as any).artist || (nextCandidate as any).dj_name,
+                currentTrackTitle: nowPlayingTrack?.title,
+                currentTrackArtist: nowPlayingTrack?.artist,
+                timingType: "outro",
+              }),
+            })
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                isPrefetchingDropRef.current = false;
+                if (data && data.drop_url) {
+                  const freshDrop: RadioDrop = {
+                    id: `dyn-${Date.now()}`,
+                    title: data.title || `${data.persona || "GOODLIFE"} Drop`,
+                    audio_url: data.drop_url,
+                    persona: data.persona,
+                    mood: data.mood,
+                    target_track_id: (nextCandidate as any).id,
+                    target_track_title: nextCandidate.title,
+                  };
+                  availableDropsRef.current = [freshDrop, ...availableDropsRef.current];
+                  if (typeof Audio !== "undefined") {
+                    const pre = new Audio();
+                    pre.preload = "auto";
+                    pre.src = data.drop_url;
+                  }
+                }
+              })
+              .catch(() => {
+                isPrefetchingDropRef.current = false;
+              });
+          }
+        }
       }
     }, 1000);
 
@@ -942,8 +995,36 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     const dropAudio = dropAudioRef.current;
     const drops = availableDropsRef.current.length > 0 ? availableDropsRef.current : DEFAULT_STATION_DROPS;
-    const drop = drops[currentDropIndexRef.current % drops.length];
-    currentDropIndexRef.current += 1;
+
+    // Determine expected next track to match dynamic track-targeted drops
+    const endedTrackId = currentTrackIdRef.current;
+    const audio = audioRef.current;
+    let expectedNextTrack: RadioSet | null = null;
+    if (backupSetsRef.current.length > 0) {
+      const currentIdx = backupSetsRef.current.findIndex(
+        (s) => String(s.id) === endedTrackId || (audio && s.audio_url === audio.src) || (s.external_id && s.external_id === endedTrackId)
+      );
+      const nextIdx = (currentIdx + 1) % backupSetsRef.current.length;
+      expectedNextTrack = backupSetsRef.current[nextIdx];
+    }
+
+    // 1. Try to find a drop specifically targeted for the upcoming track!
+    let drop: RadioDrop | undefined;
+    if (expectedNextTrack) {
+      const targetId = expectedNextTrack.id;
+      const targetTitle = (expectedNextTrack.title || "").toLowerCase();
+      drop = drops.find((d) =>
+        (d.target_track_id && String(d.target_track_id) === String(targetId)) ||
+        (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase())) ||
+        (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
+      );
+    }
+
+    // 2. If no track-targeted drop, pick the next available from dynamic pool
+    if (!drop) {
+      drop = drops[currentDropIndexRef.current % drops.length];
+      currentDropIndexRef.current += 1;
+    }
 
     const advanceToNextSong = async () => {
       setIsDropPlaying(false);

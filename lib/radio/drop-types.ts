@@ -71,7 +71,7 @@ export interface GeneratedDropRecord {
   valid_until: Date;
   target_track_id?: number | null;
   created_at: Date;
-  provider: "groq" | "nvidia" | "pollinations" | "generic_library";
+  provider: "groq" | "nvidia" | "pollinations" | "gemini" | "generic_library";
   model_id: string;
   latency_ms: number;
   is_generic_fallback: boolean;
