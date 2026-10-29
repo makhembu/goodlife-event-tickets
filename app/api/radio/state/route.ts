@@ -16,38 +16,6 @@ let _stateDbCache: {
 // Module-level schema cache: checked once per serverless worker instance (0 DB queries on subsequent calls)
 let _hasRadioEnabledColumn: boolean | null = null;
 
-// Neutral Station Sweepers with 4 Personas
-const DROPS = [
-  {
-    id: "drop-shax-hype",
-    title: "DJ Shax · Nairobi Festival Airwaves",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
-    persona: "DJ Shax",
-    mood: "HYPE",
-  },
-  {
-    id: "drop-amina-sunset",
-    title: "Amina · Sunset Frequency",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
-    persona: "Amina",
-    mood: "SENSUAL",
-  },
-  {
-    id: "drop-cheche-sheng",
-    title: "MC Cheche · Nairobi Sound",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793102386_09ef74.mp3",
-    persona: "MC Cheche",
-    mood: "BANTER",
-  },
-  {
-    id: "drop-wigman-live",
-    title: "Wigman · Live Frequency",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-    persona: "Wigman",
-    mood: "STOIC",
-  },
-];
-
 export async function GET() {
   const now = Date.now();
   try {
@@ -226,8 +194,29 @@ export async function GET() {
       }
     }
 
-      // Dynamic drops are generated live on-the-fly per track transition, not loaded from stale DB rows
-      const activeDrops: any[] = [];
+      // Load active drops from PostgreSQL database
+      let activeDrops: any[] = [];
+      try {
+        const dropsRes = await neonQuery(
+          `SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title
+           FROM radio_drops
+           WHERE deleted_at IS NULL AND created_at > NOW() - INTERVAL '24 hours' AND audio_url IS NOT NULL
+           ORDER BY created_at DESC
+           LIMIT 50`
+        );
+        activeDrops = (dropsRes.rows || []).map((r: any) => ({
+          id: `db-drop-${r.id}`,
+          title: r.title,
+          script: r.script,
+          audio_url: r.audio_url,
+          persona: r.persona,
+          mood: r.mood,
+          target_track_id: r.target_track_id,
+          target_track_title: r.target_track_title,
+        }));
+      } catch (dbErr: any) {
+        console.warn("[api/radio/state] Error loading active drops:", dbErr.message);
+      }
 
     const payload = {
       enabled: settings.radio_enabled !== false,
@@ -258,7 +247,7 @@ export async function GET() {
         mode: settings.broadcast_mode || "curated",
         live: { title: settings.live_title || "", stream_url: settings.live_stream_url || "", fallback_set: fallbackSet },
         sets,
-        drops: DROPS,
+        drops: [],
       });
     }
     return NextResponse.json(

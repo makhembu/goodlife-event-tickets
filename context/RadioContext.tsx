@@ -160,29 +160,7 @@ const RadioContext = createContext<RadioContextType | null>(null);
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
-const DEFAULT_STATION_DROPS: RadioDrop[] = [
-  {
-    id: "drop-shax-hype",
-    title: "DJ Shax · Nairobi Festival Airwaves",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110740827-dyn_dj-shax_mvqru6hd_ht10.mp3",
-    persona: "DJ Shax",
-    mood: "HYPE",
-  },
-  {
-    id: "drop-amina-sunset",
-    title: "Amina · Sunset Frequency",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/1793110767747-dyn_amina_mvqrur9e_aq1d.mp3",
-    persona: "Amina",
-    mood: "SENSUAL",
-  },
-  {
-    id: "drop-wigman-live",
-    title: "Wigman · Live Frequency",
-    audio_url: "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/radio/drops/ai_1793103865_e61bf9.mp3",
-    persona: "Wigman",
-    mood: "STOIC",
-  },
-];
+const DEFAULT_STATION_DROPS: RadioDrop[] = [];
 
 
 /**
@@ -1194,9 +1172,22 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return idMatch || titleMatch;
     });
 
-    // 3. Fallback ONLY to a generic station sweeper with NO track target
+    // 3. Fallback ONLY to a generic station sweeper with NO track target and ZERO track/artist mentions
     if (!drop) {
-      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+      drop = drops.find((d) => {
+        if (d.target_track_id || d.target_track_title) return false;
+        const titleLower = (d.title || "").toLowerCase();
+        const scriptLower = (d.script || "").toLowerCase();
+        if (
+          titleLower.includes("big 7") ||
+          scriptLower.includes("big 7") ||
+          titleLower.includes("burna") ||
+          scriptLower.includes("burna")
+        ) {
+          return false;
+        }
+        return true;
+      });
     }
 
     // 4. If no verified matching drop exists, DO NOT PLAY ANY DROP (prevents wrong song name!)
@@ -1358,7 +1349,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     // 2. If no track-specific drop, ONLY allow a generic station sweeper that has NO track target
     // and does NOT mention any other track or artist in its title/script
     if (!drop) {
-      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+      drop = drops.find((d) => {
+        if (d.target_track_id || d.target_track_title) return false;
+        const titleLower = (d.title || "").toLowerCase();
+        const scriptLower = (d.script || "").toLowerCase();
+        if (
+          titleLower.includes("big 7") ||
+          scriptLower.includes("big 7") ||
+          titleLower.includes("burna") ||
+          scriptLower.includes("burna")
+        ) {
+          return false;
+        }
+        return true;
+      });
     }
 
     // 3. Remove the aired drop if matched; if no verified drop, play track immediately with NO drop!
