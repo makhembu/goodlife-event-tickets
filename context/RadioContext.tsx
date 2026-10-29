@@ -560,7 +560,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Background dynamic drop pre-fetch for upcoming track (airs between songs)
-      if (clamped >= 15 && !isPrefetchingDropRef.current) {
+      if (clamped >= 3 && !isPrefetchingDropRef.current) {
         const nextCandidate = (upNextQueue && upNextQueue.length > 0)
           ? upNextQueue[0]
           : (backupSetsRef.current.length > 1 ? backupSetsRef.current[1] : null);

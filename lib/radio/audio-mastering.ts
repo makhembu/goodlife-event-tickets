@@ -7,16 +7,15 @@ import { promisify } from "util";
 const execAsync = promisify(exec);
 
 function getEnv(key: string): string {
-  if (process.env[key]) return process.env[key]!;
   const envPath = path.resolve(process.cwd(), ".env.local");
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, "utf8");
     for (const line of content.split(/\r?\n/)) {
       const m = line.match(new RegExp(`^\\s*${key}\\s*=\\s*"?([^"#\\r\\n]+?)"?\\s*$`));
-      if (m) return m[1].trim();
+      if (m && m[1].trim()) return m[1].trim();
     }
   }
-  return "";
+  return process.env[key] || "";
 }
 
 // Map persona or voice ID to Gemini's 5 pre-built broadcast voices
@@ -96,47 +95,60 @@ export async function synthesizeVoiceAudio(
   const lookup = voiceOrPersonaId.toLowerCase().trim();
   const voiceName: GeminiVoiceName = VOICE_MAP[lookup] || "Aoede";
 
-  try {
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-goog-api-key": geminiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: cleanText }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
+  // Strict Gemini 3.8 Flash TTS model cascade
+  const ttsModels = [
+    "gemini-3.8-flash-tts",
+    "gemini-3.8-flash-lite-tts",
+    "gemini-3.1-flash-tts-preview",
+    "gemini-2.5-flash-preview-tts",
+  ];
+
+  for (const model of ttsModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-goog-api-key": geminiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: cleanText }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
             },
           },
-        },
-      }),
-      signal: AbortSignal.timeout(10000), // 10s strict timeout
-    });
+        }),
+        signal: AbortSignal.timeout(10000), // 10s strict timeout
+      });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.warn(`[audio-mastering] Gemini TTS failed with HTTP ${res.status}: ${errText.slice(0, 200)}`);
-      return null;
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn(`[audio-mastering] Gemini TTS (${model}) failed with HTTP ${res.status}: ${errText.slice(0, 150)}`);
+        continue;
+      }
+
+      const data: any = await res.json();
+      const base64Data = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+      if (!base64Data) {
+        console.warn(`[audio-mastering] Gemini TTS (${model}) returned no audio data`);
+        continue;
+      }
+
+      console.log(`[audio-mastering] Synthesized Gemini 3.8 Flash TTS audio with ${model} (${voiceName})`);
+      return Buffer.from(base64Data, "base64");
+    } catch (err: any) {
+      console.warn(`[audio-mastering] Gemini TTS (${model}) error: ${err.message}`);
     }
-
-    const data: any = await res.json();
-    const base64Data = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-    if (!base64Data) {
-      console.warn("[audio-mastering] Gemini TTS returned no audio data in candidate payload");
-      return null;
-    }
-
-    return Buffer.from(base64Data, "base64");
-  } catch (err: any) {
-    console.error("[audio-mastering] Gemini TTS synthesis error:", err.message);
-    return null;
   }
+
+  console.error("[audio-mastering] All Gemini Flash TTS models exhausted or failed");
+  return null;
 }
 
 /**
@@ -148,17 +160,25 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
   const tmpDir = os.tmpdir();
   const id = `drop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   
-  // Detect input audio format (WAV magic RIFF vs MP3)
+  // Detect input audio format:
+  // 1. WAV magic: "RIFF"
+  // 2. MP3 magic: 0xFFFB, 0xFFF3, 0xFFF2, "ID3"
+  // 3. Otherwise: Raw PCM 16-bit LE, 24000 Hz, 1 channel (Gemini Flash TTS default audio/l16)
   const isWav = rawBuffer.length > 4 && rawBuffer.subarray(0, 4).toString() === "RIFF";
-  const inExt = isWav ? "wav" : "mp3";
+  const isId3 = rawBuffer.length > 3 && rawBuffer.subarray(0, 3).toString() === "ID3";
+  const isMp3Sync = rawBuffer.length > 2 && rawBuffer[0] === 0xff && (rawBuffer[1] & 0xe0) === 0xe0;
+  const isMp3 = isId3 || isMp3Sync;
+
+  const inExt = isWav ? "wav" : isMp3 ? "mp3" : "pcm";
   const inputPath = path.join(tmpDir, `${id}_in.${inExt}`);
   const outputPath = path.join(tmpDir, `${id}_out.mp3`);
 
   try {
     fs.writeFileSync(inputPath, rawBuffer);
 
-    // Run ffmpeg with EBU R128 Loudnorm (-14 LUFS, -1.0 dBFS true peak)
-    const cmd = `ffmpeg -y -v error -i "${inputPath}" -af "loudnorm=I=-14:TP=-1.0:LRA=7" -ar 44100 -b:a 192k "${outputPath}"`;
+    // If raw PCM from Gemini TTS, specify decoding format parameters
+    const inputFlags = inExt === "pcm" ? "-f s16le -ar 24000 -ac 1" : "";
+    const cmd = `ffmpeg -y -v error ${inputFlags} -i "${inputPath}" -af "loudnorm=I=-14:TP=-1.0:LRA=7" -ar 44100 -b:a 192k "${outputPath}"`;
     await execAsync(cmd, { timeout: 8000 });
 
     if (fs.existsSync(outputPath)) {

@@ -15,16 +15,15 @@ import { uploadDropBufferToR2 } from "./r2-signer";
 
 // Environment parser
 function getEnv(key: string): string {
-  if (process.env[key]) return process.env[key]!;
   const envPath = path.resolve(process.cwd(), ".env.local");
   if (fs.existsSync(envPath)) {
     const content = fs.readFileSync(envPath, "utf8");
     for (const line of content.split(/\r?\n/)) {
       const m = line.match(new RegExp(`^\\s*${key}\\s*=\\s*"?([^"#\\r\\n]+?)"?\\s*$`));
-      if (m) return m[1].trim();
+      if (m && m[1].trim()) return m[1].trim();
     }
   }
-  return "";
+  return process.env[key] || "";
 }
 
 // Config caches
@@ -153,10 +152,16 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
   let parsed: any = null;
 
   try {
-    const clean = output.replace(/```json/gi, "").replace(/```/g, "").trim();
-    parsed = JSON.parse(clean);
-  } catch (e: any) {
-    return { valid: false, errors: [`JSON Parse Error: ${e.message}`] };
+    let clean = output.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      parsed = JSON.parse(jsonMatch[0]);
+    } else {
+      parsed = { tag: "[excited]", text: clean.replace(/^["']|["']$/g, "").trim() };
+    }
+  } catch {
+    const rawClean = output.replace(/```json/gi, "").replace(/```/g, "").replace(/^["']|["']$/g, "").trim();
+    parsed = { tag: "[excited]", text: rawClean };
   }
 
   if (!parsed.text || typeof parsed.text !== "string") {
@@ -256,37 +261,39 @@ async function callCascadingLlm(
   system: string,
   user: string
 ): Promise<{ text: string; provider: "groq" | "nvidia" | "pollinations" | "gemini"; model_id: string; latency_ms: number } | null> {
-  // Tier 0: Gemini 2.5 Flash (Primary High-Fidelity Broadcast Script Generator)
-  const geminiKey = getEnv("GEMINI_API_KEY") || process.env.GEMINI_API_KEY;
+  // Tier 0: Gemini 3.8 / 2.5 Flash Broadcast Script Generator
+  const geminiKey = getEnv("GEMINI_API_KEY");
   if (geminiKey) {
     const t0 = Date.now();
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: system }] },
-            contents: [{ parts: [{ text: user }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.7,
-              maxOutputTokens: 250,
-            },
-          }),
-          signal: AbortSignal.timeout(5000),
+    for (const model of ["gemini-2.5-flash", "gemini-3.8-flash"]) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: system }] },
+              contents: [{ parts: [{ text: user }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.7,
+                maxOutputTokens: 250,
+              },
+            }),
+            signal: AbortSignal.timeout(8000),
+          }
+        );
+        if (res.ok) {
+          const j = await res.json();
+          const content = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (content) {
+            return { text: content, provider: "gemini", model_id: model, latency_ms: Date.now() - t0 };
+          }
         }
-      );
-      if (res.ok) {
-        const j = await res.json();
-        const content = j.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (content) {
-          return { text: content, provider: "gemini", model_id: "gemini-2.5-flash", latency_ms: Date.now() - t0 };
-        }
+      } catch (e: any) {
+        console.warn(`[drop-engine] Gemini LLM (${model}) failed: ${e.message}`);
       }
-    } catch (e: any) {
-      console.warn("[drop-engine] Gemini LLM attempt failed, cascading:", e.message);
     }
   }
 
