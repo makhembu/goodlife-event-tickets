@@ -1,0 +1,92 @@
+[
+  {
+    "persona": "DJ Fusion",
+    "personaId": "dj-fusion",
+    "file": "/drops/samples/dj-fusion_context_drop.mp3",
+    "sizeBytes": 184363,
+    "script": "Squad, Goodlife 4 is in 9 days! Lock your passes on the Goodlife website now. Don't sleep on this, jioni iko zuri!",
+    "tag": "[excited]",
+    "targetTrack": "Big 7 by Burna Boy"
+  },
+  {
+    "persona": "DJ Sudi",
+    "personaId": "dj-sudi",
+    "file": "/drops/samples/dj-sudi_context_drop.mp3",
+    "sizeBytes": 344859,
+    "script": "Goodlife Radio 254, your evening pulse! Vibe ya jioni ni safe, matatus full, mbele ya 254. Tune in, piga luku safi.",
+    "tag": "[excited]",
+    "targetTrack": "Spin My World by DJ Kent"
+  },
+  {
+    "persona": "DJ Sney",
+    "personaId": "dj-sney",
+    "file": "/drops/samples/dj-sney_context_drop.mp3",
+    "sizeBytes": 212575,
+    "script": "Kila banger unapenda, kila rhythm unataka. Hii ndio frequency ya Kenya, hii ndio GOODLIFE Radio 254!",
+    "tag": "[excited]",
+    "targetTrack": "Soweto by Victony"
+  },
+  {
+    "persona": "MC Cheche",
+    "personaId": "mc-cheche",
+    "file": "/drops/samples/mc-cheche_context_drop.mp3",
+    "sizeBytes": 221352,
+    "script": "Hustle ya mchana inahitaji ngoma nzito kama hizi. Cheza kama wewe, shika flow kwenye GOODLIFE Radio 254!",
+    "tag": "[excited]",
+    "targetTrack": "Amapiano Groove by Kabza De Small"
+  },
+  {
+    "persona": "DJ Shax",
+    "personaId": "dj-shax",
+    "file": "/drops/samples/dj-shax_context_drop.mp3",
+    "sizeBytes": 309750,
+    "script": "Burna Boy smashes 'Big 7'! Bassline hits hard, shika rhythm. GOODLIFE Radio 254, weka volume maboys!",
+    "tag": "[excited]",
+    "targetTrack": "Big 7 by Burna Boy"
+  },
+  {
+    "persona": "Amina",
+    "personaId": "amina",
+    "file": "/drops/samples/amina_context_drop.mp3",
+    "sizeBytes": 212575,
+    "script": "Amina inside! Thika bound in 9 days for Goodlife 4. Tickets on goodlife dot somewhere dot space. Hakuna kulala, msee!",
+    "tag": "[excited]",
+    "targetTrack": "Spin My World by DJ Kent"
+  },
+  {
+    "persona": "Bwana Mkubwa",
+    "personaId": "bwana-mkubwa",
+    "file": "/drops/samples/bwana-mkubwa_context_drop.mp3",
+    "sizeBytes": 299092,
+    "script": "Amsha baze yako na uambie mbogi fomu iko locked! GOODLIFE Radio 254 inawasha kila kona ya 254 asubuhi hii!",
+    "tag": "[excited]",
+    "targetTrack": "Soweto by Victony"
+  },
+  {
+    "persona": "Malkia Kenya",
+    "personaId": "malkia-kenya",
+    "file": "/drops/samples/malkia-kenya_context_drop.mp3",
+    "sizeBytes": 225114,
+    "script": "Turn that radio all the way up! Shax on the decks, tunapiga luku mbaya na muziki safi mchana huu ndani ya GOODLIFE Radio 254.",
+    "tag": "[excited]",
+    "targetTrack": "Amapiano Groove by Kabza De Small"
+  },
+  {
+    "persona": "Wigman",
+    "personaId": "wigman",
+    "file": "/drops/samples/wigman_context_drop.mp3",
+    "sizeBytes": 242668,
+    "script": "Pumzika vizuri lakini usizime radio. Melody nzuri zitaendelea kutiririka hadi asubuhi kupitia GOODLIFE Radio 254.",
+    "tag": "[calm]",
+    "targetTrack": "Big 7 by Burna Boy"
+  },
+  {
+    "persona": "Zari",
+    "personaId": "zari",
+    "file": "/drops/samples/zari_context_drop.mp3",
+    "sizeBytes": 287181,
+    "script": "DJ Kent drops 'Spin My World'! Bassline inashake mtaa, shika groove. Vibe iko intact, GOODLIFE Radio 254!",
+    "tag": "[excited]",
+    "targetTrack": "Spin My World by DJ Kent"
+  }
+]

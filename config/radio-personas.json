@@ -1,37 +1,83 @@
 {
   "personas": [
     {
-      "id": "dj-shax",
-      "name": "DJ Shax",
-      "voice_id": "Puck",
-      "style": "Booming festival hype, energetic, commanding",
-      "dayparts": ["afternoon", "peak_evening", "late_night"],
+      "id": "dj-fusion",
+      "name": "DJ Fusion",
+      "voice_id": "dj_fusion_cloned",
+      "style": "Park & Chill resident selector, conversational Nairobi Sheng and urban English, charismatic entertainer",
+      "dayparts": ["morning", "afternoon", "peak_evening", "deep_overnight"],
+      "energy_range": [6, 9],
+      "tags": ["[hype]", "[confident]"],
+      "weight": 0.30
+    },
+    {
+      "id": "dj-sudi",
+      "name": "DJ Sudi",
+      "voice_id": "ed2dfca6b6f440869006f9d3e721f3a3",
+      "style": "Kenyan club selector & DJ drop specialist, rapid fire Swahili transition hype",
+      "dayparts": ["afternoon", "peak_evening", "deep_overnight"],
       "energy_range": [7, 10],
-      "tags": ["[excited]"]
+      "tags": ["[hype]", "[excited]"]
+    },
+    {
+      "id": "dj-sney",
+      "name": "DJ Sney",
+      "voice_id": "3b68e8a9193b45b7ac873c693c49b7ad",
+      "style": "Electric Swahili hype MC, mixtape stagers, high-octane club energy",
+      "dayparts": ["peak_evening", "deep_overnight"],
+      "energy_range": [8, 10],
+      "tags": ["[hype]", "[excited]"]
     },
     {
       "id": "mc-cheche",
       "name": "MC Cheche",
-      "voice_id": "Fenrir",
-      "style": "Slick Nairobi Sheng selector, sharp, fast, youth culture",
+      "voice_id": "6801890ec345469d8818129e5bdd50dd",
+      "style": "Slick Nairobi Sheng selector, sharp, fast, youth culture & street anthems",
       "dayparts": ["morning", "afternoon", "peak_evening"],
       "energy_range": [5, 9],
-      "tags": ["[excited]"]
+      "tags": ["[excited]", "[hype]"]
+    },
+    {
+      "id": "dj-shax",
+      "name": "DJ Shax",
+      "voice_id": "4dc4683877cd4538b0ffe233885b5f4e",
+      "style": "Booming festival hype commander, big room energy, mainstage festival stagers",
+      "dayparts": ["afternoon", "peak_evening", "deep_overnight"],
+      "energy_range": [7, 10],
+      "tags": ["[excited]", "[confident]"]
     },
     {
       "id": "amina",
       "name": "Amina",
-      "voice_id": "Aoede",
-      "style": "Smooth, warm, atmospheric, late-night grooves and sunrise",
+      "voice_id": "amina_cloned",
+      "style": "Smooth, warm, atmospheric, late-night grooves and sunrise afro-fusion",
       "dayparts": ["morning", "afternoon", "deep_overnight"],
       "energy_range": [3, 7],
-      "tags": ["[calm]"]
+      "tags": ["[calm]", "[warm tone]"]
+    },
+    {
+      "id": "bwana-mkubwa",
+      "name": "Bwana Mkubwa",
+      "voice_id": "51b9c141b0e642fc9c5f30a5f89c2d31",
+      "style": "Deep baritone Swahili broadcaster, classic Kenyan radio presence, authoritative and resonant",
+      "dayparts": ["morning", "afternoon", "peak_evening"],
+      "energy_range": [5, 8],
+      "tags": ["[confident]", "[calm]"]
+    },
+    {
+      "id": "malkia-kenya",
+      "name": "Malkia Kenya",
+      "voice_id": "f53027b3260f4c7080c761effa6e6891",
+      "style": "Vibrant East African female presenter, upbeat daytime vibes, Swahili and English fusion",
+      "dayparts": ["morning", "afternoon"],
+      "energy_range": [6, 8],
+      "tags": ["[excited]", "[warm tone]"]
     },
     {
       "id": "wigman",
       "name": "Wigman",
-      "voice_id": "Charon",
-      "style": "Confident, authoritative festival commander, crisp transitions",
+      "voice_id": "d4483baa705e4ff5bfe1831b6960359f",
+      "style": "Confident, authoritative Afro-tech commander, crisp transitions and underground cuts",
       "dayparts": ["afternoon", "peak_evening", "deep_overnight"],
       "energy_range": [6, 10],
       "tags": ["[confident]"]
@@ -39,11 +85,56 @@
     {
       "id": "zari",
       "name": "Zari",
-      "voice_id": "Kore",
-      "style": "Chill, breezy, soulful daytime selector, smooth flow",
+      "voice_id": "zari_cloned",
+      "style": "Chill, breezy, soulful Coastal Swahili daytime selector, smooth acoustic flow",
       "dayparts": ["morning", "afternoon"],
       "energy_range": [3, 6],
-      "tags": ["[calm]"]
+      "tags": ["[calm]", "[relaxed]"]
+    },
+    {
+      "id": "gemini-aoede",
+      "name": "Gemini Aoede",
+      "voice_id": "gemini_aoede_cloned",
+      "style": "Warm, bright, polished urban broadcast presenter, clear diction with natural radio resonance",
+      "dayparts": ["morning", "afternoon"],
+      "energy_range": [5, 8],
+      "tags": ["[excited]", "[warm tone]"]
+    },
+    {
+      "id": "gemini-puck",
+      "name": "Gemini Puck",
+      "voice_id": "gemini_puck_cloned",
+      "style": "Youthful, energetic, punchy upbeat radio host, dynamic tempo and high charisma",
+      "dayparts": ["afternoon", "peak_evening"],
+      "energy_range": [7, 10],
+      "tags": ["[hype]", "[excited]"]
+    },
+    {
+      "id": "gemini-charon",
+      "name": "Gemini Charon",
+      "voice_id": "gemini_charon_cloned",
+      "style": "Deep, resonant, baritone late-night selector, soothing and authoritative late-night presence",
+      "dayparts": ["peak_evening", "deep_overnight"],
+      "energy_range": [4, 7],
+      "tags": ["[calm]", "[confident]"]
+    },
+    {
+      "id": "gemini-fenrir",
+      "name": "Gemini Fenrir",
+      "voice_id": "gemini_fenrir_cloned",
+      "style": "Authoritative, commanding festival announcer, heavy presence and mainstage festival hype",
+      "dayparts": ["afternoon", "peak_evening"],
+      "energy_range": [7, 10],
+      "tags": ["[hype]", "[confident]"]
+    },
+    {
+      "id": "gemini-kore",
+      "name": "Gemini Kore",
+      "voice_id": "gemini_kore_cloned",
+      "style": "Soft, melodic, relaxed acoustic host, smooth transitions and mellow rhythm",
+      "dayparts": ["morning", "deep_overnight"],
+      "energy_range": [3, 6],
+      "tags": ["[calm]", "[relaxed]"]
     }
   ],
   "daypart_rules": {

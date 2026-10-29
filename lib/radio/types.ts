@@ -98,7 +98,8 @@ export interface LiveNowPlayingTrack {
 }
 
 export interface LiveQueueItem {
-  video_id: string;
+  video_id?: string;
+  id?: number | string;
   title: string;
   artist: string;
   duration?: number;
@@ -122,5 +123,13 @@ export interface RadioLiveBffResponse {
   now_playing: LiveNowPlayingTrack | null;
   up_next: LiveQueueItem[];
   history: LiveHistoryItem[];
+  live_drop?: {
+    id: string | number;
+    persona?: string;
+    title?: string;
+    script?: string;
+    audio_url: string;
+    fired_at?: string;
+  } | null;
   target_duration_sec?: number;
 }

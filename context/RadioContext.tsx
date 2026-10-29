@@ -93,6 +93,7 @@ export interface RadioContextType {
   nextTrack: () => void;
   prevTrack: () => void;
   seek: (percent: number) => void;
+  airLiveDrop: (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => Promise<boolean>;
   fetchRadioState: () => Promise<void>;
   fetchRadioLive: () => Promise<void>;
 }
@@ -149,6 +150,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   nextTrack: () => {},
   prevTrack: () => {},
   seek: () => {},
+  airLiveDrop: async () => false,
   fetchRadioState: async () => {},
   fetchRadioLive: async () => {},
 };
@@ -159,13 +161,6 @@ const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
 const DEFAULT_STATION_DROPS: RadioDrop[] = [
-  {
-    id: "drop-cheche-sheng",
-    title: "MC Cheche · Nairobi Sound",
-    audio_url: "/drops/wazi-254.mp3",
-    persona: "MC Cheche",
-    mood: "BANTER",
-  },
   {
     id: "drop-shax-hype",
     title: "DJ Shax · Nairobi Festival Airwaves",
@@ -261,6 +256,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [isDropPlaying]);
   const lastPrefetchedTrackKeyRef = useRef<string | null>(null);
   const isPrefetchingDropRef = useRef<boolean>(false);
+  const hasFiredOutroDropRef = useRef<boolean>(false);
+  const swellIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const triggerOutroDropCrossoverRef = useRef<() => void>(() => {});
+  const lastLiveDropIdRef = useRef<string | number | null>(null);
 
 
   // Smooth local progress interpolation anchored at poll time
@@ -421,7 +420,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.now_playing) {
-        const track = data.now_playing;
+        const track = {
+          ...data.now_playing,
+          title: formatTrackTitle(data.now_playing.title),
+        };
         setNowPlayingTrack(track);
 
         // Track change detection: reset beacon and listened seconds
@@ -432,12 +434,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           secondsListenedRef.current = 0;
           hasSentBeaconRef.current = false;
 
-          // If playing and track advances, update audio src immediately!
+          // If playing and track advances, update audio src safely without truncating playing song
           if (audioRef.current && isPlayingRef.current && !isDropPlayingRef.current && track.audio_url) {
             if (audioRef.current.src !== track.audio_url) {
-              audioRef.current.src = track.audio_url;
-              audioRef.current.currentTime = track.elapsed || 0;
-              audioRef.current.play().catch(() => {});
+              const audio = audioRef.current;
+              const remaining = (audio.duration && !isNaN(audio.duration) && audio.currentTime)
+                ? audio.duration - audio.currentTime
+                : 0;
+
+              // Guard against premature cutoff: swap if in outro window (<=15s) or song has stopped/ended
+              const isOutroWindow = remaining > 0 && remaining <= 15;
+              const isStalledOrEnded = audio.ended || audio.paused || remaining <= 0;
+
+              if (isOutroWindow || isStalledOrEnded) {
+                audio.src = track.audio_url;
+                audio.currentTime = track.elapsed || 0;
+                audio.play().catch(() => {});
+              }
             }
           }
         }
@@ -451,10 +464,24 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (Array.isArray(data.up_next)) {
-        setUpNextQueue(data.up_next);
+        setUpNextQueue(data.up_next.map((t: any) => ({
+          ...t,
+          title: formatTrackTitle(t?.title),
+        })));
       }
       if (Array.isArray(data.history)) {
         setHistoryList(data.history);
+      }
+
+      // Live injected drop broadcast listener: trigger live drop mid-song for all listeners
+      if (data.live_drop && data.live_drop.id && data.live_drop.id !== lastLiveDropIdRef.current) {
+        lastLiveDropIdRef.current = data.live_drop.id;
+        const dropFiredTime = data.live_drop.fired_at ? new Date(data.live_drop.fired_at).getTime() : Date.now();
+        const ageSec = Math.floor((Date.now() - dropFiredTime) / 1000);
+        if (ageSec <= 25 && isPlayingRef.current && audioRef.current && data.live_drop.audio_url) {
+          console.log(`[RadioContext] 🔴 Stream live drop detected: "${data.live_drop.title}" (${data.live_drop.persona})`);
+          triggerLiveInjectedDrop(data.live_drop);
+        }
       }
 
       // Reset poll backoff on successful response
@@ -560,6 +587,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       secondsListenedRef.current += 1;
       if (secondsListenedRef.current >= 20 && !hasSentBeaconRef.current) {
         sendPlayBeaconOnce(false);
+      }
+
+      // 15s Outro Crossover Trigger: Drop starts 15 seconds before the track ends, continuing across next track start
+      const remainingSec = nowPlayingTrack?.duration && clamped ? nowPlayingTrack.duration - clamped : 999;
+      if (remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
+        triggerOutroDropCrossoverRef.current();
       }
 
       // Background dynamic drop pre-fetch for upcoming track (airs between songs)
@@ -753,7 +786,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (backupTrack) {
       // Synchronize metadata with backup track so visual display and audio match 100%
       setNowPlayingTrack({
-        title: backupTrack.title,
+        title: formatTrackTitle(backupTrack.title),
         artist: backupTrack.dj_name,
         thumbnail: backupTrack.cover_url,
         elapsed: 0,
@@ -764,6 +797,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setInterpolatedElapsed(0);
       lastPollElapsedRef.current = 0;
       lastPollTimestampRef.current = Date.now();
+
+      // Synchronize Up Next queue
+      const upcoming = [
+        backupSets[(currentBackupIndex + 1) % backupSets.length],
+        backupSets[(currentBackupIndex + 2) % backupSets.length],
+        backupSets[(currentBackupIndex + 3) % backupSets.length],
+      ].filter(Boolean).map((t) => ({
+        id: t.id,
+        video_id: `set-${t.id}`,
+        title: formatTrackTitle(t.title),
+        artist: t.dj_name,
+        duration: t.duration_sec || 180,
+        thumbnail: t.cover_url,
+      }));
+      setUpNextQueue(upcoming);
 
       audioRef.current.src = backupTrack.audio_url;
       audioRef.current
@@ -999,6 +1047,215 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [nowPlayingTrack]);
 
   
+  // Helper: Smooth volume swell when drop concludes (the broadcast beat drop)
+  const swellMusicToFullVolume = useCallback(() => {
+    if (swellIntervalRef.current) {
+      clearInterval(swellIntervalRef.current);
+      swellIntervalRef.current = null;
+    }
+    const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+    const startVol = audioRef.current ? audioRef.current.volume : duckedVol;
+    const target = isMutedRef.current ? 0 : volumeRef.current;
+    if (startVol >= target || target <= 0) {
+      if (audioRef.current) audioRef.current.volume = target;
+      return;
+    }
+    const startTime = Date.now();
+    const swellDuration = 400; // 400ms broadcast beat drop swell
+    swellIntervalRef.current = setInterval(() => {
+      const progress = Math.min(1, (Date.now() - startTime) / swellDuration);
+      if (audioRef.current) {
+        audioRef.current.volume = startVol + (target - startVol) * progress;
+      }
+      if (progress >= 1) {
+        if (swellIntervalRef.current) clearInterval(swellIntervalRef.current);
+        swellIntervalRef.current = null;
+      }
+    }, 25);
+  }, []);
+
+  // Live Drop Injection Engine: ducks current track mid-song, plays voice drop for all listeners, then swells back
+  const triggerLiveInjectedDrop = useCallback(
+    (liveDrop: { id: string | number; title?: string; persona?: string; audio_url: string }) => {
+      if (!audioRef.current || !dropAudioRef.current || !liveDrop.audio_url) return;
+      const dropAudio = dropAudioRef.current;
+      const audio = audioRef.current;
+
+      const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+      const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+
+      isDropPlayingRef.current = true;
+      setIsDropPlaying(true);
+      setActiveDropTitle(liveDrop.title || "Live Air Drop");
+      setActivePersona(liveDrop.persona || "Station DJ");
+      setActiveMood("live");
+
+      // Duck currently playing music bed immediately mid-song
+      audio.volume = duckedVol;
+
+      const onDropDone = () => {
+        dropAudio.removeEventListener("ended", onDropDone);
+        dropAudio.removeEventListener("error", onDropDone);
+        isDropPlayingRef.current = false;
+        setIsDropPlaying(false);
+        setActiveDropTitle(null);
+        setActivePersona(null);
+        setActiveMood(null);
+        swellMusicToFullVolume();
+      };
+
+      dropAudio.addEventListener("ended", onDropDone);
+      dropAudio.addEventListener("error", onDropDone);
+      dropAudio.src = liveDrop.audio_url;
+      dropAudio.volume = masterVol;
+      dropAudio.play().catch(() => {
+        onDropDone();
+      });
+    },
+    [swellMusicToFullVolume]
+  );
+
+  // Method exposed to admin and DJ soundboard: broadcast drop to entire stream and fire locally
+  const airLiveDrop = useCallback(
+    async (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => {
+      try {
+        const res = await fetch("/api/radio/drops/live-inject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audio_url: dropData.audioUrl,
+            title: dropData.title,
+            persona: dropData.persona,
+            script: dropData.script,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.drop) {
+            triggerLiveInjectedDrop(data.drop);
+            return true;
+          }
+        }
+      } catch (err) {
+        console.warn("[RadioContext] airLiveDrop broadcast failed:", err);
+      }
+      return false;
+    },
+    [triggerLiveInjectedDrop]
+  );
+
+  // 12A. Outro Drop Crossover Trigger (Starts at 15s before track ends, bridges into next song)
+  const triggerOutroDropCrossover = useCallback(() => {
+    if (
+      hasFiredOutroDropRef.current ||
+      isDropPlayingRef.current ||
+      engineStateRef.current === "paused" ||
+      !radioEnabledRef.current ||
+      !audioRef.current ||
+      !dropAudioRef.current
+    ) {
+      return;
+    }
+
+    const dropAudio = dropAudioRef.current;
+    const audio = audioRef.current;
+
+    // 1. Accurately determine the upcoming track
+    const sets = backupSetsRef.current;
+    let nextTrack: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+    if (!nextTrack && sets.length > 0) {
+      const rawId = currentTrackIdRef.current || "";
+      const cleanId = rawId.replace(/^set-/, "");
+      let cIdx = sets.findIndex(
+        (s) => String(s.id) === cleanId || (audio && s.audio_url === audio.src)
+      );
+      if (cIdx === -1) cIdx = 0;
+      const nIdx = (cIdx + 1) % sets.length;
+      nextTrack = sets[nIdx];
+    }
+
+    if (!nextTrack) return;
+    const targetId = String(nextTrack.id || "");
+    const targetTitle = (nextTrack.title || "").toLowerCase().trim();
+
+    const drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+    if (drops.length === 0) return;
+
+    // 2. Strict matching: Look for a drop verified for THIS upcoming track
+    let drop = drops.find((d) => {
+      const idMatch = d.target_track_id && String(d.target_track_id) === targetId;
+      const titleMatch = d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim());
+      return idMatch || titleMatch;
+    });
+
+    // 3. Fallback ONLY to a generic station sweeper with NO track target
+    if (!drop) {
+      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+    }
+
+    // 4. If no verified matching drop exists, DO NOT PLAY ANY DROP (prevents wrong song name!)
+    if (!drop) {
+      console.log(`[RadioContext] ⏭️ Skipping 15s drop: No verified drop for upcoming track "${nextTrack.title}". Zero disconnect guaranteed.`);
+      return;
+    }
+
+    availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop.id);
+
+    hasFiredOutroDropRef.current = true;
+    isDropPlayingRef.current = true;
+    setIsDropPlaying(true);
+    setActiveDropTitle(drop.title);
+    setActivePersona(drop.persona || "GOODLIFE DJ");
+    setActiveMood(drop.mood || "HYPE");
+
+    const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+
+    // Duck the outgoing track's volume to 0.22 so drop plays over outgoing music
+    audio.volume = duckedVol;
+
+    const cleanupOutroDrop = () => {
+      if (dropAudio) {
+        dropAudio.removeEventListener("ended", onDropEnded);
+        dropAudio.removeEventListener("error", onDropError);
+      }
+      swellMusicToFullVolume();
+      isDropPlayingRef.current = false;
+      setIsDropPlaying(false);
+      setActiveDropTitle(null);
+      setActivePersona(null);
+      setActiveMood(null);
+    };
+
+    const onDropEnded = () => {
+      cleanupOutroDrop();
+    };
+
+    const onDropError = () => {
+      console.warn("[RadioContext] Outro drop error, swelling music immediately");
+      cleanupOutroDrop();
+    };
+
+    try {
+      dropAudio.src = drop.audio_url;
+      dropAudio.volume = masterVol;
+      dropAudio.addEventListener("ended", onDropEnded);
+      dropAudio.addEventListener("error", onDropError);
+      dropAudio.play().catch((err) => {
+        console.warn("[RadioContext] Outro drop play rejected:", err);
+        cleanupOutroDrop();
+      });
+      console.log(`[RadioContext] 🎙️ Outro crossover drop started at 15s mark: "${drop.title}"`);
+    } catch {
+      cleanupOutroDrop();
+    }
+  }, [swellMusicToFullVolume]);
+
+  useEffect(() => {
+    triggerOutroDropCrossoverRef.current = triggerOutroDropCrossover;
+  }, [triggerOutroDropCrossover]);
+
   // 12B. Station Voice Drop Playout Pipeline (Talkover Bed between songs)
   const playDropAndAdvance = useCallback(async () => {
     if (engineStateRef.current === "paused" || !radioEnabledRef.current) {
@@ -1032,31 +1289,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Try to find a drop specifically targeted for the upcoming track!
-    let drop: RadioDrop | undefined;
-    const targetId = String(nextTrack.id);
-    const targetTitle = (nextTrack.title || "").toLowerCase();
-    drop = drops.find((d) =>
-      (d.target_track_id && String(d.target_track_id) === targetId) ||
-      (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase())) ||
-      (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
-    );
-
-    // If no track-targeted drop, pick the most recent fresh dynamic drop
-    if (!drop && drops.length > 0) {
-      drop = drops[0];
-    }
-    // Remove the aired drop so every transition gets a fresh dynamic drop
-    if (drop) {
-      availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
-    }
-
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
     const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
 
     // Advance metadata immediately to next track so listener sees the next song starting!
     setNowPlayingTrack({
-      title: nextTrack.title,
+      title: formatTrackTitle(nextTrack.title),
       artist: nextTrack.dj_name,
       thumbnail: nextTrack.cover_url,
       elapsed: 0,
@@ -1068,36 +1306,66 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setInterpolatedElapsed(0);
     lastPollElapsedRef.current = 0;
     lastPollTimestampRef.current = Date.now();
+    hasFiredOutroDropRef.current = false;
+
+    // Immediately update Up Next Queue so UI displays the truth
+    const upcomingQueue = [
+      sets[(nextIdx + 1) % sets.length],
+      sets[(nextIdx + 2) % sets.length],
+      sets[(nextIdx + 3) % sets.length],
+    ].filter(Boolean).map((t) => ({
+      id: t.id,
+      video_id: `set-${t.id}`,
+      title: formatTrackTitle(t.title),
+      artist: t.dj_name,
+      duration: t.duration_sec || 180,
+      thumbnail: t.cover_url,
+    }));
+    setUpNextQueue(upcomingQueue);
+
+    // Seamless Crossover: If drop is ALREADY speaking across boundary from the 15s outro mark:
+    if (isDropPlayingRef.current) {
+      console.log(`[RadioContext] 🔀 Seamless crossover: advancing music under active drop -> "${nextTrack.title}"`);
+      audio.src = nextTrack.audio_url;
+      audio.currentTime = 0;
+      audio.volume = duckedVol; // Keep new track ducked while drop finishes!
+      try {
+        await audio.play();
+        setIsPlaying(true);
+        setEngineState("live");
+      } catch (err) {
+        console.warn("[RadioContext] Crossover track play error:", err);
+      }
+      return;
+    }
+
+    // Otherwise, standard talkover bed: drop fires right at boundary over incoming track intro
+    let drop: RadioDrop | undefined;
+    const targetId = String(nextTrack.id);
+    const targetTitle = (nextTrack.title || "").toLowerCase().trim();
+
+    // 1. Strict match: Drop explicitly targeting THIS track by ID or title
+    drop = drops.find((d) =>
+      (d.target_track_id && String(d.target_track_id) === targetId) ||
+      (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
+    );
+
+    // 2. If no track-specific drop, ONLY allow a generic station sweeper that has NO track target
+    // and does NOT mention any other track or artist in its title/script
+    if (!drop) {
+      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+    }
+
+    // 3. Remove the aired drop if matched; if no verified drop, play track immediately with NO drop!
+    if (drop) {
+      availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
+    }
 
     // Prepare incoming music track
     audio.src = nextTrack.audio_url;
     audio.currentTime = 0;
 
     const hasDrop = Boolean(dropAudio && drop?.audio_url);
-
-    // Helper: Smooth volume swell when drop concludes (the broadcast beat drop)
-    let swellInterval: NodeJS.Timeout | null = null;
-    const swellMusicToFullVolume = () => {
-      if (swellInterval) clearInterval(swellInterval);
-      const startVol = audioRef.current ? audioRef.current.volume : duckedVol;
-      const target = isMutedRef.current ? 0 : volumeRef.current;
-      if (startVol >= target || target <= 0) {
-        if (audioRef.current) audioRef.current.volume = target;
-        return;
-      }
-      const startTime = Date.now();
-      const swellDuration = 400; // 400ms broadcast beat drop swell
-      swellInterval = setInterval(() => {
-        const progress = Math.min(1, (Date.now() - startTime) / swellDuration);
-        if (audioRef.current) {
-          audioRef.current.volume = startVol + (target - startVol) * progress;
-        }
-        if (progress >= 1) {
-          if (swellInterval) clearInterval(swellInterval);
-          swellInterval = null;
-        }
-      }, 25);
-    };
 
     const cleanupDropPlayout = () => {
       if (dropAudio) {
@@ -1273,21 +1541,76 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isPlaying, interpolatedElapsed, currentBackupIndex, backupSets]);
 
-  // Kept for backward compatibility with vault player
-  const advanceBroadcastTrack = useCallback(() => {
+  // Advance broadcast track cleanly (handles manual skip button or automated jump)
+  const advanceBroadcastTrack = useCallback((isManualSkip = false) => {
     if (backupSets.length === 0) return;
     if (!isSyncedRef.current) return;
+
+    const audio = audioRef.current;
+    const dropAudio = dropAudioRef.current;
+
+    // If DJ decides to manually skip track, choke any drop immediately so no drop airs
+    if (isManualSkip) {
+      console.log("[RadioContext] ⏭️ Manual track skip: chocking active drops and bypassing talkover drop");
+      if (dropAudio) {
+        dropAudio.pause();
+        dropAudio.currentTime = 0;
+      }
+      isDropPlayingRef.current = false;
+      setIsDropPlaying(false);
+      setActiveDropTitle(null);
+      setActivePersona(null);
+      setActiveMood(null);
+      hasFiredOutroDropRef.current = false;
+    }
+
     const nextIdx = (currentBackupIndex + 1) % backupSets.length;
     setCurrentBackupIndex(nextIdx);
     const track = backupSets[nextIdx];
-    if (audioRef.current && track) {
-      audioRef.current.src = track.audio_url;
-      audioRef.current.play().catch(() => {});
+    if (audio && track) {
+      // Discard any prefetched drops that were targeted for the old skipped track
+      availableDropsRef.current = availableDropsRef.current.filter(
+        (d) => !d.target_track_id || String(d.target_track_id) === String(track.id)
+      );
+
+      setNowPlayingTrack({
+        title: formatTrackTitle(track.title),
+        artist: track.dj_name,
+        thumbnail: track.cover_url,
+        elapsed: 0,
+        duration: track.duration_sec || 180,
+        audio_url: track.audio_url,
+        video_id: `set-${track.id}`,
+      });
+      currentTrackIdRef.current = `set-${track.id}`;
+      setInterpolatedElapsed(0);
+      lastPollElapsedRef.current = 0;
+      lastPollTimestampRef.current = Date.now();
+
+      // Immediately update Up Next Queue so UI displays the truth
+      const upcomingQueue = [
+        backupSets[(nextIdx + 1) % backupSets.length],
+        backupSets[(nextIdx + 2) % backupSets.length],
+        backupSets[(nextIdx + 3) % backupSets.length],
+      ].filter(Boolean).map((t) => ({
+        id: t.id,
+        video_id: `set-${t.id}`,
+        title: formatTrackTitle(t.title),
+        artist: t.dj_name,
+        duration: t.duration_sec || 180,
+        thumbnail: t.cover_url,
+      }));
+      setUpNextQueue(upcomingQueue);
+
+      audio.src = track.audio_url;
+      audio.currentTime = 0;
+      audio.volume = isMutedRef.current ? 0 : volumeRef.current;
+      audio.play().catch(() => {});
     }
   }, [backupSets, currentBackupIndex]);
 
   const nextTrack = useCallback(() => {
-    advanceBroadcastTrack();
+    advanceBroadcastTrack(true); // manual skip -> NO drop!
   }, [advanceBroadcastTrack]);
 
   const prevTrack = useCallback(() => {
@@ -1395,6 +1718,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         nextTrack,
         prevTrack,
         seek,
+        airLiveDrop,
         fetchRadioState,
         fetchRadioLive,
       }}

@@ -65,3 +65,7 @@ public/sample-tickets/
 # Local testing scratch and audits
 scratch/
 audit/
+tests/*.png
+tests/*.py
+tests/monitor_proofs/
+tests/__pycache__/

@@ -863,7 +863,7 @@ export default function RadioPage() {
                               {/* Title & Artist */}
                               <div className="min-w-0 truncate">
                                 <p className="font-bold text-xs sm:text-sm uppercase text-brand-navy truncate leading-tight">
-                                  {item.title}
+                                  {formatTrackTitle(item.title)}
                                 </p>
                                 {item.artist && (
                                   <p className="font-mono text-xs text-brand-navy/80 uppercase truncate mt-0.5">
@@ -914,7 +914,7 @@ export default function RadioPage() {
                             >
                               <div className="min-w-0 flex-1">
                                 <p className="font-bold text-xs sm:text-sm uppercase text-brand-navy truncate leading-tight">
-                                  {hist.title}
+                                  {formatTrackTitle(hist.title)}
                                 </p>
                                 {hist.artist && (
                                   <p className="font-mono text-xs text-brand-navy/80 uppercase truncate mt-0.5">
@@ -991,7 +991,7 @@ export default function RadioPage() {
             {queue && queue.length > 0 && (
               <div className="hidden">
                 {queue.map((t) => (
-                  <span key={t.id}>{t.title}</span>
+                  <span key={t.id}>{formatTrackTitle(t.title)}</span>
                 ))}
               </div>
             )}

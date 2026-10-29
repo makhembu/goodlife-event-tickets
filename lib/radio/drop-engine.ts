@@ -11,7 +11,8 @@ import {
 import { getPromotableEvents, RadioPromotableEvent } from "./events";
 import { selectGenericReviewedDrop, verifyDropBeforePlayout } from "./drop-gate";
 import { synthesizeVoiceAudio, masterDropAudio } from "./audio-mastering";
-import { uploadDropBufferToR2 } from "./r2-signer";
+import { uploadDropBufferToR2, deleteRadioAudioKeys } from "./r2-signer";
+import { neonQuery } from "../supabase-db";
 
 // Environment parser
 function getEnv(key: string): string {
@@ -63,8 +64,202 @@ function getShengPhrases(): string[] {
   return shengPhrasesCache;
 }
 
-// Recent scripts cache to prevent repetition (last 10 drops)
+// Recent scripts cache to prevent repetition (last 50 drops)
+export const RECENT_SCRIPTS_CAPACITY = 50;
 const recentScriptsCache: string[] = [];
+let isRecentScriptsSeeded = false;
+
+/**
+ * Seeds recent scripts cache from Neon PostgreSQL database on cold start.
+ */
+export async function seedRecentScriptsCache(): Promise<void> {
+  if (isRecentScriptsSeeded) return;
+  try {
+    if (typeof neonQuery === "function") {
+      const { rows } = await neonQuery(
+        "SELECT script FROM radio_drops WHERE script IS NOT NULL ORDER BY created_at DESC LIMIT 50"
+      );
+      if (rows && Array.isArray(rows)) {
+        for (const r of rows.reverse()) {
+          if (r.script && !recentScriptsCache.includes(r.script)) {
+            recentScriptsCache.push(r.script);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    // Non-fatal, database might be cold or table initializing
+  } finally {
+    isRecentScriptsSeeded = true;
+  }
+}
+
+/**
+ * Checks if a candidate script is too close in syntax, structure, or vocabulary to recent drops.
+ * Evaluates:
+ * 1. 4-gram repetition: Rejects if any 4-word consecutive sequence matches a recent drop.
+ * 2. Jaccard token similarity: Rejects if significant word overlap exceeds 40%.
+ */
+export function isScriptTooClose(
+  candidate: string,
+  recentScripts: string[]
+): { tooClose: boolean; reason?: string } {
+  if (!candidate || !recentScripts || recentScripts.length === 0) {
+    return { tooClose: false };
+  }
+
+  const cleanCand = candidate
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const candWords = cleanCand.split(" ").filter(Boolean);
+  if (candWords.length < 3) return { tooClose: false };
+
+  // 1. 4-gram repetition check
+  if (candWords.length >= 4) {
+    for (let i = 0; i <= candWords.length - 4; i++) {
+      const shingle = candWords.slice(i, i + 4).join(" ");
+      // Allow ubiquitous brand identifier
+      if (shingle.includes("goodlife radio 254")) continue;
+
+      for (const prev of recentScripts) {
+        const cleanPrev = prev
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (cleanPrev.includes(shingle)) {
+          return { tooClose: true, reason: `Repeats 4-word sequence: "${shingle}"` };
+        }
+      }
+    }
+  }
+
+  // 2. Jaccard similarity on significant tokens (>3 characters)
+  const candTokens = new Set(candWords.filter((w) => w.length > 3));
+  if (candTokens.size >= 4) {
+    for (const prev of recentScripts) {
+      const prevWords = prev
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(" ")
+        .filter((w) => w.length > 3);
+      const prevTokens = new Set(prevWords);
+      if (prevTokens.size < 4) continue;
+
+      let intersection = 0;
+      for (const token of candTokens) {
+        if (prevTokens.has(token)) intersection++;
+      }
+      const union = new Set([...candTokens, ...prevTokens]).size;
+      const jaccard = union > 0 ? intersection / union : 0;
+      if (jaccard > 0.40) {
+        return {
+          tooClose: true,
+          reason: `High vocabulary overlap (${Math.round(jaccard * 100)}%) with recent drop`,
+        };
+      }
+    }
+  }
+
+  return { tooClose: false };
+}
+
+export type DropArchetype =
+  | "track_stager"
+  | "station_callout"
+  | "event_spotlight"
+  | "host_banter"
+  | "ticket_cta";
+
+export const DROP_ARCHETYPES: DropArchetype[] = [
+  "track_stager",
+  "station_callout",
+  "event_spotlight",
+  "host_banter",
+  "ticket_cta",
+];
+
+/**
+ * Drops retention cleanup: Deletes drops older than 24 hours (1 day) from:
+ * 1. Neon Postgres `radio_drops` table
+ * 2. Cloudflare R2 bucket audio files
+ * 3. Local disk dynamic drop cache (public/drops/generated/)
+ */
+export async function cleanupExpiredRadioDrops(
+  maxAgeHours = 24
+): Promise<{ deletedDbRows: number; deletedFiles: number }> {
+  let deletedDbRows = 0;
+  let deletedFiles = 0;
+
+  // 1. Database Cleanup
+  try {
+    if (typeof neonQuery === "function") {
+      const { rows } = await neonQuery(
+        `DELETE FROM radio_drops 
+         WHERE created_at < NOW() - ($1 || ' hours')::interval 
+         RETURNING id, audio_url`,
+        [maxAgeHours]
+      );
+      if (rows && rows.length > 0) {
+        deletedDbRows = rows.length;
+        const r2Urls = rows.map((r: any) => r.audio_url).filter((url: string) => url && url.startsWith("http"));
+        if (r2Urls.length > 0) {
+          try {
+            await deleteRadioAudioKeys(r2Urls);
+          } catch (r2Err: any) {
+            console.warn("[drop-engine] R2 drop cleanup error:", r2Err.message);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[drop-engine] DB drop cleanup warning:", err.message);
+  }
+
+  // 2. Local Disk Cleanup (prune temporary/dynamic drop files in public/drops/generated/ or public/drops/)
+  try {
+    const candidateDirs = [
+      path.resolve(process.cwd(), "public", "drops", "generated"),
+      path.resolve(process.cwd(), "public", "drops"),
+    ];
+
+    const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(dir)) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.endsWith(".mp3")) {
+            // NEVER delete permanent soundboard FX, reference voice samples, or baseline sample drops
+            if (
+              entry.name.startsWith("fx_") ||
+              entry.name.startsWith("sample_") ||
+              entry.name.startsWith("reference_") ||
+              entry.name.includes("reference")
+            ) {
+              continue;
+            }
+
+            const fullPath = path.join(dir, entry.name);
+            const stats = fs.statSync(fullPath);
+            if (stats.mtimeMs < cutoff) {
+              fs.unlinkSync(fullPath);
+              deletedFiles++;
+            }
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[drop-engine] Local disk cleanup warning:", err.message);
+  }
+
+  return { deletedDbRows, deletedFiles };
+}
 
 /**
  * Determines current daypart based on Nairobi time (UTC+3)
@@ -97,16 +292,87 @@ export function resolveDaypartPersona(daypart: RadioDaypart, preferredPersonaId?
 }
 
 /**
+ * Selects an on-air persona for dynamic drop generation:
+ * - DJ Fusion is assigned ~30% of all generated drops (Resident Entertainer)
+ * - The remaining 70% is distributed randomly among the other 9 personas
+ */
+export function selectDropPersona(daypart: RadioDaypart, preferredPersonaId?: string) {
+  const cfg = getPersonasConfig();
+  if (preferredPersonaId && cfg?.personas) {
+    const match = cfg.personas.find((p: any) => p.id === preferredPersonaId);
+    if (match) return match;
+  }
+
+  if (!cfg?.personas || cfg.personas.length === 0) {
+    return resolveDaypartPersona(daypart);
+  }
+
+  // 30% probability assigned to DJ Fusion
+  const roll = Math.random();
+  if (roll < 0.30) {
+    const fusion = cfg.personas.find((p: any) => p.id === "dj-fusion");
+    if (fusion) return fusion;
+  }
+
+  // Remaining 70%: pick randomly from the other 9 personas
+  const otherPersonas = cfg.personas.filter((p: any) => p.id !== "dj-fusion");
+  if (otherPersonas.length > 0) {
+    const picked = otherPersonas[Math.floor(Math.random() * otherPersonas.length)];
+    return picked;
+  }
+
+  return resolveDaypartPersona(daypart);
+}
+
+/**
  * Builds the strict broadcast facts block and system/user prompt
  */
 export function buildDropPrompt(
   facts: DropVerifiedFacts,
   introSeconds = 10,
-  recentDrops: string[] = []
-): { system: string; user: string } {
+  recentDrops: string[] = [],
+  archetype?: DropArchetype
+): { system: string; user: string; archetype: DropArchetype } {
   const phrases = getShengPhrases();
-  // Sample 6 fresh Sheng expressions
-  const shengSample = phrases.sort(() => 0.5 - Math.random()).slice(0, 6).join(", ");
+  // Sample 8 fresh Sheng expressions
+  const shengSample = phrases.sort(() => 0.5 - Math.random()).slice(0, 8).join(", ");
+
+  const chosenArchetype: DropArchetype =
+    archetype ||
+    (facts.next_track && Math.random() < 0.4
+      ? "track_stager"
+      : DROP_ARCHETYPES[Math.floor(Math.random() * DROP_ARCHETYPES.length)]);
+
+  let archetypeDirectives = "";
+  switch (chosenArchetype) {
+    case "track_stager":
+      archetypeDirectives = `DROP ARCHETYPE: TRACK STAGER (80% MUSIC ANTICIPATION)
+- Focus heavily on hyping the incoming track ("${facts.next_track?.title || "upcoming banger"}" by "${facts.next_track?.artist || "the artist"}") and the DJ transition.
+- Emphasize bassline, rhythm, and dancefloor energy.
+- Do NOT spend time advertising tickets or dates; keep the musical hype front and center.`;
+      break;
+    case "station_callout":
+      archetypeDirectives = `DROP ARCHETYPE: STATION CALLOUT & URBAN FREQUENCY
+- Focus on GOODLIFE Radio 254 identity, the heartbeat of Nairobi streets, and the current ${facts.daypart} mood.
+- Shout out the listeners, matatus, hoods, and sound lovers across 254.
+- Pure station pride, zero marketing pitch.`;
+      break;
+    case "event_spotlight":
+      archetypeDirectives = `DROP ARCHETYPE: LIVE EVENT SPOTLIGHT
+- Focus on the upcoming live festival experience (${facts.event?.name_spoken || "the festival"}) at ${facts.event?.venue_spoken || "the grounds"}.
+- Mention the countdown and open-air festival vibe. Keep it vivid and sensory.`;
+      break;
+    case "host_banter":
+      archetypeDirectives = `DROP ARCHETYPE: HOST BANTER & STREET FLAVOR
+- Showcase the distinctive personality of host "${facts.persona}".
+- Use natural, witty Nairobi banter, conversational storytelling, and authentic slang.`;
+      break;
+    case "ticket_cta":
+      archetypeDirectives = `DROP ARCHETYPE: TICKET CALL-TO-ACTION
+- Deliver a clear, punchy call-to-action directing the squad to secure passes on "the Goodlife website".
+- Keep it natural and casual, like a friend reminding the squad to lock down tickets.`;
+      break;
+  }
 
   const system = `You are a professional on-air radio presenter for ${facts.station_callout}.
 You write ultra-punchy, high-energy on-air drops and stagers for host "${facts.persona}".
@@ -120,9 +386,10 @@ CRITICAL BROADCAST STYLE & RULES:
    - When mentioning where to buy tickets, 80% of the time say "the Goodlife website" (e.g. "tickets on the Goodlife website").
    - 20% of the time say "s m w h r" or "goodlife dot somewhere dot space".
    - NEVER EVER say ".co.ke" under any circumstances.
-3. ANTI-REPETITION:
+3. ANTI-REPETITION (STRICT 50-DROP DIVERSITY):
    - Do NOT repeat the same catchphrase (like "Chapaa sasa, msee!" or "vibe ya leo") over and over.
-   - Vary your intros, greetings, and call-to-actions. Keep every drop fresh, spontaneous, and conversational.
+   - Never reuse opening structures from recent drops.
+   - Vary sentence lengths and emotional beats. Keep every drop fresh, spontaneous, and conversational.
 4. ZERO FACT INVENTING: Only state facts explicitly given in the VERIFIED FACTS block below.
 5. PRECOMPUTED PHRASES: Never calculate dates, countdowns or ticket prices. Use the exact precomputed phrases provided.
 6. UNCONFIRMED ITEMS: If lineup is empty, do NOT name any artist. If weather/traffic is not in facts, DO NOT mention it.
@@ -135,13 +402,15 @@ Do not include backticks, markdown, or any introductory commentary.`;
   const user = `VERIFIED FACTS:
 ${JSON.stringify(facts, null, 2)}
 
+${archetypeDirectives}
+
 Time cap: ${introSeconds} seconds (Keep it ultra-punchy: 15 to 25 words maximum).
-Do not repeat lines from recently aired drops:
-${recentDrops.slice(-5).map((d, i) => `${i + 1}. "${d}"`).join("\n")}
+Avoid similarity or shared phrasing with recently aired drops (last ${Math.min(recentDrops.length, 15)}):
+${recentDrops.slice(-15).map((d, i) => `${i + 1}. "${d}"`).join("\n")}
 
 Write the on-air drop JSON now:`;
 
-  return { system, user };
+  return { system, user, archetype: chosenArchetype };
 }
 
 /**
@@ -223,7 +492,7 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
     }
   }
 
-  // 5. Digit safety check: numbers must come only from verified phrases (station name, event title, countdown)
+  // 5. Digit safety check: numbers must come only from verified phrases (station name, event title, countdown, track/artist title)
   let digitsToCheck = text.replace(/254/g, "").replace(/\b4\b/g, "");
   if (facts.event?.countdown_phrase) {
     digitsToCheck = digitsToCheck.replace(new RegExp(facts.event.countdown_phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "");
@@ -240,6 +509,22 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
     const gateNumbers = facts.event.gates_open_phrase.match(/\d+/g);
     if (gateNumbers) {
       for (const num of gateNumbers) {
+        digitsToCheck = digitsToCheck.replace(new RegExp(`\\b${num}\\b`, "g"), "");
+      }
+    }
+  }
+  if (facts.next_track?.title) {
+    const trackNumbers = facts.next_track.title.match(/\d+/g);
+    if (trackNumbers) {
+      for (const num of trackNumbers) {
+        digitsToCheck = digitsToCheck.replace(new RegExp(`\\b${num}\\b`, "g"), "");
+      }
+    }
+  }
+  if (facts.next_track?.artist) {
+    const artistNumbers = facts.next_track.artist.match(/\d+/g);
+    if (artistNumbers) {
+      for (const num of artistNumbers) {
         digitsToCheck = digitsToCheck.replace(new RegExp(`\\b${num}\\b`, "g"), "");
       }
     }
@@ -442,6 +727,7 @@ export interface GenerateDropRequest {
   dropType?: RadioDropType;
   daypart?: RadioDaypart;
   preferredPersonaId?: string;
+  archetype?: DropArchetype;
   nextTrack?: { id?: number; title: string; artist: string; genre?: string };
   currentGenre?: string;
   introSeconds?: number;
@@ -453,10 +739,16 @@ export interface GenerateDropRequest {
  * strict grounding, loudnorm mastering, and pre-flight Drop Gate verification.
  */
 export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promise<GeneratedDropRecord> {
+  // Ensure recent drops memory is seeded from Postgres database
+  await seedRecentScriptsCache();
+
+  // Retention cleanup: automatically prune drops older than 24h
+  cleanupExpiredRadioDrops(24).catch(() => {});
+
   const now = new Date();
   const station = getStationConfig();
   const daypart = req.daypart || getCurrentDaypart(now);
-  const persona = resolveDaypartPersona(daypart, req.preferredPersonaId);
+  const persona = selectDropPersona(daypart, req.preferredPersonaId);
   const introSeconds = req.introSeconds || 10;
 
   // 1. Fetch promotable events from the live data layer
@@ -523,8 +815,8 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
       : undefined,
   };
 
-  // Build prompt
-  const { system, user } = buildDropPrompt(facts, introSeconds, recentScriptsCache);
+  // Build prompt with archetype rotation & anti-repetition memory
+  const { system, user } = buildDropPrompt(facts, introSeconds, recentScriptsCache, req.archetype);
 
   // 3. Inference with cascade
   let chosenScript = "";
@@ -555,17 +847,23 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
 
     const val = validateDropScript(candidateJson, facts, introSeconds);
     if (val.valid && val.parsedJson) {
-      chosenScript = val.parsedJson.text;
-      chosenTag = val.parsedJson.tag || chosenTag;
-      providerUsed = llmRes.provider;
-      modelIdUsed = llmRes.model_id;
-      latencyMs = llmRes.latency_ms;
+      // Anti-closeness check against last 50 drops
+      const closeness = isScriptTooClose(val.parsedJson.text, recentScriptsCache);
+      if (closeness.tooClose) {
+        console.warn(`[drop-engine] Script too close to recent drops (${closeness.reason}), substituting fresh drop`);
+      } else {
+        chosenScript = val.parsedJson.text;
+        chosenTag = val.parsedJson.tag || chosenTag;
+        providerUsed = llmRes.provider;
+        modelIdUsed = llmRes.model_id;
+        latencyMs = llmRes.latency_ms;
+      }
     } else {
       console.warn(`[drop-engine] LLM response failed validation (${val.errors.join("; ")}), using fallback drop`);
     }
   }
 
-  // If LLM failed or validator rejected, select reviewed generic drop
+  // If LLM failed, validator rejected, or script was too close, select reviewed generic drop
   if (!chosenScript) {
     const generic = selectGenericReviewedDrop(persona.id, daypart);
     chosenScript = generic.script;
@@ -575,9 +873,11 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
     isFallback = true;
   }
 
-  // Update recent scripts cache
+  // Update recent scripts cache (maintains up to 50 drops)
   recentScriptsCache.push(chosenScript);
-  if (recentScriptsCache.length > 10) recentScriptsCache.shift();
+  while (recentScriptsCache.length > RECENT_SCRIPTS_CAPACITY) {
+    recentScriptsCache.shift();
+  }
 
   // Create tentative drop record
   const dropRecord: GeneratedDropRecord = {
@@ -608,7 +908,7 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   if (!req.skipAudioSynthesis) {
     try {
       const voiceId = finalDrop.voice_id || persona.voice_id || persona.id || "Aoede";
-      const rawAudio = await synthesizeVoiceAudio(finalDrop.script, voiceId);
+      const rawAudio = await synthesizeVoiceAudio(finalDrop.script, persona.id, voiceId);
 
       if (rawAudio) {
         // Apply broadcast loudnorm (-14 LUFS, -1 dBFS TP)

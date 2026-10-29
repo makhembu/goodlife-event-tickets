@@ -14,7 +14,9 @@ import {
   Search,
   CheckCircle2,
   AlertCircle,
+  SkipForward,
 } from "lucide-react";
+import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 interface PlaylistTrack {
   id: number;
@@ -79,8 +81,8 @@ export default function OnAirRundown() {
         setBroadcastMode(newMode);
         notify(
           newMode === "mania"
-            ? "⚡ MANIA MODE ENGAGED: DJ Manual Control Active!"
-            : "🤖 AUTODJ ROTATION ENGAGED: Playout cycling automatically."
+            ? "⚡ DJ MANUAL CONTROL: Custom track ordering active"
+            : "🤖 AUTODJ ENGAGED: Automated smart rotation"
         );
         fetchPlaylist();
       } else {
@@ -170,206 +172,149 @@ export default function OnAirRundown() {
   }, [sets, searchQuery]);
 
   return (
-    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 shadow-2xl flex flex-col h-full space-y-4">
-      {/* Notification Toast */}
-      {notification && (
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-xs animate-in fade-in slide-in-from-top-1">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span className="truncate">{notification}</span>
-        </div>
-      )}
-
-      {/* Rundown Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
-        <div className="flex items-center gap-2.5">
-          <Layers className="w-4 h-4 text-cyan-400" />
+    <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4 flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="flex items-center space-x-2">
+          <div className="p-1.5 bg-[#DFBB7D] text-[#16181D] font-bold">
+            <Layers className="w-4 h-4" />
+          </div>
           <div>
-            <h3 className="font-mono text-xs font-black tracking-widest uppercase text-white">
-              FESTIVAL PLAYLIST &amp; RUNDOWN
+            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white">
+              ON-AIR RUNDOWN · ROTATION TIMELINE
             </h3>
-            <p className="font-mono text-[10px] text-zinc-500">
-              {sets.length} Tracks In Active Rotation
+            <p className="text-[11px] font-mono text-[#DFBB7D]">
+              {sets.length} Tracks in schedule · Real-time playout timeline
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Mode Switchers: AUTODJ vs MANIA */}
-          <div className="flex items-center p-1 rounded-lg bg-zinc-900 border border-zinc-800">
-            <button
-              onClick={() => handleToggleMode("autodj")}
-              disabled={modeSwitching}
-              className={`px-2.5 py-1 rounded font-mono text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                broadcastMode === "autodj"
-                  ? "bg-emerald-500 text-zinc-950 shadow-md"
-                  : "text-zinc-400 hover:text-white"
-              }`}
-            >
-              AUTODJ
-            </button>
-            <button
-              onClick={() => handleToggleMode("mania")}
-              disabled={modeSwitching}
-              className={`px-2.5 py-1 rounded font-mono text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 ${
-                broadcastMode === "mania"
-                  ? "bg-amber-400 text-zinc-950 shadow-md animate-pulse"
-                  : "text-zinc-400 hover:text-amber-400"
-              }`}
-            >
-              <Zap className="w-3 h-3 fill-current" />
-              MANIA (DJ)
-            </button>
-          </div>
-
+        {/* Mode Toggle Buttons */}
+        <div className="flex items-center space-x-1 bg-black/40 p-0.5 border border-white/10">
           <button
-            onClick={fetchPlaylist}
-            disabled={loading}
-            className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-            title="Refresh Playlist"
+            onClick={() => handleToggleMode("autodj")}
+            disabled={modeSwitching}
+            className={`px-2 py-1 font-mono text-[10px] font-bold transition-colors ${
+              broadcastMode === "autodj"
+                ? "bg-[#DFBB7D] text-[#16181D]"
+                : "text-white/60 hover:text-white"
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-cyan-400" : ""}`} />
+            AUTODJ
+          </button>
+          <button
+            onClick={() => handleToggleMode("mania")}
+            disabled={modeSwitching}
+            className={`px-2 py-1 font-mono text-[10px] font-bold transition-colors ${
+              broadcastMode === "mania"
+                ? "bg-[#E84855] text-white"
+                : "text-white/60 hover:text-white"
+            }`}
+          >
+            MANUAL
           </button>
         </div>
       </div>
 
-      {/* Mode Status Banner */}
-      <div
-        className={`p-2.5 rounded-lg border font-mono text-xs flex items-center justify-between transition-colors ${
-          broadcastMode === "mania"
-            ? "bg-amber-950/40 border-amber-600/60 text-amber-300"
-            : "bg-emerald-950/30 border-emerald-800/40 text-emerald-400"
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          {broadcastMode === "mania" ? (
-            <Zap className="w-4 h-4 text-amber-400 fill-current animate-bounce" />
-          ) : (
-            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-          )}
-          <span className="font-bold uppercase tracking-wider">
-            {broadcastMode === "mania"
-              ? "MANIA MODE ENGAGED · MANUAL DJ CONTROL"
-              : "AUTODJ ACTIVE · 24/7 AUTO ROTATION"}
-          </span>
+      {/* Notification Toast */}
+      {notification && (
+        <div className="p-2 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs flex items-center space-x-1.5">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="truncate">{notification}</span>
         </div>
-        <span className="text-[10px] opacity-75">
-          {broadcastMode === "mania" ? "Click [FIRE] on any track" : "Cycles smoothly"}
-        </span>
-      </div>
+      )}
 
-      {/* Search Input */}
+      {/* Search Filter */}
       <div className="relative">
-        <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Filter tracks by title or artist..."
-          className="w-full bg-zinc-900/90 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 font-mono text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500"
+          placeholder="Filter rotation by artist or song title..."
+          className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-8 pr-3 py-1.5 border border-white/10 focus:border-[#DFBB7D] focus:outline-none"
         />
       </div>
 
-      {/* Playlist Table */}
-      <div className="flex-1 overflow-y-auto space-y-2 max-h-[460px] pr-1">
-        {filteredSets.length === 0 ? (
-          <div className="text-center py-12 px-4 rounded-xl border border-dashed border-zinc-800/80 bg-zinc-900/30">
-            <Layers className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-            <p className="font-mono text-xs font-bold text-zinc-400 uppercase">
-              No tracks found
-            </p>
+      {/* Track List */}
+      <div className="space-y-1.5 overflow-y-auto max-h-[380px] pr-1">
+        {loading && sets.length === 0 ? (
+          <div className="p-6 text-center text-white/40 font-mono text-xs">
+            Loading broadcast rundown...
+          </div>
+        ) : filteredSets.length === 0 ? (
+          <div className="p-6 text-center text-white/40 font-mono text-xs">
+            No tracks found matching query.
           </div>
         ) : (
           filteredSets.map((track, idx) => {
-            const isOnAir = activeSetId === track.id;
-            const isOperating = operatingId === track.id;
-
+            const isPlaying = track.id === activeSetId;
             return (
               <div
                 key={track.id}
-                className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
-                  isOnAir
-                    ? "bg-emerald-950/40 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-                    : "bg-zinc-900/70 border-zinc-800/80 hover:border-zinc-700"
+                className={`p-2 border transition-all flex items-center justify-between ${
+                  isPlaying
+                    ? "bg-[#DFBB7D]/10 border-[#DFBB7D] shadow-[2px_2px_0px_#DFBB7D]"
+                    : "bg-white/5 border-white/10 hover:border-white/20"
                 }`}
               >
-                {/* Track Info */}
-                <div className="flex items-center gap-3 overflow-hidden min-w-0 flex-1">
-                  <span className="font-mono font-bold text-xs text-zinc-500 w-6 flex-shrink-0">
-                    #{idx + 1}
+                {/* Left: Position & Info */}
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <span className={`font-mono text-xs font-bold w-6 text-center ${
+                    isPlaying ? "text-[#F5C842]" : "text-white/40"
+                  }`}>
+                    {isPlaying ? "▶" : `#${idx + 1}`}
                   </span>
 
-                  {/* Thumbnail */}
-                  <img
-                    src={track.cover_url || "/flyer.png"}
-                    alt={track.title}
-                    className="w-9 h-9 rounded object-cover flex-shrink-0 border border-zinc-800"
-                  />
-
-                  <div className="truncate min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p
-                        className={`font-mono text-xs font-bold truncate ${
-                          isOnAir ? "text-emerald-300" : "text-zinc-100"
-                        }`}
-                      >
-                        {track.title}
-                      </p>
-                      {isOnAir && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase font-mono bg-emerald-500 text-zinc-950 flex-shrink-0 animate-pulse">
-                          ON AIR
-                        </span>
-                      )}
+                  <div className="truncate">
+                    <div className="font-mono text-xs font-bold text-white truncate">
+                      {formatTrackTitle(track.title)}
                     </div>
-                    <p className="font-mono text-[10px] text-zinc-400 truncate">
-                      {track.dj_name || "Goodlife Resident"}
-                      {track.duration_sec ? ` · ${formatSecs(track.duration_sec)}` : ""}
-                    </p>
+                    <div className="text-[10px] font-mono text-[#DFBB7D] truncate">
+                      {track.dj_name || "Resident Selector"}
+                      {track.genre ? ` · ${track.genre}` : ""}
+                    </div>
                   </div>
                 </div>
 
-                {/* DJ Control Actions */}
-                <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-                  {/* Fire On Air / Play Now Button */}
+                {/* Right: Actions */}
+                <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                  <span className="font-mono text-[11px] text-white/50 mr-1">
+                    {formatSecs(track.duration_sec)}
+                  </span>
+
+                  {/* Skip to this track */}
                   <button
                     onClick={() => handlePlayNow(track.id, track.title)}
-                    disabled={isOnAir || isOperating}
-                    className={`px-2.5 py-1 rounded font-mono text-[10px] font-black uppercase flex items-center gap-1 transition-all cursor-pointer ${
-                      isOnAir
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-default"
-                        : "bg-amber-400 hover:bg-amber-300 text-zinc-950 shadow hover:shadow-amber-400/20 active:scale-95"
-                    }`}
-                    title={isOnAir ? "Currently on air" : "Cue directly on air (engages Mania)"}
+                    title="Skip immediately to this track"
+                    className="p-1 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white border border-white/20"
                   >
                     <Play className="w-3 h-3 fill-current" />
-                    {isOnAir ? "LIVE" : "FIRE"}
                   </button>
 
-                  {/* Move Up */}
+                  {/* Up / Down Reorder */}
                   <button
                     onClick={() => handleReorder(track.id, "up")}
-                    disabled={idx === 0 || isOperating}
-                    className="p-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-                    title="Move up in rotation"
+                    disabled={idx === 0}
+                    title="Move Track Earlier"
+                    className="p-1 text-white/50 hover:text-white disabled:opacity-20"
                   >
                     <ArrowUp className="w-3 h-3" />
                   </button>
-
-                  {/* Move Down */}
                   <button
                     onClick={() => handleReorder(track.id, "down")}
-                    disabled={idx === sets.length - 1 || isOperating}
-                    className="p-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 transition-colors cursor-pointer"
-                    title="Move down in rotation"
+                    disabled={idx === filteredSets.length - 1}
+                    title="Move Track Later"
+                    className="p-1 text-white/50 hover:text-white disabled:opacity-20"
                   >
                     <ArrowDown className="w-3 h-3" />
                   </button>
 
-                  {/* Delete / Remove */}
+                  {/* Remove */}
                   <button
                     onClick={() => handleDelete(track.id, track.title)}
-                    disabled={isOperating}
-                    className="p-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-500 hover:text-red-400 hover:border-red-900/40 transition-colors cursor-pointer"
                     title="Remove from playlist"
+                    className="p-1 text-white/30 hover:text-[#E84855]"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>

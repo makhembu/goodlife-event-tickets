@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { RadioTower, Copy, Check, ExternalLink, Headphones, Info, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
-interface DecksConnectCardProps {
+export interface DecksConnectCardProps {
   harborHost?: string;
   harborPort?: number;
   harborMount?: string;
@@ -17,7 +17,7 @@ export default function DecksConnectCard({
   harborPort = 8005,
   harborMount = "/live",
   harborUser = "source",
-  harborPass = "",
+  harborPass = "goodlife254dj",
   webDjUrl = "https://dj.darajadigital.com",
 }: DecksConnectCardProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -42,16 +42,7 @@ export default function DecksConnectCard({
 
   const copyToClipboard = (text: string, fieldName: string) => {
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          document.body.removeChild(ta);
-        } catch {}
-      });
+      navigator.clipboard.writeText(text).catch(() => {});
     }
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 2500);
@@ -66,147 +57,122 @@ User: ${harborUser}
 Password: ${harborPass}
 Format: MP3 320kbps (or 256kbps)`;
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          document.body.removeChild(ta);
-        } catch {}
-      });
+      navigator.clipboard.writeText(text).catch(() => {});
     }
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 3000);
   };
 
   return (
-    <div className="p-5 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-brand-navy pb-3">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className="flex items-center gap-2">
-            <Headphones className="w-5 h-5 text-brand-navy" />
-            <h2 className="font-display text-lg font-black uppercase tracking-wider">
-              CONNECT CLUB DECKS (PIONEER / BUTT / OBS)
-            </h2>
+    <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="flex items-center space-x-2">
+          <div className="p-1.5 bg-[#10B981] text-[#16181D] font-bold">
+            <RadioTower className="w-4 h-4" />
           </div>
-          {/* Live connection indicator badge */}
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 border-2 text-[10px] font-black uppercase tracking-wider rounded ${
-            djConnected === true
-              ? "bg-emerald-100 border-emerald-600 text-emerald-800"
-              : djConnected === false
-              ? "bg-slate-100 border-slate-400 text-slate-500"
-              : "bg-yellow-50 border-yellow-400 text-yellow-700"
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              djConnected === true ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
-            }`} />
-            {djConnected === true ? "LIVE — DJ CONNECTED" : djConnected === false ? "WAITING FOR DJ" : "CHECKING..."}
+          <div>
+            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white">
+              LIVE DJ HARBOR · BUTT / CDJ / TRAKTOR
+            </h3>
+            <p className="text-[11px] font-mono text-[#DFBB7D]">
+              Direct Icecast source harbor · AutoDJ automatically crossfades on connection
+            </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={copyAllSettings}
-          className="px-3 py-1.5 border-2 border-brand-navy bg-brand-accent hover:bg-brand-off-white text-brand-navy font-black text-xs uppercase flex items-center gap-1.5 transition-all shadow-(--shadow-brut-xs) cursor-pointer"
-        >
-          {copiedAll ? <Check className="w-4 h-4 text-emerald-700" /> : <Copy className="w-4 h-4" />}
-          <span>{copiedAll ? "COPIED ALL CREDENTIALS!" : "COPY ALL SETTINGS FOR BUTT"}</span>
-        </button>
+        {/* Live DJ Status Badge */}
+        <div className={`px-2.5 py-1 font-mono text-xs font-bold border flex items-center space-x-1.5 ${
+          djConnected === true
+            ? "bg-[#10B981] text-[#16181D] border-[#10B981] animate-pulse"
+            : "bg-white/5 text-white/50 border-white/10"
+        }`}>
+          <div className={`w-2 h-2 rounded-full ${djConnected === true ? "bg-[#16181D]" : "bg-white/40"}`} />
+          <span>{djConnected === true ? "LIVE DJ ON AIR" : "HARBOR IDLE (AUTODJ ACTIVE)"}</span>
+        </div>
       </div>
 
-      <p className="text-xs text-brand-navy/70">
-        Plug your mixer into your laptop, open BUTT or OBS, and paste these settings. The station automatically detects your audio and crossfades into your live set with <b>zero dead air</b>.
-      </p>
-
-      {/* Quick Credentials Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-xs">
+      {/* Harbor Credential Fields */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 font-mono text-xs">
         {/* Host */}
-        <div className="p-2.5 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between">
-          <span className="text-[10px] text-brand-navy/60 font-bold uppercase">Server Host</span>
-          <div className="flex items-center justify-between gap-1 mt-1">
-            <span className="font-black text-brand-navy truncate text-[11px]">{harborHost}</span>
-            <button
-              onClick={() => copyToClipboard(harborHost, "host")}
-              className="p-1 hover:text-brand-accent cursor-pointer shrink-0"
-              title="Copy Host"
-            >
-              {copiedField === "host" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+        <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-white/50 block">SERVER / HOST</span>
+            <span className="text-white font-bold">{harborHost}</span>
           </div>
+          <button
+            onClick={() => copyToClipboard(harborHost, "host")}
+            className="p-1 text-white/40 hover:text-[#DFBB7D]"
+            title="Copy Host"
+          >
+            {copiedField === "host" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
         {/* Port */}
-        <div className="p-2.5 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between">
-          <span className="text-[10px] text-brand-navy/60 font-bold uppercase">Port</span>
-          <div className="flex items-center justify-between gap-1 mt-1">
-            <span className="font-black text-brand-navy">{harborPort}</span>
-            <button
-              onClick={() => copyToClipboard(String(harborPort), "port")}
-              className="p-1 hover:text-brand-accent cursor-pointer shrink-0"
-              title="Copy Port"
-            >
-              {copiedField === "port" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+        <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-white/50 block">PORT</span>
+            <span className="text-[#DFBB7D] font-bold">{harborPort}</span>
           </div>
+          <button
+            onClick={() => copyToClipboard(String(harborPort), "port")}
+            className="p-1 text-white/40 hover:text-[#DFBB7D]"
+            title="Copy Port"
+          >
+            {copiedField === "port" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
         {/* Mount */}
-        <div className="p-2.5 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between">
-          <span className="text-[10px] text-brand-navy/60 font-bold uppercase">Mountpoint</span>
-          <div className="flex items-center justify-between gap-1 mt-1">
-            <span className="font-black text-brand-navy">{harborMount}</span>
-            <button
-              onClick={() => copyToClipboard(harborMount, "mount")}
-              className="p-1 hover:text-brand-accent cursor-pointer shrink-0"
-              title="Copy Mount"
-            >
-              {copiedField === "mount" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+        <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-white/50 block">MOUNTPOINT</span>
+            <span className="text-white font-bold">{harborMount}</span>
           </div>
+          <button
+            onClick={() => copyToClipboard(harborMount, "mount")}
+            className="p-1 text-white/40 hover:text-[#DFBB7D]"
+            title="Copy Mount"
+          >
+            {copiedField === "mount" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
         </div>
 
         {/* Password */}
-        <div className="p-2.5 border-2 border-brand-navy bg-brand-off-white flex flex-col justify-between">
-          <span className="text-[10px] text-brand-navy/60 font-bold uppercase">DJ Password</span>
-          <div className="flex items-center justify-between gap-1 mt-1">
-            <span className="font-black text-brand-navy truncate text-[11px] font-mono">
-              {passRevealed ? (harborPass || "• Not Set •") : "•".repeat(Math.max(8, harborPass ? harborPass.length : 8))}
-            </span>
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setPassRevealed(!passRevealed)}
-                className="p-1 hover:text-brand-accent cursor-pointer text-brand-navy/70 hover:text-brand-navy"
-                title={passRevealed ? "Hide password" : "Show password"}
-              >
-                {passRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(harborPass, "pass")}
-                className="p-1 hover:text-brand-accent cursor-pointer shrink-0"
-                title="Copy Password"
-              >
-                {copiedField === "pass" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
+        <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-white/50 block">PASSWORD</span>
+            <span className="text-white font-bold">{passRevealed ? harborPass : "••••••••••••"}</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setPassRevealed(!passRevealed)}
+              className="p-1 text-white/40 hover:text-white"
+            >
+              {passRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => copyToClipboard(harborPass, "pass")}
+              className="p-1 text-white/40 hover:text-[#DFBB7D]"
+              title="Copy Password"
+            >
+              {copiedField === "pass" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Zero-Training 3-Step Guide */}
-      <div className="p-3 border-2 border-brand-navy/30 bg-amber-50 text-amber-950 text-xs rounded space-y-1.5 font-sans">
-        <div className="flex items-center gap-1.5 font-black uppercase text-[11px] text-amber-900">
-          <Info className="w-4 h-4 text-amber-700 shrink-0" />
-          <span>ZERO-TRAINING QUICK GUIDE (HOW TO GO LIVE IN 60 SECONDS):</span>
-        </div>
-        <ol className="list-decimal list-inside space-y-1 text-amber-900/90 text-[11px] leading-relaxed">
-          <li><b>Connect Laptop:</b> Run a 3.5mm-to-RCA cable from your Pioneer Mixer <i>REC OUT</i> into your laptop audio jack or USB audio interface.</li>
-          <li><b>Open BUTT or OBS:</b> Click <i>&quot;COPY ALL SETTINGS FOR BUTT&quot;</i> above and paste them into BUTT Settings → Main.</li>
-          <li><b>Click Play / Connect:</b> The station will crossfade automatically from AutoDJ to your decks. When finished, click Disconnect—your set will auto-archive to the Set Vault!</li>
-        </ol>
+      {/* Action Strip */}
+      <div className="flex items-center justify-between pt-1 font-mono text-xs">
+        <span className="text-[11px] text-white/40">Audio Format: MP3 320kbps Stereo (44.1kHz)</span>
+        <button
+          onClick={copyAllSettings}
+          className="px-3 py-1.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold border border-[#16181D] flex items-center space-x-1.5 shadow-[2px_2px_0px_#16181D]"
+        >
+          {copiedAll ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copiedAll ? "COPIED ALL!" : "COPY ALL CREDENTIALS"}</span>
+        </button>
       </div>
     </div>
   );

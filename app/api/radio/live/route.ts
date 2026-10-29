@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
+import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +13,33 @@ interface LiveCachedState {
 
 let _cachedLiveState: LiveCachedState | null = null;
 
+async function queryRecentLiveDrop() {
+  try {
+    const dropRes = await neonQuery(
+      `SELECT id, persona, mood, title, script, audio_url, created_at
+       FROM radio_drops
+       WHERE timing_type = 'live_inject' AND created_at > NOW() - INTERVAL '20 seconds'
+       ORDER BY created_at DESC
+       LIMIT 1`
+    );
+    if (dropRes.rows.length > 0) {
+      const d = dropRes.rows[0];
+      return {
+        id: d.id,
+        persona: d.persona,
+        title: d.title,
+        script: d.script,
+        audio_url: d.audio_url,
+        fired_at: d.created_at,
+      };
+    }
+  } catch {}
+  return null;
+}
+
 async function getTimelineFallback() {
   try {
-    const [setsRes, settingsRes] = await Promise.all([
+    const [setsRes, settingsRes, liveDrop] = await Promise.all([
       neonQuery(`
         SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
         FROM radio_sets
@@ -24,6 +49,7 @@ async function getTimelineFallback() {
       neonQuery(
         "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
       ).catch(() => ({ rows: [] })),
+      queryRecentLiveDrop(),
     ]);
 
     const sets = setsRes.rows || [];
@@ -80,7 +106,8 @@ async function getTimelineFallback() {
       stale: false,
       mode: activeMode,
       now_playing: {
-        title: currentTrack.title,
+        id: currentTrack.id,
+        title: formatTrackTitle(currentTrack.title),
         artist: currentTrack.dj_name,
         thumbnail: currentTrack.cover_url,
         elapsed: offsetSec,
@@ -89,12 +116,14 @@ async function getTimelineFallback() {
         video_id: `set-${currentTrack.id}`,
       },
       up_next: nextTracks.map((t: any) => ({
-        title: t.title,
+        id: t.id,
+        title: formatTrackTitle(t.title),
         artist: t.dj_name,
         duration: t.duration_sec || 180,
         thumbnail: t.cover_url,
       })),
       history: [],
+      live_drop: liveDrop,
       target_duration_sec: 2.0,
     };
   } catch (err: any) {
@@ -170,10 +199,21 @@ export async function GET() {
     const nowPlaying = await nowRes.json();
     const upNext = nextRes.ok ? await nextRes.json().catch(() => []) : [];
     const history = histRes.ok ? await histRes.json().catch(() => []) : [];
+    const liveDrop = await queryRecentLiveDrop();
+
+    if (nowPlaying && nowPlaying.title) {
+      nowPlaying.title = formatTrackTitle(nowPlaying.title);
+    }
+    const cleanUpNext = Array.isArray(upNext)
+      ? upNext.slice(0, 5).map((t: any) => ({
+          ...t,
+          title: formatTrackTitle(t?.title),
+        }))
+      : [];
 
     const liveData: LiveCachedState = {
       nowPlaying,
-      upNext: Array.isArray(upNext) ? upNext.slice(0, 5) : [],
+      upNext: cleanUpNext,
       history: Array.isArray(history) ? history.slice(0, 10) : [],
       ts: Date.now(),
     };
@@ -187,6 +227,7 @@ export async function GET() {
         now_playing: liveData.nowPlaying,
         up_next: liveData.upNext,
         history: liveData.history,
+        live_drop: liveDrop,
         target_duration_sec: 2.0,
       },
       {

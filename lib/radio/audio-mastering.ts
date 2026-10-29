@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { encode } from "@msgpack/msgpack";
 import { bridgeMasterAudioFfmpeg } from "./bridge-client";
 
 const execAsync = promisify(exec);
@@ -30,27 +31,83 @@ const VOICE_MAP: Record<string, GeminiVoiceName> = {
   fenrir: "Fenrir",
   kore: "Kore",
 
-  // Persona IDs
-  "dj-shax": "Puck",
-  "shax": "Puck",
+  // 10 Station Personas + Aliases
+  "dj-fusion": "Puck",
+  "fusion": "Puck",
+  "dj-sudi": "Fenrir",
+  "sudi": "Fenrir",
+  "dj-sney": "Puck",
+  "sney": "Puck",
   "mc-cheche": "Fenrir",
   "cheche": "Fenrir",
+  "dj-shax": "Puck",
+  "shax": "Puck",
   "amina": "Aoede",
+  "bwana-mkubwa": "Charon",
+  "bwana": "Charon",
+  "malkia-kenya": "Aoede",
+  "malkia": "Aoede",
   "wigman": "Charon",
   "the-chief": "Charon",
   "zari": "Kore",
+  "anz-ben": "Fenrir",
+
+  // Gemini Broadcast Voices
+  "gemini-aoede": "Aoede",
+  "gemini-puck": "Puck",
+  "gemini-charon": "Charon",
+  "gemini-fenrir": "Fenrir",
+  "gemini-kore": "Kore",
+  "gemini": "Aoede",
 };
 
 /**
- * Strips formatting, bracketed emotion tags, stage directions, and extraneous punctuation
- * so the TTS engine speaks ONLY pure spoken script.
+ * Normalizes Kenyan radio idioms, station branding, and numbers so TTS engines
+ * produce natural spoken cadence without corrupting natural words.
+ * The zero-shot acoustic model derives authentic Kenyan accent and pronunciation
+ * directly from the voice reference itself.
  */
-export function sanitizeScriptForTts(rawText: string): string {
-  let cleaned = rawText
+export function normalizeRadioScriptForTts(text: string): string {
+  if (!text) return "";
+  return text
+    // Replace telephone/country code 254 with natural spoken cadence
+    .replace(/\b254\b/g, "two five four")
+    // Fix elongated street shouts
+    .replace(/\b[Yy]ooo+!?\b/g, "Yo! Yo!")
+    // Radio station callsign spacing
+    .replace(/\bGOODLIFE\s*254\b/gi, "GOODLIFE two five four")
+    .replace(/\bGL\s*254\b/gi, "GOODLIFE two five four")
+    // Currency pronunciation: expand numbers before "bob" naturally
+    .replace(/\b200\s*bob\b/gi, "two hundred bob")
+    .replace(/\b500\s*bob\b/gi, "five hundred bob")
+    .replace(/\b1000\s*bob\b/gi, "one thousand bob")
+    .replace(/\b1k\s*bob\b/gi, "one thousand bob")
+    // Common abbreviations
+    .replace(/\bNBO\b/gi, "Nairobi")
+    .replace(/\bKE\b/gi, "Kenya")
+    .replace(/\bDJ\b/g, "D J");
+}
+
+/**
+ * Strips formatting, markdown, and unwanted punctuation.
+ * If preserveEmotions is true, bracketed and parenthesized emotion tags like
+ * [hype], [excited], (laughs) are preserved for expressive TTS engines like Fish Audio.
+ */
+export function sanitizeScriptForTts(rawText: string, preserveEmotions = false): string {
+  let cleaned = rawText;
+
+  if (!preserveEmotions) {
     // Remove bracketed stage directions like [excited], [whisper], [banter]
-    .replace(/\[[^\]]*\]/g, " ")
+    cleaned = cleaned.replace(/\[[^\]]*\]/g, " ");
     // Remove parenthesized directions like (energetic DJ tone)
-    .replace(/\([^)]*(?:tone|voice|energy|dj|host|shout|style|drop)[^)]*\)/gi, " ")
+    cleaned = cleaned.replace(/\([^)]*(?:tone|voice|energy|dj|host|shout|style|drop)[^)]*\)/gi, " ");
+  } else {
+    // S2.1 uses square brackets [...] for emotion/prosody tags.
+    // Convert common parenthesized emotions to square brackets
+    cleaned = cleaned.replace(/\((laughs?|laughing|chuckle|gasp|sigh|whisper|whispering|excited|hype|shout|shouting|calm|happy|energetic)\)/gi, "[$1]");
+  }
+
+  cleaned = cleaned
     // Remove markdown symbols and asterisks
     .replace(/[*_#`~]/g, "")
     // Remove emojis
@@ -68,25 +125,196 @@ export function sanitizeScriptForTts(rawText: string): string {
 }
 
 /**
- * Synthesizes voice audio via Gemini Flash TTS (gemini-3.8-flash-lite-tts).
- * Automatically resolves the voice among the 5 distinct station personas:
- * - Puck: DJ Shax (High-energy festival host)
- * - Aoede: Amina (Melodic sunset flow)
- * - Charon: Wigman / The Chief (Deep baritone vault)
- * - Fenrir: MC Cheche (Punchy urban host)
- * - Kore: Zari (Chill afternoon selector)
+ * Synthesizes expressive voice audio via Fish Audio API (Tier 1).
+ * Uses model: s2.1-pro-free.
+ * Implements Instant Inline Zero-Shot Voice Cloning by sending raw reference audio bytes
+ * via application/msgpack, perfectly capturing authentic Kenyan accent and DJ tone.
+ */
+export async function synthesizeFishAudioTts(
+  script: string,
+  voiceOrPersona = "dj-fusion",
+  explicitVoiceId?: string
+): Promise<Buffer | null> {
+  const apiKey = getEnv("FISH_AUDIO_KEY") || process.env.FISH_AUDIO_KEY;
+  if (!apiKey) return null;
+
+  const normalized = normalizeRadioScriptForTts(sanitizeScriptForTts(script, true));
+  if (!normalized || normalized.length < 3) return null;
+
+  const lookup = voiceOrPersona.toLowerCase().trim();
+
+  // Locate authentic vocal reference for inline zero-shot cloning
+  let referencePath: string | null = null;
+  if (lookup === "dj-fusion" || lookup === "fusion") {
+    const fusionSample = path.resolve(process.cwd(), "public", "voice-samples", "dj_fusion_reference.mp3");
+    if (fs.existsSync(fusionSample)) {
+      referencePath = fusionSample;
+    }
+  } else if (lookup === "amina") {
+    const aminaSample = path.resolve(process.cwd(), "public", "voice-samples", "amina_reference.mp3");
+    if (fs.existsSync(aminaSample)) {
+      referencePath = aminaSample;
+    }
+  } else if (lookup === "zari") {
+    const zariSample = path.resolve(process.cwd(), "public", "voice-samples", "zari_reference.mp3");
+    if (fs.existsSync(zariSample)) {
+      referencePath = zariSample;
+    }
+  } else if (lookup === "gemini-aoede" || lookup === "aoede") {
+    const s = path.resolve(process.cwd(), "public", "voice-samples", "gemini_aoede_reference.mp3");
+    if (fs.existsSync(s)) referencePath = s;
+  } else if (lookup === "gemini-puck" || lookup === "puck") {
+    const s = path.resolve(process.cwd(), "public", "voice-samples", "gemini_puck_reference.mp3");
+    if (fs.existsSync(s)) referencePath = s;
+  } else if (lookup === "gemini-charon" || lookup === "charon") {
+    const s = path.resolve(process.cwd(), "public", "voice-samples", "gemini_charon_reference.mp3");
+    if (fs.existsSync(s)) referencePath = s;
+  } else if (lookup === "gemini-fenrir" || lookup === "fenrir") {
+    const s = path.resolve(process.cwd(), "public", "voice-samples", "gemini_fenrir_reference.mp3");
+    if (fs.existsSync(s)) referencePath = s;
+  } else if (lookup === "gemini-kore" || lookup === "kore") {
+    const s = path.resolve(process.cwd(), "public", "voice-samples", "gemini_kore_reference.mp3");
+    if (fs.existsSync(s)) referencePath = s;
+  } else {
+    // Check if a dedicated reference audio file exists for this persona
+    const personaSample = path.resolve(process.cwd(), "public", "voice-samples", `${lookup}_reference.mp3`);
+    const personaSampleUnderscore = path.resolve(process.cwd(), "public", "voice-samples", `${lookup.replace(/-/g, "_")}_reference.mp3`);
+    if (fs.existsSync(personaSample)) {
+      referencePath = personaSample;
+    } else if (fs.existsSync(personaSampleUnderscore)) {
+      referencePath = personaSampleUnderscore;
+    }
+  }
+
+  try {
+    let headers: Record<string, string> = {
+      "Authorization": `Bearer ${apiKey}`,
+      "model": "s2.1-pro-free",
+    };
+    let bodyData: any;
+
+    if (referencePath && fs.existsSync(referencePath)) {
+      // Inline Zero-Shot Cloning with exact voice reference bytes and matching transcript via msgpack
+      const refAudioBytes = fs.readFileSync(referencePath);
+      let referenceText = "";
+      const textFile = referencePath.replace(/\.mp3$/i, ".txt");
+      if (fs.existsSync(textFile)) {
+        referenceText = fs.readFileSync(textFile, "utf8").trim();
+      }
+
+      headers["Content-Type"] = "application/msgpack";
+      const payload = {
+        text: normalized,
+        references: [
+          {
+            audio: refAudioBytes,
+            text: referenceText,
+          },
+        ],
+        temperature: 0.6,
+        top_p: 0.7,
+        prosody: {
+          speed: 0.93,
+          volume: 0,
+        },
+        format: "mp3",
+        latency: "balanced",
+      };
+      bodyData = encode(payload);
+      console.log(`[audio-mastering] Sending inline zero-shot voice clone with reference (${refAudioBytes.length} bytes, voice: ${lookup}, transcriptLen: ${referenceText.length})`);
+    } else {
+      // Determine reference_id: explicit voice ID, persona-specific env, or default persistent model
+      let voiceId = explicitVoiceId && /^[a-f0-9]{32}$/i.test(explicitVoiceId) ? explicitVoiceId : "";
+      if (!voiceId) {
+        if (lookup.includes("sudi")) {
+          voiceId = getEnv("FISH_SUDI_VOICE_ID") || "ed2dfca6b6f440869006f9d3e721f3a3";
+        } else if (lookup.includes("sney")) {
+          voiceId = getEnv("FISH_SNEY_VOICE_ID") || "3b68e8a9193b45b7ac873c693c49b7ad";
+        } else if (lookup.includes("shax")) {
+          voiceId = getEnv("FISH_SHAX_VOICE_ID") || "4dc4683877cd4538b0ffe233885b5f4e";
+        } else if (lookup.includes("bwana")) {
+          voiceId = getEnv("FISH_BWANA_VOICE_ID") || "51b9c141b0e642fc9c5f30a5f89c2d31";
+        } else if (lookup.includes("malkia")) {
+          voiceId = getEnv("FISH_MALKIA_VOICE_ID") || "f53027b3260f4c7080c761effa6e6891";
+        } else if (lookup.includes("wigman")) {
+          voiceId = getEnv("FISH_WIGMAN_VOICE_ID") || "d4483baa705e4ff5bfe1831b6960359f";
+        } else if (lookup.includes("cheche")) {
+          voiceId = getEnv("FISH_CHECHE_VOICE_ID") || "6801890ec345469d8818129e5bdd50dd";
+        } else {
+          voiceId = getEnv("FISH_VOICE_ID") || "ed2dfca6b6f440869006f9d3e721f3a3";
+        }
+      }
+
+      headers["Content-Type"] = "application/json";
+      bodyData = JSON.stringify({
+        text: normalized,
+        reference_id: voiceId,
+        temperature: 0.6,
+        top_p: 0.7,
+        prosody: {
+          speed: 0.93,
+          volume: 0,
+        },
+        format: "mp3",
+        mp3_bitrate: 128,
+        latency: "normal",
+      });
+    }
+
+    const res = await fetch("https://api.fish.audio/v1/tts", {
+      method: "POST",
+      headers,
+      body: bodyData,
+      signal: AbortSignal.timeout(25000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[audio-mastering] Fish Audio (${res.status}): ${errText.slice(0, 120)}`);
+      return null;
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (buffer.length > 500) {
+      console.log(`[audio-mastering] Synthesized Fish Audio s2.1-pro-free (${buffer.length} bytes, voice: ${lookup})`);
+      return buffer;
+    }
+  } catch (err: any) {
+    console.warn(`[audio-mastering] Fish Audio error: ${err.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Synthesizes voice audio with multi-tier failover:
+ * Tier 1: Fish Audio s2.1-pro-free (expressive with emotions & phonetic normalization)
+ * Tier 2: Gemini 3.8 Flash TTS cascade
  */
 export async function synthesizeVoiceAudio(
   text: string,
-  voiceOrPersonaId = "Aoede"
+  voiceOrPersonaId = "Aoede",
+  explicitVoiceId?: string
 ): Promise<Buffer | null> {
+  // Tier 1: Try Fish Audio s2.1-pro-free first
+  try {
+    const fishBuffer = await synthesizeFishAudioTts(text, voiceOrPersonaId, explicitVoiceId);
+    if (fishBuffer && fishBuffer.length > 500) {
+      return fishBuffer;
+    }
+  } catch (err: any) {
+    console.warn("[audio-mastering] Fish Audio Tier 1 bypassed:", err?.message);
+  }
+
+  // Tier 2: Fallback to Gemini Flash TTS
   const geminiKey = getEnv("GEMINI_API_KEY") || process.env.GEMINI_API_KEY || "";
   if (!geminiKey) {
     console.warn("[audio-mastering] GEMINI_API_KEY not set in environment");
     return null;
   }
 
-  const cleanText = sanitizeScriptForTts(text);
+  const cleanText = normalizeRadioScriptForTts(sanitizeScriptForTts(text, false));
   if (!cleanText || cleanText.length < 3) {
     console.warn("[audio-mastering] Empty script text after sanitization");
     return null;

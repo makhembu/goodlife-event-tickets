@@ -19,6 +19,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
+import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 interface DropRecord {
   id: number;
@@ -139,6 +140,19 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
         targetTrack = library.find((s) => s.id === selectedTrackId);
       }
 
+      const personaIdMap: Record<string, string> = {
+        "DJ Fusion": "dj-fusion",
+        "DJ Sudi": "dj-sudi",
+        "DJ Sney": "dj-sney",
+        "MC Cheche": "mc-cheche",
+        "DJ Shax": "dj-shax",
+        "Amina": "amina",
+        "Bwana Mkubwa": "bwana-mkubwa",
+        "Malkia Kenya": "malkia-kenya",
+        "Wigman": "wigman",
+        "Zari": "zari",
+      };
+
       const res = await fetch("/api/radio/drops/dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,6 +164,7 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
           currentTrackTitle: data?.broadcast?.currentTrack?.title || "Airwave Anthem",
           currentTrackArtist: data?.broadcast?.currentTrack?.dj_name || "Goodlife Allstars",
           timingType: "outro",
+          preferredPersonaId: personaIdMap[genPersona] || "dj-fusion",
           preferredMood: genPersona === "Amina" ? "sensual" : genPersona === "MC Cheche" ? "comedic" : "hype",
           forceNew: true, // force a fresh generation
         }),
@@ -175,14 +190,26 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
 
   const getPersonaBadge = (persona: string) => {
     switch (persona) {
+      case "DJ Fusion":
+        return "bg-rose-500/20 text-rose-300 border-rose-500/40";
+      case "DJ Sudi":
+        return "bg-cyan-500/20 text-cyan-300 border-cyan-500/40";
+      case "DJ Sney":
+        return "bg-orange-500/20 text-orange-300 border-orange-500/40";
       case "DJ Shax":
         return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
       case "Amina":
         return "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40";
       case "MC Cheche":
         return "bg-amber-500/20 text-amber-300 border-amber-500/40";
+      case "Bwana Mkubwa":
+        return "bg-yellow-500/20 text-yellow-300 border-yellow-500/40";
+      case "Malkia Kenya":
+        return "bg-pink-500/20 text-pink-300 border-pink-500/40";
       case "Wigman":
         return "bg-sky-500/20 text-sky-300 border-sky-500/40";
+      case "Zari":
+        return "bg-teal-500/20 text-teal-300 border-teal-500/40";
       default:
         return "bg-brand-accent/20 text-brand-accent border-brand-accent/40";
     }
@@ -239,7 +266,7 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
               {data.broadcast?.currentTrack ? (
                 <div>
                   <h3 className="text-lg font-bold text-brand-off-white truncate font-sans">
-                    {data.broadcast.currentTrack.title}
+                    {formatTrackTitle(data.broadcast.currentTrack.title)}
                   </h3>
                   <p className="text-xs font-mono text-brand-accent truncate">
                     {data.broadcast.currentTrack.dj_name} · {data.broadcast.currentTrack.genre || "Afrobeats"}
@@ -276,7 +303,7 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
                 {data.broadcast?.nextTrack ? (
                   <div className="mt-2.5">
                     <h4 className="text-sm font-bold text-brand-off-white truncate">
-                      {data.broadcast.nextTrack.title}
+                      {formatTrackTitle(data.broadcast.nextTrack.title)}
                     </h4>
                     <p className="text-xs font-mono text-brand-accent/80 truncate">
                       {data.broadcast.nextTrack.dj_name}
@@ -402,11 +429,11 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
                   className="w-full bg-brand-navy border border-brand-navy-light text-brand-off-white text-xs font-mono p-2 rounded-lg"
                 >
                   <option value="next">
-                    [Upcoming Next Track] {data.broadcast?.nextTrack ? data.broadcast.nextTrack.title : "Default"}
+                    [Upcoming Next Track] {data.broadcast?.nextTrack ? formatTrackTitle(data.broadcast.nextTrack.title) : "Default"}
                   </option>
                   {library.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.title} ({s.dj_name})
+                      {formatTrackTitle(s.title)} ({s.dj_name})
                     </option>
                   ))}
                 </select>
@@ -421,10 +448,16 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
                   onChange={(e) => setGenPersona(e.target.value)}
                   className="w-full bg-brand-navy border border-brand-navy-light text-brand-off-white text-xs font-mono p-2 rounded-lg"
                 >
-                  <option value="DJ Shax">DJ Shax (Hype MC)</option>
-                  <option value="Amina">Amina (Sensual Queen)</option>
+                  <option value="DJ Fusion">DJ Fusion (Resident / 30%)</option>
+                  <option value="DJ Sudi">DJ Sudi (Swahili Drops)</option>
+                  <option value="DJ Sney">DJ Sney (Hype Mixtape)</option>
                   <option value="MC Cheche">MC Cheche (Slick Sheng)</option>
+                  <option value="DJ Shax">DJ Shax (Festival Hype)</option>
+                  <option value="Amina">Amina (Sunset Queen)</option>
+                  <option value="Bwana Mkubwa">Bwana Mkubwa (Baritone Swahili)</option>
+                  <option value="Malkia Kenya">Malkia Kenya (Vibrant Presenter)</option>
                   <option value="Wigman">Wigman (Club Commander)</option>
+                  <option value="Zari">Zari (Coastal Breeze)</option>
                 </select>
               </div>
 

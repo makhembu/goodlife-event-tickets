@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
-import { resolveCoverArt } from "@/lib/radio/media-helpers";
+import { resolveCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
 
     const sets = (setsRes.rows || []).map((s: any) => ({
       ...s,
+      title: formatTrackTitle(s.title),
       cover_url: resolveCoverArt(s.cover_url),
     }));
 

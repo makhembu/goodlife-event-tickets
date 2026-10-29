@@ -103,7 +103,7 @@ export async function verifyDropBeforePlayout(
       const liveEvents = await Promise.race([
         getPromotableEvents(now),
         new Promise<RadioPromotableEvent[]>((_, reject) =>
-          setTimeout(() => reject(new Error("DB timeout in Drop Gate")), 3000)
+          setTimeout(() => reject(new Error("DB timeout in Drop Gate")), 5000)
         ),
       ]);
 
