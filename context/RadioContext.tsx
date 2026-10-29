@@ -564,9 +564,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       // Background dynamic drop pre-fetch for upcoming track (airs between songs)
       if (clamped >= 3 && !isPrefetchingDropRef.current) {
-        const nextCandidate = (upNextQueue && upNextQueue.length > 0)
-          ? upNextQueue[0]
-          : (backupSetsRef.current.length > 1 ? backupSetsRef.current[1] : null);
+        let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+        if (!nextCandidate && backupSetsRef.current.length > 0) {
+          const sets = backupSetsRef.current;
+          const rawId = currentTrackIdRef.current || "";
+          const cleanId = rawId.replace(/^set-/, "");
+          let cIdx = sets.findIndex(
+            (s) => String(s.id) === cleanId || (audioRef.current && s.audio_url === audioRef.current.src)
+          );
+          if (cIdx === -1) cIdx = 0;
+          const nIdx = (cIdx + 1) % sets.length;
+          nextCandidate = sets[nIdx];
+        }
 
         if (nextCandidate && nextCandidate.title) {
           const nextKey = `${(nextCandidate as any).id || ""}-${nextCandidate.title}`;
@@ -997,7 +1006,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
 
     const dropAudio = dropAudioRef.current;
-    const drops = availableDropsRef.current.length > 0 ? availableDropsRef.current : DEFAULT_STATION_DROPS;
+    // Strictly dynamic drops: only air freshly generated AI voice drops, never stale hardcoded sweepers
+    const drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
     const audio = audioRef.current;
 
     // Determine upcoming track cleanly from backupSetsRef
@@ -1032,10 +1042,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
     );
 
-    // If no track-targeted drop, pick the next available from dynamic pool
-    if (!drop) {
-      drop = drops[currentDropIndexRef.current % drops.length];
-      currentDropIndexRef.current += 1;
+    // If no track-targeted drop, pick the most recent fresh dynamic drop
+    if (!drop && drops.length > 0) {
+      drop = drops[0];
+    }
+    // Remove the aired drop so every transition gets a fresh dynamic drop
+    if (drop) {
+      availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
     }
 
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;

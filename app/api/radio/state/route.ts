@@ -226,32 +226,8 @@ export async function GET() {
       }
     }
 
-      // Load active dynamic drops pool from Neon database
-      let activeDrops = DROPS;
-      try {
-        const dbDropsRes = await neonQuery(
-          `SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title, target_artist
-           FROM radio_drops
-           WHERE audio_url IS NOT NULL AND audio_url != ''
-           ORDER BY created_at DESC
-           LIMIT 25`
-        );
-        if (dbDropsRes.rows.length > 0) {
-          const loadedDrops = dbDropsRes.rows.map((r: any) => ({
-            id: `db-drop-${r.id}`,
-            title: r.title || `${r.persona || "GOODLIFE"} Drop`,
-            audio_url: r.audio_url,
-            persona: r.persona || "Station DJ",
-            mood: r.mood || "HYPE",
-            target_track_id: r.target_track_id,
-            target_track_title: r.target_track_title,
-            target_artist: r.target_artist,
-          }));
-          activeDrops = [...loadedDrops, ...DROPS];
-        }
-      } catch (dbErr: any) {
-        console.warn("[api/radio/state] Error loading dynamic drops from DB:", dbErr.message);
-      }
+      // Dynamic drops are generated live on-the-fly per track transition, not loaded from stale DB rows
+      const activeDrops: any[] = [];
 
     const payload = {
       enabled: settings.radio_enabled !== false,

@@ -135,7 +135,7 @@ Do not include backticks, markdown, or any introductory commentary.`;
   const user = `VERIFIED FACTS:
 ${JSON.stringify(facts, null, 2)}
 
-Time cap: ${introSeconds} seconds (maximum ${Math.round(introSeconds * 3.0)} words).
+Time cap: ${introSeconds} seconds (Keep it ultra-punchy: 15 to 25 words maximum).
 Do not repeat lines from recently aired drops:
 ${recentDrops.slice(-5).map((d, i) => `${i + 1}. "${d}"`).join("\n")}
 
@@ -168,7 +168,7 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
     return { valid: false, errors: ["Missing or invalid 'text' property in JSON"] };
   }
 
-  const text = parsed.text.trim();
+  let text = parsed.text.trim();
 
   // 1. Preambles and markdown
   if (/^(here is|sure|okay|here's|presenter:|dj:)/i.test(text)) {
@@ -183,7 +183,7 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
   if (words.length < 3) {
     errors.push("Drop text is too short (< 3 words)");
   }
-  const maxWords = Math.round(introSeconds * 3.2);
+  const maxWords = Math.max(50, Math.round(introSeconds * 4.5));
   if (words.length > maxWords) {
     errors.push(`Word count (${words.length}) exceeds intro cap (${maxWords})`);
   }
@@ -212,8 +212,10 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
 
     // Lineup check: if event has no confirmed lineup, model must not invent artists
     if (!facts.event.lineup || facts.event.lineup.length === 0) {
+      const nextArtist = (facts.next_track?.artist || "").toLowerCase();
       const suspiciousArtists = ["wakadinali", "sauti sol", "burna boy", "drake", "diamond", "otile"];
       for (const a of suspiciousArtists) {
+        if (nextArtist.includes(a)) continue;
         if (text.toLowerCase().includes(a)) {
           errors.push(`Invented unconfirmed artist: "${a}"`);
         }
@@ -273,15 +275,14 @@ async function callCascadingLlm(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              systemInstruction: { parts: [{ text: system }] },
-              contents: [{ parts: [{ text: user }] }],
+              contents: [{ role: "user", parts: [{ text: `${system}\n\n${user}` }] }],
               generationConfig: {
                 responseMimeType: "application/json",
                 temperature: 0.7,
-                maxOutputTokens: 250,
+                thinkingConfig: { thinkingBudget: 0 },
               },
             }),
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(3500),
           }
         );
         if (res.ok) {
@@ -478,6 +479,20 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
     spokenTicketUrl = "tickets on goodlife dot somewhere dot space";
   }
 
+  // Determine drop type
+  let resolvedDropType: RadioDropType = req.dropType || "station_id";
+  if (!req.dropType) {
+    if (req.nextTrack) {
+      resolvedDropType = "next_track_tease";
+    } else if (primaryEvent) {
+      resolvedDropType = primaryEvent.countdown_phrase === "today" ? "happening_now" : "event_countdown";
+    } else {
+      resolvedDropType = "station_id";
+    }
+  }
+
+  const includeEventTiers = resolvedDropType === "event_countdown" || resolvedDropType === "happening_now";
+
   // Build verified facts block
   const facts: DropVerifiedFacts = {
     station_callout: station.station_name,
@@ -493,11 +508,13 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
           countdown_phrase: primaryEvent.countdown_phrase,
           gates_open_phrase: primaryEvent.gates_open_phrase,
           spoken_ticket_url: spokenTicketUrl,
-          tiers: primaryEvent.tiers.map((t) => ({
-            name: t.name,
-            price: t.price,
-            price_spoken: t.price_spoken,
-          })),
+          tiers: includeEventTiers
+            ? primaryEvent.tiers.map((t) => ({
+                name: t.name,
+                price: t.price,
+                price_spoken: t.price_spoken,
+              }))
+            : [],
           lineup: primaryEvent.lineup,
           promo_blurb: primaryEvent.promo_blurb,
           facts_hash: primaryEvent.facts_hash,
@@ -505,18 +522,6 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
         }
       : undefined,
   };
-
-  // Determine drop type
-  let resolvedDropType: RadioDropType = req.dropType || "station_id";
-  if (!req.dropType) {
-    if (primaryEvent) {
-      resolvedDropType = primaryEvent.countdown_phrase === "today" ? "happening_now" : "event_countdown";
-    } else if (req.nextTrack) {
-      resolvedDropType = "next_track_tease";
-    } else {
-      resolvedDropType = "station_id";
-    }
-  }
 
   // Build prompt
   const { system, user } = buildDropPrompt(facts, introSeconds, recentScriptsCache);
@@ -532,7 +537,23 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   const llmRes = await callCascadingLlm(system, user);
 
   if (llmRes) {
-    const val = validateDropScript(llmRes.text, facts, introSeconds);
+    let candidateJson = llmRes.text;
+    try {
+      const match = candidateJson.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.text && typeof parsed.text === "string") {
+          parsed.text = parsed.text
+            .replace(/^((?:dj|presenter|host|mc)\s*[^:]{0,25}:\s*)/gi, "")
+            .replace(/^(here is|sure|okay|here's)\s*[:,-]?\s*/gi, "")
+            .replace(/^["']|["']$/g, "")
+            .trim();
+          candidateJson = JSON.stringify(parsed);
+        }
+      }
+    } catch {}
+
+    const val = validateDropScript(candidateJson, facts, introSeconds);
     if (val.valid && val.parsedJson) {
       chosenScript = val.parsedJson.text;
       chosenTag = val.parsedJson.tag || chosenTag;
