@@ -152,9 +152,37 @@ export async function synthesizeVoiceAudio(
 }
 
 /**
+ * Converts raw 16-bit PCM (24000Hz, mono) to valid RFC-compliant WAV audio buffer.
+ */
+export function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const dataSize = pcmBuffer.length;
+  const fileSize = dataSize + 36;
+
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(fileSize, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
+/**
  * Masters raw audio buffer to radio broadcast standards:
  * - Loudnorm: -14 LUFS integrated, -1.0 dBFS true peak, 7 LRA
- * - Resamples to 44.1 kHz, 192 kbps MP3
+ * - Resamples to 44.1 kHz, 192 kbps MP3 when ffmpeg is available
+ * - Falls back to valid RFC-compliant 24kHz WAV when ffmpeg is absent (e.g. Serverless)
  */
 export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
   const tmpDir = os.tmpdir();
@@ -168,6 +196,9 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
   const isId3 = rawBuffer.length > 3 && rawBuffer.subarray(0, 3).toString() === "ID3";
   const isMp3Sync = rawBuffer.length > 2 && rawBuffer[0] === 0xff && (rawBuffer[1] & 0xe0) === 0xe0;
   const isMp3 = isId3 || isMp3Sync;
+
+  // If input is raw PCM, convert to valid WAV buffer so browser can natively decode it immediately
+  const validBuffer = (isWav || isMp3) ? rawBuffer : pcmToWav(rawBuffer);
 
   const inExt = isWav ? "wav" : isMp3 ? "mp3" : "pcm";
   const inputPath = path.join(tmpDir, `${id}_in.${inExt}`);
@@ -186,7 +217,7 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
       return mastered;
     }
   } catch (err: any) {
-    console.warn("[audio-mastering] ffmpeg mastering fallback, using raw audio:", err.message);
+    console.warn("[audio-mastering] ffmpeg mastering fallback, using valid WAV buffer:", err.message);
   } finally {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
@@ -194,5 +225,5 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
     } catch {}
   }
 
-  return rawBuffer;
+  return validBuffer;
 }

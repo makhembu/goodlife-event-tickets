@@ -1133,6 +1133,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     try {
       dropAudio.src = drop.audio_url;
+      try { dropAudio.load(); } catch {}
       dropAudio.volume = isMutedRef.current ? 0 : volumeRef.current;
       dropAudio.addEventListener("ended", handleDropEnded);
       dropAudio.addEventListener("error", handleDropError);
@@ -1396,7 +1397,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       />
 
       {/* Kept inert for drop/soundboard pipeline compatibility */}
-      <audio ref={dropAudioRef} preload="none" playsInline />
+      <audio ref={dropAudioRef} preload="auto" playsInline />
     </RadioContext.Provider>
   );
 }
