@@ -990,7 +990,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [nowPlayingTrack]);
 
   
-  // 12B. Station Voice Drop Playout Pipeline (Airs between songs)
+  // 12B. Station Voice Drop Playout Pipeline (Talkover Bed between songs)
   const playDropAndAdvance = useCallback(async () => {
     if (engineStateRef.current === "paused" || !radioEnabledRef.current) {
       return;
@@ -1017,17 +1017,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const nextIdx = sets.length > 0 ? (currentIdx + 1) % sets.length : 0;
     const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
 
+    if (!nextTrack || !nextTrack.audio_url || !audio) {
+      attachAndPlayLiveStream();
+      return;
+    }
+
     // Try to find a drop specifically targeted for the upcoming track!
     let drop: RadioDrop | undefined;
-    if (nextTrack) {
-      const targetId = String(nextTrack.id);
-      const targetTitle = (nextTrack.title || "").toLowerCase();
-      drop = drops.find((d) =>
-        (d.target_track_id && String(d.target_track_id) === targetId) ||
-        (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase())) ||
-        (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
-      );
-    }
+    const targetId = String(nextTrack.id);
+    const targetTitle = (nextTrack.title || "").toLowerCase();
+    drop = drops.find((d) =>
+      (d.target_track_id && String(d.target_track_id) === targetId) ||
+      (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase())) ||
+      (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
+    );
 
     // If no track-targeted drop, pick the next available from dynamic pool
     if (!drop) {
@@ -1035,62 +1038,60 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       currentDropIndexRef.current += 1;
     }
 
-    let hasTransitioned = false;
-    const startNextSongSeamlessly = async () => {
-      if (hasTransitioned) return;
-      hasTransitioned = true;
+    const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
 
-      if (dropAudio) {
-        dropAudio.removeEventListener("ended", handleDropEnded);
-        dropAudio.removeEventListener("error", handleDropError);
+    // Advance metadata immediately to next track so listener sees the next song starting!
+    setNowPlayingTrack({
+      title: nextTrack.title,
+      artist: nextTrack.dj_name,
+      thumbnail: nextTrack.cover_url,
+      elapsed: 0,
+      duration: nextTrack.duration_sec || 180,
+      audio_url: nextTrack.audio_url,
+      video_id: `set-${nextTrack.id}`,
+    });
+    currentTrackIdRef.current = `set-${nextTrack.id}`;
+    setInterpolatedElapsed(0);
+    lastPollElapsedRef.current = 0;
+    lastPollTimestampRef.current = Date.now();
+
+    // Prepare incoming music track
+    audio.src = nextTrack.audio_url;
+    audio.currentTime = 0;
+
+    const hasDrop = Boolean(dropAudio && drop?.audio_url);
+
+    // Helper: Smooth volume swell when drop concludes (the broadcast beat drop)
+    let swellInterval: NodeJS.Timeout | null = null;
+    const swellMusicToFullVolume = () => {
+      if (swellInterval) clearInterval(swellInterval);
+      const startVol = audioRef.current ? audioRef.current.volume : duckedVol;
+      const target = isMutedRef.current ? 0 : volumeRef.current;
+      if (startVol >= target || target <= 0) {
+        if (audioRef.current) audioRef.current.volume = target;
+        return;
       }
-
-      if (nextTrack && nextTrack.audio_url && audioRef.current) {
-        const aud = audioRef.current;
-        setNowPlayingTrack({
-          title: nextTrack.title,
-          artist: nextTrack.dj_name,
-          thumbnail: nextTrack.cover_url,
-          elapsed: 0,
-          duration: nextTrack.duration_sec || 180,
-          audio_url: nextTrack.audio_url,
-          video_id: `set-${nextTrack.id}`,
-        });
-        currentTrackIdRef.current = `set-${nextTrack.id}`;
-        setInterpolatedElapsed(0);
-        lastPollElapsedRef.current = 0;
-        lastPollTimestampRef.current = Date.now();
-
-        aud.src = nextTrack.audio_url;
-        aud.currentTime = 0;
-
-        const targetVol = isMutedRef.current ? 0 : volumeRef.current;
-        aud.volume = Math.min(0.25, targetVol);
-
-        try {
-          await aud.play();
-          setIsPlaying(true);
-          setEngineState("live");
-
-          // Smooth 250ms volume swell
-          if (targetVol > 0.25) {
-            const startTime = Date.now();
-            const fadeTimer = setInterval(() => {
-              const progress = Math.min(1, (Date.now() - startTime) / 250);
-              if (audioRef.current) {
-                audioRef.current.volume = Math.min(targetVol, 0.25 + (targetVol - 0.25) * progress);
-              }
-              if (progress >= 1) clearInterval(fadeTimer);
-            }, 30);
-          }
-        } catch {
-          attachAndPlayLiveStream();
+      const startTime = Date.now();
+      const swellDuration = 400; // 400ms broadcast beat drop swell
+      swellInterval = setInterval(() => {
+        const progress = Math.min(1, (Date.now() - startTime) / swellDuration);
+        if (audioRef.current) {
+          audioRef.current.volume = startVol + (target - startVol) * progress;
         }
-      } else {
-        attachAndPlayLiveStream();
-      }
+        if (progress >= 1) {
+          if (swellInterval) clearInterval(swellInterval);
+          swellInterval = null;
+        }
+      }, 25);
+    };
 
-      // Drop concluded: release lock and clear drop states
+    const cleanupDropPlayout = () => {
+      if (dropAudio) {
+        dropAudio.removeEventListener("ended", onDropEnded);
+        dropAudio.removeEventListener("error", onDropError);
+      }
+      swellMusicToFullVolume();
       isDropPlayingRef.current = false;
       setIsDropPlaying(false);
       setActiveDropTitle(null);
@@ -1098,50 +1099,54 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setActiveMood(null);
     };
 
-    const handleDropEnded = async () => {
-      await startNextSongSeamlessly();
+    const onDropEnded = () => {
+      cleanupDropPlayout();
     };
 
-    const handleDropError = async () => {
-      console.warn("[RadioContext] Drop audio failed, advancing immediately");
-      await startNextSongSeamlessly();
+    const onDropError = () => {
+      console.warn("[RadioContext] Drop audio error, swelling music immediately");
+      cleanupDropPlayout();
     };
 
-    if (!dropAudio || !drop?.audio_url) {
-      await startNextSongSeamlessly();
-      return;
-    }
+    if (hasDrop && drop && dropAudio) {
+      // Broadcast talkover bed: incoming song starts ducked underneath the voice
+      audio.volume = duckedVol;
+      isDropPlayingRef.current = true;
+      setIsDropPlaying(true);
+      setActiveDropTitle(drop.title);
+      setActivePersona(drop.persona || "GOODLIFE DJ");
+      setActiveMood(drop.mood || "HYPE");
 
-    // Synchronously engage drop lock so polling loop cannot collide!
-    isDropPlayingRef.current = true;
-    setIsDropPlaying(true);
-    setActiveDropTitle(drop.title);
-    setActivePersona(drop.persona || "GOODLIFE DJ");
-    setActiveMood(drop.mood || "HYPE");
-
-    // Pause primary audio while drop airs, pre-buffer upcoming track
-    if (audio) {
+      // Start music bed immediately (zero dead air!)
       try {
-        audio.pause();
-        if (nextTrack?.audio_url) {
-          audio.src = nextTrack.audio_url;
-          audio.currentTime = 0;
-          audio.preload = "auto";
-        }
-      } catch {}
-    }
+        await audio.play();
+        setIsPlaying(true);
+        setEngineState("live");
+      } catch (err: any) {
+        console.warn("[RadioContext] Music play rejected:", err);
+      }
 
-    try {
-      dropAudio.src = drop.audio_url;
-      try { dropAudio.load(); } catch {}
-      dropAudio.volume = isMutedRef.current ? 0 : volumeRef.current;
-      dropAudio.addEventListener("ended", handleDropEnded);
-      dropAudio.addEventListener("error", handleDropError);
-
-      await dropAudio.play();
-    } catch (err) {
-      console.warn("[RadioContext] Drop play rejected, advancing immediately:", err);
-      await startNextSongSeamlessly();
+      // Start voice drop simultaneously over the ducked music bed
+      try {
+        dropAudio.src = drop.audio_url;
+        dropAudio.volume = masterVol;
+        dropAudio.addEventListener("ended", onDropEnded);
+        dropAudio.addEventListener("error", onDropError);
+        await dropAudio.play();
+      } catch (err) {
+        console.warn("[RadioContext] Drop play rejected, swelling music:", err);
+        cleanupDropPlayout();
+      }
+    } else {
+      // Direct track advance with no drop
+      audio.volume = masterVol;
+      try {
+        await audio.play();
+        setIsPlaying(true);
+        setEngineState("live");
+      } catch {
+        attachAndPlayLiveStream();
+      }
     }
   }, [attachAndPlayLiveStream]);
 
@@ -1167,7 +1172,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setIsMuted((prev) => {
       const next = !prev;
       if (audioRef.current) {
-        audioRef.current.volume = next ? 0 : volume;
+        if (isDropPlayingRef.current) {
+          audioRef.current.volume = next ? 0 : volume * 0.22;
+        } else {
+          audioRef.current.volume = next ? 0 : volume;
+        }
       }
       if (dropAudioRef.current) {
         dropAudioRef.current.volume = next ? 0 : volume;
@@ -1181,7 +1190,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setVolumeState(clamped);
     setIsMuted(false);
     if (audioRef.current) {
-      audioRef.current.volume = clamped;
+      if (isDropPlayingRef.current) {
+        audioRef.current.volume = clamped * 0.22;
+      } else {
+        audioRef.current.volume = clamped;
+      }
     }
     if (dropAudioRef.current) {
       dropAudioRef.current.volume = clamped;

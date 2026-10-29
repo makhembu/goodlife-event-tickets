@@ -199,4 +199,77 @@ export async function bridgeDeleteQueueItem(queueId: number | string) {
   );
 }
 
+/**
+ * Masters audio using native FFmpeg on Home Server (.29) via Bridge API.
+ * Applies EBU R128 loudness normalization (-14 LUFS, -1.0 dBFS True Peak, 7 LRA)
+ * and resamples to 44.1 kHz, 192 kbps broadcast MP3.
+ */
+export async function bridgeMasterAudioFfmpeg(
+  rawBuffer: Buffer,
+  options: {
+    inputFormat?: "auto" | "pcm" | "wav" | "mp3";
+    sampleRate?: number;
+    channels?: number;
+    targetLufs?: number;
+    timeoutMs?: number;
+  } = {}
+): Promise<Buffer | null> {
+  const { timestamp, signature } = signRequest("multipart");
+  const timeoutMs = options.timeoutMs || 12000;
+
+  // Prefer LAN IP if running in local network, fall back to Cloudflare tunnel
+  const candidateUrls = [
+    process.env.RADIO_BRIDGE_LAN_URL || "http://192.168.100.29:8283",
+    BRIDGE_BASE_URL,
+  ];
+
+  for (const baseUrl of candidateUrls) {
+    if (!baseUrl) continue;
+    const cleanBase = baseUrl.replace(/\/+$/, "");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const formData = new FormData();
+      formData.append("audio", new Blob([new Uint8Array(rawBuffer)]), "audio_input");
+      formData.append("input_format", options.inputFormat || "auto");
+      formData.append("sample_rate", String(options.sampleRate || 24000));
+      formData.append("channels", String(options.channels || 1));
+      formData.append("target_lufs", String(options.targetLufs || -14.0));
+
+      const res = await fetch(`${cleanBase}/api/radio/ffmpeg/master`, {
+        method: "POST",
+        headers: {
+          "X-Bridge-Timestamp": timestamp,
+          "X-Bridge-Signature": signature,
+          "X-Goodlife-Timestamp": timestamp,
+          "X-Goodlife-Radio-Key": signature,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("audio/") || ct.includes("octet-stream")) {
+          const ab = await res.arrayBuffer();
+          const masteredBuf = Buffer.from(ab);
+          if (masteredBuf.length > 500) {
+            console.log(`[bridge-client] Successfully mastered audio via .29 server FFmpeg (${masteredBuf.length} bytes)`);
+            return masteredBuf;
+          }
+        }
+      }
+    } catch {
+      clearTimeout(timer);
+      // Try next candidate URL
+    }
+  }
+
+  console.warn("[bridge-client] Remote FFmpeg mastering on .29 server failed or timed out");
+  return null;
+}
+
 export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };

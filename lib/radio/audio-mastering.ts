@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { bridgeMasterAudioFfmpeg } from "./bridge-client";
 
 const execAsync = promisify(exec);
 
@@ -181,8 +182,8 @@ export function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1,
 /**
  * Masters raw audio buffer to radio broadcast standards:
  * - Loudnorm: -14 LUFS integrated, -1.0 dBFS true peak, 7 LRA
- * - Resamples to 44.1 kHz, 192 kbps MP3 when ffmpeg is available
- * - Falls back to valid RFC-compliant 24kHz WAV when ffmpeg is absent (e.g. Serverless)
+ * - Resamples to 44.1 kHz, 192 kbps MP3 via local ffmpeg OR remote .29 home server FFmpeg
+ * - Falls back to valid RFC-compliant 24kHz WAV when ffmpeg is unavailable
  */
 export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
   const tmpDir = os.tmpdir();
@@ -197,27 +198,27 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
   const isMp3Sync = rawBuffer.length > 2 && rawBuffer[0] === 0xff && (rawBuffer[1] & 0xe0) === 0xe0;
   const isMp3 = isId3 || isMp3Sync;
 
-  // If input is raw PCM, convert to valid WAV buffer so browser can natively decode it immediately
+  // Fallback buffer if both local & remote FFmpeg fail
   const validBuffer = (isWav || isMp3) ? rawBuffer : pcmToWav(rawBuffer);
 
   const inExt = isWav ? "wav" : isMp3 ? "mp3" : "pcm";
   const inputPath = path.join(tmpDir, `${id}_in.${inExt}`);
   const outputPath = path.join(tmpDir, `${id}_out.mp3`);
 
+  // Tier 1: Try local ffmpeg if installed in environment
   try {
     fs.writeFileSync(inputPath, rawBuffer);
-
-    // If raw PCM from Gemini TTS, specify decoding format parameters
     const inputFlags = inExt === "pcm" ? "-f s16le -ar 24000 -ac 1" : "";
     const cmd = `ffmpeg -y -v error ${inputFlags} -i "${inputPath}" -af "loudnorm=I=-14:TP=-1.0:LRA=7" -ar 44100 -b:a 192k "${outputPath}"`;
     await execAsync(cmd, { timeout: 8000 });
 
     if (fs.existsSync(outputPath)) {
       const mastered = fs.readFileSync(outputPath);
+      console.log(`[audio-mastering] Mastered drop via local FFmpeg (${mastered.length} bytes)`);
       return mastered;
     }
-  } catch (err: any) {
-    console.warn("[audio-mastering] ffmpeg mastering fallback, using valid WAV buffer:", err.message);
+  } catch {
+    // Local ffmpeg not available (e.g. Vercel Serverless), cascade to .29 Home Server
   } finally {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
@@ -225,5 +226,24 @@ export async function masterDropAudio(rawBuffer: Buffer): Promise<Buffer> {
     } catch {}
   }
 
+  // Tier 2: Try .29 Ubuntu Home Server FFmpeg over LAN / Cloudflare Tunnel
+  try {
+    const remoteMastered = await bridgeMasterAudioFfmpeg(rawBuffer, {
+      inputFormat: inExt as any,
+      sampleRate: 24000,
+      channels: 1,
+      targetLufs: -14.0,
+      timeoutMs: 9000,
+    });
+    if (remoteMastered && remoteMastered.length > 500) {
+      console.log(`[audio-mastering] Mastered drop via .29 server FFmpeg (${remoteMastered.length} bytes MP3)`);
+      return remoteMastered;
+    }
+  } catch (bridgeErr: any) {
+    console.warn("[audio-mastering] .29 server FFmpeg error:", bridgeErr.message);
+  }
+
+  // Tier 3: Pure JS RFC-compliant WAV fallback
+  console.warn("[audio-mastering] FFmpeg cascade exhausted, using RFC WAV fallback");
   return validBuffer;
 }
