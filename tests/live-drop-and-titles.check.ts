@@ -23,6 +23,7 @@ const sampleDirtyTitles = [
   { raw: "Something About You feat  DJ Maphorisa & Kabza De Small (Official Audio) | ShaSha", expected: "Something About You feat DJ Maphorisa & Kabza De Small" },
   { raw: "Samthing Soweto - \"Lotto\" ft. Mlindo The Vocalist (Official Video)", expected: "Samthing Soweto - Lotto ft. Mlindo The Vocalist" },
   { raw: "01 - Master KG - Jerusalem [4K]", expected: "Master KG - Jerusalem" },
+  { raw: "Black Coffee & David Guetta - Drive feat. Delilah Montagu [Ultra Music]", expected: "Black Coffee & David Guetta - Drive feat. Delilah Montagu" },
 ];
 
 for (const sample of sampleDirtyTitles) {

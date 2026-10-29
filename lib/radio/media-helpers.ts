@@ -56,9 +56,9 @@ export function formatTrackTitle(title?: string | null): string {
 
   let cleaned = title.trim();
 
-  // 1. Strip bracketed or parenthesized video artifacts
+  // 1. Strip bracketed or parenthesized video artifacts & channel/label tags
   cleaned = cleaned.replace(
-    /\s*[\[\(](?:official\s+(?:music\s+)?video|official\s+audio|official\s+hd\s+video|official\s+video\s+hd|official\s+visualizer|official\s+lyric\s+video|lyric\s+video|official\s+lyrics|lyrics|visualizer|audio|explicit|clean|4k|hd|hq|extended\s+mix|original\s+mix)[\]\)]/gi,
+    /\s*[\[\(](?:official\s+(?:music\s+)?video|official\s+audio|official\s+hd\s+video|official\s+video\s+hd|official\s+visualizer|official\s+lyric\s+video|lyric\s+video|official\s+lyrics|lyrics|visualizer|audio|explicit|clean|4k|hd|hq|extended\s+mix|original\s+mix|[^\]\)]*(?:Records|Music|Entertainment|VEVO|Label|Productions?))[\]\)]/gi,
     ""
   );
 
