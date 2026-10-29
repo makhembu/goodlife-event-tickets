@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       {
         drop_url: drop.audio_url,
         script: drop.script,
-        title: `${drop.persona_name} · GOODLIFE Drop`,
+        title: `${drop.persona_name} · ${nextTrack?.title || "GOODLIFE Drop"}`,
         persona: drop.persona_name,
         mood: drop.tag,
         timingType: drop.drop_type === "next_track_tease" ? "intro" : "outro",

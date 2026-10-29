@@ -256,7 +256,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const availableDropsRef = useRef<RadioDrop[]>(DEFAULT_STATION_DROPS);
   const currentDropIndexRef = useRef<number>(0);
   const isDropPlayingRef = useRef(false);
-  isDropPlayingRef.current = isDropPlaying;
+  useEffect(() => {
+    isDropPlayingRef.current = isDropPlaying;
+  }, [isDropPlaying]);
   const lastPrefetchedTrackKeyRef = useRef<string | null>(null);
   const isPrefetchingDropRef = useRef<boolean>(false);
 
@@ -386,6 +388,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const fetchRadioLive = useCallback(async () => {
     if (isPollingRef.current) return;
     if (!radioEnabledRef.current) return;
+    if (isDropPlayingRef.current) return;
 
     isPollingRef.current = true;
     try {
@@ -995,135 +998,151 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     const dropAudio = dropAudioRef.current;
     const drops = availableDropsRef.current.length > 0 ? availableDropsRef.current : DEFAULT_STATION_DROPS;
-
-    // Determine expected next track to match dynamic track-targeted drops
-    const endedTrackId = currentTrackIdRef.current;
     const audio = audioRef.current;
-    let expectedNextTrack: RadioSet | null = null;
-    if (backupSetsRef.current.length > 0) {
-      const currentIdx = backupSetsRef.current.findIndex(
-        (s) => String(s.id) === endedTrackId || (audio && s.audio_url === audio.src) || (s.external_id && s.external_id === endedTrackId)
-      );
-      const nextIdx = (currentIdx + 1) % backupSetsRef.current.length;
-      expectedNextTrack = backupSetsRef.current[nextIdx];
-    }
 
-    // 1. Try to find a drop specifically targeted for the upcoming track!
+    // Determine upcoming track cleanly from backupSetsRef
+    const rawEndedId = currentTrackIdRef.current || "";
+    const cleanEndedId = rawEndedId.replace(/^set-/, "");
+    const sets = backupSetsRef.current;
+    let currentIdx = -1;
+    if (sets.length > 0) {
+      currentIdx = sets.findIndex(
+        (s) =>
+          String(s.id) === cleanEndedId ||
+          (audio && s.audio_url === audio.src) ||
+          (s.external_id && (s.external_id === rawEndedId || s.external_id === cleanEndedId))
+      );
+      if (currentIdx === -1) currentIdx = 0;
+    }
+    const nextIdx = sets.length > 0 ? (currentIdx + 1) % sets.length : 0;
+    const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
+
+    // Try to find a drop specifically targeted for the upcoming track!
     let drop: RadioDrop | undefined;
-    if (expectedNextTrack) {
-      const targetId = expectedNextTrack.id;
-      const targetTitle = (expectedNextTrack.title || "").toLowerCase();
+    if (nextTrack) {
+      const targetId = String(nextTrack.id);
+      const targetTitle = (nextTrack.title || "").toLowerCase();
       drop = drops.find((d) =>
-        (d.target_track_id && String(d.target_track_id) === String(targetId)) ||
+        (d.target_track_id && String(d.target_track_id) === targetId) ||
         (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase())) ||
         (d.title && targetTitle && targetTitle.includes(d.title.toLowerCase().replace(/·.*$/, "").trim()))
       );
     }
 
-    // 2. If no track-targeted drop, pick the next available from dynamic pool
+    // If no track-targeted drop, pick the next available from dynamic pool
     if (!drop) {
       drop = drops[currentDropIndexRef.current % drops.length];
       currentDropIndexRef.current += 1;
     }
 
-    const advanceToNextSong = async () => {
+    let hasTransitioned = false;
+    const startNextSongSeamlessly = async () => {
+      if (hasTransitioned) return;
+      hasTransitioned = true;
+
+      if (dropAudio) {
+        dropAudio.removeEventListener("ended", handleDropEnded);
+        dropAudio.removeEventListener("error", handleDropError);
+      }
+
+      if (nextTrack && nextTrack.audio_url && audioRef.current) {
+        const aud = audioRef.current;
+        setNowPlayingTrack({
+          title: nextTrack.title,
+          artist: nextTrack.dj_name,
+          thumbnail: nextTrack.cover_url,
+          elapsed: 0,
+          duration: nextTrack.duration_sec || 180,
+          audio_url: nextTrack.audio_url,
+          video_id: `set-${nextTrack.id}`,
+        });
+        currentTrackIdRef.current = `set-${nextTrack.id}`;
+        setInterpolatedElapsed(0);
+        lastPollElapsedRef.current = 0;
+        lastPollTimestampRef.current = Date.now();
+
+        aud.src = nextTrack.audio_url;
+        aud.currentTime = 0;
+
+        const targetVol = isMutedRef.current ? 0 : volumeRef.current;
+        aud.volume = Math.min(0.25, targetVol);
+
+        try {
+          await aud.play();
+          setIsPlaying(true);
+          setEngineState("live");
+
+          // Smooth 250ms volume swell
+          if (targetVol > 0.25) {
+            const startTime = Date.now();
+            const fadeTimer = setInterval(() => {
+              const progress = Math.min(1, (Date.now() - startTime) / 250);
+              if (audioRef.current) {
+                audioRef.current.volume = Math.min(targetVol, 0.25 + (targetVol - 0.25) * progress);
+              }
+              if (progress >= 1) clearInterval(fadeTimer);
+            }, 30);
+          }
+        } catch {
+          attachAndPlayLiveStream();
+        }
+      } else {
+        attachAndPlayLiveStream();
+      }
+
+      // Drop concluded: release lock and clear drop states
+      isDropPlayingRef.current = false;
       setIsDropPlaying(false);
       setActiveDropTitle(null);
       setActivePersona(null);
       setActiveMood(null);
-      const endedTrackId = currentTrackIdRef.current;
-      currentTrackIdRef.current = ""; // Clear current track ID so next song is recognized immediately
-      await fetchRadioLive();
+    };
 
-      const audio = audioRef.current;
-      if (audio) {
-        let nextTrack = null;
-        if (backupSetsRef.current.length > 0) {
-          const currentIdx = backupSetsRef.current.findIndex(
-            (s) => String(s.id) === endedTrackId || s.audio_url === audio.src || (s.external_id && s.external_id === endedTrackId)
-          );
-          const nextIdx = (currentIdx + 1) % backupSetsRef.current.length;
-          nextTrack = backupSetsRef.current[nextIdx];
-        }
+    const handleDropEnded = async () => {
+      await startNextSongSeamlessly();
+    };
 
-        if (nextTrack && nextTrack.audio_url) {
-          setNowPlayingTrack({
-            title: nextTrack.title,
-            artist: nextTrack.dj_name,
-            thumbnail: nextTrack.cover_url,
-            elapsed: 0,
-            duration: nextTrack.duration_sec || 180,
-            audio_url: nextTrack.audio_url,
-            video_id: `set-${nextTrack.id}`,
-          });
-          currentTrackIdRef.current = `set-${nextTrack.id}`;
-          setInterpolatedElapsed(0);
-          lastPollElapsedRef.current = 0;
-          lastPollTimestampRef.current = Date.now();
-          audio.src = nextTrack.audio_url;
-          audio.currentTime = 0;
-          try {
-            await audio.play();
-            setIsPlaying(true);
-            setEngineState("live");
-          } catch {
-            attachAndPlayLiveStream();
-          }
-        } else {
-          attachAndPlayLiveStream();
-        }
-      }
+    const handleDropError = async () => {
+      console.warn("[RadioContext] Drop audio failed, advancing immediately");
+      await startNextSongSeamlessly();
     };
 
     if (!dropAudio || !drop?.audio_url) {
-      await advanceToNextSong();
+      await startNextSongSeamlessly();
       return;
     }
 
-    if (audioRef.current) {
+    // Synchronously engage drop lock so polling loop cannot collide!
+    isDropPlayingRef.current = true;
+    setIsDropPlaying(true);
+    setActiveDropTitle(drop.title);
+    setActivePersona(drop.persona || "GOODLIFE DJ");
+    setActiveMood(drop.mood || "HYPE");
+
+    // Pause primary audio while drop airs, pre-buffer upcoming track
+    if (audio) {
       try {
-        audioRef.current.pause();
+        audio.pause();
+        if (nextTrack?.audio_url) {
+          audio.src = nextTrack.audio_url;
+          audio.currentTime = 0;
+          audio.preload = "auto";
+        }
       } catch {}
     }
 
     try {
-      setIsDropPlaying(true);
-      setActiveDropTitle(drop.title);
-      setActivePersona(drop.persona || null);
-      setActiveMood(drop.mood || null);
-
       dropAudio.src = drop.audio_url;
       dropAudio.volume = isMutedRef.current ? 0 : volumeRef.current;
-
-      const handleDropEnded = async () => {
-        dropAudio.removeEventListener("ended", handleDropEnded);
-        dropAudio.removeEventListener("error", handleDropError);
-        try {
-          dropAudio.removeAttribute("src");
-          dropAudio.load();
-        } catch {}
-        await advanceToNextSong();
-      };
-
-      const handleDropError = async () => {
-        dropAudio.removeEventListener("ended", handleDropEnded);
-        dropAudio.removeEventListener("error", handleDropError);
-        try {
-          dropAudio.removeAttribute("src");
-          dropAudio.load();
-        } catch {}
-        await advanceToNextSong();
-      };
-
       dropAudio.addEventListener("ended", handleDropEnded);
       dropAudio.addEventListener("error", handleDropError);
 
       await dropAudio.play();
     } catch (err) {
       console.warn("[RadioContext] Drop play rejected, advancing immediately:", err);
-      await advanceToNextSong();
+      await startNextSongSeamlessly();
     }
-  }, [fetchRadioLive, attachAndPlayLiveStream]);
+  }, [attachAndPlayLiveStream]);
 
   // 13. Public Control Actions
   const togglePlay = useCallback(() => {
@@ -1281,9 +1300,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [engineState, isStale]);
 
-  // Derived display values
-  const displayTitle = formatTrackTitle(nowPlayingTrack?.title || backupSets[0]?.title);
-  const displayArtist = nowPlayingTrack?.artist || backupSets[0]?.dj_name || null;
+  // Derived display values: while a station drop airs, display the drop metadata
+  const displayTitle = isDropPlaying && activeDropTitle
+    ? activeDropTitle
+    : formatTrackTitle(nowPlayingTrack?.title || backupSets[0]?.title);
+  const displayArtist = isDropPlaying && activePersona
+    ? activePersona
+    : (nowPlayingTrack?.artist || backupSets[0]?.dj_name || null);
   const displayCover = resolveCoverArt(nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url);
   const displayThought = nowPlayingTrack?.thought && nowPlayingTrack.thought.trim() !== "" ? nowPlayingTrack.thought.trim() : null;
   const displayDaypart = nowPlayingTrack?.daypart && nowPlayingTrack.daypart.trim() !== "" ? nowPlayingTrack.daypart.trim() : null;

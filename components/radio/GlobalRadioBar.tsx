@@ -161,7 +161,11 @@ export default function GlobalRadioBar() {
                 {isLive ? liveTitle : cleanedTrack.title}
               </p>
               <p className="text-[9px] text-brand-accent uppercase font-bold truncate">
-                {isLive ? "🔴 LIVE BROADCAST" : cleanedTrack.artist}
+                {isDropPlaying
+                  ? `🎙️ STATION DROP · ${activePersona || "GOODLIFE"}`
+                  : isLive
+                  ? "🔴 LIVE BROADCAST"
+                  : cleanedTrack.artist}
               </p>
             </div>
           </div>
@@ -269,7 +273,11 @@ export default function GlobalRadioBar() {
                 {isLive ? liveTitle : cleanedTrack.title}
               </p>
               <p className="text-xs text-brand-accent uppercase font-bold truncate">
-                {isLive ? "🔴 MAIN STAGE BROADCAST" : `BY ${cleanedTrack.artist}`}
+                {isDropPlaying
+                  ? `🎙️ STATION DROP · ${activePersona || "GOODLIFE"}`
+                  : isLive
+                  ? "🔴 MAIN STAGE BROADCAST"
+                  : `BY ${cleanedTrack.artist}`}
               </p>
             </div>
           </div>

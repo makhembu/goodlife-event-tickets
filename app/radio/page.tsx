@@ -600,6 +600,12 @@ export default function RadioPage() {
 
                     {/* Metadata & Mobile Play Button Row */}
                     <div className="min-w-0 flex-1">
+                      {isDropPlaying && (
+                        <div className="bg-brand-accent text-brand-navy font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 border border-brand-navy w-fit mb-1 animate-pulse">
+                          <Sparkles className="w-3 h-3 fill-brand-navy shrink-0" />
+                          <span>STATION DROP · {activePersona || "DJ"}</span>
+                        </div>
+                      )}
                       <h2 className="font-display text-2xl uppercase tracking-wide text-brand-off-white leading-tight line-clamp-2">
                         {displayTitle}
                       </h2>
