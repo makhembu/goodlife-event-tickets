@@ -477,8 +477,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (data.live_drop && data.live_drop.id && data.live_drop.id !== lastLiveDropIdRef.current) {
         lastLiveDropIdRef.current = data.live_drop.id;
         const dropFiredTime = data.live_drop.fired_at ? new Date(data.live_drop.fired_at).getTime() : Date.now();
-        const ageSec = Math.floor((Date.now() - dropFiredTime) / 1000);
-        if (ageSec <= 25 && isPlayingRef.current && audioRef.current && data.live_drop.audio_url) {
+        const ageSec = typeof data.live_drop.age_seconds === "number"
+          ? data.live_drop.age_seconds
+          : Math.abs(Math.floor((Date.now() - dropFiredTime) / 1000));
+        if (ageSec <= 90 && isPlayingRef.current && audioRef.current && data.live_drop.audio_url) {
           console.log(`[RadioContext] 🔴 Stream live drop detected: "${data.live_drop.title}" (${data.live_drop.persona})`);
           triggerLiveInjectedDrop(data.live_drop);
         }
@@ -519,10 +521,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      const cadenceMs = (isOnRadioPage && isPlaying) ? 3500 : pollBackoffMsRef.current;
       pollTimerRef.current = setTimeout(async () => {
         await fetchRadioLive();
         scheduleNextPoll();
-      }, pollBackoffMsRef.current);
+      }, cadenceMs);
     };
 
     const isOnRadioPage = pathname?.startsWith("/radio");
@@ -1109,7 +1112,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       dropAudio.addEventListener("error", onDropDone);
       dropAudio.src = liveDrop.audio_url;
       dropAudio.volume = masterVol;
-      dropAudio.play().catch(() => {
+      dropAudio.currentTime = 0;
+      dropAudio.play().catch((playErr) => {
+        console.warn("[RadioContext] Live drop play error:", playErr);
         onDropDone();
       });
     },

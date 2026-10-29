@@ -130,6 +130,7 @@ export interface RadioLiveBffResponse {
     script?: string;
     audio_url: string;
     fired_at?: string;
+    age_seconds?: number;
   } | null;
   target_duration_sec?: number;
 }

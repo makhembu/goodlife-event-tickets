@@ -16,9 +16,10 @@ let _cachedLiveState: LiveCachedState | null = null;
 async function queryRecentLiveDrop() {
   try {
     const dropRes = await neonQuery(
-      `SELECT id, persona, mood, title, script, audio_url, created_at
+      `SELECT id, persona, mood, title, script, audio_url, created_at,
+              ROUND(EXTRACT(EPOCH FROM (NOW() - created_at))) as age_seconds
        FROM radio_drops
-       WHERE timing_type = 'live_inject' AND created_at > NOW() - INTERVAL '20 seconds'
+       WHERE timing_type = 'live_inject' AND created_at > NOW() - INTERVAL '120 seconds'
        ORDER BY created_at DESC
        LIMIT 1`
     );
@@ -31,6 +32,7 @@ async function queryRecentLiveDrop() {
         script: d.script,
         audio_url: d.audio_url,
         fired_at: d.created_at,
+        age_seconds: Number(d.age_seconds) || 0,
       };
     }
   } catch {}
@@ -159,7 +161,7 @@ export async function GET() {
       return NextResponse.json(fallback, {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         },
       });
     }
@@ -176,7 +178,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         },
       }
     );
@@ -233,7 +235,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         },
       }
     );
@@ -266,7 +268,7 @@ export async function GET() {
       return NextResponse.json(fallback, {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         },
       });
     }
@@ -284,7 +286,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
         },
       }
     );
