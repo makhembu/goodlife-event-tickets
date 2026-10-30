@@ -78,13 +78,13 @@ export function wahaConfig() {
   const baseUrl = (
     process.env.WAHA_BASE_URL ||
     process.env.WHATSAPP_GATEWAY_URL ||
-    "https://waha.darajadigital.com"
+    "https://waha-ember.darajadigital.com"
   ).replace(/\/+$/, "");
 
   const apiKey =
     process.env.WAHA_API_KEY ||
     process.env.WHATSAPP_API_KEY ||
-    "";
+    "goodlife_waha_secret_2026";
 
   const sessionId =
     process.env.WAHA_SESSION_ID || process.env.WHATSAPP_SESSION_ID || "default";

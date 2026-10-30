@@ -31,7 +31,7 @@ export async function sendRadioAlert(options: SendAlertOptions): Promise<{ succe
   const severityTag = options.severity ? `[${options.severity}] ` : "";
   const fullText = `📻 *GOODLIFE Radio 254 Alert*\n${severityTag}${options.message}\n\n_Time: ${new Date().toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })} EAT_`;
 
-  const wahaBase = process.env.WAHA_GATEWAY_URL || "http://192.168.100.29:18000";
+  const wahaBase = process.env.WAHA_GATEWAY_URL || "https://waha-ember.darajadigital.com";
   const apiKey = process.env.WAHA_API_KEY || "goodlife_waha_secret_2026";
 
   try {
