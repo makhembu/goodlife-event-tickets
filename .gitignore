@@ -24,6 +24,8 @@ checkout-whatsapp-open.png
 /research/
 audit-shots/
 .test-screenshots/
+test-assets/
+public/test-evidence/
 
 .vercel
 

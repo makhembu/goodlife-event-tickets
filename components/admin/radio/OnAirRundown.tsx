@@ -52,7 +52,17 @@ export default function OnAirRundown() {
       if (res.ok) {
         const data = await res.json();
         setSets(Array.isArray(data.sets) ? data.sets : []);
-        setActiveSetId(data.active_set_id || null);
+        let activeId = data.active_set_id || null;
+        if (!activeId) {
+          try {
+            const liveRes = await fetch("/api/radio/live");
+            if (liveRes.ok) {
+              const liveData = await liveRes.json();
+              if (liveData?.now_playing?.id) activeId = liveData.now_playing.id;
+            }
+          } catch {}
+        }
+        setActiveSetId(activeId);
         setBroadcastMode(data.mode === "mania" ? "mania" : "autodj");
       }
     } catch (err) {

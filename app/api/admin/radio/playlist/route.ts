@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
 import { resolveCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
+import { computeLiveTimeline } from "@/lib/radio/timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +28,33 @@ export async function GET(req: NextRequest) {
     );
     const settings = settingsRes.rows[0] || {};
 
+    let activeSetId: number | null = null;
+    let mode: "autodj" | "mania" = settings.broadcast_mode === "mania" ? "mania" : "autodj";
+
+    if (mode === "mania" && settings.active_set_id) {
+      const maniaSet = sets.find((s: any) => s.id === Number(settings.active_set_id));
+      if (maniaSet) {
+        const trackDur = (maniaSet.duration_sec && maniaSet.duration_sec > 0) ? maniaSet.duration_sec : 180;
+        const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+        const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+        if (elapsed < trackDur) {
+          activeSetId = maniaSet.id;
+        } else {
+          mode = "autodj";
+        }
+      } else {
+        mode = "autodj";
+      }
+    }
+
+    if (mode === "autodj" && sets.length > 0) {
+      const timeline = computeLiveTimeline(sets);
+      activeSetId = sets[timeline.index]?.id || sets[0]?.id || null;
+    }
+
     return NextResponse.json({
-      mode: settings.broadcast_mode || "autodj",
-      active_set_id: settings.active_set_id || null,
+      mode,
+      active_set_id: activeSetId,
       sets,
     });
   } catch (err: any) {

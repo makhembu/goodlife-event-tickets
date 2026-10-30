@@ -41,6 +41,12 @@ export default function TransportBar({
   const [eatTime, setEatTime] = useState<string>("");
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
 
+  const currentAudioUrlRef = useRef<string>("");
+  const currentElapsedRef = useRef<number>(0);
+  const currentTrackIdRef = useRef<number | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+  isPlayingRef.current = isPlaying;
+
   // Meter levels for stereo VU
   const [meterLeft, setMeterLeft] = useState(14);
   const [meterRight, setMeterRight] = useState(12);
@@ -70,6 +76,9 @@ export default function TransportBar({
   useEffect(() => {
     const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
     audio.volume = isMuted ? 0 : volume * masterGain;
+    audio.onended = () => {
+      fetchTelemetry();
+    };
     setAudioEl(audio);
 
     return () => {
@@ -108,58 +117,101 @@ export default function TransportBar({
     return () => cancelAnimationFrame(animId);
   }, [isPlaying, statusState, isDucking]);
 
-  // Telemetry Poller: AzuraCast with fallback
-  useEffect(() => {
-    let active = true;
-    const fetchTelemetry = async () => {
-      try {
-        const res = await fetch("/api/admin/radio/azuracast/nowplaying");
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.online !== false && (data.now_playing?.song?.title || data.station)) {
-            if (active) {
-              setNowPlaying(data);
-              setStatusState("live");
+  // Telemetry Poller: Synchronized with /api/radio/live (identical source of truth as public listener player)
+  const fetchTelemetry = async () => {
+    // 1. AzuraCast bridge telemetry if present and active
+    try {
+      const res = await fetch("/api/admin/radio/azuracast/nowplaying");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.online !== false && (data.now_playing?.song?.title || data.station)) {
+          setNowPlaying(data);
+          setStatusState("live");
+          return;
+        }
+      }
+    } catch {}
+
+    // 2. Real-time BFF live playout endpoint (primary 24/7 truth)
+    try {
+      const liveRes = await fetch("/api/radio/live");
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        if (liveData && liveData.now_playing) {
+          const track = liveData.now_playing;
+          currentAudioUrlRef.current = track.audio_url || "";
+          currentElapsedRef.current = track.elapsed || 0;
+
+          // If local headphone monitor is active, sync audio src seamlessly if track changed
+          if (audioEl && isPlayingRef.current && track.audio_url) {
+            if (track.id !== currentTrackIdRef.current) {
+              currentTrackIdRef.current = track.id;
+              audioEl.src = track.audio_url;
+              audioEl.currentTime = track.elapsed || 0;
+              audioEl.play().catch(() => {});
             }
-            return;
+          } else if (track.id) {
+            currentTrackIdRef.current = track.id;
           }
-        }
-      } catch {}
 
-      // Fallback to internal radio state
-      try {
-        const stateRes = await fetch("/api/radio/state");
-        if (stateRes.ok && active) {
-          const stateData = await stateRes.json();
-          const activeSet = stateData.sets?.find((s: any) => s.id === stateData.broadcast?.active_set_id) || stateData.sets?.[0];
-          if (activeSet) {
-            setNowPlaying({
-              now_playing: {
-                song: {
-                  title: activeSet.title || "GOODLIFE Broadcast Mix",
-                  artist: activeSet.dj_name || "Resident Selector",
-                  art: "/flyer.png",
-                },
-                elapsed: stateData.broadcast?.offset_sec || 0,
-                duration: activeSet.duration_sec || 180,
-                is_live: false,
+          setNowPlaying({
+            now_playing: {
+              id: track.id,
+              song: {
+                title: track.title || "GOODLIFE Broadcast Mix",
+                artist: track.artist || "GOODLIFE Resident",
+                art: track.thumbnail || "/flyer.png",
               },
-              listeners: { total: 42, unique: 38 },
-              live: { is_live: false },
-            });
-            setStatusState("live");
-          }
+              elapsed: track.elapsed || 0,
+              duration: track.duration || 180,
+              audio_url: track.audio_url,
+              is_live: liveData.mode === "live",
+            },
+            listeners: { total: liveData.listeners_count ?? 0, unique: liveData.listeners_count ?? 0 },
+            live: { is_live: liveData.mode === "live" },
+          });
+          setStatusState("live");
+          return;
         }
-      } catch {}
-    };
+      }
+    } catch {}
 
+    // 3. Fallback to /api/radio/state if live is unavailable
+    try {
+      const stateRes = await fetch("/api/radio/state");
+      if (stateRes.ok) {
+        const stateData = await stateRes.json();
+        const activeSet = stateData.sets?.find((s: any) => s.id === stateData.broadcast?.active_set_id) || stateData.sets?.[0];
+        if (activeSet) {
+          setNowPlaying({
+            now_playing: {
+              id: activeSet.id,
+              song: {
+                title: activeSet.title || "GOODLIFE Broadcast Mix",
+                artist: activeSet.dj_name || "Resident Selector",
+                art: activeSet.cover_url || "/flyer.png",
+              },
+              elapsed: stateData.broadcast?.offset_sec || 0,
+              duration: activeSet.duration_sec || 180,
+              audio_url: activeSet.audio_url,
+              is_live: false,
+            },
+            listeners: { total: 0, unique: 0 },
+            live: { is_live: false },
+          });
+          setStatusState("live");
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
     fetchTelemetry();
     const interval = setInterval(fetchTelemetry, 3500);
     return () => {
-      active = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [audioEl]);
 
   const handleTogglePlay = () => {
     if (!audioEl) return;
@@ -167,7 +219,29 @@ export default function TransportBar({
       audioEl.pause();
       setIsPlaying(false);
     } else {
-      audioEl.play().then(() => setIsPlaying(true)).catch(() => {});
+      const targetSrc = (streamUrl && !streamUrl.includes("darajadigital"))
+        ? streamUrl
+        : currentAudioUrlRef.current;
+
+      if (!targetSrc) {
+        console.warn("[TransportBar] No audio stream available to monitor");
+        return;
+      }
+
+      if (audioEl.src !== targetSrc) {
+        audioEl.src = targetSrc;
+        if (!streamUrl && currentElapsedRef.current > 0) {
+          try {
+            audioEl.currentTime = currentElapsedRef.current;
+          } catch {}
+        }
+      }
+      audioEl
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.warn("[TransportBar] Monitor playback blocked or failed:", err);
+        });
     }
   };
 
@@ -181,10 +255,12 @@ export default function TransportBar({
         const res = await fetch("/api/admin/radio/azuracast/skip", { method: "POST" });
         if (!res.ok) console.warn("Skip failed");
       }
+      // Re-fetch telemetry immediately so the cockpit displays the new track in lockstep
+      await fetchTelemetry();
     } catch (err) {
       console.warn("Skip error:", err);
     } finally {
-      setTimeout(() => setIsSkipping(false), 2000);
+      setTimeout(() => setIsSkipping(false), 1500);
     }
   };
 

@@ -1147,34 +1147,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
     if (drops.length === 0) return;
 
-    // 2. Strict matching: Look for a drop verified for THIS upcoming track
-    let drop = drops.find((d) => {
+    // 2. Strict matching: ONLY play a drop specifically verified and targeted for THIS upcoming track
+    const drop = drops.find((d) => {
       const idMatch = d.target_track_id && String(d.target_track_id) === targetId;
       const titleMatch = d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim());
       return idMatch || titleMatch;
     });
 
-    // 3. Fallback ONLY to a generic station sweeper with NO track target and ZERO track/artist mentions
+    // 3. If no verified matching drop exists, DO NOT PLAY ANY DROP (prevents wrong song name / repeating DJ clips!)
     if (!drop) {
-      drop = drops.find((d) => {
-        if (d.target_track_id || d.target_track_title) return false;
-        const titleLower = (d.title || "").toLowerCase();
-        const scriptLower = (d.script || "").toLowerCase();
-        if (
-          titleLower.includes("big 7") ||
-          scriptLower.includes("big 7") ||
-          titleLower.includes("burna") ||
-          scriptLower.includes("burna")
-        ) {
-          return false;
-        }
-        return true;
-      });
-    }
-
-    // 4. If no verified matching drop exists, DO NOT PLAY ANY DROP (prevents wrong song name!)
-    if (!drop) {
-      console.log(`[RadioContext] ⏭️ Skipping 15s drop: No verified drop for upcoming track "${nextTrack.title}". Zero disconnect guaranteed.`);
+      console.log(`[RadioContext] ⏭️ Skipping 15s drop: No verified drop targeting "${nextTrack.title}". Clean musical transition.`);
       return;
     }
 
@@ -1322,32 +1304,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetId = String(nextTrack.id);
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    // 1. Strict match: Drop explicitly targeting THIS track by ID or title
+    // 1. Strict match ONLY: Drop explicitly targeting THIS track by ID or title
     drop = drops.find((d) =>
       (d.target_track_id && String(d.target_track_id) === targetId) ||
       (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
     );
 
-    // 2. If no track-specific drop, ONLY allow a generic station sweeper that has NO track target
-    // and does NOT mention any other track or artist in its title/script
-    if (!drop) {
-      drop = drops.find((d) => {
-        if (d.target_track_id || d.target_track_title) return false;
-        const titleLower = (d.title || "").toLowerCase();
-        const scriptLower = (d.script || "").toLowerCase();
-        if (
-          titleLower.includes("big 7") ||
-          scriptLower.includes("big 7") ||
-          titleLower.includes("burna") ||
-          scriptLower.includes("burna")
-        ) {
-          return false;
-        }
-        return true;
-      });
-    }
-
-    // 3. Remove the aired drop if matched; if no verified drop, play track immediately with NO drop!
+    // 2. Remove the aired drop if matched; if no verified drop targeting this track, transition cleanly with NO drop!
     if (drop) {
       availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
     }
