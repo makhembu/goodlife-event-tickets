@@ -230,9 +230,17 @@ export async function POST(request: NextRequest) {
         [reference]
       ).catch(() => {});
 
+      const isUpstreamError =
+        (stkRes.httpStatus && stkRes.httpStatus >= 500) ||
+        (stkRes.error && (stkRes.error.includes("HTTP 5") || stkRes.error.includes("sql_failed")));
+
+      const userMessage = isUpstreamError
+        ? "Payments are temporarily unavailable. Try again in a few minutes or message us on WhatsApp."
+        : (stkRes.error || "M-Pesa STK Push failed.");
+
       return NextResponse.json(
-        { error: stkRes.error || "M-Pesa STK Push failed." },
-        { status: 400 }
+        { error: userMessage },
+        { status: isUpstreamError ? 502 : 400 }
       );
     }
 
@@ -248,7 +256,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("PayHero initialize exception:", error);
     return NextResponse.json(
-      { error: "PayHero STK Push failed: " + error.message },
+      { error: "Payments are temporarily unavailable. Try again in a few minutes or message us on WhatsApp." },
       { status: 500 }
     );
   }

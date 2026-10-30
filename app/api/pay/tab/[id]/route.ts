@@ -256,14 +256,19 @@ export async function POST(
     });
 
     if (!stkRes.ok) {
+      const isUpstream =
+        (stkRes.httpStatus && stkRes.httpStatus >= 500) ||
+        (stkRes.error && (stkRes.error.includes("HTTP 5") || stkRes.error.includes("sql_failed")));
       return NextResponse.json(
         {
           success: false,
           checkout_request_id: externalReference,
           external_reference: externalReference,
-          message: stkRes.error || "M-Pesa STK Push request was rejected.",
+          message: isUpstream
+            ? "Payment service is temporarily unavailable. Please try again in a few moments."
+            : (stkRes.error || "M-Pesa STK Push request was rejected."),
         },
-        { status: 400 }
+        { status: isUpstream ? 502 : 400 }
       );
     }
 

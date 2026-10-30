@@ -133,7 +133,12 @@ export function payheroCallbackUrl(): string | undefined {
 export async function initiatePayheroStkPush(
   req: PayheroStkRequest
 ): Promise<{ ok: boolean; data?: PayheroInitiateResponse; error?: string; httpStatus: number }> {
-  const res = await fetch(`${PAYHERO_API}/payments`, {
+  const accountId = process.env.PAYHERO_ACCOUNT_ID || "12263";
+  const endpoint = accountId
+    ? `https://backend.payhero.co.ke/api/account/${accountId}/payments`
+    : `${PAYHERO_API}/payments`;
+
+  let res = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -141,6 +146,18 @@ export async function initiatePayheroStkPush(
     },
     body: JSON.stringify(req),
   });
+
+  // If account-scoped route returns 404, fallback to v2/payments
+  if (res.status === 404 && endpoint !== `${PAYHERO_API}/payments`) {
+    res = await fetch(`${PAYHERO_API}/payments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: payheroAuthHeader(),
+      },
+      body: JSON.stringify(req),
+    });
+  }
 
   let data: PayheroInitiateResponse = {};
   try {
@@ -151,6 +168,7 @@ export async function initiatePayheroStkPush(
 
   if (!res.ok) {
     const msg =
+      (data as any)?.error_message ||
       (data as any)?.message ||
       (typeof (data as any)?.error === "string" ? (data as any).error : undefined) ||
       `PayHero STK push failed (HTTP ${res.status})`;
@@ -158,7 +176,15 @@ export async function initiatePayheroStkPush(
   }
 
   if (data.status && String(data.status).toUpperCase() === "FAILED") {
-    return { ok: false, data, error: data.message || "PayHero rejected the STK push request.", httpStatus: res.status };
+    return {
+      ok: false,
+      data,
+      error:
+        (data as any)?.error_message ||
+        data.message ||
+        "PayHero rejected the STK push request.",
+      httpStatus: res.status,
+    };
   }
 
   return { ok: true, data, httpStatus: res.status };
@@ -189,7 +215,10 @@ export async function getPayheroTransactionStatus(
     return {
       ok: false,
       data,
-      error: (data as any)?.message || `PayHero status check failed (HTTP ${res.status})`,
+      error:
+        (data as any)?.error_message ||
+        (data as any)?.message ||
+        `PayHero status check failed (HTTP ${res.status})`,
     };
   }
   return { ok: true, data };

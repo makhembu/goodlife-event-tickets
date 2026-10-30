@@ -111,13 +111,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!stkRes.ok) {
+      const isUpstream =
+        (stkRes.httpStatus && stkRes.httpStatus >= 500) ||
+        (stkRes.error && (stkRes.error.includes("HTTP 5") || stkRes.error.includes("sql_failed")));
       return NextResponse.json(
         {
           success: false,
           reference: finalReference,
-          message: stkRes.error || "M-Pesa STK Push failed to initiate.",
+          message: isUpstream
+            ? "M-Pesa payment service is temporarily unavailable. Please try again or collect cash."
+            : (stkRes.error || "M-Pesa STK Push failed to initiate."),
         },
-        { status: 400 }
+        { status: isUpstream ? 502 : 400 }
       );
     }
 
