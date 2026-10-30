@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
 import { getRadioTelemetry } from "@/lib/radio/telemetry";
-import { computeLiveTimeline } from "@/context/RadioContext";
+import { computeLiveTimeline } from "@/lib/radio/timeline";
 
 export const dynamic = "force-dynamic";
 

@@ -163,28 +163,10 @@ const CACHED_SETS_KEY = "gl_radio_cached_sets";
 const DEFAULT_STATION_DROPS: RadioDrop[] = [];
 
 
-/**
- * Inert deterministic timeline math preserved strictly for historical vault set calculations.
- * Never called on the live stream path.
- */
+import { computeLiveTimeline as computeLiveTimelineCore } from "@/lib/radio/timeline";
+
 export function computeLiveTimeline(setsList: RadioSet[]): { index: number; offsetSec: number } {
-  if (!setsList || setsList.length === 0) return { index: 0, offsetSec: 0 };
-  let totalDurationSec = 0;
-  for (const s of setsList) {
-    totalDurationSec += s.duration_sec && s.duration_sec > 0 ? s.duration_sec : 180;
-  }
-  if (totalDurationSec === 0) return { index: 0, offsetSec: 0 };
-  const nowSec = Math.floor(Date.now() / 1000);
-  const cycleSec = nowSec % totalDurationSec;
-  let cumulative = 0;
-  for (let i = 0; i < setsList.length; i++) {
-    const dur = setsList[i].duration_sec && setsList[i].duration_sec > 0 ? setsList[i].duration_sec : 180;
-    if (cumulative + dur > cycleSec) {
-      return { index: i, offsetSec: cycleSec - cumulative };
-    }
-    cumulative += dur;
-  }
-  return { index: 0, offsetSec: 0 };
+  return computeLiveTimelineCore(setsList);
 }
 
 export function RadioProvider({ children }: { children: React.ReactNode }) {

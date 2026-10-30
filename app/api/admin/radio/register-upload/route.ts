@@ -8,19 +8,17 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const {
-      title,
-      dj_name,
-      audio_url,
-      r2_key,
-      cover_url,
-      duration_sec,
-      genre,
-      file_size,
-      bitrate,
-      event_id,
-      is_high_quality,
-    } = body;
+    const title = body.title;
+    const dj_name = body.dj_name || body.djName;
+    const audio_url = body.audio_url || body.audioUrl;
+    const r2_key = body.r2_key || body.r2Key || body.key || "";
+    const cover_url = body.cover_url || body.coverUrl || "";
+    const duration_sec = body.duration_sec ?? body.durationSec ?? 180;
+    const genre = body.genre || "Afro House";
+    const file_size = body.file_size ?? body.fileSize ?? 0;
+    const bitrate = body.bitrate ?? 192;
+    const event_id = body.event_id || body.eventId || 2;
+    const is_high_quality = body.is_high_quality ?? body.isHighQuality;
 
     if (!title || typeof title !== "string" || !title.trim()) {
       return NextResponse.json({ error: "Track title is required" }, { status: 400 });
