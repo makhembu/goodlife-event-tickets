@@ -169,6 +169,44 @@ export function computeLiveTimeline(setsList: RadioSet[]): { index: number; offs
   return computeLiveTimelineCore(setsList);
 }
 
+/**
+ * Safely seeks an HTMLAudioElement to a target live offset.
+ * In HTML5, setting currentTime while readyState === HAVE_NOTHING (0) is ignored
+ * by the browser and resets to 0. This helper listens for loadedmetadata / canplay
+ * to ensure the seek is applied as soon as the media timeline is ready, with
+ * fallback verification shortly after play begins.
+ */
+function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number) {
+  if (targetOffset <= 0) return;
+
+  let seekApplied = false;
+  const applySeek = () => {
+    if (seekApplied) return;
+    try {
+      const dur = audio.duration;
+      const maxSeek = dur && !isNaN(dur) && dur > 2 ? Math.min(targetOffset, dur - 1) : targetOffset;
+      if (maxSeek > 0) {
+        audio.currentTime = maxSeek;
+        seekApplied = true;
+      }
+    } catch (e) {
+      console.warn("[RadioContext] safeSeekAudio error:", e);
+    }
+  };
+
+  if (audio.readyState >= 1) {
+    applySeek();
+  } else {
+    const onReady = () => {
+      audio.removeEventListener("loadedmetadata", onReady);
+      audio.removeEventListener("canplay", onReady);
+      applySeek();
+    };
+    audio.addEventListener("loadedmetadata", onReady, { once: true });
+    audio.addEventListener("canplay", onReady, { once: true });
+  }
+}
+
 export function RadioProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
@@ -408,7 +446,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
               if (isOutroWindow || isStalledOrEnded) {
                 audio.src = track.audio_url;
-                audio.currentTime = track.elapsed || 0;
+                safeSeekAudio(audio, track.elapsed || 0);
                 audio.play().catch(() => {});
               }
             }
@@ -824,23 +862,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // Helper: Play the synchronized R2 festival track directly
     const playCurrentTrackAudio = async () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+
       let track = nowPlayingTrackRef.current;
-      if (!track || !track.audio_url) {
+      const timeSinceLastPoll = lastPollTimestampRef.current > 0
+        ? Math.max(0, (Date.now() - lastPollTimestampRef.current) / 1000)
+        : 0;
+      const isTrackStaleOrFinished = !track || !track.audio_url || (
+        Boolean(track.duration && track.duration > 0 && ((track.elapsed || 0) + timeSinceLastPoll) >= track.duration)
+      );
+
+      // If track is missing, or the song in memory finished while sitting on the page:
+      if (isTrackStaleOrFinished) {
         try {
-          const res = await fetch("/api/radio/live");
+          const res = await fetch(`/api/radio/live?t=${Date.now()}`, { cache: "no-store" });
           if (res.ok) {
             const data = await res.json();
             if (data.now_playing?.audio_url) {
-              track = data.now_playing;
+              track = {
+                ...data.now_playing,
+                title: formatTrackTitle(data.now_playing.title),
+              };
               setNowPlayingTrack(track);
+              if (track) {
+                lastPollElapsedRef.current = track.elapsed || 0;
+                lastPollTimestampRef.current = Date.now();
+                setInterpolatedElapsed(track.elapsed || 0);
+              }
             }
           }
-        } catch {}
+        } catch (e) {
+          console.warn("[RadioContext] Failed to fetch fresh live track for play:", e);
+        }
       }
 
       const activeAudioUrl = track?.audio_url || backupSetsRef.current[0]?.audio_url;
-      const audio = audioRef.current;
-      if (!activeAudioUrl || !audio) {
+      if (!activeAudioUrl) {
         setEngineState("offline");
         setIsPlaying(false);
         return;
@@ -851,16 +909,36 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setIsLive(true);
       notifyOtherTabsPlay();
 
+      // Compute precise live offset (accounting for seconds since poll was received)
+      let seekOffset = 0;
+      if (track?.elapsed !== undefined) {
+        const secondsSincePoll = lastPollTimestampRef.current > 0
+          ? Math.max(0, (Date.now() - lastPollTimestampRef.current) / 1000)
+          : 0;
+        seekOffset = (track.elapsed || 0) + secondsSincePoll;
+        if (track.duration && track.duration > 2) {
+          seekOffset = Math.min(seekOffset, track.duration - 1);
+        }
+        seekOffset = Math.max(0, seekOffset);
+      }
+
       audio.src = activeAudioUrl;
-      const seekOffset = track?.elapsed || 0;
-      try {
-        audio.currentTime = seekOffset;
-      } catch {}
       audio.volume = isMutedRef.current ? 0 : volumeRef.current;
+
+      safeSeekAudio(audio, seekOffset);
 
       try {
         await audio.play();
         setIsPlaying(true);
+        // Fallback check: If browser audio decoder started at 0 despite seekOffset,
+        // snap it to the live offset once playing begins
+        if (seekOffset > 2) {
+          setTimeout(() => {
+            if (audioRef.current && isPlayingRef.current && audioRef.current.currentTime < 1.0) {
+              safeSeekAudio(audioRef.current, seekOffset);
+            }
+          }, 250);
+        }
       } catch (err: any) {
         if (err?.name === "NotAllowedError") {
           setEngineState("idle");
