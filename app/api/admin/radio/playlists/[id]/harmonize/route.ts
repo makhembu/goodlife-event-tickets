@@ -166,7 +166,7 @@ export async function POST(
           score -= 40;
         }
 
-        // 4. Energy progression if both tracks have energy
+        // 4. RMS Loudness proxy continuity (1-10 scale derived from audio RMS amplitude)
         if (cand.energy && prev.energy) {
           const energyDiff = Math.abs(cand.energy - prev.energy);
           if (energyDiff <= 1) score += 15;

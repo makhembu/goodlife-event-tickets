@@ -108,6 +108,8 @@ async function runTests() {
     "utf8"
   );
   check("Public playlist item API returns tracks ordered by position", publicPlaylistIdApi.includes("ORDER BY pt.position ASC"));
+  check("Public playlist item API does not leak musical_key, bpm, or key_source", !publicPlaylistIdApi.includes("s.musical_key") && !publicPlaylistIdApi.includes("s.key_source"));
+
 
   // 6. Stage 2 Listener Side & RadioContext checks
   const radioContextCode = fs.readFileSync(

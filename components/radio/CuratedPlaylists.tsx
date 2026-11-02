@@ -42,10 +42,6 @@ export interface PlaylistTrackDetail {
   duration: string;
   duration_sec: number;
   genre: string | null;
-  bpm?: number | null;
-  musical_key?: string | null;
-  energy?: number | null;
-  key_source?: string | null;
   bitrate: number;
 }
 
@@ -527,21 +523,9 @@ export default function CuratedPlaylists() {
                                   >
                                     {formatTrackTitle(track.title)}
                                   </p>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <p className="font-mono text-[11px] text-brand-navy/70 uppercase truncate">
-                                      {track.dj_name}
-                                    </p>
-                                    {track.musical_key && (
-                                      <span className="px-1 py-0.5 bg-brand-navy/10 text-brand-navy font-mono font-bold text-[9px] rounded shrink-0">
-                                        {track.musical_key}
-                                      </span>
-                                    )}
-                                    {track.bpm && (
-                                      <span className="font-mono text-[9px] text-brand-navy/50 shrink-0">
-                                        {track.bpm} BPM
-                                      </span>
-                                    )}
-                                  </div>
+                                  <p className="font-mono text-[11px] text-brand-navy/70 uppercase truncate mt-0.5">
+                                    {track.dj_name}
+                                  </p>
                                 </div>
                               </div>
 
