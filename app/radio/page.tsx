@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
+import CuratedPlaylists from "@/components/radio/CuratedPlaylists";
 import { resolveCoverArt, resolveFallbackCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
 import { resolveEventFlyer } from "@/lib/event-flyer";
 import { isEventSellable } from "@/lib/event-availability";
@@ -51,6 +52,7 @@ export default function RadioPage() {
     engineState,
     isPlaying,
     isLive,
+    activePlaylist,
     title,
     artist,
     coverUrl,
@@ -66,6 +68,7 @@ export default function RadioPage() {
     togglePlay,
     toggleMute,
     setVolume,
+    snapToBroadcast,
   } = useRadio();
 
   // Cover image fallback state (never render broken raw <img>)
@@ -79,8 +82,8 @@ export default function RadioPage() {
   // Share state
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // View toggle between Live Broadcast Station and Festival Set Vault
-  const [activeView, setActiveView] = useState<"live" | "vault">("live");
+  // View toggle between Live Broadcast Station, Curated Tapes/Playlists, and Festival Set Vault
+  const [activeView, setActiveView] = useState<"live" | "playlists" | "vault">("live");
 
   // Reset cover error on track change
   useEffect(() => {
@@ -362,7 +365,7 @@ export default function RadioPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Switcher: Live vs Vault */}
+            {/* View Switcher: Live vs Playlists vs Vault */}
             <div className="flex border-2 border-brand-navy bg-brand-off-white rounded overflow-hidden shadow-(--shadow-brut-xs)">
               <button
                 type="button"
@@ -374,6 +377,20 @@ export default function RadioPage() {
                 }`}
               >
                 LIVE STATION
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView("playlists")}
+                className={`px-3 py-1 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeView === "playlists"
+                    ? "bg-brand-navy text-brand-off-white"
+                    : "text-brand-navy hover:bg-brand-accent"
+                }`}
+              >
+                <span>PLAYLISTS</span>
+                {activePlaylist && !isLive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-ping" />
+                )}
               </button>
               <button
                 type="button"
@@ -431,6 +448,36 @@ export default function RadioPage() {
         {/* ========================================================================= */}
         {activeView === "live" && (
           <div className="space-y-6">
+            {/* If currently playing an on-demand tape, show quick return pill */}
+            {activePlaylist && !isLive && (
+              <div className="p-3 bg-brand-navy text-white border-3 border-brand-navy rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-(--shadow-brut-sm)">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-brand-accent animate-ping shrink-0" />
+                  <span className="font-mono text-xs uppercase truncate text-brand-off-white">
+                    PLAYING ON-DEMAND PLAYLIST:{" "}
+                    <strong className="text-brand-accent">{activePlaylist.name}</strong>{" "}
+                    (TRACK {activePlaylist.trackIndex + 1} OF {activePlaylist.tracks.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveView("playlists")}
+                    className="px-3 py-1 bg-white text-brand-navy font-mono text-xs font-bold uppercase border border-brand-navy hover:bg-brand-accent transition-colors cursor-pointer"
+                  >
+                    VIEW TAPE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={snapToBroadcast}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-mono text-xs font-bold uppercase border border-brand-navy transition-colors cursor-pointer"
+                  >
+                    RETURN TO LIVE BROADCAST
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* HERO DECK CONSOLE (THE CENTERPIECE) */}
             <div className="relative border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl) rounded-2xl p-4 sm:p-6 lg:p-8 overflow-hidden">
               {/* Subtle ambient glow */}
@@ -966,7 +1013,16 @@ export default function RadioPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB VIEW 2: FESTIVAL SET VAULT (ARCHIVED DJ SETS)                         */}
+        {/* TAB VIEW 2: CURATED PLAYLISTS / TAPES                                     */}
+        {/* ========================================================================= */}
+        {activeView === "playlists" && (
+          <div className="space-y-4">
+            <CuratedPlaylists />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB VIEW 3: FESTIVAL SET VAULT (ARCHIVED DJ SETS)                         */}
         {/* ========================================================================= */}
         {activeView === "vault" && (
           <div className="space-y-4">

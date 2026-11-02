@@ -101,7 +101,37 @@ async function runTests() {
   );
   check("Public playlist item API returns tracks ordered by position", publicPlaylistIdApi.includes("ORDER BY pt.position ASC"));
 
-  // 6. Playout math unit simulation
+  // 6. Stage 2 Listener Side & RadioContext checks
+  const radioContextCode = fs.readFileSync(
+    path.join(process.cwd(), "context/RadioContext.tsx"),
+    "utf8"
+  );
+  check("RadioContext exports ActivePlaylist interface", radioContextCode.includes("export interface ActivePlaylist"));
+  check("RadioContextType exposes activePlaylist state", radioContextCode.includes("activePlaylist: ActivePlaylist | null"));
+  check("RadioContextType exposes playPlaylist method", radioContextCode.includes("playPlaylist: (playlistId: number, startTrackIndex?: number) => Promise<void>"));
+  check("RadioContext implements playPlaylist on-demand", radioContextCode.includes("const playPlaylist = useCallback") && radioContextCode.includes("/api/radio/playlists/"));
+  check("RadioContext advances tracks within playlist", radioContextCode.includes("activePlaylistRef.current"));
+  check("RadioContext switchToLive resets activePlaylist", radioContextCode.includes("setActivePlaylist(null)") && radioContextCode.includes("activePlaylistRef.current = null"));
+
+  const curatedPlaylistsCode = fs.readFileSync(
+    path.join(process.cwd(), "components/radio/CuratedPlaylists.tsx"),
+    "utf8"
+  );
+  check("CuratedPlaylists component exists and imports useRadio", curatedPlaylistsCode.includes("useRadio") && curatedPlaylistsCode.includes("CuratedPlaylists"));
+  check("CuratedPlaylists fetches public playlists", curatedPlaylistsCode.includes("/api/radio/playlists"));
+  check("CuratedPlaylists supports on-demand playPlaylist trigger", curatedPlaylistsCode.includes("playPlaylist(playlistId"));
+  check("CuratedPlaylists displays ordered tracklists", curatedPlaylistsCode.includes("ORDERED TRACKLIST") && curatedPlaylistsCode.includes("formatTrackTitle"));
+
+  const listenerPageCode = fs.readFileSync(
+    path.join(process.cwd(), "app/radio/page.tsx"),
+    "utf8"
+  );
+  check("Radio page imports CuratedPlaylists", listenerPageCode.includes("CuratedPlaylists"));
+  check("Radio page supports 'playlists' view switcher", listenerPageCode.includes('"playlists"') && listenerPageCode.includes("PLAYLISTS"));
+  check("Radio page renders CuratedPlaylists component", listenerPageCode.includes("<CuratedPlaylists />"));
+  check("Radio page displays on-demand tape status banner", listenerPageCode.includes("PLAYING ON-DEMAND PLAYLIST") || listenerPageCode.includes("PLAYING ON-DEMAND TAPE"));
+
+  // 7. Playout math unit simulation
   const nowSec = 1700000000;
   const activatedAtSec = 1700000000; // Just activated right now
   const totalDurationSec = 600; // 10 minute playlist

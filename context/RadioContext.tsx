@@ -34,6 +34,17 @@ import {
   SongSearchLink,
 } from "@/lib/radio/media-helpers";
 
+export interface ActivePlaylist {
+  id: number;
+  name: string;
+  slug?: string;
+  description?: string;
+  cover_url?: string;
+  genre?: string;
+  trackIndex: number;
+  tracks: RadioSet[];
+}
+
 export interface RadioContextType {
   // Playback engine state machine
   engineState: RadioEngineState;
@@ -79,6 +90,9 @@ export interface RadioContextType {
   activeMood: string | null;
   isDropPlaying: boolean;
 
+  // Curated Playlist support
+  activePlaylist: ActivePlaylist | null;
+
   // User Actions
   togglePlay: () => void;
   retry: () => void;
@@ -89,6 +103,7 @@ export interface RadioContextType {
   switchToLive: () => void;
   switchToCurated: () => void;
   playSet: (set: RadioSet) => void;
+  playPlaylist: (playlistId: number, startTrackIndex?: number) => Promise<void>;
   snapToBroadcast: () => void;
   nextTrack: () => void;
   prevTrack: () => void;
@@ -137,6 +152,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   activePersona: null,
   activeMood: null,
   isDropPlaying: false,
+  activePlaylist: null,
   togglePlay: () => {},
   retry: () => {},
   toggleMute: () => {},
@@ -146,6 +162,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   switchToLive: () => {},
   switchToCurated: () => {},
   playSet: () => {},
+  playPlaylist: async () => {},
   snapToBroadcast: () => {},
   nextTrack: () => {},
   prevTrack: () => {},
@@ -241,6 +258,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [backupSets, setBackupSets] = useState<RadioSet[]>([]);
   const [currentBackupIndex, setCurrentBackupIndex] = useState(0);
   const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Active Curated Playlist State
+  const [activePlaylist, setActivePlaylist] = useState<ActivePlaylist | null>(null);
+  const activePlaylistRef = useRef<ActivePlaylist | null>(null);
+  activePlaylistRef.current = activePlaylist;
   // Station Drops Playout State
   const [isDropPlaying, setIsDropPlaying] = useState(false);
   const [activeDropTitle, setActiveDropTitle] = useState<string | null>(null);
@@ -381,6 +403,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (isPollingRef.current) return;
     if (!radioEnabledRef.current) return;
     if (isDropPlayingRef.current) return;
+    if (!isLiveRef.current) return;
 
     isPollingRef.current = true;
     try {
@@ -1286,7 +1309,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // Determine upcoming track cleanly from backupSetsRef
     const rawEndedId = currentTrackIdRef.current || "";
-    const cleanEndedId = rawEndedId.replace(/^set-/, "");
+    const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
     const sets = backupSetsRef.current;
     let currentIdx = -1;
     if (sets.length > 0) {
@@ -1302,12 +1325,22 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
 
     if (!nextTrack || !nextTrack.audio_url || !audio) {
+      if (activePlaylistRef.current) return;
       attachAndPlayLiveStream();
       return;
     }
 
+    if (activePlaylistRef.current) {
+      const pl = activePlaylistRef.current;
+      setActivePlaylist({ ...pl, trackIndex: nextIdx });
+    }
+
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
     const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+
+    const trackVideoId = activePlaylistRef.current
+      ? `pl-${activePlaylistRef.current.id}-${nextTrack.id}`
+      : `set-${nextTrack.id}`;
 
     // Advance metadata immediately to next track so listener sees the next song starting!
     setNowPlayingTrack({
@@ -1317,9 +1350,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       elapsed: 0,
       duration: nextTrack.duration_sec || 180,
       audio_url: nextTrack.audio_url,
-      video_id: `set-${nextTrack.id}`,
+      video_id: trackVideoId,
     });
-    currentTrackIdRef.current = `set-${nextTrack.id}`;
+    currentTrackIdRef.current = trackVideoId;
     setInterpolatedElapsed(0);
     lastPollElapsedRef.current = 0;
     lastPollTimestampRef.current = Date.now();
@@ -1332,7 +1365,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       sets[(nextIdx + 3) % sets.length],
     ].filter(Boolean).map((t) => ({
       id: t.id,
-      video_id: `set-${t.id}`,
+      video_id: activePlaylistRef.current ? `pl-${activePlaylistRef.current.id}-${t.id}` : `set-${t.id}`,
       title: formatTrackTitle(t.title),
       artist: t.dj_name,
       duration: t.duration_sec || 180,
@@ -1510,6 +1543,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const switchToLive = useCallback(() => {
+    setActivePlaylist(null);
+    activePlaylistRef.current = null;
     setIsLive(true);
     attachAndPlayLiveStream();
   }, [attachAndPlayLiveStream]);
@@ -1523,6 +1558,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const playSet = useCallback(
     (set: RadioSet) => {
       teardownPlayback();
+      setActivePlaylist(null);
+      activePlaylistRef.current = null;
       setIsLive(false);
       setEngineState("live");
       setIsPlaying(true);
@@ -1544,6 +1581,103 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (audioRef.current) {
         audioRef.current.src = set.audio_url;
         audioRef.current.play().catch(() => setEngineState("error"));
+      }
+    },
+    [teardownPlayback]
+  );
+
+  // Curated Playlist on-demand playback
+  const playPlaylist = useCallback(
+    async (playlistId: number, startTrackIndex = 0) => {
+      try {
+        teardownPlayback();
+        const res = await fetch(`/api/radio/playlists/${playlistId}`);
+        if (!res.ok) throw new Error("Failed to load playlist");
+        const data = await res.json();
+        if (!data.success || !Array.isArray(data.tracks) || data.tracks.length === 0) {
+          throw new Error("Empty playlist or playlist not found");
+        }
+
+        const playlistTracks: RadioSet[] = data.tracks.map((t: any) => ({
+          id: t.id,
+          event_id: t.event_id || 0,
+          title: t.title,
+          dj_name: t.dj_name || data.playlist.name,
+          audio_url: t.audio_url,
+          audio_high_url: t.audio_high_url || null,
+          cover_url: t.cover_url || data.playlist.cover_url || "/flyer.png",
+          duration: t.duration || "0:00",
+          duration_sec: t.duration_sec || 180,
+          genre: t.genre || data.playlist.genre || "Amapiano",
+          bitrate: t.bitrate || 192,
+          is_active: true,
+        }));
+
+        const safeIndex = Math.max(0, Math.min(startTrackIndex, playlistTracks.length - 1));
+        const selectedTrack = playlistTracks[safeIndex];
+
+        const plInfo: ActivePlaylist = {
+          id: data.playlist.id,
+          name: data.playlist.name,
+          slug: data.playlist.slug,
+          description: data.playlist.description,
+          cover_url: data.playlist.cover_url,
+          genre: data.playlist.genre,
+          trackIndex: safeIndex,
+          tracks: playlistTracks,
+        };
+
+        setActivePlaylist(plInfo);
+        activePlaylistRef.current = plInfo;
+        setBackupSets(playlistTracks);
+        setCurrentBackupIndex(safeIndex);
+
+        setIsLive(false);
+        setEngineState("live");
+        setIsPlaying(true);
+        notifyOtherTabsPlay();
+
+        const trackVideoId = `pl-${data.playlist.id}-${selectedTrack.id}`;
+        setNowPlayingTrack({
+          title: formatTrackTitle(selectedTrack.title),
+          artist: selectedTrack.dj_name,
+          thumbnail: selectedTrack.cover_url,
+          elapsed: 0,
+          duration: selectedTrack.duration_sec || 180,
+          audio_url: selectedTrack.audio_url,
+          video_id: trackVideoId,
+        });
+        currentTrackIdRef.current = trackVideoId;
+        setInterpolatedElapsed(0);
+        lastPollElapsedRef.current = 0;
+        lastPollTimestampRef.current = Date.now();
+
+        // Queue next tracks from playlist
+        const upcomingQueue = [
+          playlistTracks[(safeIndex + 1) % playlistTracks.length],
+          playlistTracks[(safeIndex + 2) % playlistTracks.length],
+          playlistTracks[(safeIndex + 3) % playlistTracks.length],
+        ]
+          .filter(Boolean)
+          .map((t) => ({
+            id: t.id,
+            video_id: `pl-${data.playlist.id}-${t.id}`,
+            title: formatTrackTitle(t.title),
+            artist: t.dj_name,
+            duration: t.duration_sec || 180,
+            thumbnail: t.cover_url,
+          }));
+        setUpNextQueue(upcomingQueue);
+
+        if (audioRef.current) {
+          audioRef.current.src = selectedTrack.audio_url;
+          audioRef.current.currentTime = 0;
+          audioRef.current.volume = isMutedRef.current ? 0 : volumeRef.current;
+          await audioRef.current.play();
+        }
+      } catch (err) {
+        console.error("[RadioContext] playPlaylist error:", err);
+        setEngineState("error");
       }
     },
     [teardownPlayback]
@@ -1595,12 +1729,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     const nextIdx = (currentBackupIndex + 1) % backupSets.length;
     setCurrentBackupIndex(nextIdx);
+    if (activePlaylistRef.current) {
+      setActivePlaylist({ ...activePlaylistRef.current, trackIndex: nextIdx });
+    }
     const track = backupSets[nextIdx];
     if (audio && track) {
       // Discard any prefetched drops that were targeted for the old skipped track
       availableDropsRef.current = availableDropsRef.current.filter(
         (d) => !d.target_track_id || String(d.target_track_id) === String(track.id)
       );
+
+      const trackVideoId = activePlaylistRef.current
+        ? `pl-${activePlaylistRef.current.id}-${track.id}`
+        : `set-${track.id}`;
 
       setNowPlayingTrack({
         title: formatTrackTitle(track.title),
@@ -1609,9 +1750,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         elapsed: 0,
         duration: track.duration_sec || 180,
         audio_url: track.audio_url,
-        video_id: `set-${track.id}`,
+        video_id: trackVideoId,
       });
-      currentTrackIdRef.current = `set-${track.id}`;
+      currentTrackIdRef.current = trackVideoId;
       setInterpolatedElapsed(0);
       lastPollElapsedRef.current = 0;
       lastPollTimestampRef.current = Date.now();
@@ -1623,7 +1764,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         backupSets[(nextIdx + 3) % backupSets.length],
       ].filter(Boolean).map((t) => ({
         id: t.id,
-        video_id: `set-${t.id}`,
+        video_id: activePlaylistRef.current ? `pl-${activePlaylistRef.current.id}-${t.id}` : `set-${t.id}`,
         title: formatTrackTitle(t.title),
         artist: t.dj_name,
         duration: t.duration_sec || 180,
@@ -1646,9 +1787,31 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (backupSets.length === 0) return;
     const prevIdx = (currentBackupIndex - 1 + backupSets.length) % backupSets.length;
     setCurrentBackupIndex(prevIdx);
+    if (activePlaylistRef.current) {
+      setActivePlaylist({ ...activePlaylistRef.current, trackIndex: prevIdx });
+    }
     const track = backupSets[prevIdx];
     if (audioRef.current && track) {
+      const trackVideoId = activePlaylistRef.current
+        ? `pl-${activePlaylistRef.current.id}-${track.id}`
+        : `set-${track.id}`;
+
+      setNowPlayingTrack({
+        title: formatTrackTitle(track.title),
+        artist: track.dj_name,
+        thumbnail: track.cover_url,
+        elapsed: 0,
+        duration: track.duration_sec || 180,
+        audio_url: track.audio_url,
+        video_id: trackVideoId,
+      });
+      currentTrackIdRef.current = trackVideoId;
+      setInterpolatedElapsed(0);
+      lastPollElapsedRef.current = 0;
+      lastPollTimestampRef.current = Date.now();
+
       audioRef.current.src = track.audio_url;
+      audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }
   }, [backupSets, currentBackupIndex]);
@@ -1740,6 +1903,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         activePersona,
         activeMood,
         isDropPlaying,
+        activePlaylist,
         togglePlay,
         retry,
         toggleMute,
@@ -1749,6 +1913,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         switchToLive,
         switchToCurated,
         playSet,
+        playPlaylist,
         snapToBroadcast,
         nextTrack,
         prevTrack,
