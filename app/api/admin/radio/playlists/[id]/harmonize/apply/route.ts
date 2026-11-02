@@ -84,6 +84,19 @@ export async function POST(
     );
     const snapshotId = snapshotRes.rows[0]?.id;
 
+    // Cap snapshots to the latest 20 per playlist to prevent unbounded table growth
+    await neonQuery(
+      `DELETE FROM radio_playlist_order_snapshots 
+       WHERE playlist_id = $1 
+         AND id NOT IN (
+           SELECT id FROM radio_playlist_order_snapshots 
+           WHERE playlist_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT 20
+         )`,
+      [playlistId]
+    );
+
     // 5. Atomic rewrite of positions using unnest
     const newPositions = proposedIds.map((_, idx) => idx);
     await neonQuery(

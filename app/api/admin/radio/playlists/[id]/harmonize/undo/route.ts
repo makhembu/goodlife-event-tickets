@@ -16,6 +16,12 @@ export async function POST(
   }
 
   try {
+    let reanchorBroadcast = false;
+    try {
+      const body = await req.json();
+      reanchorBroadcast = !!body?.reanchorBroadcast;
+    } catch {}
+
     // 1. Fetch latest snapshot
     const snapRes = await neonQuery(
       `SELECT id, track_ids, created_at 
@@ -74,10 +80,28 @@ export async function POST(
       [snapshot.id]
     );
 
+    // 5. Handle on-air re-anchoring if requested
+    const playlistRes = await neonQuery(
+      `SELECT is_broadcast_active FROM radio_playlists WHERE id = $1`,
+      [playlistId]
+    );
+    const isBroadcastActive = playlistRes.rows[0]?.is_broadcast_active || false;
+
+    let reanchored = false;
+    if (isBroadcastActive && reanchorBroadcast) {
+      await neonQuery(
+        `UPDATE radio_playlists SET activated_at = NOW() WHERE id = $1`,
+        [playlistId]
+      );
+      reanchored = true;
+    }
+
     return NextResponse.json({
       success: true,
       restoredTrackCount: restoredIds.length,
       snapshotTimestamp: snapshot.created_at,
+      reanchored,
+      isBroadcastActive,
     });
   } catch (err: any) {
     console.error("[api/admin/radio/playlists/[id]/harmonize/undo] Error:", err);

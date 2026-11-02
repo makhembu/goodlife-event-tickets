@@ -63,7 +63,8 @@ export default function HarmonizeModal({
   const [unindexedTracks, setUnindexedTracks] = useState<any[]>([]);
   const [fullSetAnchors, setFullSetAnchors] = useState<any[]>([]);
   const [selectedOpenerId, setSelectedOpenerId] = useState<number | null>(null);
-  const [reanchorBroadcast, setReanchorBroadcast] = useState(playlist.is_broadcast_active);
+  // Default unchecked so admins never accidentally reset broadcast clock on apply
+  const [reanchorBroadcast, setReanchorBroadcast] = useState(false);
   const [applying, setApplying] = useState(false);
 
   // Eligible opener candidates (indexed tracks only)

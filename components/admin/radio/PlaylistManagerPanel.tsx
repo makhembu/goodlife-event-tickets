@@ -84,14 +84,28 @@ export default function PlaylistManagerPanel({
 
   const handleUndoReorder = async () => {
     if (!selectedPlaylistId) return;
+    let reanchor = false;
+    if (selectedPlaylist?.is_broadcast_active) {
+      reanchor = confirm(
+        "This playlist is currently LIVE ON AIR.\n\nDo you want to re-anchor the broadcast timeline to Track #1 upon restoring?\n\nClick OK to re-anchor to Track #1, or Cancel to keep current timeline offset."
+      );
+    }
     try {
       const res = await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/harmonize/undo`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reanchorBroadcast: reanchor }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showBanner(`Restored previous track order (${data.restoredTrackCount} tracks)`, "success");
+        showBanner(
+          `Restored previous track order (${data.restoredTrackCount} tracks)${data.reanchored ? " · Broadcast re-anchored to #1" : ""}`,
+          "success"
+        );
         fetchPlaylistDetails(selectedPlaylistId);
+        if (data.reanchored && onRefreshLive) {
+          onRefreshLive();
+        }
       } else {
         showBanner(data.error || "No previous order snapshot available to undo", "error");
       }

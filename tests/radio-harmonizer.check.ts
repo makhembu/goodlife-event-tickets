@@ -23,7 +23,9 @@ async function runTests() {
   console.log("Starting Radio Harmonizer (Option A) verification...\n");
 
   // 1. Migration and Schema Checks
-  const migrationPath = path.join(process.cwd(), "scripts/migrations/20261102_radio_harmonizer.sql");
+  const migrationPath = fs.existsSync(path.join(process.cwd(), "migrations/20261102_radio_harmonizer.sql"))
+    ? path.join(process.cwd(), "migrations/20261102_radio_harmonizer.sql")
+    : path.join(process.cwd(), "scripts/migrations/20261102_radio_harmonizer.sql");
   if (fs.existsSync(migrationPath)) {
     check("Migration file exists", true);
     const migrationCode = fs.readFileSync(migrationPath, "utf8");
