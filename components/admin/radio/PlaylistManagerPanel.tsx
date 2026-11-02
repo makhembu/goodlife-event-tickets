@@ -17,8 +17,10 @@ import {
   Check,
   RadioTower,
   Sparkles,
+  Undo2,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
+import HarmonizeModal from "./HarmonizeModal";
 
 export interface PlaylistSummary {
   id: number;
@@ -45,6 +47,10 @@ export interface PlaylistTrack {
   duration: string;
   duration_sec: number;
   genre: string;
+  bpm?: number | null;
+  musical_key?: string | null;
+  energy?: number | null;
+  is_full_set?: boolean;
 }
 
 interface PlaylistManagerPanelProps {
@@ -72,8 +78,27 @@ export default function PlaylistManagerPanel({
 
   // Add tracks selector state
   const [showAddTracks, setShowAddTracks] = useState(false);
+  const [showHarmonizeModal, setShowHarmonizeModal] = useState(false);
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  const handleUndoReorder = async () => {
+    if (!selectedPlaylistId) return;
+    try {
+      const res = await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/harmonize/undo`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showBanner(`Restored previous track order (${data.restoredTrackCount} tracks)`, "success");
+        fetchPlaylistDetails(selectedPlaylistId);
+      } else {
+        showBanner(data.error || "No previous order snapshot available to undo", "error");
+      }
+    } catch {
+      showBanner("Network error restoring previous order", "error");
+    }
+  };
 
   const fetchPlaylists = async () => {
     try {
@@ -527,17 +552,38 @@ export default function PlaylistManagerPanel({
               </div>
 
               {/* Action Toolbar */}
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-black uppercase tracking-wider text-neutral-400">
                   Tracklist Sequence (Plays In This Order On Air)
                 </span>
-                <button
-                  onClick={() => setShowAddTracks(!showAddTracks)}
-                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {showAddTracks ? "Close Selector" : "Add Tracks from Library"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowHarmonizeModal(true)}
+                    disabled={selectedPlaylistTracks.length < 2}
+                    className="px-3 py-1.5 bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/25 text-[#DFBB7D] border border-[#DFBB7D]/40 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all disabled:opacity-30 shadow-[1px_1px_0px_#DFBB7D]"
+                    title="Order tracks by Camelot key wheel & tempo progression"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Harmonize Tracklist</span>
+                  </button>
+
+                  <button
+                    onClick={handleUndoReorder}
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all"
+                    title="Undo last reorder from database snapshot"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    <span>Undo</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddTracks(!showAddTracks)}
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {showAddTracks ? "Close Selector" : "Add Tracks"}
+                  </button>
+                </div>
               </div>
 
               {/* Add Tracks Drawer */}
@@ -638,9 +684,34 @@ export default function PlaylistManagerPanel({
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-white truncate">{track.title}</div>
-                        <div className="text-xs text-neutral-400 truncate">
-                          {track.dj_name} • <span className="text-neutral-500">{track.genre}</span>
+                        <div className="text-sm font-bold text-white truncate flex items-center gap-2">
+                          <span>{track.title}</span>
+                          {track.is_full_set && (
+                            <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-black uppercase">
+                              DJ MIX
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-neutral-400 truncate flex items-center gap-2 mt-0.5">
+                          <span>{track.dj_name}</span>
+                          <span className="text-neutral-600">•</span>
+                          <span className="text-neutral-500">{track.genre}</span>
+                          {track.musical_key && (
+                            <>
+                              <span className="text-neutral-600">•</span>
+                              <span className="text-emerald-400 font-mono font-bold text-[10px]">
+                                {track.musical_key}
+                              </span>
+                            </>
+                          )}
+                          {track.bpm && (
+                            <>
+                              <span className="text-neutral-600">•</span>
+                              <span className="text-neutral-400 font-mono text-[10px]">
+                                {track.bpm} BPM
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -786,6 +857,23 @@ export default function PlaylistManagerPanel({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Harmonize Tracklist Review & Diff Modal */}
+      {selectedPlaylist && (
+        <HarmonizeModal
+          playlist={selectedPlaylist}
+          tracks={selectedPlaylistTracks}
+          isOpen={showHarmonizeModal}
+          onClose={() => setShowHarmonizeModal(false)}
+          onApplied={() => {
+            showBanner(`Harmonized playlist "${selectedPlaylist.name}" successfully!`, "success");
+            fetchPlaylistDetails(selectedPlaylist.id);
+            if (selectedPlaylist.is_broadcast_active && onRefreshLive) {
+              onRefreshLive();
+            }
+          }}
+        />
       )}
     </div>
   );

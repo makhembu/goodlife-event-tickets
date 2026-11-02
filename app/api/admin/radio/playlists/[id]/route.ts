@@ -40,6 +40,10 @@ export async function GET(
         s.duration,
         s.duration_sec,
         s.genre,
+        s.bpm,
+        s.musical_key,
+        s.energy,
+        s.is_full_set,
         s.external_id
       FROM radio_playlist_tracks pt
       JOIN radio_sets s ON s.id = pt.track_id

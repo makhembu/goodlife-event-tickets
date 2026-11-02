@@ -26,6 +26,10 @@ export interface RadioSet {
   display_order: number;
   is_active: boolean;
   play_count: number;
+  bpm?: number | null;
+  musical_key?: string | null;
+  energy?: number | null;
+  is_full_set?: boolean;
   created_at: string;
   deleted_at?: string | null;
 }

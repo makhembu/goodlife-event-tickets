@@ -718,8 +718,27 @@ export default function AdminRadioPage() {
                     </button>
 
                     <div className="truncate">
-                      <div className="font-bold text-white truncate">{formatTrackTitle(set.title)}</div>
-                      <div className="text-[10px] text-[#DFBB7D]">{set.dj_name} · {set.genre}</div>
+                      <div className="font-bold text-white truncate flex items-center space-x-2">
+                        <span className="truncate">{formatTrackTitle(set.title)}</span>
+                        {set.is_full_set && (
+                          <span className="px-1.5 py-0.2 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[8px] font-mono font-bold uppercase shrink-0">
+                            DJ MIX
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-[#DFBB7D] flex items-center space-x-2 truncate">
+                        <span>{set.dj_name} · {set.genre}</span>
+                        {set.musical_key && (
+                          <span className="px-1 py-0.2 bg-[#DFBB7D]/20 text-[#DFBB7D] border border-[#DFBB7D]/40 font-mono font-bold text-[9px] shrink-0">
+                            {set.musical_key}
+                          </span>
+                        )}
+                        {set.bpm && (
+                          <span className="text-white/60 font-mono text-[9px] shrink-0">
+                            {set.bpm} BPM
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

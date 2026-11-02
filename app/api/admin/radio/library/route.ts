@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (action === "update") {
-      const { id, title, dj_name, genre, is_active } = body;
+      const { id, title, dj_name, genre, is_active, bpm, musical_key, energy, is_full_set } = body;
       if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
       const updates: string[] = [];
@@ -80,6 +80,46 @@ export async function PATCH(req: NextRequest) {
       if (is_active !== undefined) {
         updates.push(`is_active = $${pIdx++}`);
         params.push(Boolean(is_active));
+      }
+      if (bpm !== undefined) {
+        if (bpm === null || bpm === "") {
+          updates.push(`bpm = NULL`);
+        } else {
+          const numBpm = Number(bpm);
+          if (isNaN(numBpm) || numBpm < 40 || numBpm > 250) {
+            return NextResponse.json({ error: "BPM must be between 40 and 250" }, { status: 400 });
+          }
+          updates.push(`bpm = $${pIdx++}`);
+          params.push(Math.round(numBpm));
+        }
+      }
+      if (musical_key !== undefined) {
+        if (musical_key === null || musical_key === "") {
+          updates.push(`musical_key = NULL`);
+        } else {
+          const keyStr = String(musical_key).trim().toUpperCase();
+          if (!/^(1[0-2]|[1-9])[AB]$/.test(keyStr)) {
+            return NextResponse.json({ error: "Key must be in Camelot format (1A to 12B)" }, { status: 400 });
+          }
+          updates.push(`musical_key = $${pIdx++}`);
+          params.push(keyStr);
+        }
+      }
+      if (energy !== undefined) {
+        if (energy === null || energy === "") {
+          updates.push(`energy = NULL`);
+        } else {
+          const numEnergy = Number(energy);
+          if (isNaN(numEnergy) || numEnergy < 1 || numEnergy > 10) {
+            return NextResponse.json({ error: "Energy must be between 1 and 10" }, { status: 400 });
+          }
+          updates.push(`energy = $${pIdx++}`);
+          params.push(Math.round(numEnergy));
+        }
+      }
+      if (is_full_set !== undefined) {
+        updates.push(`is_full_set = $${pIdx++}`);
+        params.push(Boolean(is_full_set));
       }
 
       if (updates.length === 0) {
