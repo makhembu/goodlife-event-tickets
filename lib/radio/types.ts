@@ -30,6 +30,7 @@ export interface RadioSet {
   musical_key?: string | null;
   energy?: number | null;
   is_full_set?: boolean;
+  key_source?: 'manual' | 'tunebat' | 'analyzed' | null;
   created_at: string;
   deleted_at?: string | null;
 }

@@ -44,6 +44,7 @@ export async function GET(
         s.musical_key,
         s.energy,
         s.is_full_set,
+        s.key_source,
         s.external_id
       FROM radio_playlist_tracks pt
       JOIN radio_sets s ON s.id = pt.track_id

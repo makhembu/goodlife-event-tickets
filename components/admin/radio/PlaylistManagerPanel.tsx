@@ -51,6 +51,7 @@ export interface PlaylistTrack {
   musical_key?: string | null;
   energy?: number | null;
   is_full_set?: boolean;
+  key_source?: 'manual' | 'tunebat' | 'analyzed' | null;
 }
 
 interface PlaylistManagerPanelProps {
@@ -84,6 +85,9 @@ export default function PlaylistManagerPanel({
 
   const handleUndoReorder = async () => {
     if (!selectedPlaylistId) return;
+    if (!confirm("Restore previous track order?\n\nThis will revert to the last saved snapshot and consume it (Undo is one-way). Continue?")) {
+      return;
+    }
     let reanchor = false;
     if (selectedPlaylist?.is_broadcast_active) {
       reanchor = confirm(
@@ -716,6 +720,20 @@ export default function PlaylistManagerPanel({
                               <span className="text-emerald-400 font-mono font-bold text-[10px]">
                                 {track.musical_key}
                               </span>
+                              {track.key_source && (
+                                <span
+                                  className={`px-1 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${
+                                    track.key_source === "tunebat"
+                                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                                      : track.key_source === "analyzed"
+                                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                      : "bg-white/10 text-white/70"
+                                  }`}
+                                  title={`Key Source: ${track.key_source}`}
+                                >
+                                  {track.key_source === "analyzed" ? "auto" : track.key_source}
+                                </span>
+                              )}
                             </>
                           )}
                           {track.bpm && (

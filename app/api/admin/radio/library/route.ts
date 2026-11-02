@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (action === "update") {
-      const { id, title, dj_name, genre, is_active, bpm, musical_key, energy, is_full_set } = body;
+      const { id, title, dj_name, genre, is_active, bpm, musical_key, energy, is_full_set, key_source } = body;
       if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
       const updates: string[] = [];
@@ -120,6 +120,21 @@ export async function PATCH(req: NextRequest) {
       if (is_full_set !== undefined) {
         updates.push(`is_full_set = $${pIdx++}`);
         params.push(Boolean(is_full_set));
+      }
+      if (key_source !== undefined) {
+        if (key_source === null || key_source === "") {
+          updates.push(`key_source = NULL`);
+        } else {
+          const srcStr = String(key_source).trim().toLowerCase();
+          if (!["manual", "tunebat", "analyzed"].includes(srcStr)) {
+            return NextResponse.json({ error: "key_source must be manual, tunebat, or analyzed" }, { status: 400 });
+          }
+          updates.push(`key_source = $${pIdx++}`);
+          params.push(srcStr);
+        }
+      } else if (musical_key !== undefined && musical_key !== null && musical_key !== "") {
+        // Default to manual if musical_key was explicitly entered without a source
+        updates.push(`key_source = COALESCE(key_source, 'manual')`);
       }
 
       if (updates.length === 0) {

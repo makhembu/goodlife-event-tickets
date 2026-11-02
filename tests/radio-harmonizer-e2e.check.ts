@@ -32,6 +32,12 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
+// Gate behind RUN_LIVE_E2E=1 so routine test suites and CI runs do not mutate live data
+if (!process.env.RUN_LIVE_E2E || process.env.RUN_LIVE_E2E !== "1") {
+  console.log("SKIP: radio-harmonizer-e2e.check.ts (set RUN_LIVE_E2E=1 to run live database mutation test)");
+  process.exit(0);
+}
+
 const PLAYLIST_ID = 3; // Playlist 3: Millennial Rock & Alternative (13 tracks, not live on-air)
 const BASE_URL = process.env.TEST_APP_URL || "https://goodlife.smwhr.space";
 
@@ -52,6 +58,22 @@ async function runE2E() {
   console.log(`Starting Harmonizer E2E verification on Playlist ${PLAYLIST_ID}...\n`);
 
   const { neonQuery } = await import("../lib/supabase-db");
+
+  // Safety Invariant: NEVER run live mutation tests against an on-air broadcast playlist
+  const plCheck = await neonQuery(
+    `SELECT id, name, is_broadcast_active FROM radio_playlists WHERE id = $1`,
+    [PLAYLIST_ID]
+  );
+  if (plCheck.rows.length === 0) {
+    throw new Error(`Target test playlist #${PLAYLIST_ID} does not exist in database`);
+  }
+  const targetPlaylist = plCheck.rows[0];
+  if (targetPlaylist.is_broadcast_active) {
+    throw new Error(
+      `ABORT: Playlist #${PLAYLIST_ID} (${targetPlaylist.name}) is currently LIVE ON AIR. Mutation tests must only run on offline playlists.`
+    );
+  }
+  check("Target playlist is confirmed offline (is_broadcast_active = false)", !targetPlaylist.is_broadcast_active);
 
   // Phase A: Real Neon Database End-to-End Transaction Cycle
   console.log("=== Phase A: Live Neon DB Playout & Snapshot Cycle ===");
