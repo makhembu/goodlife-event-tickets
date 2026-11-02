@@ -81,6 +81,9 @@ export default function AdminRadioPage() {
   const [uploadDj, setUploadDj] = useState("");
   const [uploadGenre, setUploadGenre] = useState("Afro House");
   const [isHighQuality, setIsHighQuality] = useState(true);
+  const [uploadTargetPlaylistId, setUploadTargetPlaylistId] = useState<number | null>(null);
+  const [availablePlaylists, setAvailablePlaylists] = useState<{ id: number; name: string; genre: string }[]>([]);
+  const [quickAddPlaylistMap, setQuickAddPlaylistMap] = useState<Record<number, number>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "success" | "error">("idle");
@@ -136,6 +139,24 @@ export default function AdminRadioPage() {
     } catch {}
   };
 
+  const fetchAvailablePlaylists = async () => {
+    try {
+      const res = await fetch("/api/admin/radio/playlists");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.playlists)) {
+        setAvailablePlaylists(
+          data.playlists.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            genre: p.genre,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch available playlists:", err);
+    }
+  };
+
   const checkBridgeHealth = async () => {
     try {
       const res = await fetch("/api/admin/radio/health");
@@ -149,6 +170,7 @@ export default function AdminRadioPage() {
   useEffect(() => {
     fetchLibrary();
     fetchBroadcastSettings();
+    fetchAvailablePlaylists();
     checkBridgeHealth();
     const hInterval = setInterval(checkBridgeHealth, 30000);
     return () => clearInterval(hInterval);
@@ -297,6 +319,7 @@ export default function AdminRadioPage() {
           audioUrl: publicUrl,
           durationSec: 180,
           isHighQuality,
+          playlistId: uploadTargetPlaylistId,
         }),
       });
 
@@ -563,7 +586,7 @@ export default function AdminRadioPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[11px] text-white/60 mb-1">DJ / ARTIST</label>
                   <input
@@ -583,10 +606,29 @@ export default function AdminRadioPage() {
                   >
                     <option value="Afro House">Afro House</option>
                     <option value="Amapiano">Amapiano</option>
+                    <option value="Hip-Hop">Hip-Hop / Rap</option>
+                    <option value="Rock">Rock / Alternative</option>
+                    <option value="Reggae">Reggae / Dancehall</option>
+                    <option value="Pop">2000s Pop / R&B</option>
                     <option value="Gengetone">Gengetone</option>
                     <option value="Old School Hip Hop">Old School Hip Hop</option>
                     <option value="Chillout / Sundowner">Chillout / Sundowner</option>
                     <option value="Electronic / Dance">Electronic / Dance</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-white/60 mb-1">ADD TO PLAYLIST</label>
+                  <select
+                    value={uploadTargetPlaylistId ?? ""}
+                    onChange={(e) => setUploadTargetPlaylistId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full bg-[#1A1D24] text-[#DFBB7D] font-bold p-2 border border-[#DFBB7D]/40"
+                  >
+                    <option value="">-- No Playlist (Library Only) --</option>
+                    {availablePlaylists.map((pl) => (
+                      <option key={pl.id} value={pl.id}>
+                        {pl.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="flex items-center space-x-2 pt-6">
@@ -681,7 +723,48 @@ export default function AdminRadioPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3 shrink-0">
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <select
+                      value={quickAddPlaylistMap[set.id] ?? ""}
+                      onChange={(e) => setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: Number(e.target.value) }))}
+                      className="bg-[#1A1D24] text-white/90 text-[10px] p-1 border border-white/20"
+                    >
+                      <option value="">+ To Playlist...</option>
+                      {availablePlaylists.map((pl) => (
+                        <option key={pl.id} value={pl.id}>
+                          {pl.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {quickAddPlaylistMap[set.id] ? (
+                      <button
+                        onClick={async () => {
+                          const plId = quickAddPlaylistMap[set.id];
+                          if (!plId) return;
+                          try {
+                            const res = await fetch(`/api/admin/radio/playlists/${plId}/tracks`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ track_ids: [set.id] }),
+                            });
+                            const d = await res.json();
+                            if (res.ok) {
+                              showMsg(`Added track to ${availablePlaylists.find((p) => p.id === plId)?.name || "playlist"}!`, "success");
+                              setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: 0 }));
+                            } else {
+                              showMsg(d.error || "Failed to add track to playlist", "error");
+                            }
+                          } catch {
+                            showMsg("Network error adding to playlist", "error");
+                          }
+                        }}
+                        className="px-2 py-1 bg-[#DFBB7D] text-[#16181D] text-[10px] font-bold hover:bg-[#F5C842]"
+                      >
+                        ADD
+                      </button>
+                    ) : null}
+
                     <span className="text-white/50 text-[11px]">{set.duration || "Full Set"}</span>
                     <button
                       onClick={() => deleteTrack(set.id)}

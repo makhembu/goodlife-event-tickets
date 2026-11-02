@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const bitrate = body.bitrate ?? 192;
     const event_id = body.event_id || body.eventId || 2;
     const is_high_quality = body.is_high_quality ?? body.isHighQuality;
+    const targetPlaylistId = body.playlist_id ? Number(body.playlist_id) : (body.playlistId ? Number(body.playlistId) : null);
 
     if (!title || typeof title !== "string" || !title.trim()) {
       return NextResponse.json({ error: "Track title is required" }, { status: 400 });
@@ -69,7 +70,18 @@ export async function POST(req: NextRequest) {
     ];
 
     const { rows } = await neonQuery(query, params);
-    return NextResponse.json({ success: true, item: rows[0] });
+    const newTrack = rows[0];
+
+    if (targetPlaylistId && newTrack?.id) {
+      await neonQuery(
+        `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(position), -1) + 1 FROM radio_playlist_tracks WHERE playlist_id = $1))
+         ON CONFLICT (playlist_id, track_id) DO NOTHING`,
+        [targetPlaylistId, newTrack.id]
+      );
+    }
+
+    return NextResponse.json({ success: true, item: newTrack, playlist_id: targetPlaylistId });
   } catch (err: any) {
     console.error("[register-upload] Error registering track:", err);
     return NextResponse.json({ error: err.message || "Failed to register upload in database" }, { status: 500 });

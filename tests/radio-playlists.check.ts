@@ -36,6 +36,8 @@ async function runTests() {
   );
   check("Admin radio page imports PlaylistManagerPanel", adminPageCode.includes("PlaylistManagerPanel"));
   check("Admin radio page renders PlaylistManagerPanel when activeTab is playlists", adminPageCode.includes('activeTab === "playlists"'));
+  check("Admin radio page upload form includes ADD TO PLAYLIST selector", adminPageCode.includes("ADD TO PLAYLIST") && adminPageCode.includes("uploadTargetPlaylistId"));
+  check("Admin radio page library table includes quick playlist assignment", adminPageCode.includes("quickAddPlaylistMap") && adminPageCode.includes("+ To Playlist..."));
 
   // 2. Migration and schema checks
   const migrationCode = fs.readFileSync(
@@ -70,6 +72,12 @@ async function runTests() {
   );
   check("Tracks API enforces requireAdmin", adminTracksApi.includes("requireAdmin"));
   check("Tracks API supports reorder array", adminTracksApi.includes("reorder") && adminTracksApi.includes("position"));
+
+  const registerUploadApi = fs.readFileSync(
+    path.join(process.cwd(), "app/api/admin/radio/register-upload/route.ts"),
+    "utf8"
+  );
+  check("Register upload API assigns targetPlaylistId to radio_playlist_tracks", registerUploadApi.includes("targetPlaylistId") && registerUploadApi.includes("radio_playlist_tracks"));
 
   // 4. Playout math in /api/radio/live and /api/radio/state
   const liveApiCode = fs.readFileSync(
