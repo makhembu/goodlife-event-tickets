@@ -1610,6 +1610,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           duration_sec: t.duration_sec || 180,
           genre: t.genre || data.playlist.genre || "Amapiano",
           bitrate: t.bitrate || 192,
+          bpm: t.bpm || null,
+          musical_key: t.musical_key || null,
+          energy: t.energy || null,
+          is_full_set: Boolean(t.is_full_set),
+          key_source: t.key_source || null,
           is_active: true,
         }));
 
