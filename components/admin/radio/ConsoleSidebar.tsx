@@ -10,9 +10,10 @@ import {
   Activity,
   Sliders,
   ArrowLeft,
+  Layers,
 } from "lucide-react";
 
-export type ConsoleTab = "studio" | "drops" | "library" | "live" | "telemetry" | "overrides";
+export type ConsoleTab = "studio" | "drops" | "library" | "playlists" | "live" | "telemetry" | "overrides";
 
 export interface ConsoleSidebarProps {
   activeTab: ConsoleTab;
@@ -40,6 +41,11 @@ export default function ConsoleSidebar({
       id: "library",
       label: "Music Library",
       icon: <ListMusic className="w-5 h-5" />,
+    },
+    {
+      id: "playlists",
+      label: "Playlists & Sets",
+      icon: <Layers className="w-5 h-5" />,
     },
     {
       id: "live",

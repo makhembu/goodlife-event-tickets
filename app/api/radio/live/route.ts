@@ -41,20 +41,40 @@ async function queryRecentLiveDrop() {
 
 async function getTimelineFallback() {
   try {
-    const [setsRes, settingsRes, liveDrop] = await Promise.all([
+    const [playlistRes, settingsRes, liveDrop] = await Promise.all([
       neonQuery(`
-        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
-        FROM radio_sets
-        WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
-        ORDER BY display_order ASC, id ASC
-      `),
+        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
+               s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
+        FROM radio_playlists p
+        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        ORDER BY pt.position ASC, pt.id ASC
+      `).catch(() => ({ rows: [] })),
       neonQuery(
         "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
       ).catch(() => ({ rows: [] })),
       queryRecentLiveDrop(),
     ]);
 
-    const sets = setsRes.rows || [];
+    let sets: any[] = [];
+    let activatedAt: string | null = null;
+    let activePlaylistName: string | null = null;
+
+    if (playlistRes.rows.length > 0) {
+      sets = playlistRes.rows;
+      activatedAt = playlistRes.rows[0].activated_at;
+      activePlaylistName = playlistRes.rows[0].playlist_name;
+    } else {
+      const setsRes = await neonQuery(`
+        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+        FROM radio_sets
+        WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
+        ORDER BY display_order ASC, id ASC
+      `);
+      sets = setsRes.rows || [];
+    }
+
     if (sets.length === 0) return null;
 
     const settings = settingsRes.rows[0] || {};
@@ -82,7 +102,16 @@ async function getTimelineFallback() {
     if (activeMode === "autodj") {
       const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
       const nowSec = Math.floor(Date.now() / 1000);
-      const cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
+      let cycleSec = 0;
+
+      if (activatedAt) {
+        const activatedAtSec = Math.floor(new Date(activatedAt).getTime() / 1000);
+        const elapsedSinceActivation = Math.max(0, nowSec - activatedAtSec);
+        cycleSec = totalDurationSec > 0 ? (elapsedSinceActivation % totalDurationSec) : 0;
+      } else {
+        cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
+      }
+
       let cumulative = 0;
 
       for (let i = 0; i < sets.length; i++) {
@@ -107,6 +136,7 @@ async function getTimelineFallback() {
       offline: false,
       stale: false,
       mode: activeMode,
+      playlist_name: activePlaylistName,
       now_playing: {
         id: currentTrack.id,
         title: formatTrackTitle(currentTrack.title),

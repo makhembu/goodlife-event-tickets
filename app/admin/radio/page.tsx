@@ -39,6 +39,7 @@ import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
+import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
 import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -693,6 +694,13 @@ export default function AdminRadioPage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* VIEW: PLAYLISTS & PROGRAMMING */}
+      {activeTab === "playlists" && (
+        <div className="space-y-6">
+          <PlaylistManagerPanel library={library} onRefreshLive={fetchBroadcastSettings} />
         </div>
       )}
 

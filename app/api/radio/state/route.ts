@@ -10,6 +10,9 @@ let _stateDbCache: {
   sets: any[];
   fallbackSet: any;
   totalDurationSec: number;
+  activatedAt: string | null;
+  activePlaylistName: string | null;
+  activePlaylistId: number | null;
   ts: number;
 } | null = null;
 
@@ -68,17 +71,41 @@ export async function GET() {
       }
 
 
-      // 2. Fetch active ready tracks
-      const setsRes = await neonQuery(`
-        SELECT 
-          id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
-          duration, duration_sec, genre, file_size, bitrate, play_count, created_at
-        FROM radio_sets
-        WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
-        ORDER BY display_order ASC, id ASC
-        LIMIT 60
-      `);
-      const rawSets = setsRes.rows || [];
+      // 2. Fetch tracks: from active broadcast playlist, or fallback to ready catalog
+      const playlistRes = await neonQuery(`
+        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
+               s.id, s.event_id, s.title, s.dj_name, s.audio_url, s.audio_high_url, s.cover_url, 
+               s.duration, s.duration_sec, s.genre, s.file_size, s.bitrate, s.play_count, s.created_at, pt.position
+        FROM radio_playlists p
+        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        ORDER BY pt.position ASC, pt.id ASC
+      `).catch(() => ({ rows: [] }));
+
+      let rawSets: any[] = [];
+      let activatedAt: string | null = null;
+      let activePlaylistName: string | null = null;
+      let activePlaylistId: number | null = null;
+
+      if (playlistRes.rows.length > 0) {
+        rawSets = playlistRes.rows;
+        activatedAt = playlistRes.rows[0].activated_at;
+        activePlaylistName = playlistRes.rows[0].playlist_name;
+        activePlaylistId = playlistRes.rows[0].playlist_id;
+      } else {
+        const setsRes = await neonQuery(`
+          SELECT 
+            id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
+            duration, duration_sec, genre, file_size, bitrate, play_count, created_at
+          FROM radio_sets
+          WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
+          ORDER BY display_order ASC, id ASC
+          LIMIT 60
+        `);
+        rawSets = setsRes.rows || [];
+      }
+
       const sets = rawSets.map((s: any) => {
         let cover = resolveCoverArt(s.cover_url);
         if (cover.includes("/vi/")) {
@@ -110,12 +137,15 @@ export async function GET() {
         sets,
         fallbackSet,
         totalDurationSec,
+        activatedAt,
+        activePlaylistName,
+        activePlaylistId,
         ts: now,
       };
       _stateDbCache = cached;
     }
 
-    const { settings, sets, fallbackSet, totalDurationSec } = cached;
+    const { settings, sets, fallbackSet, totalDurationSec, activatedAt, activePlaylistName, activePlaylistId } = cached;
 
     // 3. Compute 24/7 Virtual Synchronized Broadcast Schedule (Instant math, 0ms)
     let broadcastSchedule = null;
@@ -144,10 +174,20 @@ export async function GET() {
           server_time: nowSec,
           total_duration_sec: totalDurationSec,
           is_mania: true,
+          playlist_id: activePlaylistId,
+          playlist_name: activePlaylistName,
         };
       } else {
-        // AUTODJ: Virtual Synchronized Playout Loop across festival library
-        const cycleSec = nowSec % totalDurationSec;
+        // AUTODJ: Virtual Synchronized Playout Loop across active playlist (or festival library fallback)
+        let cycleSec = 0;
+        if (activatedAt) {
+          const activatedAtSec = Math.floor(new Date(activatedAt).getTime() / 1000);
+          const elapsedSinceActivation = Math.max(0, nowSec - activatedAtSec);
+          cycleSec = totalDurationSec > 0 ? (elapsedSinceActivation % totalDurationSec) : 0;
+        } else {
+          cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
+        }
+
         let cumulative = 0;
 
         for (let i = 0; i < sets.length; i++) {
@@ -167,6 +207,8 @@ export async function GET() {
           server_time: nowSec,
           total_duration_sec: totalDurationSec,
           is_mania: false,
+          playlist_id: activePlaylistId,
+          playlist_name: activePlaylistName,
         };
       }
 
