@@ -49,7 +49,7 @@ export default function BroadcastConsole({
   const [meterRight, setMeterRight] = useState(12);
 
   useEffect(() => {
-    const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
+    const audio = new Audio(streamUrl || "");
     audio.volume = volume;
     audio.onended = () => {
       fetchTelemetry();

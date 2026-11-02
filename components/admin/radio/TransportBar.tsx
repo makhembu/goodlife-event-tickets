@@ -74,7 +74,7 @@ export default function TransportBar({
 
   // Monitor Audio Element initialization
   useEffect(() => {
-    const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
+    const audio = new Audio(streamUrl || "");
     audio.volume = isMuted ? 0 : volume * masterGain;
     audio.onended = () => {
       fetchTelemetry();
@@ -219,9 +219,7 @@ export default function TransportBar({
       audioEl.pause();
       setIsPlaying(false);
     } else {
-      const targetSrc = (streamUrl && !streamUrl.includes("darajadigital"))
-        ? streamUrl
-        : currentAudioUrlRef.current;
+      const targetSrc = streamUrl || currentAudioUrlRef.current;
 
       if (!targetSrc) {
         console.warn("[TransportBar] No audio stream available to monitor");

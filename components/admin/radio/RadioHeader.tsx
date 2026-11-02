@@ -17,7 +17,7 @@ export default function RadioHeader({ streamUrl = "", onRefresh }: RadioHeaderPr
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const audio = new Audio(streamUrl && !streamUrl.includes("darajadigital") ? streamUrl : "");
+    const audio = new Audio(streamUrl || "");
     setAudioEl(audio);
 
     return () => {

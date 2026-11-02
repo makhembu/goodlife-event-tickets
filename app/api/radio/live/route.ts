@@ -152,10 +152,21 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
 }
 
 export async function GET() {
-  const upstreamBase = process.env.RADIO_UPSTREAM_URL;
+  const upstreamBase = process.env.RADIO_UPSTREAM_URL?.trim();
 
-  // If no upstream server is configured, smoothly fall back to 24/7 virtual schedule
-  if (!upstreamBase || upstreamBase.trim() === "") {
+  // 1. Check current station broadcast mode from database (Cloudflare virtual schedule is primary)
+  let broadcastMode = "autodj";
+  try {
+    const settingsRes = await neonQuery(
+      "SELECT broadcast_mode FROM radio_settings WHERE id = 1"
+    );
+    if (settingsRes.rows[0]?.broadcast_mode) {
+      broadcastMode = settingsRes.rows[0].broadcast_mode;
+    }
+  } catch {}
+
+  // 2. If station is in autodj or mania mode, Cloudflare R2 virtual timeline is the primary playout
+  if (broadcastMode !== "live" || !upstreamBase) {
     const fallback = await getTimelineFallback();
     if (fallback) {
       return NextResponse.json(fallback, {
@@ -169,7 +180,7 @@ export async function GET() {
     return NextResponse.json(
       {
         offline: true,
-        reason: "RADIO_UPSTREAM_URL is not configured",
+        reason: "No active radio sets available",
         now_playing: null,
         up_next: [],
         history: [],
@@ -184,8 +195,9 @@ export async function GET() {
     );
   }
 
-  const cleanBase = upstreamBase.trim().replace(/\/+$/, "");
-  const timeoutMs = 3000; // Strictly 3-second upstream timeout
+  // 3. Station is in explicit live stage mode: query upstream relay with 3000ms timeout
+  const cleanBase = upstreamBase.replace(/\/+$/, "");
+  const timeoutMs = 3000;
 
   try {
     const [nowRes, nextRes, histRes] = await Promise.all([

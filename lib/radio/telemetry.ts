@@ -138,7 +138,7 @@ export async function getRadioTelemetry(targetAirTimeMs?: number): Promise<Radio
     trafficBulletin,
     entertainmentNews,
     activeCities,
-    venue: "Marara Camp, Thika",
-    frequency: "98.4 FM",
+    venue: "Festival Grounds",
+    frequency: "Digital Airwave",
   };
 }

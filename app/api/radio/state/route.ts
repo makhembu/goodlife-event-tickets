@@ -67,10 +67,6 @@ export async function GET() {
         settings.live_stream_url = process.env.RADIO_STREAM_URL.trim();
       }
 
-      // Filter out invalid/obsolete stream domains
-      if (settings.live_stream_url && settings.live_stream_url.includes("darajadigital")) {
-        settings.live_stream_url = "";
-      }
 
       // 2. Fetch active ready tracks
       const setsRes = await neonQuery(`

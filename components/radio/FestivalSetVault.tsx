@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Disc3, Calendar, Clock, Volume2, VolumeX, Sparkles, Download } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Play, Pause, Disc3, Calendar, Clock, Volume2, VolumeX, Sparkles, Download, Radio } from "lucide-react";
+import { useRadio } from "@/context/RadioContext";
 
 export interface ArchivedSet {
   id: number;
@@ -16,14 +17,21 @@ export interface ArchivedSet {
 }
 
 export default function FestivalSetVault() {
+  const {
+    isLive,
+    isPlaying: isRadioPlaying,
+    currentTime,
+    duration,
+    progress,
+    playSet,
+    togglePlay,
+    seek,
+    snapToBroadcast,
+  } = useRadio();
+
   const [recordings, setRecordings] = useState<ArchivedSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     async function loadRecordings() {
@@ -43,44 +51,20 @@ export default function FestivalSetVault() {
   }, []);
 
   const activeSet = recordings.find((r) => r.id === activeSetId);
+  const isPlaying = !isLive && isRadioPlaying;
 
   const handlePlaySet = (set: ArchivedSet) => {
     if (activeSetId === set.id) {
-      if (isPlaying) {
-        audioRef.current?.pause();
-        setIsPlaying(false);
-      } else {
-        audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
-      }
+      togglePlay();
     } else {
       setActiveSetId(set.id);
-      setIsPlaying(true);
-      setProgress(0);
-      setCurrentTime(0);
-
-      if (audioRef.current) {
-        audioRef.current.src = set.audio_url;
-        audioRef.current.load();
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-      }
+      playSet(set as any);
     }
   };
 
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const cur = audioRef.current.currentTime;
-    const dur = audioRef.current.duration || (activeSet?.duration || 1);
-    setCurrentTime(cur);
-    setDuration(dur);
-    setProgress(dur > 0 ? (cur / dur) * 100 : 0);
-  };
-
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!audioRef.current || !audioRef.current.duration) return;
     const percent = parseFloat(e.target.value);
-    const target = (percent / 100) * audioRef.current.duration;
-    audioRef.current.currentTime = target;
-    setProgress(percent);
+    seek(percent);
   };
 
   const formatSeconds = (sec: number) => {
@@ -115,14 +99,6 @@ export default function FestivalSetVault() {
 
   return (
     <div className="p-6 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) space-y-6">
-      {/* Hidden audio element for on-demand playback */}
-      <audio
-        ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={() => setIsPlaying(false)}
-        preload="none"
-      />
-
       <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-brand-navy pb-3">
         <div className="flex items-center gap-2">
           <Disc3 className="w-5 h-5 text-amber-500" />
@@ -130,17 +106,29 @@ export default function FestivalSetVault() {
             FESTIVAL SET VAULT &amp; RECAPS
           </h3>
         </div>
-        <span className="font-mono text-xs font-bold px-2 py-0.5 border border-brand-navy bg-brand-off-white uppercase">
-          {recordings.length} Recorded Sets
-        </span>
+        <div className="flex items-center gap-2">
+          {!isLive && (
+            <button
+              type="button"
+              onClick={snapToBroadcast}
+              className="px-3 py-1 font-mono text-xs font-bold uppercase bg-red-600 hover:bg-red-700 text-white flex items-center gap-1.5 border border-brand-navy transition-colors cursor-pointer"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>SNAP TO LIVE BROADCAST</span>
+            </button>
+          )}
+          <span className="font-mono text-xs font-bold px-2 py-0.5 border border-brand-navy bg-brand-off-white uppercase">
+            {recordings.length} Recorded Sets
+          </span>
+        </div>
       </div>
 
       <p className="text-xs text-brand-navy/70">
-        Replay pristine 320kbps master recordings of live guest DJ takeovers and festival stages from Marara Camp and club sessions.
+        Replay pristine 320kbps master recordings of live guest DJ takeovers and festival stages from festival editions and club sessions.
       </p>
 
       {/* Active Set Audio Scrubber Bar (If Playing) */}
-      {activeSet && (
+      {activeSet && !isLive && (
         <div className="p-4 border-3 border-brand-navy bg-brand-navy text-white space-y-3 shadow-(--shadow-brut-sm)">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">

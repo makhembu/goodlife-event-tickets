@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       telemetry = await getRadioTelemetry();
     } catch {
       telemetry = {
-        listenersCount: 1350,
+        listenersCount: 0,
         nairobiTimeEAT: "18:00",
         nairobiTime12h: "6:00 PM",
         timeSlot: "sunset_vibes",
@@ -25,9 +25,9 @@ export async function GET(req: NextRequest) {
         weather: "22°C Nairobi",
         trafficBulletin: "Steady traffic across Nairobi arterial highways",
         entertainmentNews: "Kenya music festivals buzz",
-        activeCities: ["Nairobi", "Thika", "Eldoret"],
-        venue: "Marara Camp, Thika",
-        frequency: "98.4 FM",
+        activeCities: ["Nairobi", "Eldoret", "Mombasa"],
+        venue: "Festival Grounds",
+        frequency: "Digital Airwave",
       };
     }
 

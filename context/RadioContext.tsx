@@ -356,12 +356,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setBroadcastMode(data.mode);
       }
       if (typeof data.live?.stream_url === "string") {
-        const cleanUrl = data.live.stream_url.trim();
-        if (!cleanUrl.includes("darajadigital")) {
-          setLiveStreamUrl(cleanUrl);
-        } else {
-          setLiveStreamUrl("");
-        }
+        setLiveStreamUrl(data.live.stream_url.trim());
       }
 
       if (Array.isArray(data.sets) && data.sets.length > 0) {
@@ -440,11 +435,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 ? audio.duration - audio.currentTime
                 : 0;
 
-              // Guard against premature cutoff: swap if in outro window (<=15s) or song has stopped/ended
+              // Guard against premature cutoff: swap if in outro window (<=15s), song has stopped/ended,
+              // or station diverged significantly (e.g. DJ locked a new track in Mania mode or skipped)
               const isOutroWindow = remaining > 0 && remaining <= 15;
               const isStalledOrEnded = audio.ended || audio.paused || remaining <= 0;
+              const isDjManiaOverride = (data as any)?.mode === "mania";
+              const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 30;
 
-              if (isOutroWindow || isStalledOrEnded) {
+              if (isOutroWindow || isStalledOrEnded || isDjManiaOverride || hasDivergedSignificantly) {
                 audio.src = track.audio_url;
                 safeSeekAudio(audio, track.elapsed || 0);
                 audio.play().catch(() => {});
@@ -596,8 +594,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         triggerOutroDropCrossoverRef.current();
       }
 
-      // Background dynamic drop pre-fetch for upcoming track (airs between songs)
-      if (clamped >= 3 && !isPrefetchingDropRef.current) {
+      // Preload next matching drop if available from station pool
+      if (clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
         let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
         if (!nextCandidate && backupSetsRef.current.length > 0) {
           const sets = backupSetsRef.current;
@@ -616,42 +614,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (lastPrefetchedTrackKeyRef.current !== nextKey) {
             lastPrefetchedTrackKeyRef.current = nextKey;
             isPrefetchingDropRef.current = true;
-            fetch("/api/radio/drops/dynamic", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                nextTrackId: (nextCandidate as any).id,
-                nextTrackTitle: nextCandidate.title,
-                nextTrackArtist: (nextCandidate as any).artist || (nextCandidate as any).dj_name,
-                currentTrackTitle: nowPlayingTrack?.title,
-                currentTrackArtist: nowPlayingTrack?.artist,
-                timingType: "outro",
-              }),
-            })
-              .then((res) => (res.ok ? res.json() : null))
-              .then((data) => {
-                isPrefetchingDropRef.current = false;
-                if (data && data.drop_url) {
-                  const freshDrop: RadioDrop = {
-                    id: `dyn-${Date.now()}`,
-                    title: data.title || `${data.persona || "GOODLIFE"} Drop`,
-                    audio_url: data.drop_url,
-                    persona: data.persona,
-                    mood: data.mood,
-                    target_track_id: (nextCandidate as any).id,
-                    target_track_title: nextCandidate.title,
-                  };
-                  availableDropsRef.current = [freshDrop, ...availableDropsRef.current];
-                  if (typeof Audio !== "undefined") {
-                    const pre = new Audio();
-                    pre.preload = "auto";
-                    pre.src = data.drop_url;
-                  }
-                }
-              })
-              .catch(() => {
-                isPrefetchingDropRef.current = false;
-              });
+            const targetId = String((nextCandidate as any).id || "");
+            const targetTitle = (nextCandidate.title || "").toLowerCase().trim();
+            const matchedDrop = availableDropsRef.current.find((d) =>
+              (d.target_track_id && String(d.target_track_id) === targetId) ||
+              (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
+            );
+            if (matchedDrop?.audio_url && typeof Audio !== "undefined") {
+              const pre = new Audio();
+              pre.preload = "auto";
+              pre.src = matchedDrop.audio_url;
+            }
+            isPrefetchingDropRef.current = false;
           }
         }
       }
@@ -951,7 +925,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     // If station is in autodj or mania mode, or no live stream is set: play festival track directly
-    if (currentMode !== "live" || !streamUrl || streamUrl.trim() === "" || streamUrl.includes("darajadigital")) {
+    if (currentMode !== "live" || !streamUrl || streamUrl.trim() === "") {
       await playCurrentTrackAudio();
       return;
     }
@@ -1037,6 +1011,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const handleTimeUpdate = useCallback(() => {
     if (!audioRef.current) return;
     const cur = audioRef.current.currentTime;
+    const dur = audioRef.current.duration;
+
+    if (!isLiveRef.current && dur && !isNaN(dur) && dur > 0) {
+      setInterpolatedElapsed(cur);
+    }
 
     if (cur > lastPlaybackTimeRef.current) {
       lastPlaybackTimeRef.current = cur;
@@ -1464,18 +1443,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [attachAndPlayLiveStream]);
 
   // 13. Public Control Actions
-  const togglePlay = useCallback(() => {
+  const togglePlay = useCallback(async () => {
     if (isPlaying) {
       teardownPlayback();
       setIsPlaying(false);
       setEngineState("paused");
     } else {
       setIsMinimized(false);
-      fetchRadioState();
-      fetchRadioLive();
+      // Ensure state and live track are fresh before playing
+      if (backupSetsRef.current.length === 0 || !nowPlayingTrackRef.current) {
+        await Promise.all([fetchRadioState(), fetchRadioLive()]);
+      } else {
+        fetchRadioState();
+        fetchRadioLive();
+      }
       attachAndPlayLiveStream();
     }
-  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback]);
+  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive]);
 
   const retry = useCallback(() => {
     attachAndPlayLiveStream();
@@ -1543,6 +1527,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setEngineState("live");
       setIsPlaying(true);
       notifyOtherTabsPlay();
+
+      setNowPlayingTrack({
+        title: formatTrackTitle(set.title),
+        artist: set.dj_name,
+        thumbnail: set.cover_url || "/flyer.png",
+        elapsed: 0,
+        duration: set.duration_sec || 0,
+        audio_url: set.audio_url,
+        video_id: `vault-${set.id}`,
+      });
+      setInterpolatedElapsed(0);
+      lastPollElapsedRef.current = 0;
+      lastPollTimestampRef.current = Date.now();
 
       if (audioRef.current) {
         audioRef.current.src = set.audio_url;
@@ -1656,8 +1653,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [backupSets, currentBackupIndex]);
 
-  const seek = useCallback((_percent: number) => {
-    // Non-interactive in live broadcast
+  const seek = useCallback((percent: number) => {
+    if (!audioRef.current || isLiveRef.current) return;
+    const dur = audioRef.current.duration;
+    if (dur && !isNaN(dur) && dur > 0) {
+      const targetTime = (Math.max(0, Math.min(100, percent)) / 100) * dur;
+      audioRef.current.currentTime = targetTime;
+      setInterpolatedElapsed(targetTime);
+    }
   }, []);
 
   // Format honest status text
