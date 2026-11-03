@@ -107,6 +107,9 @@ export default function PerformanceSoundboard({
     activeBankId,
     setActiveBankId,
     vaultDrops,
+    createBank,
+    renameBank,
+    deleteBank,
     toastMsg,
     showToast,
   } = useSoundboard();
@@ -545,6 +548,58 @@ export default function PerformanceSoundboard({
     }
   };
 
+  // Bank Management Handlers
+  const handleAddBank = async () => {
+    const name = prompt("Enter new bank name:", `Bank ${banks.length + 1}`);
+    if (name && name.trim()) {
+      await createBank(name.trim());
+    }
+  };
+
+  const handleRenameActiveBank = async () => {
+    const cur = banks.find((b) => b.id === activeBankId);
+    if (!cur) return;
+    const name = prompt("Rename bank:", cur.name);
+    if (name && name.trim() && name.trim() !== cur.name) {
+      await renameBank(cur.id, name.trim());
+    }
+  };
+
+  const handleDeleteActiveBank = async () => {
+    await deleteBank(activeBankId);
+  };
+
+  const handleMoveBank = async (direction: "left" | "right") => {
+    const idx = banks.findIndex((b) => b.id === activeBankId);
+    if (idx < 0) return;
+    const targetIdx = direction === "left" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= banks.length) return;
+
+    const newBanks = [...banks];
+    const [moved] = newBanks.splice(idx, 1);
+    newBanks.splice(targetIdx, 0, moved);
+
+    const reordered = newBanks.map((b, i) => ({ ...b, position: i }));
+    setBanks(reordered);
+    try {
+      localStorage.setItem("goodlife_soundboard_cache", JSON.stringify(reordered));
+      await Promise.all([
+        fetch(`/api/admin/radio/soundboard/banks/${moved.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: targetIdx }),
+        }),
+        fetch(`/api/admin/radio/soundboard/banks/${banks[targetIdx].id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: idx }),
+        }),
+      ]);
+    } catch {
+      showToast("Failed to save bank order", "error");
+    }
+  };
+
   const filteredVaultDrops = useMemo(() => {
     if (!dropSearch.trim()) return vaultDrops;
     const q = dropSearch.toLowerCase();
@@ -611,13 +666,13 @@ export default function PerformanceSoundboard({
 
         {/* Bank Switcher, Mode Toggle & Edit Mode Toggle */}
         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-          {/* Dynamic Bank Tabs */}
-          <div className="flex items-center border border-white/20 p-0.5 bg-black/40">
+          {/* Dynamic Bank Tabs (Horizontally scrollable on mobile) */}
+          <div className="flex items-center border border-white/20 p-0.5 bg-black/40 overflow-x-auto max-w-[calc(100vw-3rem)] sm:max-w-xs md:max-w-md shrink-0">
             {(banks.length > 0 ? banks : [{ id: 1, name: "15 DJ DROPS" }, { id: 2, name: "STATION FX" }]).map((b) => (
               <button
                 key={b.id}
                 onClick={() => setActiveBankId(b.id)}
-                className={`px-2.5 py-1.5 sm:py-1 font-mono text-xs font-bold transition-all text-center cursor-pointer ${
+                className={`px-2.5 py-1.5 sm:py-1 font-mono text-xs font-bold transition-all text-center cursor-pointer shrink-0 whitespace-nowrap ${
                   activeBankId === b.id
                     ? "bg-[#DFBB7D] text-[#16181D]"
                     : "text-white/60 hover:text-white"
@@ -626,6 +681,15 @@ export default function PerformanceSoundboard({
                 {b.name}
               </button>
             ))}
+            {isEditMode && (
+              <button
+                onClick={handleAddBank}
+                title="Create a new soundboard bank"
+                className="px-2.5 py-1 font-mono text-xs font-bold text-[#DFBB7D] hover:bg-[#DFBB7D]/20 cursor-pointer shrink-0 border-l border-white/20 whitespace-nowrap"
+              >
+                + Bank
+              </button>
+            )}
           </div>
 
           {/* Tactile On-Air vs Local PFL Mode Switcher (Visible in Perform Mode) */}
@@ -690,20 +754,70 @@ export default function PerformanceSoundboard({
         </div>
       </div>
 
-      {/* Edit Mode Notice Banner */}
+      {/* Edit Mode Notice Banner & Bank Controls */}
       {isEditMode && (
-        <div className="p-2.5 bg-[#F5C842]/15 border-2 border-[#F5C842] rounded-lg text-[#F5C842] font-mono text-xs flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Edit3 className="w-4 h-4 shrink-0 animate-bounce" />
-            <span>TAP ANY PAD TO EDIT · Change clip from Drops Vault, rename, change emoji or color.</span>
+        <div className="p-3 bg-[#F5C842]/15 border-2 border-[#F5C842] rounded-lg text-[#F5C842] font-mono text-xs space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <Edit3 className="w-4 h-4 shrink-0 animate-bounce" />
+              <span>EDIT MODE · Tap any pad to edit, drag or reorder pads, or manage banks below.</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={handleAddBank}
+                className="px-2.5 py-1 bg-black/40 hover:bg-black/60 text-[#DFBB7D] border border-white/20 font-bold rounded flex items-center space-x-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Bank</span>
+              </button>
+              <button
+                onClick={handleAddNewPad}
+                className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] font-bold rounded flex items-center space-x-1 hover:bg-[#F5C842] transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Add Pad</span>
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleAddNewPad}
-            className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] font-bold rounded flex items-center space-x-1 hover:bg-[#F5C842] transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Pad</span>
-          </button>
+
+          {/* Active Bank Quick Management Toolbar */}
+          <div className="pt-2 border-t border-[#F5C842]/30 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              <span className="text-white/80 font-bold">
+                Bank &ldquo;{banks.find((b) => b.id === activeBankId)?.name}&rdquo;:
+              </span>
+              <button
+                onClick={handleRenameActiveBank}
+                className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded cursor-pointer"
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => handleMoveBank("left")}
+                disabled={banks.findIndex((b) => b.id === activeBankId) === 0}
+                className="px-2 py-0.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white rounded cursor-pointer"
+                title="Move bank left"
+              >
+                ← Left
+              </button>
+              <button
+                onClick={() => handleMoveBank("right")}
+                disabled={banks.findIndex((b) => b.id === activeBankId) === banks.length - 1}
+                className="px-2 py-0.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white rounded cursor-pointer"
+                title="Move bank right"
+              >
+                Right →
+              </button>
+            </div>
+            <button
+              onClick={handleDeleteActiveBank}
+              disabled={banks.length <= 1}
+              className="px-2 py-0.5 bg-red-500/20 hover:bg-red-500 text-red-200 hover:text-white border border-red-500/40 disabled:opacity-30 rounded cursor-pointer flex items-center space-x-1"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Delete Bank</span>
+            </button>
+          </div>
         </div>
       )}
 

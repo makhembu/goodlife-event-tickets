@@ -31,6 +31,9 @@ export interface SoundboardContextType {
     dropId?: number | null,
     newLabel?: string
   ) => Promise<{ success: boolean; bankName?: string; padPosition?: number; error?: string }>;
+  createBank: (name: string) => Promise<boolean>;
+  renameBank: (bankId: number, newName: string) => Promise<boolean>;
+  deleteBank: (bankId: number) => Promise<boolean>;
   toastMsg: { text: string; type: "success" | "error" } | null;
   showToast: (text: string, type?: "success" | "error") => void;
 }
@@ -187,6 +190,117 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
     [banks, showToast]
   );
 
+  const createBank = useCallback(async (name: string): Promise<boolean> => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+
+    try {
+      const res = await fetch("/api/admin/radio/soundboard/banks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create bank");
+      }
+
+      const data = await res.json();
+      if (data.bank) {
+        const updated = [...banks, data.bank];
+        setBanks(updated);
+        setActiveBankId(data.bank.id);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
+        } catch {}
+        showToast(`Bank "${trimmed}" created!`, "success");
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      showToast(err.message || "Failed to create bank", "error");
+      return false;
+    }
+  }, [banks, showToast]);
+
+  const renameBank = useCallback(async (bankId: number, newName: string): Promise<boolean> => {
+    const trimmed = newName.trim();
+    if (!trimmed) return false;
+
+    const previousBanks = banks;
+    const optimisticBanks = banks.map((b) => (b.id === bankId ? { ...b, name: trimmed } : b));
+    setBanks(optimisticBanks);
+
+    try {
+      const res = await fetch(`/api/admin/radio/soundboard/banks/${bankId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to rename bank");
+      }
+
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(optimisticBanks));
+      } catch {}
+      showToast(`Bank renamed to "${trimmed}"`, "success");
+      return true;
+    } catch (err: any) {
+      setBanks(previousBanks);
+      showToast(err.message || "Failed to rename bank", "error");
+      return false;
+    }
+  }, [banks, showToast]);
+
+  const deleteBank = useCallback(async (bankId: number): Promise<boolean> => {
+    if (banks.length <= 1) {
+      showToast("Cannot delete the last remaining soundboard bank.", "error");
+      return false;
+    }
+
+    const bankToDelete = banks.find((b) => b.id === bankId);
+    if (!bankToDelete) return false;
+
+    const padCount = bankToDelete.pads?.length || 0;
+    const message = padCount > 0
+      ? `Are you sure you want to delete bank "${bankToDelete.name}"? It contains ${padCount} pad(s) which will also be removed. Audio clips in Drops Vault are NOT deleted.`
+      : `Are you sure you want to delete bank "${bankToDelete.name}"?`;
+
+    if (!confirm(message)) return false;
+
+    const previousBanks = banks;
+    const optimisticBanks = banks.filter((b) => b.id !== bankId);
+    setBanks(optimisticBanks);
+    if (activeBankId === bankId && optimisticBanks.length > 0) {
+      setActiveBankId(optimisticBanks[0].id);
+    }
+
+    try {
+      const res = await fetch(`/api/admin/radio/soundboard/banks/${bankId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete bank");
+      }
+
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(optimisticBanks));
+      } catch {}
+      showToast(`Bank "${bankToDelete.name}" deleted.`, "success");
+      return true;
+    } catch (err: any) {
+      setBanks(previousBanks);
+      showToast(err.message || "Failed to delete bank", "error");
+      return false;
+    }
+  }, [banks, activeBankId, showToast]);
+
   return (
     <SoundboardContext.Provider
       value={{
@@ -201,6 +315,9 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
         openAssignModal,
         closeAssignModal,
         assignClipToPad,
+        createBank,
+        renameBank,
+        deleteBank,
         toastMsg,
         showToast,
       }}
