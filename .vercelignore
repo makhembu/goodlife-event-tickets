@@ -1,0 +1,12 @@
+.next/
+node_modules/
+results/
+backups/
+scratch/
+audit/
+scripts/
+tests/
+.git/
+*.log
+webhook-logs.txt
+SECURITY-AUDIT.md
