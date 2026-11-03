@@ -22,6 +22,12 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
   const [promptText, setPromptText] = useState<string>(PRESET_VIBES[0].prompt);
   const [customScript, setCustomScript] = useState<string>("");
   const [generating, setGenerating] = useState<boolean>(false);
+  const [synthStage, setSynthStage] = useState<{ step: number; title: string; percent: number }>({
+    step: 1,
+    title: "Connecting to neural speech engine...",
+    percent: 15,
+  });
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [generatedDrop, setGeneratedDrop] = useState<{
     script: string;
     audioUrl: string;
@@ -40,6 +46,44 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
     if (e) e.preventDefault();
     setGenerating(true);
     setStatusMsg(null);
+    setSynthStage({
+      step: 1,
+      title: "Connecting to Fish Audio neural model & voice weights...",
+      percent: 15,
+    });
+    setElapsedTime(0);
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsedMs = Date.now() - startTime;
+      setElapsedTime(Math.floor(elapsedMs / 100));
+
+      if (elapsedMs < 2000) {
+        setSynthStage({
+          step: 1,
+          title: "Connecting to Fish Audio neural model & voice weights...",
+          percent: Math.min(35, 15 + (elapsedMs / 2000) * 20),
+        });
+      } else if (elapsedMs < 5000) {
+        setSynthStage({
+          step: 2,
+          title: "Synthesizing vocal inflection & audio waveform...",
+          percent: Math.min(72, 35 + ((elapsedMs - 2000) / 3000) * 37),
+        });
+      } else if (elapsedMs < 7500) {
+        setSynthStage({
+          step: 3,
+          title: "Applying broadcast mastering & EBU R128 (-14 LUFS loudness)...",
+          percent: Math.min(90, 72 + ((elapsedMs - 5000) / 2500) * 18),
+        });
+      } else {
+        setSynthStage({
+          step: 4,
+          title: "Finalizing audio stream & buffering...",
+          percent: Math.min(96, 90 + ((elapsedMs - 7500) / 3000) * 6),
+        });
+      }
+    }, 150);
 
     try {
       const res = await fetch("/api/admin/radio/drops/generate", {
@@ -56,6 +100,12 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
       if (!res.ok) {
         throw new Error(data.error || `Generation failed HTTP ${res.status}`);
       }
+
+      setSynthStage({
+        step: 4,
+        title: "Complete! Audio waveform ready.",
+        percent: 100,
+      });
 
       const finalUrl = data.drop_url || data.mastered_file;
       setGeneratedDrop({
@@ -78,6 +128,7 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
         type: "error",
       });
     } finally {
+      clearInterval(interval);
       setGenerating(false);
     }
   };
@@ -206,6 +257,28 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
           )}
         </button>
       </form>
+
+      {/* Synthesis Progress Bar */}
+      {generating && (
+        <div className="p-3 border-2 border-indigo-600 bg-white shadow-(--shadow-brut-sm) space-y-2">
+          <div className="flex items-center justify-between text-xs font-black uppercase">
+            <div className="flex items-center gap-1.5 text-indigo-700">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>[Stage {synthStage.step}/4] {synthStage.title}</span>
+            </div>
+            <div className="flex items-center gap-2 text-gray-500 font-mono">
+              <span>{(elapsedTime / 10).toFixed(1)}s</span>
+              <span className="font-bold text-indigo-700">{Math.round(synthStage.percent)}%</span>
+            </div>
+          </div>
+          <div className="w-full bg-gray-200 h-2 border border-gray-300 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-200"
+              style={{ width: `${synthStage.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Status Message */}
       {statusMsg && (

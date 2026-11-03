@@ -103,7 +103,7 @@ export default function PerformanceSoundboard({
   const [padCountdowns, setPadCountdowns] = useState<Map<number, number>>(new Map());
   const [volume, setVolume] = useState<number>(0.85);
   const [muted, setMuted] = useState<boolean>(false);
-  const [broadcastMode, setBroadcastMode] = useState<"local" | "on_air">("local");
+  const [broadcastMode, setBroadcastMode] = useState<"local" | "on_air">("on_air");
 
   // Shared Soundboard State from Context
   const {

@@ -58,6 +58,8 @@ export default function BrowserMicRecorder({
       return;
     }
 
+    const localBlobUrl = URL.createObjectURL(blob);
+    setMasteredUrl(localBlobUrl);
     setMastering(true);
     setStatusMsg(null);
 
@@ -77,7 +79,7 @@ export default function BrowserMicRecorder({
       }
 
       const data = await res.json();
-      const finalUrl = data.mastered_file || audioUrl;
+      const finalUrl = data.drop_url || data.url || data.mastered_file || localBlobUrl;
       setMasteredUrl(finalUrl);
       setStatusMsg({
         text: "✓ Mic drop mastered to -14 LUFS!",
@@ -206,17 +208,19 @@ export default function BrowserMicRecorder({
           <div className="flex items-center space-x-2">
             <button
               onClick={() => {
-                if (onSendToCue && (masteredUrl || audioUrl)) {
+                const targetUrl = masteredUrl || audioUrl;
+                if (onSendToCue && targetUrl) {
                   onSendToCue({
                     id: `mic_${Date.now()}`,
                     title: dropName,
                     script: "Live Mic Recording",
-                    audioUrl: masteredUrl || audioUrl,
+                    audioUrl: targetUrl,
                     persona: "Live Mic",
                   });
+                  setStatusMsg({ text: "✓ Sent to Cue Dock (PFL)!", type: "success" });
                 }
               }}
-              className="px-2.5 py-1 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white border border-white/20 text-[11px] font-bold flex items-center space-x-1"
+              className="px-2.5 py-1 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white border border-white/20 text-[11px] font-bold flex items-center space-x-1 cursor-pointer"
             >
               <Headphones className="w-3 h-3" />
               <span>SEND TO CUE</span>
@@ -261,8 +265,15 @@ export default function BrowserMicRecorder({
         </div>
       )}
 
-      {/* Messages */}
-      {statusMsg && (
+      {/* Error / Status Messages */}
+      {recorderError && (
+        <div className="p-3 bg-[#E84855]/20 border-2 border-[#E84855] text-red-200 font-mono text-xs flex items-center space-x-2 shadow-[2px_2px_0px_#16181D]">
+          <AlertCircle className="w-4 h-4 text-[#E84855] shrink-0" />
+          <span>{recorderError}</span>
+        </div>
+      )}
+
+      {statusMsg && !recorderError && (
         <div className={`p-2 border font-mono text-xs flex items-center space-x-1.5 ${
           statusMsg.type === "success"
             ? "bg-[#10B981]/20 border-[#10B981] text-emerald-200"

@@ -35,29 +35,39 @@ export function useAudioRecorder(): AudioRecorderState {
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Microphone recording is not supported in this browser.");
+        throw new Error("Microphone recording is not supported in this browser or context (HTTPS required).");
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          // echoCancellation & noiseSuppression off: preserves natural club vibe & vocal timbre
-          echoCancellation: false,
-          noiseSuppression: false,
-          // autoGainControl off: avoid dynamic pumping in loud venues; ffmpeg handles mastering
-          autoGainControl: false,
-          sampleRate: 48000,
-        },
-      });
+      let stream: MediaStream;
+      try {
+        // First try studio vocal constraints (without strict sampleRate to prevent OverconstrainedError)
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          },
+        });
+      } catch (constraintErr: any) {
+        // If specific constraints are rejected by the hardware, fall back to default audio
+        if (constraintErr?.name === "OverconstrainedError" || constraintErr?.name === "ConstraintNotSatisfiedError") {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } else {
+          throw constraintErr;
+        }
+      }
 
       // Prefer WebM opus, fall back to MP4 on iOS Safari
       let mimeType = "audio/webm;codecs=opus";
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        if (MediaRecorder.isTypeSupported("audio/mp4")) {
-          mimeType = "audio/mp4";
-        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-          mimeType = "audio/webm";
-        } else {
-          mimeType = "";
+      if (typeof MediaRecorder !== "undefined") {
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          if (MediaRecorder.isTypeSupported("audio/mp4")) {
+            mimeType = "audio/mp4";
+          } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+            mimeType = "audio/webm";
+          } else {
+            mimeType = "";
+          }
         }
       }
 
@@ -98,7 +108,16 @@ export function useAudioRecorder(): AudioRecorderState {
         });
       }, 1000);
     } catch (err: any) {
-      setError(err.message || "Failed to access microphone.");
+      console.error("[useAudioRecorder] Failed to start recording:", err);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setError("Microphone permission was denied. Click the site settings icon (left of the address bar) to allow microphone access, then try again.");
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setError("No microphone found on your device. Please connect a microphone or headset.");
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        setError("Microphone is currently in use by another app. Please close other audio apps and try again.");
+      } else {
+        setError(err.message || "Failed to access microphone.");
+      }
       setIsRecording(false);
     }
   }, []);

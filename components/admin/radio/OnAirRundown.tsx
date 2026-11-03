@@ -33,6 +33,7 @@ interface PlaylistTrack {
 
 export default function OnAirRundown() {
   const [sets, setSets] = useState<PlaylistTrack[]>([]);
+  const [playlistName, setPlaylistName] = useState<string | null>(null);
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
   const [broadcastMode, setBroadcastMode] = useState<"autodj" | "mania">("autodj");
   const [loading, setLoading] = useState(true);
@@ -53,6 +54,7 @@ export default function OnAirRundown() {
       if (res.ok) {
         const data = await res.json();
         setSets(Array.isArray(data.sets) ? data.sets : []);
+        setPlaylistName(data.playlist_name || null);
         let activeId = data.active_set_id || null;
         if (!activeId) {
           try {
@@ -194,11 +196,11 @@ export default function OnAirRundown() {
             <Layers className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white">
-              ON-AIR RUNDOWN · ROTATION TIMELINE
+            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white truncate max-w-[280px]">
+              {playlistName ? `ON-AIR RUNDOWN · ${playlistName.toUpperCase()}` : "ON-AIR RUNDOWN · ROTATION TIMELINE"}
             </h3>
             <p className="text-[11px] font-mono text-[#DFBB7D]">
-              {sets.length} Tracks in schedule · Real-time playout timeline
+              {sets.length} Tracks in schedule · {playlistName ? "Active Broadcast Playlist" : "Real-time playout timeline"}
             </p>
           </div>
         </div>

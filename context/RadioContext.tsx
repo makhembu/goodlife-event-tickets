@@ -1186,11 +1186,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Live Drop Injection Engine: ducks current track mid-song, plays voice drop for all listeners, then swells back
   const triggerLiveInjectedDrop = useCallback(
     (liveDrop: { id: string | number; title?: string; persona?: string; audio_url: string }) => {
-      if (!audioRef.current || !dropAudioRef.current || !liveDrop.audio_url) return;
+      if (!dropAudioRef.current || !liveDrop.audio_url) return;
       const dropAudio = dropAudioRef.current;
       const audio = audioRef.current;
 
-      const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+      const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
       const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
 
       isDropPlayingRef.current = true;
@@ -1199,8 +1199,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setActivePersona(liveDrop.persona || "Station DJ");
       setActiveMood("live");
 
-      // Duck currently playing music bed immediately mid-song
-      audio.volume = duckedVol;
+      // Duck currently playing music bed immediately mid-song if audio is playing
+      if (audio) {
+        audio.volume = duckedVol;
+      }
 
       const onDropDone = () => {
         dropAudio.removeEventListener("ended", onDropDone);
@@ -1210,7 +1212,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setActiveDropTitle(null);
         setActivePersona(null);
         setActiveMood(null);
-        swellMusicToFullVolume();
+        if (audio) {
+          swellMusicToFullVolume();
+        }
       };
 
       dropAudio.addEventListener("ended", onDropDone);

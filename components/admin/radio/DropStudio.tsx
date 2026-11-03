@@ -1,8 +1,22 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Sparkles, Headphones, Radio, Plus, CheckCircle2, AlertCircle, RefreshCw, Volume2 } from "lucide-react";
+import {
+  Sparkles,
+  Headphones,
+  Radio,
+  Plus,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Volume2,
+  Play,
+  Pause,
+  ArrowRight,
+  Send,
+} from "lucide-react";
 import { CueDropItem } from "./CueDock";
+import { useSoundboard } from "@/context/SoundboardContext";
 
 interface DropPreset {
   id: string;
@@ -84,10 +98,27 @@ export interface DropStudioProps {
 }
 
 export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: DropStudioProps) {
+  const { openAssignModal } = useSoundboard();
   const [selectedPreset, setSelectedPreset] = useState<DropPreset>(PRESETS[0]);
   const [selectedVoice, setSelectedVoice] = useState<string>("dj-fusion");
   const [scriptText, setScriptText] = useState(PRESETS[0].defaultText);
   const [generating, setGenerating] = useState(false);
+  const [activeDrop, setActiveDrop] = useState<{
+    id: string;
+    title: string;
+    script: string;
+    audioUrl: string;
+    persona?: string;
+  } | null>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [airingStatus, setAiringStatus] = useState<string | null>(null);
+  const [synthStage, setSynthStage] = useState<{ step: number; title: string; percent: number }>({
+    step: 1,
+    title: "Connecting to Fish Audio neural model...",
+    percent: 15,
+  });
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -121,6 +152,44 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
     setGenerating(true);
     setError(null);
     setSuccessMsg(null);
+    setSynthStage({
+      step: 1,
+      title: "Connecting to Fish Audio neural model & loading voice weights...",
+      percent: 15,
+    });
+    setElapsedTime(0);
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsedMs = Date.now() - startTime;
+      setElapsedTime(Math.floor(elapsedMs / 100));
+
+      if (elapsedMs < 2000) {
+        setSynthStage({
+          step: 1,
+          title: "Connecting to Fish Audio neural model & loading voice weights...",
+          percent: Math.min(35, 15 + (elapsedMs / 2000) * 20),
+        });
+      } else if (elapsedMs < 5000) {
+        setSynthStage({
+          step: 2,
+          title: `Synthesizing ${VOICES.find((v) => v.id === selectedVoice)?.label || "DJ"} voice audio waveform...`,
+          percent: Math.min(72, 35 + ((elapsedMs - 2000) / 3000) * 37),
+        });
+      } else if (elapsedMs < 7500) {
+        setSynthStage({
+          step: 3,
+          title: "Applying broadcast mastering & EBU R128 (-14 LUFS loudness)...",
+          percent: Math.min(90, 72 + ((elapsedMs - 5000) / 2500) * 18),
+        });
+      } else {
+        setSynthStage({
+          step: 4,
+          title: destination === "air" ? "Buffering into live broadcast stream..." : "Buffering into Headphone Cue...",
+          percent: Math.min(96, 90 + ((elapsedMs - 7500) / 3000) * 6),
+        });
+      }
+    }, 150);
 
     try {
       const res = await fetch("/api/admin/radio/drops/generate", {
@@ -138,6 +207,12 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         throw new Error(data.error || "Drop generation failed.");
       }
 
+      setSynthStage({
+        step: 4,
+        title: "Complete! Audio waveform ready.",
+        percent: 100,
+      });
+
       const cueItem: CueDropItem = {
         id: `drop_${Date.now()}`,
         title: `${selectedPreset.label}`,
@@ -146,22 +221,65 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         persona: VOICES.find((v) => v.id === selectedVoice)?.label,
       };
 
+      setActiveDrop(cueItem);
       setSuccessMsg("✓ Synthesized with Fish Audio s2.1-pro-free (-14 LUFS)!");
 
-      if (destination === "cue" && onDropReady) {
+      // Always populate CueDock with the new drop
+      if (onDropReady) {
         onDropReady(cueItem);
-      } else if (destination === "air") {
+      }
+
+      if (destination === "air") {
         if (onAirLive) {
           await onAirLive(data.drop_url, cueItem.title, cueItem.persona, scriptText.trim());
-        }
-        if (onFireDirect) {
+          setAiringStatus("✓ Aired live to broadcast stream!");
+          setTimeout(() => setAiringStatus(null), 4000);
+        } else if (onFireDirect) {
           onFireDirect(data.drop_url, cueItem.title);
         }
       }
     } catch (err: any) {
       setError(err.message || "Failed to generate AI drop.");
     } finally {
+      clearInterval(interval);
       setGenerating(false);
+    }
+  };
+
+  const handleToggleAudition = () => {
+    if (!activeDrop?.audioUrl) return;
+    if (!previewAudioRef.current) {
+      previewAudioRef.current = new Audio(activeDrop.audioUrl);
+      previewAudioRef.current.onended = () => setIsPlayingPreview(false);
+    } else if (previewAudioRef.current.src !== activeDrop.audioUrl) {
+      previewAudioRef.current.src = activeDrop.audioUrl;
+    }
+
+    if (isPlayingPreview) {
+      previewAudioRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      previewAudioRef.current.play().then(() => setIsPlayingPreview(true)).catch(() => setIsPlayingPreview(false));
+    }
+  };
+
+  const handleReAir = async () => {
+    if (!activeDrop?.audioUrl || !onAirLive) return;
+    setAiringStatus("Airing to stream...");
+    try {
+      const ok = await onAirLive(activeDrop.audioUrl, activeDrop.title, activeDrop.persona, activeDrop.script);
+      setAiringStatus(ok ? "✓ Fired live to stream!" : "Aired!");
+    } catch {
+      setAiringStatus("Failed to air drop");
+    }
+    setTimeout(() => setAiringStatus(null), 3500);
+  };
+
+  const handleSendActiveToCue = () => {
+    if (activeDrop && onDropReady) {
+      onDropReady(activeDrop);
+      setAiringStatus("✓ Sent to Cue Dock (PFL)!");
+      setTimeout(() => setAiringStatus(null), 3000);
     }
   };
 
@@ -324,6 +442,39 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       </div>
 
+      {/* Dynamic Synthesis Progress Indicator */}
+      {generating && (
+        <div className="bg-[#1A1D24] p-3.5 border-2 border-[#DFBB7D] shadow-[2px_2px_0px_#DFBB7D] space-y-2.5">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="w-3.5 h-3.5 text-[#DFBB7D] animate-spin shrink-0" />
+              <span className="text-[#DFBB7D] font-bold">
+                [STAGE {synthStage.step}/4] {synthStage.title}
+              </span>
+            </div>
+            <div className="flex items-center space-x-2 text-white/70">
+              <span>{(elapsedTime / 10).toFixed(1)}s</span>
+              <span className="font-bold text-[#F5C842]">{Math.round(synthStage.percent)}%</span>
+            </div>
+          </div>
+
+          {/* Progress Bar Track */}
+          <div className="w-full bg-black/60 h-2.5 overflow-hidden border border-white/20 p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-[#DFBB7D] via-[#F5C842] to-[#E84855] transition-all duration-200 relative overflow-hidden"
+              style={{ width: `${synthStage.percent}%` }}
+            >
+              <div className="absolute inset-0 bg-white/25 animate-pulse" />
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center text-[10px] font-mono text-white/50">
+            <span>Neural Vocal Engine · Fish Audio s2.1-pro-free</span>
+            <span>EBU R128 (-14 LUFS) mastering</span>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       {error && (
         <div className="p-2.5 bg-[#E84855]/20 border border-[#E84855] text-red-200 font-mono text-xs flex items-center space-x-1.5">
@@ -335,6 +486,75 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         <div className="p-2.5 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs flex items-center space-x-1.5">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Active Generated Drop Deck (Instant Audition, Re-air, Cue & Pad Assign) */}
+      {activeDrop && (
+        <div className="bg-[#1A1D24] border-2 border-[#DFBB7D] p-3.5 shadow-[2px_2px_0px_#DFBB7D] space-y-2.5">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center space-x-2">
+              <span className="px-1.5 py-0.5 bg-[#DFBB7D] text-[#16181D] font-mono text-[10px] font-bold">
+                READY DROP
+              </span>
+              <span className="font-mono text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">
+                {activeDrop.title} {activeDrop.persona ? `· ${activeDrop.persona}` : ""}
+              </span>
+            </div>
+            {airingStatus && (
+              <span className="font-mono text-[11px] text-emerald-400 font-bold animate-pulse">
+                {airingStatus}
+              </span>
+            )}
+          </div>
+
+          <p className="font-mono text-xs text-white/80 italic bg-black/40 p-2 border border-white/5">
+            &ldquo;{activeDrop.script}&rdquo;
+          </p>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleToggleAudition}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1.5 cursor-pointer"
+            >
+              {isPlayingPreview ? (
+                <Pause className="w-3.5 h-3.5 text-[#DFBB7D]" />
+              ) : (
+                <Play className="w-3.5 h-3.5 text-[#DFBB7D]" />
+              )}
+              <span>{isPlayingPreview ? "PAUSE AUDITION" : "AUDITION (LOCAL)"}</span>
+            </button>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleSendActiveToCue}
+                className="px-2.5 py-1.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] flex items-center space-x-1 cursor-pointer"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span>SEND TO CUE</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReAir}
+                className="px-3 py-1.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1 shadow-[2px_2px_0px_#DFBB7D] cursor-pointer"
+              >
+                <Radio className="w-3.5 h-3.5 animate-pulse" />
+                <span>FIRE TO LIVE STREAM</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openAssignModal(activeDrop.audioUrl, activeDrop.title)}
+                className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white font-mono text-xs font-bold border border-white/10 flex items-center space-x-1 cursor-pointer"
+              >
+                <ArrowRight className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                <span>ASSIGN TO PAD</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

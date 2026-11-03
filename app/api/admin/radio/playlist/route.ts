@@ -8,53 +8,126 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const setsRes = await neonQuery(`
-      SELECT 
-        id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
-        duration, duration_sec, genre, display_order, is_active, created_at
-      FROM radio_sets
-      WHERE deleted_at IS NULL AND is_active = true
-      ORDER BY display_order ASC, id ASC
-    `);
+    // 1. Check for active broadcast playlist first
+    const [playlistRes, settingsRes] = await Promise.all([
+      neonQuery(`
+        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
+               s.id, s.event_id, s.title, s.dj_name, s.audio_url, s.audio_high_url, s.cover_url, 
+               s.duration, s.duration_sec, s.genre, pt.position
+        FROM radio_playlists p
+        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        ORDER BY pt.position ASC, pt.id ASC
+      `).catch(() => ({ rows: [] })),
+      neonQuery("SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"),
+    ]);
 
-    const sets = (setsRes.rows || []).map((s: any) => ({
-      ...s,
-      title: formatTrackTitle(s.title),
-      cover_url: resolveCoverArt(s.cover_url),
-    }));
-
-    const settingsRes = await neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
-    );
     const settings = settingsRes.rows[0] || {};
-
     let activeSetId: number | null = null;
     let mode: "autodj" | "mania" = settings.broadcast_mode === "mania" ? "mania" : "autodj";
+    let sets: any[] = [];
+    let isPlaylistBroadcast = false;
+    let playlistName: string | null = null;
+    let playlistId: number | null = null;
 
-    if (mode === "mania" && settings.active_set_id) {
-      const maniaSet = sets.find((s: any) => s.id === Number(settings.active_set_id));
-      if (maniaSet) {
-        const trackDur = (maniaSet.duration_sec && maniaSet.duration_sec > 0) ? maniaSet.duration_sec : 180;
-        const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
-        const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-        if (elapsed < trackDur) {
-          activeSetId = maniaSet.id;
+    if (playlistRes.rows.length > 0) {
+      isPlaylistBroadcast = true;
+      playlistName = playlistRes.rows[0].playlist_name;
+      playlistId = playlistRes.rows[0].playlist_id;
+      const activatedAt = playlistRes.rows[0].activated_at;
+
+      sets = playlistRes.rows.map((s: any) => ({
+        ...s,
+        title: formatTrackTitle(s.title),
+        cover_url: resolveCoverArt(s.cover_url),
+      }));
+
+      // Determine active track in active broadcast playlist
+      if (mode === "mania" && settings.active_set_id) {
+        const maniaSet = sets.find((s: any) => s.id === Number(settings.active_set_id));
+        if (maniaSet) {
+          const trackDur = (maniaSet.duration_sec && maniaSet.duration_sec > 0) ? maniaSet.duration_sec : 180;
+          const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+          const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+          if (elapsed < trackDur) {
+            activeSetId = maniaSet.id;
+          } else {
+            mode = "autodj";
+          }
         } else {
           mode = "autodj";
         }
-      } else {
-        mode = "autodj";
       }
-    }
 
-    if (mode === "autodj" && sets.length > 0) {
-      const timeline = computeLiveTimeline(sets);
-      activeSetId = sets[timeline.index]?.id || sets[0]?.id || null;
+      if (mode === "autodj" && sets.length > 0) {
+        const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
+        const nowSec = Math.floor(Date.now() / 1000);
+        let cycleSec = 0;
+
+        if (activatedAt) {
+          const activatedAtSec = Math.floor(new Date(activatedAt).getTime() / 1000);
+          const elapsedSinceActivation = Math.max(0, nowSec - activatedAtSec);
+          cycleSec = totalDurationSec > 0 ? (elapsedSinceActivation % totalDurationSec) : 0;
+        } else {
+          cycleSec = totalDurationSec > 0 ? (nowSec % totalDurationSec) : 0;
+        }
+
+        let cumulative = 0;
+        for (let i = 0; i < sets.length; i++) {
+          const dur = sets[i].duration_sec || 180;
+          if (cumulative + dur > cycleSec) {
+            activeSetId = sets[i].id;
+            break;
+          }
+          cumulative += dur;
+        }
+      }
+    } else {
+      // Fallback: general radio_sets catalog
+      const setsRes = await neonQuery(`
+        SELECT 
+          id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
+          duration, duration_sec, genre, display_order, is_active, created_at
+        FROM radio_sets
+        WHERE deleted_at IS NULL AND is_active = true
+        ORDER BY display_order ASC, id ASC
+      `);
+
+      sets = (setsRes.rows || []).map((s: any) => ({
+        ...s,
+        title: formatTrackTitle(s.title),
+        cover_url: resolveCoverArt(s.cover_url),
+      }));
+
+      if (mode === "mania" && settings.active_set_id) {
+        const maniaSet = sets.find((s: any) => s.id === Number(settings.active_set_id));
+        if (maniaSet) {
+          const trackDur = (maniaSet.duration_sec && maniaSet.duration_sec > 0) ? maniaSet.duration_sec : 180;
+          const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+          const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+          if (elapsed < trackDur) {
+            activeSetId = maniaSet.id;
+          } else {
+            mode = "autodj";
+          }
+        } else {
+          mode = "autodj";
+        }
+      }
+
+      if (mode === "autodj" && sets.length > 0) {
+        const timeline = computeLiveTimeline(sets);
+        activeSetId = sets[timeline.index]?.id || sets[0]?.id || null;
+      }
     }
 
     return NextResponse.json({
       mode,
       active_set_id: activeSetId,
+      playlist_name: playlistName,
+      playlist_id: playlistId,
+      is_playlist_broadcast: isPlaylistBroadcast,
       sets,
     });
   } catch (err: any) {
