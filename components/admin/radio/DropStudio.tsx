@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Sparkles,
   Headphones,
@@ -14,6 +14,7 @@ import {
   Pause,
   ArrowRight,
   Send,
+  Wand2,
 } from "lucide-react";
 import { CueDropItem } from "./CueDock";
 import { useSoundboard } from "@/context/SoundboardContext";
@@ -122,6 +123,94 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const promptInputRef = useRef<HTMLInputElement | null>(null);
+  const lastFocusedRef = useRef<"prompt" | "script">("prompt");
+
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [writingScript, setWritingScript] = useState(false);
+  const [broadcastContext, setBroadcastContext] = useState<any>(null);
+  const [contextTags, setContextTags] = useState<Array<{ id: string; label: string; value: string }>>([
+    { id: "tickets", label: "🎟️ Tickets: goodlife.smwhr.space", value: "tickets on goodlife.smwhr.space" },
+    { id: "date", label: "📅 Date: Every Sunday", value: "Every Sunday" },
+    { id: "venue", label: "📍 Venue: Marara Camp, Thika", value: "Marara Camp, Thika" },
+    { id: "price", label: "💰 Price: 200 bob", value: "200 bob" },
+    { id: "station", label: "📻 Station: GOODLIFE Radio 254", value: "GOODLIFE Radio 254" },
+  ]);
+
+  // Prepopulate live broadcast tags from server
+  useEffect(() => {
+    fetch("/api/admin/radio/drops/write-script")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.context) {
+          setBroadcastContext(d.context);
+          if (d.tags && d.tags.length > 0) {
+            setContextTags(d.tags);
+          }
+        }
+      })
+      .catch((err) => console.warn("Could not fetch broadcast context tags:", err));
+  }, []);
+
+  const handleInsertTag = (tagValue: string) => {
+    if (lastFocusedRef.current === "script" && textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      const text = scriptText;
+      const newText = text.substring(0, start) + " " + tagValue + " " + text.substring(end);
+      setScriptText(newText.replace(/\s{2,}/g, " "));
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(start + tagValue.length + 2, start + tagValue.length + 2);
+        }
+      }, 10);
+    } else {
+      setAiPrompt((prev) => (prev ? `${prev}, ${tagValue}` : tagValue));
+      if (promptInputRef.current) {
+        promptInputRef.current.focus();
+      }
+    }
+  };
+
+  const handleWriteScriptWithAi = async (overridePrompt?: string) => {
+    const promptToUse = (overridePrompt ?? aiPrompt).trim();
+    setWritingScript(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    const activePersona = VOICES.find((v) => v.id === selectedVoice)?.label || "DJ Fusion";
+
+    try {
+      const res = await fetch("/api/admin/radio/drops/write-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptToUse || `Hype Sunday Park & Chill tickets for 200 bob at Marara Camp with ${activePersona}`,
+          voice_id: selectedVoice,
+          voice_persona: activePersona,
+          context: broadcastContext,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate script.");
+      }
+
+      if (data.script) {
+        setScriptText(data.script);
+        setSuccessMsg(`✨ AI script written for ${data.persona || activePersona}! Ready to audition or fire.`);
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || "AI script generation failed.");
+    } finally {
+      setWritingScript(false);
+    }
+  };
 
   const handleSelectPreset = (preset: DropPreset) => {
     setSelectedPreset(preset);
@@ -392,6 +481,120 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       </div>
 
+      {/* 1. Dynamic Live Broadcast Tags */}
+      <div className="bg-[#1A1D24]/80 p-2.5 sm:p-3 border border-[#DFBB7D]/30 space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-mono text-[#DFBB7D] uppercase tracking-wider font-bold flex items-center space-x-1.5">
+            <Radio className="w-3.5 h-3.5 text-[#DFBB7D]" />
+            <span>Pre-Populated Broadcast Tags (Click to Insert):</span>
+          </label>
+          <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
+            Live from Postgres & station rotation
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {contextTags.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => handleInsertTag(tag.value)}
+              title={`Click to insert "${tag.value}" into AI prompt or script`}
+              className="px-2 py-1 bg-black/40 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white/90 font-mono text-[11px] border border-[#DFBB7D]/40 transition-colors flex items-center space-x-1 cursor-pointer"
+            >
+              <span>+</span>
+              <span>{tag.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. AI Script Assistant Bar */}
+      <div className="bg-[#1A1D24] p-3 border-2 border-[#DFBB7D]/60 space-y-2 shadow-sm">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-mono text-white/90 uppercase tracking-wider font-bold flex items-center space-x-1.5">
+            <Wand2 className="w-3.5 h-3.5 text-[#F5C842]" />
+            <span>AI Script Generator · Prompt Engine</span>
+          </label>
+          <span className="text-[10px] font-mono text-[#10B981]">
+            Powered by Gemini & Groq
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <input
+              ref={promptInputRef}
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onFocus={() => {
+                lastFocusedRef.current = "prompt";
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleWriteScriptWithAi();
+                }
+              }}
+              placeholder='e.g. "Hype tickets for Sunday at Marara Camp" or "Shout out Nairobi chillers listening live"...'
+              className="w-full bg-black/50 text-white font-mono text-xs px-3 py-2 border border-white/20 focus:border-[#DFBB7D] focus:outline-none"
+            />
+            {aiPrompt && (
+              <button
+                type="button"
+                onClick={() => setAiPrompt("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-xs font-mono"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleWriteScriptWithAi()}
+            disabled={writingScript}
+            className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold transition-all flex items-center justify-center space-x-1.5 shrink-0 disabled:opacity-50 cursor-pointer shadow-[2px_2px_0px_#16181D]"
+          >
+            {writingScript ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>WRITING SCRIPT...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>✨ AI WRITE SCRIPT</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Quick prompt suggestions */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-[10px] font-mono text-white/50 mr-1">Quick Prompts:</span>
+          {[
+            { label: "⚡ Hype Sunday Park & Chill", prompt: "Hype Sunday Park & Chill at Marara Camp Thika with river vibes" },
+            { label: "🎟️ Push 200 Bob Tickets", prompt: "Urge listeners to grab the 200 bob advance tickets on goodlife.smwhr.space" },
+            { label: "🎵 Introduce Up Next Track", prompt: "Introduce the upcoming song with high energy and hype" },
+            { label: "🔥 Nairobi Sheng Hype Drop", prompt: "Raw energetic Nairobi Sheng DJ drop telling wasee we outside" },
+            { label: "📻 Station ID & Shoutout", prompt: "Station ID shoutout for all listeners tuned in across Nairobi and diaspora" },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => {
+                setAiPrompt(item.prompt);
+                handleWriteScriptWithAi(item.prompt);
+              }}
+              className="px-2 py-0.5 bg-white/5 hover:bg-white/20 text-white/80 hover:text-white font-mono text-[10px] border border-white/10 transition-colors cursor-pointer"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Emotion Chips */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
@@ -432,6 +635,9 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           ref={textareaRef}
           value={scriptText}
           onChange={(e) => setScriptText(e.target.value)}
+          onFocus={() => {
+            lastFocusedRef.current = "script";
+          }}
           rows={3}
           className="w-full bg-[#1A1D24] text-white font-mono text-xs p-3 border border-white/20 focus:border-[#DFBB7D] focus:outline-none resize-none leading-relaxed"
           placeholder="Type Sheng / Kenyan radio drop script..."

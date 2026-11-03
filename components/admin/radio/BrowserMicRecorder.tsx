@@ -105,8 +105,8 @@ export default function BrowserMicRecorder({
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
-            noiseSuppression: false,
-            autoGainControl: false,
+            noiseSuppression: true,
+            autoGainControl: true,
           },
         });
       } catch (err: any) {
@@ -116,7 +116,7 @@ export default function BrowserMicRecorder({
 
       talkoverStreamRef.current = stream;
 
-      // Web Audio setup for live filtering & level measurement
+      // Web Audio setup for live filtering, broadcast gain boost & level measurement
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioCtxClass();
       talkoverAudioCtxRef.current = ctx;
@@ -130,11 +130,18 @@ export default function BrowserMicRecorder({
 
       // Vocal compressor (broadcast voice leveling)
       const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.value = -24;
-      compressor.knee.value = 30;
-      compressor.ratio.value = 12;
+      compressor.threshold.value = -22;
+      compressor.knee.value = 24;
+      compressor.ratio.value = 8;
       compressor.attack.value = 0.003;
       compressor.release.value = 0.25;
+
+      // Broadcast Vocal Gain (+9dB boost so live host voice cuts through loudly over music!)
+      const vocalGain = ctx.createGain();
+      vocalGain.gain.value = 2.8;
+
+      // Destination for recording the enhanced, loud vocal stream
+      const dest = ctx.createMediaStreamDestination();
 
       // Analyser for real-time meter display
       const analyser = ctx.createAnalyser();
@@ -142,7 +149,9 @@ export default function BrowserMicRecorder({
 
       source.connect(highPass);
       highPass.connect(compressor);
-      compressor.connect(analyser);
+      compressor.connect(vocalGain);
+      vocalGain.connect(dest);
+      vocalGain.connect(analyser);
 
       const pcmData = new Uint8Array(analyser.frequencyBinCount);
       const updateMeter = () => {
@@ -158,7 +167,7 @@ export default function BrowserMicRecorder({
       };
       talkoverAnimRef.current = requestAnimationFrame(updateMeter);
 
-      // Concurrently record talkover audio in background
+      // Concurrently record talkover audio in background from the BOOSTED studio stream
       talkoverChunksRef.current = [];
       let mimeType = "audio/webm;codecs=opus";
       if (typeof MediaRecorder !== "undefined") {
@@ -166,7 +175,8 @@ export default function BrowserMicRecorder({
           mimeType = MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
         }
       }
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const recordStream = dest.stream && dest.stream.getAudioTracks().length > 0 ? dest.stream : stream;
+      const recorder = mimeType ? new MediaRecorder(recordStream, { mimeType }) : new MediaRecorder(recordStream);
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) talkoverChunksRef.current.push(e.data);
       };

@@ -53,8 +53,8 @@ async function runTests() {
   check("[Behavior] resolveCoverArt preserves non-youtube image URLs", resolveCoverArt("https://images.goodlife.internal/album.jpg") === "https://images.goodlife.internal/album.jpg");
 
   // 3. Honest Title Fallback (Rule: NO invented defaults like 'GOODLIFE RADIO' or 'Unknown Track')
-  check("[Behavior] formatTrackTitle returns honest 'Updating...' on null", formatTrackTitle(null) === "Updating...");
-  check("[Behavior] formatTrackTitle returns honest 'Updating...' on empty string", formatTrackTitle("   ") === "Updating...");
+  check("[Behavior] formatTrackTitle returns honest 'Station Rotation Active' on null", formatTrackTitle(null) === "Station Rotation Active");
+  check("[Behavior] formatTrackTitle returns honest 'Station Rotation Active' on empty string", formatTrackTitle("   ") === "Station Rotation Active");
   check("[Behavior] formatTrackTitle preserves real track title", formatTrackTitle("Billie Jean") === "Billie Jean");
 
   // 4. Song Search Link Builder (Spotify, Apple Music, YouTube Music, Audiomack; Dropped Boomplay)

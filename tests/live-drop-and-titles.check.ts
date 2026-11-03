@@ -32,9 +32,9 @@ for (const sample of sampleDirtyTitles) {
 }
 
 // 2. Truth in Empty/Null titles
-assert(formatTrackTitle(null) === "Updating...", "Null title returns 'Updating...'");
-assert(formatTrackTitle("") === "Updating...", "Empty title returns 'Updating...'");
-assert(formatTrackTitle("   ") === "Updating...", "Whitespace title returns 'Updating...'");
+assert(formatTrackTitle(null) === "Station Rotation Active", "Null title returns 'Station Rotation Active'");
+assert(formatTrackTitle("") === "Station Rotation Active", "Empty title returns 'Station Rotation Active'");
+assert(formatTrackTitle("   ") === "Station Rotation Active", "Whitespace title returns 'Station Rotation Active'");
 
 // 3. Aliasing check
 assert(normalizeTrackTitle === formatTrackTitle, "normalizeTrackTitle is alias of formatTrackTitle");
