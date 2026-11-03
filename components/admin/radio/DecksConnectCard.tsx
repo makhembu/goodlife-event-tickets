@@ -66,13 +66,13 @@ Format: MP3 320kbps (or 256kbps)`;
   return (
     <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-3">
         <div className="flex items-center space-x-2">
-          <div className="p-1.5 bg-[#10B981] text-[#16181D] font-bold">
+          <div className="p-1.5 bg-[#10B981] text-[#16181D] font-bold shrink-0">
             <RadioTower className="w-4 h-4" />
           </div>
-          <div>
-            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white">
+          <div className="min-w-0">
+            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white truncate">
               LIVE DJ HARBOR · BUTT / CDJ / TRAKTOR
             </h3>
             <p className="text-[11px] font-mono text-[#DFBB7D]">
@@ -82,12 +82,12 @@ Format: MP3 320kbps (or 256kbps)`;
         </div>
 
         {/* Live DJ Status Badge */}
-        <div className={`px-2.5 py-1 font-mono text-xs font-bold border flex items-center space-x-1.5 ${
+        <div className={`px-2.5 py-1 font-mono text-xs font-bold border flex items-center space-x-1.5 self-start sm:self-auto shrink-0 ${
           djConnected === true
             ? "bg-[#10B981] text-[#16181D] border-[#10B981] animate-pulse"
-            : "bg-white/5 text-white/50 border-white/10"
+            : "bg-white/10 text-white/80 border-white/20"
         }`}>
-          <div className={`w-2 h-2 rounded-full ${djConnected === true ? "bg-[#16181D]" : "bg-white/40"}`} />
+          <div className={`w-2 h-2 rounded-full ${djConnected === true ? "bg-[#16181D]" : "bg-emerald-400/80"}`} />
           <span>{djConnected === true ? "LIVE DJ ON AIR" : "HARBOR IDLE (AUTODJ ACTIVE)"}</span>
         </div>
       </div>

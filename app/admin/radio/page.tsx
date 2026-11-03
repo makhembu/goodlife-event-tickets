@@ -46,6 +46,7 @@ import { formatTrackTitle } from "@/lib/radio/media-helpers";
 export default function AdminRadioPage() {
   const { airLiveDrop } = useRadio();
   const [activeTab, setActiveTab] = useState<ConsoleTab>("studio");
+  const [studioDeck, setStudioDeck] = useState<"perform" | "playout" | "drops">("perform");
   const [library, setLibrary] = useState<RadioSet[]>([]);
   const [loadingLib, setLoadingLib] = useState(true);
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
@@ -437,102 +438,171 @@ export default function AdminRadioPage() {
         </div>
       )}
 
-      {/* VIEW 1: STUDIO COCKPIT (DUAL DECK LAYOUT) */}
+      {/* VIEW 1: STUDIO COCKPIT (DUAL DECK ON DESKTOP, SUB-DECK SWITCHER ON MOBILE) */}
       {activeTab === "studio" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* DECK A: Performance & Drops (7 cols / ~60%) */}
-          <div className="lg:col-span-7 space-y-6">
-            <PerformanceSoundboard
-              customDropUrl={customDropUrl}
-              customDropName={customDropName}
-              onFireOnAir={async (name, url) => {
-                setIsDucking(true);
-                if (url) {
-                  await airLiveDrop({ audioUrl: url, title: name, persona: name });
-                }
-                setTimeout(() => setIsDucking(false), 4500);
-              }}
-              onSendToCue={(pad) => {
-                setCueItem({
-                  id: `pad_${pad.id}`,
-                  title: pad.name,
-                  script: `Station Drop: ${pad.name}`,
-                  audioUrl: pad.audioUrl || "",
-                  persona: pad.name,
-                });
-              }}
-              onChoke={() => setIsDucking(false)}
-            />
-
-            <CueDock
-              cueItem={cueItem}
-              onClearCue={() => setCueItem(null)}
-              onFireOnAir={async (item) => {
-                setIsDucking(true);
-                await airLiveDrop({
-                  audioUrl: item.audioUrl,
-                  title: item.title,
-                  persona: item.persona,
-                  script: item.script,
-                });
-                const audio = new Audio(item.audioUrl);
-                audio.onended = () => setIsDucking(false);
-                audio.play().catch(() => setIsDucking(false));
-              }}
-              onAssignToPad={(item, padIdx) => {
-                setCustomDropUrl(item.audioUrl);
-                setCustomDropName(item.title);
-                showMsg(`Assigned to Cartwall Pad #${padIdx + 1}!`, "success");
-              }}
-              onUpdateScript={async (newScript) => {
-                const res = await fetch("/api/admin/radio/drops/generate", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ custom_text: newScript }),
-                });
-                const data = await res.json();
-                if (res.ok) {
-                  setCueItem({
-                    id: `cue_${Date.now()}`,
-                    title: "Updated Drop",
-                    script: newScript,
-                    audioUrl: data.drop_url,
-                  });
-                }
-              }}
-            />
-
-            <DropStudio
-              onDropReady={(cue) => setCueItem(cue)}
-              onFireDirect={(audioUrl, title) => {
-                setIsDucking(true);
-                const audio = new Audio(audioUrl);
-                audio.onended = () => setIsDucking(false);
-                audio.play().catch(() => setIsDucking(false));
-              }}
-              onAirLive={async (audioUrl, title, persona, script) => {
-                return await airLiveDrop({ audioUrl, title, persona, script });
-              }}
-            />
-
-            <BrowserMicRecorder
-              onDropMastered={(url, name) => {
-                setCustomDropUrl(url);
-                setCustomDropName(name);
-              }}
-              onTalkoverToggle={(active) => setIsDucking(active)}
-              onSendToCue={(cue) => setCueItem(cue)}
-              onAirLive={async (audioUrl, title, persona, script) => {
-                return await airLiveDrop({ audioUrl, title, persona, script });
-              }}
-            />
+        <div className="space-y-4">
+          {/* Mobile Studio Deck Segmented Switcher (< lg) */}
+          <div className="lg:hidden flex items-center p-1 bg-[#16181D] border-2 border-[#DFBB7D] shadow-[2px_2px_0px_#16181D] font-mono text-xs select-none">
+            <button
+              type="button"
+              onClick={() => setStudioDeck("perform")}
+              className={`flex-1 py-2 font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                studioDeck === "perform"
+                  ? "bg-[#DFBB7D] text-[#16181D] shadow-[1px_1px_0px_#16181D]"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              <span>⚡ PERFORM</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStudioDeck("playout")}
+              className={`flex-1 py-2 font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                studioDeck === "playout"
+                  ? "bg-[#DFBB7D] text-[#16181D] shadow-[1px_1px_0px_#16181D]"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              <span>📻 PLAYOUT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStudioDeck("drops")}
+              className={`flex-1 py-2 font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                studioDeck === "drops"
+                  ? "bg-[#DFBB7D] text-[#16181D] shadow-[1px_1px_0px_#16181D]"
+                  : "text-white/60 hover:text-white"
+              }`}
+            >
+              <span>✨ AI DROPS</span>
+            </button>
           </div>
 
-          {/* DECK B: Playout & Queue (5 cols / ~40%) */}
-          <div className="lg:col-span-5 space-y-6">
-            <OnAirRundown />
-            <QueueNextTrack />
-            <DecksConnectCard />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* DECK A: Performance & Drops (7 cols / ~60%) */}
+            <div className={`space-y-6 lg:col-span-7 ${studioDeck === "playout" ? "hidden lg:block" : "block"}`}>
+              {/* Soundboard, Cue & Mic: Visible on desktop or when 'perform' is selected on mobile */}
+              <div className={`space-y-6 ${studioDeck === "drops" ? "hidden lg:block" : "block"}`}>
+                <PerformanceSoundboard
+                  customDropUrl={customDropUrl}
+                  customDropName={customDropName}
+                  onFireOnAir={async (name, url) => {
+                    setIsDucking(true);
+                    if (url) {
+                      await airLiveDrop({ audioUrl: url, title: name, persona: name });
+                    }
+                    setTimeout(() => setIsDucking(false), 4500);
+                  }}
+                  onSendToCue={(pad) => {
+                    setCueItem({
+                      id: `pad_${pad.id}`,
+                      title: pad.name,
+                      script: `Station Drop: ${pad.name}`,
+                      audioUrl: pad.audioUrl || "",
+                      persona: pad.name,
+                    });
+                  }}
+                  onChoke={() => setIsDucking(false)}
+                />
+
+                <CueDock
+                  cueItem={cueItem}
+                  onClearCue={() => setCueItem(null)}
+                  onFireOnAir={async (item) => {
+                    setIsDucking(true);
+                    await airLiveDrop({
+                      audioUrl: item.audioUrl,
+                      title: item.title,
+                      persona: item.persona,
+                      script: item.script,
+                    });
+                    const audio = new Audio(item.audioUrl);
+                    audio.onended = () => setIsDucking(false);
+                    audio.play().catch(() => setIsDucking(false));
+                  }}
+                  onAssignToPad={(item, padIdx) => {
+                    setCustomDropUrl(item.audioUrl);
+                    setCustomDropName(item.title);
+                    showMsg(`Assigned to Cartwall Pad #${padIdx + 1}!`, "success");
+                  }}
+                  onUpdateScript={async (newScript) => {
+                    const res = await fetch("/api/admin/radio/drops/generate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ custom_text: newScript }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setCueItem({
+                        id: `cue_${Date.now()}`,
+                        title: "Updated Drop",
+                        script: newScript,
+                        audioUrl: data.drop_url,
+                      });
+                    }
+                  }}
+                />
+
+                <BrowserMicRecorder
+                  onDropMastered={(url, name) => {
+                    setCustomDropUrl(url);
+                    setCustomDropName(name);
+                  }}
+                  onTalkoverToggle={(active) => setIsDucking(active)}
+                  onSendToCue={(cue) => setCueItem(cue)}
+                  onAirLive={async (audioUrl, title, persona, script) => {
+                    return await airLiveDrop({ audioUrl, title, persona, script });
+                  }}
+                />
+              </div>
+
+              {/* AI Drop Studio: Visible on desktop or when 'drops' is selected on mobile */}
+              <div className={`space-y-6 ${studioDeck === "perform" ? "hidden lg:block" : "block"}`}>
+                <DropStudio
+                  onDropReady={(cue) => setCueItem(cue)}
+                  onFireDirect={(audioUrl, title) => {
+                    setIsDucking(true);
+                    const audio = new Audio(audioUrl);
+                    audio.onended = () => setIsDucking(false);
+                    audio.play().catch(() => setIsDucking(false));
+                  }}
+                  onAirLive={async (audioUrl, title, persona, script) => {
+                    return await airLiveDrop({ audioUrl, title, persona, script });
+                  }}
+                />
+                {/* On mobile 'drops' view, also render CueDock below so DJ can preview and assign */}
+                <div className="lg:hidden">
+                  <CueDock
+                    cueItem={cueItem}
+                    onClearCue={() => setCueItem(null)}
+                    onFireOnAir={async (item) => {
+                      setIsDucking(true);
+                      await airLiveDrop({
+                        audioUrl: item.audioUrl,
+                        title: item.title,
+                        persona: item.persona,
+                        script: item.script,
+                      });
+                      const audio = new Audio(item.audioUrl);
+                      audio.onended = () => setIsDucking(false);
+                      audio.play().catch(() => setIsDucking(false));
+                    }}
+                    onAssignToPad={(item, padIdx) => {
+                      setCustomDropUrl(item.audioUrl);
+                      setCustomDropName(item.title);
+                      showMsg(`Assigned to Cartwall Pad #${padIdx + 1}!`, "success");
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* DECK B: Playout & Queue (5 cols / ~40%) */}
+            <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
+              <OnAirRundown />
+              <QueueNextTrack />
+              <DecksConnectCard />
+            </div>
           </div>
         </div>
       )}

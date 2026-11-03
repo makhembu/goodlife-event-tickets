@@ -215,26 +215,26 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       </div>
 
-      {/* Voice Selection Avatars */}
+      {/* Voice Selection Avatars (Horizontal scroll on mobile, grid on desktop) */}
       <div>
-        <label className="block text-[11px] font-mono text-white/60 uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-mono text-white/70 uppercase tracking-wider mb-1.5">
           Station Voice Persona:
         </label>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar py-0.5 sm:grid sm:grid-cols-5 sm:gap-2">
           {VOICES.map((v) => {
             const isSelected = selectedVoice === v.id;
             return (
               <button
                 key={v.id}
                 onClick={() => setSelectedVoice(v.id)}
-                className={`p-2 border text-left transition-all flex flex-col justify-between ${
+                className={`p-2 border text-left transition-all flex items-center sm:flex-col sm:items-start justify-between shrink-0 min-w-[140px] sm:min-w-0 ${
                   isSelected
                     ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] font-bold shadow-[2px_2px_0px_#16181D]"
                     : "bg-white/5 text-white border-white/10 hover:border-white/30"
                 }`}
               >
-                <div className="text-xl mb-1">{v.icon}</div>
-                <div>
+                <div className="text-xl mr-2 sm:mr-0 sm:mb-1">{v.icon}</div>
+                <div className="min-w-0 flex-1">
                   <div className="font-mono text-xs font-bold truncate">{v.label}</div>
                   <div className="text-[10px] font-mono opacity-70 truncate">{v.role}</div>
                 </div>
@@ -288,35 +288,35 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           className="w-full bg-[#1A1D24] text-white font-mono text-xs p-3 border border-white/20 focus:border-[#DFBB7D] focus:outline-none resize-none leading-relaxed"
           placeholder="Type Sheng / Kenyan radio drop script..."
         />
-        <div className="flex justify-between items-center text-[11px] font-mono text-white/40 mt-1">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs font-mono text-white/60 mt-1.5 gap-1">
           <span>Character count: {scriptText.length}</span>
-          <span>EBU R128 (-14 LUFS mastering)</span>
+          <span>EBU R128 (-14 LUFS radio broadcast mastering)</span>
         </div>
       </div>
 
       {/* Messages */}
       {error && (
-        <div className="p-2 bg-[#E84855]/20 border border-[#E84855] text-red-200 font-mono text-xs flex items-center space-x-1.5">
+        <div className="p-2.5 bg-[#E84855]/20 border border-[#E84855] text-red-200 font-mono text-xs flex items-center space-x-1.5">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
       {successMsg && (
-        <div className="p-2 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs flex items-center space-x-1.5">
+        <div className="p-2.5 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs flex items-center space-x-1.5">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
+      {/* Action Buttons (Stacked & full-width on mobile, side-by-side on desktop) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-2.5 pt-2 w-full">
         <button
           type="button"
           onClick={() => handleGenerate("cue")}
           disabled={generating || !scriptText.trim()}
-          className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] flex items-center space-x-1.5 shadow-[2px_2px_0px_#16181D]"
+          className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] flex items-center justify-center space-x-2 shadow-[2px_2px_0px_#16181D] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
         >
-          <Headphones className="w-3.5 h-3.5" />
+          <Headphones className="w-4 h-4 shrink-0" />
           <span>{generating ? "SYNTHESIZING..." : "✨ GENERATE TO CUE (PREVIEW)"}</span>
         </button>
 
@@ -324,9 +324,9 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           type="button"
           onClick={() => handleGenerate("air")}
           disabled={generating || !scriptText.trim()}
-          className="px-4 py-2 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1.5 shadow-[2px_2px_0px_#DFBB7D]"
+          className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-black border-2 border-red-400 flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(232,72,85,0.4)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
         >
-          <Radio className="w-3.5 h-3.5" />
+          <Radio className="w-4 h-4 shrink-0 animate-pulse" />
           <span>{generating ? "SYNTHESIZING..." : "🔴 FIRE TO LIVE STREAM (MID-SONG)"}</span>
         </button>
       </div>

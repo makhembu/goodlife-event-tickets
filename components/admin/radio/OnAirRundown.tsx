@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   AlertCircle,
   SkipForward,
+  MoreVertical,
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -39,6 +40,7 @@ export default function OnAirRundown() {
   const [modeSwitching, setModeSwitching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [notification, setNotification] = useState<string | null>(null);
+  const [openMenuTrackId, setOpenMenuTrackId] = useState<number | null>(null);
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -236,18 +238,28 @@ export default function OnAirRundown() {
 
       {/* Search Filter */}
       <div className="relative">
-        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
+        <label htmlFor="rundown-search-box" className="sr-only">Search Rundown</label>
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
         <input
+          id="rundown-search-box"
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Filter rotation by artist or song title..."
-          className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-8 pr-3 py-1.5 border border-white/10 focus:border-[#DFBB7D] focus:outline-none"
+          placeholder="Search rundown by title or artist..."
+          className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-9 pr-3 py-2 border border-white/20 focus:border-[#DFBB7D] focus:outline-none rounded"
         />
       </div>
 
+      {/* Backdrop for open overflow menu */}
+      {openMenuTrackId !== null && (
+        <div
+          className="fixed inset-0 z-10"
+          onClick={() => setOpenMenuTrackId(null)}
+        />
+      )}
+
       {/* Track List */}
-      <div className="space-y-1.5 overflow-y-auto max-h-[380px] pr-1">
+      <div className="space-y-2 overflow-y-auto max-h-[420px] pr-1">
         {loading && sets.length === 0 ? (
           <div className="p-6 text-center text-white/40 font-mono text-xs">
             Loading broadcast rundown...
@@ -262,73 +274,101 @@ export default function OnAirRundown() {
             return (
               <div
                 key={track.id}
-                className={`p-2 border transition-all flex items-center justify-between ${
+                className={`p-2.5 border transition-all flex items-center justify-between relative ${
                   isPlaying
-                    ? "bg-[#DFBB7D]/10 border-[#DFBB7D] shadow-[2px_2px_0px_#DFBB7D]"
+                    ? "bg-[#DFBB7D]/15 border-[#DFBB7D] shadow-[2px_2px_0px_#DFBB7D]"
                     : "bg-white/5 border-white/10 hover:border-white/20"
                 }`}
               >
-                {/* Left: Position & Info */}
-                <div className="flex items-center space-x-2.5 min-w-0">
-                  <span className={`font-mono text-xs font-bold w-6 text-center ${
-                    isPlaying ? "text-[#F5C842]" : "text-white/40"
+                {/* Left: Position & Two-Line Title Info */}
+                <div className="flex items-center space-x-3 min-w-0 flex-1">
+                  <span className={`font-mono text-xs font-bold w-6 text-center shrink-0 ${
+                    isPlaying ? "text-[#F5C842] font-black text-sm" : "text-white/40"
                   }`}>
                     {isPlaying ? "▶" : `#${idx + 1}`}
                   </span>
 
-                  <div className="truncate">
-                    <div className="font-mono text-xs font-bold text-white truncate">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-xs sm:text-sm font-bold text-white line-clamp-2 leading-snug">
                       {formatTrackTitle(track.title)}
                     </div>
-                    <div className="text-[10px] font-mono text-[#DFBB7D] truncate">
-                      {track.dj_name || "Resident Selector"}
-                      {track.genre ? ` · ${track.genre}` : ""}
+                    <div className="text-[11px] font-mono text-[#DFBB7D] truncate mt-0.5 flex items-center gap-1.5">
+                      <span>{track.dj_name || "Resident Selector"}</span>
+                      {track.genre && <span className="text-white/40">· {track.genre}</span>}
+                      <span className="text-white/40 sm:hidden">· {formatSecs(track.duration_sec)}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Right: Actions */}
-                <div className="flex items-center space-x-1.5 shrink-0 ml-2">
-                  <span className="font-mono text-[11px] text-white/50 mr-1">
+                {/* Right: Actions (Big 40px Play/Skip Button + Duration + Overflow Menu) */}
+                <div className="flex items-center space-x-2 shrink-0 ml-3">
+                  <span className="font-mono text-xs text-white/50 hidden sm:inline">
                     {formatSecs(track.duration_sec)}
                   </span>
 
-                  {/* Skip to this track */}
+                  {/* 40px Play / Skip Immediately Button */}
                   <button
                     onClick={() => handlePlayNow(track.id, track.title)}
-                    title="Skip immediately to this track"
-                    className="p-1 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white border border-white/20"
+                    title={`Skip immediately to ${track.title}`}
+                    aria-label={`Play ${track.title} now`}
+                    className={`w-10 h-10 min-w-[40px] flex items-center justify-center rounded transition-all active:scale-95 ${
+                      isPlaying
+                        ? "bg-[#F5C842] text-[#16181D] shadow-[0_0_10px_#F5C842]"
+                        : "bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D]"
+                    }`}
                   >
-                    <Play className="w-3 h-3 fill-current" />
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
                   </button>
 
-                  {/* Up / Down Reorder */}
+                  {/* Overflow '⋯' Menu Trigger */}
                   <button
-                    onClick={() => handleReorder(track.id, "up")}
-                    disabled={idx === 0}
-                    title="Move Track Earlier"
-                    className="p-1 text-white/50 hover:text-white disabled:opacity-20"
+                    onClick={() => setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id)}
+                    title="Track options (Move earlier, move later, remove)"
+                    aria-label="Track options"
+                    className="w-10 h-10 min-w-[40px] flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded transition-colors active:scale-95"
                   >
-                    <ArrowUp className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleReorder(track.id, "down")}
-                    disabled={idx === filteredSets.length - 1}
-                    title="Move Track Later"
-                    className="p-1 text-white/50 hover:text-white disabled:opacity-20"
-                  >
-                    <ArrowDown className="w-3 h-3" />
-                  </button>
-
-                  {/* Remove */}
-                  <button
-                    onClick={() => handleDelete(track.id, track.title)}
-                    title="Remove from playlist"
-                    className="p-1 text-white/30 hover:text-[#E84855]"
-                  >
-                    <Trash2 className="w-3 h-3" />
+                    <MoreVertical className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Overflow Popover Menu */}
+                {openMenuTrackId === track.id && (
+                  <div className="absolute right-2 top-12 z-20 bg-[#16181D] border-2 border-[#DFBB7D] rounded-lg p-1.5 shadow-2xl flex flex-col space-y-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100 font-mono text-xs">
+                    <button
+                      onClick={() => {
+                        handleReorder(track.id, "up");
+                        setOpenMenuTrackId(null);
+                      }}
+                      disabled={idx === 0}
+                      className="flex items-center space-x-2 px-2.5 py-2 hover:bg-white/10 text-white disabled:opacity-30 rounded text-left transition-colors"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                      <span>Move Earlier</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleReorder(track.id, "down");
+                        setOpenMenuTrackId(null);
+                      }}
+                      disabled={idx === filteredSets.length - 1}
+                      className="flex items-center space-x-2 px-2.5 py-2 hover:bg-white/10 text-white disabled:opacity-30 rounded text-left transition-colors"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                      <span>Move Later</span>
+                    </button>
+                    <div className="border-t border-white/10 my-0.5" />
+                    <button
+                      onClick={() => {
+                        handleDelete(track.id, track.title);
+                        setOpenMenuTrackId(null);
+                      }}
+                      className="flex items-center space-x-2 px-2.5 py-2 hover:bg-red-500/20 text-red-400 rounded text-left transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove from Air</span>
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })
