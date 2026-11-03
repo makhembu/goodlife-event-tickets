@@ -46,19 +46,39 @@ export default function OnAirRundown() {
   const activeTrackRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to center the currently playing track when it loads or changes
+  const prevActiveIdRef = useRef<number | null>(null);
+  const userInteractedRef = useRef<boolean>(false);
+  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleContainerScroll = () => {
+    userInteractedRef.current = true;
+    if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
+    userScrollTimeoutRef.current = setTimeout(() => {
+      userInteractedRef.current = false;
+    }, 20000); // 20s grace period when DJ is manually inspecting/scrolling rundown
+  };
+
+  const scrollToActiveTrack = (smooth = true) => {
+    if (activeTrackRef.current) {
+      activeTrackRef.current.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+        block: "center",
+      });
+    }
+  };
+
+  // Auto-scroll to center the currently playing track ONLY when active song actually changes
+  // and user is not actively scrolling to inspect other tracks
   useEffect(() => {
     if (!activeSetId) return;
-    const timer = setTimeout(() => {
-      if (activeTrackRef.current) {
-        activeTrackRef.current.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+    if (activeSetId !== prevActiveIdRef.current) {
+      prevActiveIdRef.current = activeSetId;
+      if (!userInteractedRef.current) {
+        const timer = setTimeout(() => scrollToActiveTrack(true), 250);
+        return () => clearTimeout(timer);
       }
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [activeSetId, sets]);
+    }
+  }, [activeSetId]);
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -258,18 +278,34 @@ export default function OnAirRundown() {
       )}
 
       {/* Search Filter */}
-      <div className="relative">
-        <label htmlFor="rundown-search-box" className="sr-only">Search Rundown</label>
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
-        <input
-          id="rundown-search-box"
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search rundown…"
-          aria-label="Search rundown"
-          className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-9 pr-3 py-2 border border-white/20 focus:border-[#DFBB7D] focus:outline-none rounded"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <label htmlFor="rundown-search-box" className="sr-only">Search Rundown</label>
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+          <input
+            id="rundown-search-box"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search rundown…"
+            aria-label="Search rundown"
+            className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-9 pr-3 py-2 border border-white/20 focus:border-[#DFBB7D] focus:outline-none rounded"
+          />
+        </div>
+        {activeSetId && (
+          <button
+            type="button"
+            onClick={() => {
+              userInteractedRef.current = false;
+              scrollToActiveTrack(true);
+            }}
+            className="px-2.5 py-2 bg-white/5 hover:bg-white/10 text-[#DFBB7D] hover:text-white border border-[#DFBB7D]/30 hover:border-[#DFBB7D] rounded font-mono text-[11px] font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+            title="Snap view to currently playing track"
+          >
+            <span>🎯</span>
+            <span className="hidden sm:inline">ON-AIR</span>
+          </button>
+        )}
       </div>
 
       {/* Backdrop for open overflow menu */}
@@ -281,7 +317,7 @@ export default function OnAirRundown() {
       )}
 
       {/* Track List */}
-      <div ref={containerRef} className="space-y-2 overflow-y-auto max-h-[420px] pr-1 scroll-smooth">
+      <div ref={containerRef} onScroll={handleContainerScroll} className="space-y-2 overflow-y-auto max-h-[420px] pr-1 scroll-smooth">
         {loading && sets.length === 0 ? (
           <div className="p-6 text-center text-white/40 font-mono text-xs">
             Loading broadcast rundown...

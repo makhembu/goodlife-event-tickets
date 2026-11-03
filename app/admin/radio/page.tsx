@@ -57,6 +57,39 @@ export default function AdminRadioPage() {
   const [cueItem, setCueItem] = useState<CueDropItem | null>(null);
   const [isDucking, setIsDucking] = useState(false);
 
+  // Uploads blob audio if needed, broadcasts to live stream for all listeners, and plays locally
+  const handleFireCueOnAir = async (item: CueDropItem) => {
+    setIsDucking(true);
+    let targetUrl = item.audioUrl;
+    if (targetUrl.startsWith("blob:")) {
+      try {
+        const blob = await fetch(targetUrl).then((r) => r.blob());
+        const formData = new FormData();
+        formData.append("audio", blob, "drop.webm");
+        formData.append("name", item.title || "mic_drop");
+        const upRes = await fetch("/api/admin/radio/drops/upload", {
+          method: "POST",
+          body: formData,
+        });
+        if (upRes.ok) {
+          const upData = await upRes.json();
+          if (upData.audio_url) targetUrl = upData.audio_url;
+        }
+      } catch (e) {
+        console.warn("Failed to upload blob before firing on air:", e);
+      }
+    }
+    await airLiveDrop({
+      audioUrl: targetUrl,
+      title: item.title,
+      persona: item.persona,
+      script: item.script,
+    });
+    const audio = new Audio(targetUrl);
+    audio.onended = () => setIsDucking(false);
+    audio.play().catch(() => setIsDucking(false));
+  };
+
   // Search tab state
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -512,18 +545,7 @@ export default function AdminRadioPage() {
                 <CueDock
                   cueItem={cueItem}
                   onClearCue={() => setCueItem(null)}
-                  onFireOnAir={async (item) => {
-                    setIsDucking(true);
-                    await airLiveDrop({
-                      audioUrl: item.audioUrl,
-                      title: item.title,
-                      persona: item.persona,
-                      script: item.script,
-                    });
-                    const audio = new Audio(item.audioUrl);
-                    audio.onended = () => setIsDucking(false);
-                    audio.play().catch(() => setIsDucking(false));
-                  }}
+                  onFireOnAir={handleFireCueOnAir}
                   onUpdateScript={async (newScript) => {
                     const res = await fetch("/api/admin/radio/drops/generate", {
                       method: "POST",

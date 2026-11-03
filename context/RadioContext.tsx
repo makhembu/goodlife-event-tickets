@@ -284,6 +284,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const swellIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const triggerOutroDropCrossoverRef = useRef<() => void>(() => {});
   const lastLiveDropIdRef = useRef<string | number | null>(null);
+  const lastDropPlayedTimestampRef = useRef<number>(0);
   const isTransitioningRef = useRef<boolean>(false);
   const isGeneratingDropRef = useRef<boolean>(false);
 
@@ -1249,6 +1250,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setActiveDropTitle(liveDrop.title || "Live Air Drop");
       setActivePersona(liveDrop.persona || "Station DJ");
       setActiveMood("live");
+      lastDropPlayedTimestampRef.current = Date.now();
 
       // Duck currently playing music bed immediately mid-song if audio is playing
       if (audio) {
@@ -1337,7 +1339,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       engineStateRef.current === "paused" ||
       !radioEnabledRef.current ||
       !audioRef.current ||
-      !dropAudioRef.current
+      !dropAudioRef.current ||
+      (Date.now() - lastDropPlayedTimestampRef.current < 120000)
     ) {
       return;
     }
@@ -1381,6 +1384,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop.id);
 
+    lastDropPlayedTimestampRef.current = Date.now();
     hasFiredOutroDropRef.current = true;
     isDropPlayingRef.current = true;
     setIsDropPlaying(true);
@@ -1537,15 +1541,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetId = String(nextTrack.id);
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    // 1. Strict match: Drop explicitly targeting THIS track by ID or title
-    drop = drops.find((d) =>
-      (d.target_track_id && String(d.target_track_id) === targetId) ||
-      (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
-    );
-
-    // 2. Generic station sweeper fallback: if no track-specific drop, fallback to generic sweeper
-    if (!drop && drops.length > 0) {
-      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+    // If outro drop already fired, or a drop played within 120s, DO NOT stack another drop!
+    if (hasFiredOutroDropRef.current || (Date.now() - lastDropPlayedTimestampRef.current < 120000)) {
+      drop = undefined;
+    } else {
+      // Strict match ONLY: only air drop if explicitly generated for this upcoming track
+      drop = drops.find((d) =>
+        (d.target_track_id && String(d.target_track_id) === targetId) ||
+        (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
+      );
+      if (drop) {
+        lastDropPlayedTimestampRef.current = Date.now();
+      }
     }
 
     // 3. Remove the aired drop if matched

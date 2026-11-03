@@ -64,6 +64,26 @@ export default function BrowserMicRecorder({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Uploads recorded audio blob to broadcast server/R2 so it can be streamed to all listeners
+  const uploadAudioBlob = async (blob: Blob, name: string): Promise<string> => {
+    const formData = new FormData();
+    formData.append("audio", blob, "recording.webm");
+    formData.append("name", name);
+
+    const res = await fetch("/api/admin/radio/drops/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Upload failed");
+    }
+
+    const data = await res.json();
+    return data.audio_url;
+  };
+
   const handleTalkoverClick = async () => {
     if (isTalkoverActive) {
       stopTalkover();
@@ -195,23 +215,31 @@ export default function BrowserMicRecorder({
       talkoverAudioCtxRef.current = null;
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
       if (talkoverChunksRef.current.length > 0) {
         const blob = new Blob(talkoverChunksRef.current, { type: "audio/webm" });
         if (blob.size > 1200) {
-          const url = URL.createObjectURL(blob);
-          setMasteredUrl(url);
           setStatusMsg({
-            text: "✓ Live talkover shoutout captured! You can audition, master to -14 LUFS, or assign to pad.",
+            text: "📡 Broadcasting live talkover to on-air stream...",
             type: "success",
           });
-          if (onSendToCue) {
-            onSendToCue({
-              id: `talkover_${Date.now()}`,
-              title: dropName || "Live Talkover Shoutout",
-              script: "Live Host Talkover",
-              audioUrl: url,
-              persona: "Live Host",
+          try {
+            const publicUrl = await uploadAudioBlob(blob, "Live Host Talkover");
+            setMasteredUrl(publicUrl);
+            if (onAirLive) {
+              await onAirLive(publicUrl, "Live Talkover", "Live Host", "Host live mic talkover");
+            }
+            setStatusMsg({
+              text: "✓ Live talkover broadcast on air to all listeners!",
+              type: "success",
+            });
+          } catch (uploadErr: any) {
+            console.warn("[LiveTalkover] Upload broadcast failed:", uploadErr);
+            const localUrl = URL.createObjectURL(blob);
+            setMasteredUrl(localUrl);
+            setStatusMsg({
+              text: "Talkover ended locally (upload failed: " + (uploadErr.message || "network") + ")",
+              type: "error",
             });
           }
         }
@@ -236,18 +264,19 @@ export default function BrowserMicRecorder({
       formData.append("audio", blob, "mic_drop.webm");
       formData.append("name", dropName.trim() || "Live Mic Shoutout");
 
-      const res = await fetch("/api/admin/radio/drops/diy", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Mastering failed HTTP ${res.status}`);
+      let finalUrl = localBlobUrl;
+      try {
+        finalUrl = await uploadAudioBlob(blob, dropName.trim() || "Live Mic Shoutout");
+      } catch {
+        const res = await fetch("/api/admin/radio/drops/diy", {
+          method: "POST",
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          finalUrl = data.drop_url || data.url || data.mastered_file || localBlobUrl;
+        }
       }
-
-      const data = await res.json();
-      const finalUrl = data.drop_url || data.url || data.mastered_file || localBlobUrl;
       setMasteredUrl(finalUrl);
       setStatusMsg({
         text: "✓ Mic drop mastered to -14 LUFS!",

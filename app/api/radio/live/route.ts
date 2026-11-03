@@ -19,7 +19,10 @@ async function queryRecentLiveDrop() {
       `SELECT id, persona, mood, title, script, audio_url, created_at,
               ROUND(EXTRACT(EPOCH FROM (NOW() - created_at))) as age_seconds
        FROM radio_drops
-       WHERE timing_type = 'live_inject' AND created_at > NOW() - INTERVAL '120 seconds'
+       WHERE timing_type IN ('live_inject', 'live_drop')
+         AND audio_url IS NOT NULL
+         AND audio_url NOT LIKE 'blob:%'
+         AND created_at > NOW() - INTERVAL '120 seconds'
        ORDER BY created_at DESC
        LIMIT 1`
     );
@@ -66,13 +69,31 @@ async function getTimelineFallback() {
       activatedAt = playlistRes.rows[0].activated_at;
       activePlaylistName = playlistRes.rows[0].playlist_name;
     } else {
-      const setsRes = await neonQuery(`
-        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
-        FROM radio_sets
-        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
-        ORDER BY display_order ASC, id ASC
-      `);
-      sets = setsRes.rows || [];
+      // If no playlist explicitly marked active, activate and lock primary broadcast playlist (e.g. Millennial Hip-Hop Anthems #2)
+      const defaultPlRes = await neonQuery(`
+        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
+               s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
+        FROM radio_playlists p
+        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
+        WHERE p.deleted_at IS NULL AND p.id = 2
+        ORDER BY pt.position ASC, pt.id ASC
+      `).catch(() => ({ rows: [] }));
+
+      if (defaultPlRes.rows.length > 0) {
+        sets = defaultPlRes.rows;
+        activatedAt = defaultPlRes.rows[0].activated_at || new Date().toISOString();
+        activePlaylistName = defaultPlRes.rows[0].playlist_name;
+        neonQuery(`UPDATE radio_playlists SET is_broadcast_active = true, activated_at = NOW(), updated_at = NOW() WHERE id = 2`).catch(() => {});
+      } else {
+        const setsRes = await neonQuery(`
+          SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+          FROM radio_sets
+          WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
+          ORDER BY display_order ASC, id ASC
+        `);
+        sets = setsRes.rows || [];
+      }
     }
 
     if (sets.length === 0) return null;
@@ -111,8 +132,24 @@ async function getTimelineFallback() {
           currentTrack = maniaTrack;
           offsetSec = elapsed;
           activeMode = "mania";
-          nextTracks = sets.slice(0, 3);
+          const mIdx = sets.findIndex((s: any) => s.id === maniaTrack.id);
+          nextTracks = [
+            sets[(mIdx + 1) % sets.length],
+            sets[(mIdx + 2) % sets.length],
+            sets[(mIdx + 3) % sets.length],
+          ].filter(Boolean);
         } else {
+          // Mania track finished: smoothly transition to the NEXT sequential track in rotation
+          const endedIdx = sets.findIndex((s: any) => s.id === maniaTrack.id);
+          activeIdx = endedIdx !== -1 ? (endedIdx + 1) % sets.length : 0;
+          currentTrack = sets[activeIdx] || sets[0];
+          offsetSec = Math.max(0, Math.min(20, elapsed - trackDur));
+          activeMode = "autodj";
+          nextTracks = [
+            sets[(activeIdx + 1) % sets.length],
+            sets[(activeIdx + 2) % sets.length],
+            sets[(activeIdx + 3) % sets.length],
+          ].filter(Boolean);
           neonQuery("UPDATE radio_settings SET broadcast_mode = 'autodj', active_set_id = NULL, updated_at = NOW() WHERE id = 1").catch(() => {});
         }
       }
