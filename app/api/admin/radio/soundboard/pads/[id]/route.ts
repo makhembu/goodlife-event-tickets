@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
-import { isValidSoundboardAudioUrl } from "@/lib/radio/soundboard-helpers";
+import { isValidSoundboardAudioUrl, validateSoundboardAudioLimits } from "@/lib/radio/soundboard-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -37,15 +37,16 @@ export async function PATCH(
 
     const current = existing.rows[0];
 
-    // Validate audio_url if provided
+    // Validate audio_url and enforce server-side format & size limits
     let newAudioUrl = current.audio_url;
     if (audio_url !== undefined) {
       if (audio_url === null || audio_url === "") {
         newAudioUrl = null;
       } else {
-        if (!isValidSoundboardAudioUrl(audio_url)) {
+        const validation = await validateSoundboardAudioLimits(audio_url);
+        if (!validation.valid) {
           return NextResponse.json(
-            { error: "Audio URL must point to our R2 storage domain or local /drops/ directory." },
+            { error: validation.error || "Audio URL must point to our R2 storage domain or local /drops/ directory." },
             { status: 400 }
           );
         }

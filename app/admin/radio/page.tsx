@@ -169,12 +169,17 @@ export default function AdminRadioPage() {
   };
 
   useEffect(() => {
-    fetchLibrary();
-    fetchBroadcastSettings();
-    fetchAvailablePlaylists();
-    checkBridgeHealth();
+    const timer = setTimeout(() => {
+      fetchLibrary();
+      fetchBroadcastSettings();
+      fetchAvailablePlaylists();
+      checkBridgeHealth();
+    }, 0);
     const hInterval = setInterval(checkBridgeHealth, 30000);
-    return () => clearInterval(hInterval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(hInterval);
+    };
   }, []);
 
   // Poll Ingestion Job Progress

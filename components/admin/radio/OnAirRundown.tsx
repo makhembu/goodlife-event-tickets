@@ -49,7 +49,6 @@ export default function OnAirRundown() {
 
   const fetchPlaylist = async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/admin/radio/playlist");
       if (res.ok) {
         const data = await res.json();
@@ -75,9 +74,12 @@ export default function OnAirRundown() {
   };
 
   useEffect(() => {
-    fetchPlaylist();
+    const timer = setTimeout(fetchPlaylist, 0);
     const interval = setInterval(fetchPlaylist, 6000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleToggleMode = async (newMode: "autodj" | "mania") => {

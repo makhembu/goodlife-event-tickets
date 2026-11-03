@@ -20,9 +20,6 @@ import { cleanTrackInfo } from "@/lib/radio/utils";
 
 export default function GlobalRadioBar() {
   const pathname = usePathname();
-
-  // Completely unmount on admin routes so it never overlays console/soundboard
-  if (pathname?.startsWith("/admin")) return null;
   const {
     currentSet,
     isPlaying,
@@ -64,10 +61,12 @@ export default function GlobalRadioBar() {
     return pathname === "/" || pathname?.startsWith("/events/");
   }, [pathname]);
 
+  const [prevSetId, setPrevSetId] = useState<number | undefined>(undefined);
   const [imgError, setImgError] = useState(false);
-  useEffect(() => {
+  if (currentSet?.id !== prevSetId) {
+    setPrevSetId(currentSet?.id);
     setImgError(false);
-  }, [currentSet?.id]);
+  }
 
   const cleanedTrack = useMemo(() => {
     if (isDropPlaying) {

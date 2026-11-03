@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
-import { isValidSoundboardAudioUrl } from "@/lib/radio/soundboard-helpers";
+import { isValidSoundboardAudioUrl, validateSoundboardAudioLimits } from "@/lib/radio/soundboard-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +22,14 @@ export async function POST(req: NextRequest) {
     const padEmoji = (emoji || "🔥").trim().slice(0, 16);
     const padColor = (color || "#DFBB7D").trim().slice(0, 32);
 
-    if (audio_url && !isValidSoundboardAudioUrl(audio_url)) {
-      return NextResponse.json(
-        { error: "Audio URL must point to our R2 storage domain or local /drops/ directory." },
-        { status: 400 }
-      );
+    if (audio_url) {
+      const validation = await validateSoundboardAudioLimits(audio_url);
+      if (!validation.valid) {
+        return NextResponse.json(
+          { error: validation.error || "Audio URL must point to our R2 storage domain or local /drops/ directory." },
+          { status: 400 }
+        );
+      }
     }
 
     // Determine next position

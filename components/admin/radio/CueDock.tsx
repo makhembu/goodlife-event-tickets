@@ -32,15 +32,16 @@ export default function CueDock({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedScript, setEditedScript] = useState("");
+  const [prevCueItem, setPrevCueItem] = useState<CueDropItem | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    if (cueItem) {
-      setEditedScript(cueItem.script);
-      setIsPlaying(false);
-    }
-  }, [cueItem]);
+  // Sync script when cueItem changes during render (React-recommended pattern, avoids cascading renders)
+  if (cueItem !== prevCueItem) {
+    setPrevCueItem(cueItem);
+    setEditedScript(cueItem?.script || "");
+    setIsPlaying(false);
+  }
 
   const handleTogglePreview = () => {
     if (!cueItem?.audioUrl) return;

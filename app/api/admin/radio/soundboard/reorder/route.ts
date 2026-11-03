@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { getDbPool } from "@/lib/neon-client";
+import { executePadReorderTransaction } from "@/lib/radio/soundboard-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -25,24 +26,8 @@ export async function POST(req: NextRequest) {
     const client = await pool.connect();
 
     try {
-      await client.query("BEGIN");
-
-      // Update each pad's position inside a single atomic transaction
-      for (let pos = 0; pos < ordered_pad_ids.length; pos++) {
-        const padId = Number(ordered_pad_ids[pos]);
-        await client.query(
-          `UPDATE soundboard_pads 
-           SET position = $1, updated_at = NOW() 
-           WHERE id = $2 AND bank_id = $3`,
-          [pos, padId, bank_id]
-        );
-      }
-
-      await client.query("COMMIT");
-      return NextResponse.json({ success: true, count: ordered_pad_ids.length }, { status: 200 });
-    } catch (txErr: any) {
-      await client.query("ROLLBACK");
-      throw txErr;
+      const count = await executePadReorderTransaction(client, bank_id, ordered_pad_ids);
+      return NextResponse.json({ success: true, count }, { status: 200 });
     } finally {
       client.release();
     }

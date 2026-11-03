@@ -12,27 +12,13 @@ export default function AssignToPadSheet() {
     assignClipToPad,
   } = useSoundboard();
 
-  const [selectedBankId, setSelectedBankId] = useState<number>(1);
-  const [selectedPadId, setSelectedPadId] = useState<number | null>(null);
+  const [userSelectedBankId, setUserSelectedBankId] = useState<number | null>(null);
+  const [userSelectedPadId, setUserSelectedPadId] = useState<number | null>(null);
   const [alsoRename, setAlsoRename] = useState<boolean>(false);
   const [confirmedOverwrite, setConfirmedOverwrite] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
 
-  // Sync default bank and pad when modal opens
-  useEffect(() => {
-    if (assignModalState?.open && banks.length > 0) {
-      const initialBank = banks[0];
-      setSelectedBankId(initialBank.id);
-      if (initialBank.pads && initialBank.pads.length > 0) {
-        setSelectedPadId(initialBank.pads[0].id);
-      } else {
-        setSelectedPadId(null);
-      }
-      setAlsoRename(false);
-      setConfirmedOverwrite(false);
-    }
-  }, [assignModalState?.open, banks]);
-
+  const selectedBankId = userSelectedBankId ?? (banks[0]?.id || 1);
   const currentBank = useMemo(() => {
     return banks.find((b) => b.id === selectedBankId) || banks[0];
   }, [banks, selectedBankId]);
@@ -41,15 +27,17 @@ export default function AssignToPadSheet() {
     return currentBank?.pads || [];
   }, [currentBank]);
 
+  const selectedPadId = userSelectedPadId ?? (bankPads[0]?.id || null);
+
   // When bank changes, select first pad of that bank
   const handleBankChange = (newBankId: number) => {
-    setSelectedBankId(newBankId);
+    setUserSelectedBankId(newBankId);
     setConfirmedOverwrite(false);
     const b = banks.find((item) => item.id === newBankId);
     if (b && b.pads && b.pads.length > 0) {
-      setSelectedPadId(b.pads[0].id);
+      setUserSelectedPadId(b.pads[0].id);
     } else {
-      setSelectedPadId(null);
+      setUserSelectedPadId(null);
     }
   };
 
@@ -153,7 +141,7 @@ export default function AssignToPadSheet() {
             <select
               value={selectedPadId ?? ""}
               onChange={(e) => {
-                setSelectedPadId(parseInt(e.target.value));
+                setUserSelectedPadId(parseInt(e.target.value));
                 setConfirmedOverwrite(false);
               }}
               className="w-full min-h-[44px] bg-[#1A1D24] text-white font-mono text-base sm:text-xs p-3 border border-white/20 rounded focus:border-[#DFBB7D] focus:outline-none"

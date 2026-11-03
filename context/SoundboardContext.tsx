@@ -45,30 +45,8 @@ const SoundboardContext = createContext<SoundboardContextType | null>(null);
 const CACHE_KEY = "goodlife_soundboard_cache";
 
 export function SoundboardProvider({ children }: { children: React.ReactNode }) {
-  const [banks, setBanks] = useState<SoundboardBankItem[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return [];
-  });
-  const [activeBankId, setActiveBankId] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id;
-        }
-      } catch {}
-    }
-    return 1;
-  });
+  const [banks, setBanks] = useState<SoundboardBankItem[]>([]);
+  const [activeBankId, setActiveBankId] = useState<number>(1);
   const [vaultDrops, setVaultDrops] = useState<DropVaultOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignModalState, setAssignModalState] = useState<AssignModalState | null>(null);
@@ -81,7 +59,6 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
 
   const refreshSoundboard = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/admin/radio/soundboard");
       if (res.ok) {
         const data = await res.json();
@@ -104,7 +81,35 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   useEffect(() => {
-    refreshSoundboard();
+    let ignore = false;
+
+    // Load localStorage cache asynchronously on mount to prevent SSR hydration mismatch
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          Promise.resolve().then(() => {
+            if (!ignore) {
+              setBanks(parsed);
+              setActiveBankId(parsed[0].id);
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // Fetch fresh database state outside the synchronous effect body
+    const timer = setTimeout(() => {
+      if (!ignore) {
+        refreshSoundboard();
+      }
+    }, 0);
+
+    return () => {
+      ignore = true;
+      clearTimeout(timer);
+    };
   }, [refreshSoundboard]);
 
   const openAssignModal = useCallback((audioUrl: string, clipTitle: string, dropId?: number | null) => {

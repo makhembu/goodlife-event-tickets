@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Volume2,
   VolumeX,
@@ -178,9 +178,10 @@ export default function PerformanceSoundboard({
 
   // Cleanup touch timers and preview audio on unmount
   useEffect(() => {
+    const timers = touchTimerRef.current;
     return () => {
-      touchTimerRef.current.forEach((t) => clearTimeout(t));
-      touchTimerRef.current.clear();
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
         previewAudioRef.current = null;
@@ -251,6 +252,23 @@ export default function PerformanceSoundboard({
     }
     if (onChoke) onChoke();
   };
+
+  // Open Pad Editor
+  const openPadEditor = useCallback((pad: SoundPad) => {
+    setEditingPad(pad);
+    setEditLabel(pad.name === "New Pad" ? "" : pad.name);
+    setEditEmoji(pad.emoji || "🔥");
+    setEditColor(pad.color || "#DFBB7D");
+    setEditAudioUrl(pad.audioUrl || null);
+    setEditDropId(pad.drop_id || null);
+    setClipSourceTab("vault");
+    setUploadError(null);
+    resetRecording();
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      setPreviewingUrl(null);
+    }
+  }, [resetRecording]);
 
   // Trigger Pad in Perform Mode
   const triggerPad = (pad: SoundPad) => {
@@ -373,23 +391,6 @@ export default function PerformanceSoundboard({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activePads, volume, muted, broadcastMode, playingPads, isEditMode, editingPad]);
-
-  // Open Pad Editor
-  const openPadEditor = (pad: SoundPad) => {
-    setEditingPad(pad);
-    setEditLabel(pad.name === "New Pad" ? "" : pad.name);
-    setEditEmoji(pad.emoji || "🔥");
-    setEditColor(pad.color || "#DFBB7D");
-    setEditAudioUrl(pad.audioUrl || null);
-    setEditDropId(pad.drop_id || null);
-    setClipSourceTab("vault");
-    setUploadError(null);
-    resetRecording();
-    if (previewAudioRef.current) {
-      previewAudioRef.current.pause();
-      setPreviewingUrl(null);
-    }
-  };
 
   // Handle direct audio file upload via Presigned R2 URL
   const handleFileUpload = async (file: File) => {
