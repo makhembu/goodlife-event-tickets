@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Mic, Square, Sparkles, Play, Pause, CheckCircle2, AlertCircle, RefreshCw, Radio, Headphones } from "lucide-react";
+import { Mic, Square, Sparkles, Play, Pause, CheckCircle2, AlertCircle, RefreshCw, Radio, Headphones, ArrowRight } from "lucide-react";
 import { useAudioRecorder, MAX_RECORDING_SECONDS } from "@/hooks/use-audio-recorder";
+import { useSoundboard } from "@/context/SoundboardContext";
 
 export interface BrowserMicRecorderProps {
   onDropMastered?: (audioUrl: string, dropName: string) => void;
@@ -17,6 +18,7 @@ export default function BrowserMicRecorder({
   onSendToCue,
   onAirLive,
 }: BrowserMicRecorderProps) {
+  const { openAssignModal } = useSoundboard();
   const {
     isRecording,
     recordingDuration,
@@ -78,7 +80,7 @@ export default function BrowserMicRecorder({
       const finalUrl = data.mastered_file || audioUrl;
       setMasteredUrl(finalUrl);
       setStatusMsg({
-        text: "✓ Mic drop mastered to -14 LUFS & bound to Cartwall Pad #8!",
+        text: "✓ Mic drop mastered to -14 LUFS!",
         type: "success",
       });
 
@@ -218,6 +220,18 @@ export default function BrowserMicRecorder({
             >
               <Headphones className="w-3 h-3" />
               <span>SEND TO CUE</span>
+            </button>
+            <button
+              onClick={() => {
+                const targetUrl = masteredUrl || audioUrl;
+                if (targetUrl) {
+                  openAssignModal(targetUrl, dropName);
+                }
+              }}
+              className="px-2.5 py-1 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold text-[11px] flex items-center space-x-1 cursor-pointer"
+            >
+              <ArrowRight className="w-3 h-3" />
+              <span>ASSIGN TO PAD</span>
             </button>
             <button
               onClick={async () => {

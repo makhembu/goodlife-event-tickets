@@ -40,6 +40,8 @@ import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
 import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
+import { SoundboardProvider } from "@/context/SoundboardContext";
+import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
 import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -51,9 +53,7 @@ export default function AdminRadioPage() {
   const [loadingLib, setLoadingLib] = useState(true);
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
 
-  // Studio custom drop state
-  const [customDropUrl, setCustomDropUrl] = useState<string | null>(null);
-  const [customDropName, setCustomDropName] = useState<string>("Live Mic Drop");
+  // Studio cue & ducking state
   const [cueItem, setCueItem] = useState<CueDropItem | null>(null);
   const [isDucking, setIsDucking] = useState(false);
 
@@ -423,7 +423,8 @@ export default function AdminRadioPage() {
       isDucking={isDucking}
       bridgeOnline={bridgeOnline}
     >
-      {/* Toast Alert Banner */}
+      <SoundboardProvider>
+        {/* Toast Alert Banner */}
       {message && (
         <div className={`mb-4 p-3 border-2 font-mono text-xs flex items-center justify-between shadow-[2px_2px_0px_#16181D] ${
           message.type === "success"
@@ -484,8 +485,6 @@ export default function AdminRadioPage() {
               {/* Soundboard, Cue & Mic: Visible on desktop or when 'perform' is selected on mobile */}
               <div className={`space-y-6 ${studioDeck === "drops" ? "hidden lg:block" : "block"}`}>
                 <PerformanceSoundboard
-                  customDropUrl={customDropUrl}
-                  customDropName={customDropName}
                   onFireOnAir={async (name, url) => {
                     setIsDucking(true);
                     if (url) {
@@ -520,11 +519,6 @@ export default function AdminRadioPage() {
                     audio.onended = () => setIsDucking(false);
                     audio.play().catch(() => setIsDucking(false));
                   }}
-                  onAssignToPad={(item, padIdx) => {
-                    setCustomDropUrl(item.audioUrl);
-                    setCustomDropName(item.title);
-                    showMsg(`Assigned to Cartwall Pad #${padIdx + 1}!`, "success");
-                  }}
                   onUpdateScript={async (newScript) => {
                     const res = await fetch("/api/admin/radio/drops/generate", {
                       method: "POST",
@@ -544,10 +538,6 @@ export default function AdminRadioPage() {
                 />
 
                 <BrowserMicRecorder
-                  onDropMastered={(url, name) => {
-                    setCustomDropUrl(url);
-                    setCustomDropName(name);
-                  }}
                   onTalkoverToggle={(active) => setIsDucking(active)}
                   onSendToCue={(cue) => setCueItem(cue)}
                   onAirLive={async (audioUrl, title, persona, script) => {
@@ -587,11 +577,6 @@ export default function AdminRadioPage() {
                       audio.onended = () => setIsDucking(false);
                       audio.play().catch(() => setIsDucking(false));
                     }}
-                    onAssignToPad={(item, padIdx) => {
-                      setCustomDropUrl(item.audioUrl);
-                      setCustomDropName(item.title);
-                      showMsg(`Assigned to Cartwall Pad #${padIdx + 1}!`, "success");
-                    }}
                   />
                 </div>
               </div>
@@ -612,9 +597,7 @@ export default function AdminRadioPage() {
         <div className="space-y-6">
           <AiDropGenerator
             onDropGenerated={(url, name) => {
-              setCustomDropUrl(url);
-              setCustomDropName(name);
-              showMsg(`AI Drop "${name}" synthesized and loaded to Cartwall Pad #8!`, "success");
+              showMsg(`AI Drop "${name}" synthesized and ready to audition or assign!`, "success");
             }}
           />
           <DropManagerPanel />
@@ -903,6 +886,9 @@ export default function AdminRadioPage() {
         onEnded={() => setIsPreviewPlaying(false)}
         className="hidden"
       />
-    </RadioConsoleLayout>
-  );
+      {/* Global Assign to Pad Sheet */}
+      <AssignToPadSheet />
+    </SoundboardProvider>
+  </RadioConsoleLayout>
+);
 }

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { Sparkles, Play, Pause, Download, Volume2, CheckCircle2, AlertCircle, RefreshCw, Wand2 } from "lucide-react";
+import { useSoundboard } from "@/context/SoundboardContext";
 
 interface AiDropGeneratorProps {
   onDropGenerated?: (audioUrl: string, dropName: string) => void;
@@ -16,6 +17,7 @@ const PRESET_VIBES = [
 ];
 
 export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProps) {
+  const { openAssignModal } = useSoundboard();
   const [selectedPreset, setSelectedPreset] = useState<string>(PRESET_VIBES[0].label);
   const [promptText, setPromptText] = useState<string>(PRESET_VIBES[0].prompt);
   const [customScript, setCustomScript] = useState<string>("");
@@ -101,12 +103,11 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
   };
 
   const assignToPad = () => {
-    if (generatedDrop && onDropGenerated) {
-      onDropGenerated(generatedDrop.audioUrl, `AI: ${selectedPreset}`);
-      setStatusMsg({
-        text: "✓ Drop bound directly to Soundboard Pad #8!",
-        type: "success",
-      });
+    if (generatedDrop) {
+      openAssignModal(generatedDrop.audioUrl, `AI: ${selectedPreset}`);
+      if (onDropGenerated) {
+        onDropGenerated(generatedDrop.audioUrl, `AI: ${selectedPreset}`);
+      }
     }
   };
 
@@ -254,7 +255,7 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
               onClick={assignToPad}
               className="py-2 px-3 border-2 border-brand-navy bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs uppercase transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
             >
-              Assign Pad #8
+              Assign to Pad
             </button>
 
             <a

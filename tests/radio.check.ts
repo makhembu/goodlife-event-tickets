@@ -132,7 +132,7 @@ async function runTests() {
 
   // 13. V7 Blueprint: NVIDIA NIM + Fish Audio AI Drop Pipeline & Soundboard Contract
   check("Admin radio console imports and mounts AiDropGenerator", adminRadioCode.includes("AiDropGenerator") && adminRadioCode.includes("<AiDropGenerator"));
-  check("Admin radio console binds generated AI drops to Soundboard Pad #8", adminRadioCode.includes("onDropGenerated={(url, name) => {") && adminRadioCode.includes("setCustomDropUrl(url)"));
+  check("Admin radio console binds generated AI drops to Soundboard", adminRadioCode.includes("onDropGenerated={(url, name) => {") && (adminRadioCode.includes("AssignToPadSheet") || adminRadioCode.includes("SoundboardProvider")));
   check("Bridge client exports bridgeGenerateAiDrop", bridgeClientCode.includes("export async function bridgeGenerateAiDrop"));
   check("Bridge client exports bridgeQueueNext", bridgeClientCode.includes("export async function bridgeQueueNext"));
 

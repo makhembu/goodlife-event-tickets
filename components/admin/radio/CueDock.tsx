@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Headphones, Play, Pause, Radio, ArrowRight, Check, Edit3, X, Sparkles } from "lucide-react";
+import { useSoundboard } from "@/context/SoundboardContext";
 
 export interface CueDropItem {
   id: string;
@@ -16,7 +17,7 @@ export interface CueDockProps {
   cueItem: CueDropItem | null;
   onClearCue: () => void;
   onFireOnAir: (item: CueDropItem) => void;
-  onAssignToPad: (item: CueDropItem, padIndex: number) => void;
+  onAssignToPad?: (item: CueDropItem, padIndex: number) => void;
   onUpdateScript?: (newScript: string) => Promise<void>;
 }
 
@@ -27,10 +28,10 @@ export default function CueDock({
   onAssignToPad,
   onUpdateScript,
 }: CueDockProps) {
+  const { openAssignModal } = useSoundboard();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedScript, setEditedScript] = useState("");
-  const [selectedPad, setSelectedPad] = useState<number>(7); // Pad 8 (0-indexed 7)
   const [isRegenerating, setIsRegenerating] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -168,28 +169,19 @@ export default function CueDock({
             <span>{isPlaying ? "PAUSE PREVIEW" : "PREVIEW IN EAR"}</span>
           </button>
 
-          {/* Load to Pad Selector */}
-          <div className="flex items-center space-x-1 bg-white/5 px-2 py-1 border border-white/10 shrink-0">
-            <span className="text-white/60 text-[11px]">PAD:</span>
-            <select
-              value={selectedPad}
-              onChange={(e) => setSelectedPad(parseInt(e.target.value))}
-              className="bg-transparent text-[#DFBB7D] font-bold text-xs focus:outline-none"
-            >
-              {[...Array(8)].map((_, i) => (
-                <option key={i} value={i} className="bg-[#16181D] text-white">
-                  Pad {i + 1}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => onAssignToPad(cueItem, selectedPad)}
-              title="Assign to Cartwall Pad"
-              className="ml-1 text-white hover:text-[#DFBB7D] px-1 font-bold"
-            >
-              LOAD
-            </button>
-          </div>
+          {/* Assign to Soundboard Pad Button */}
+          <button
+            onClick={() => {
+              if (cueItem) {
+                openAssignModal(cueItem.audioUrl, cueItem.title);
+              }
+            }}
+            title="Assign to Soundboard Pad"
+            className="px-3 py-1.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold text-xs flex items-center space-x-1 transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowRight className="w-3.5 h-3.5" />
+            <span>ASSIGN TO PAD</span>
+          </button>
         </div>
 
         {/* Fire on Air Immediately */}
