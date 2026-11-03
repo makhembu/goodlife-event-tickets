@@ -26,9 +26,11 @@ import {
   ArrowLeft,
   ArrowRight,
   GripVertical,
+  Upload,
 } from "lucide-react";
 import { SoundboardBankItem, SoundboardPadItem, DropVaultOption } from "@/lib/radio/soundboard-helpers";
 import { useSoundboard } from "@/context/SoundboardContext";
+import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 
 export interface SoundPad {
   id: number;
@@ -136,6 +138,26 @@ export default function PerformanceSoundboard({
   const [dropSearch, setDropSearch] = useState("");
   const [previewingUrl, setPreviewingUrl] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Clip assignment source tab: Vault | Upload | Record
+  const [clipSourceTab, setClipSourceTab] = useState<"vault" | "upload" | "record">("vault");
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploadingRecord, setIsUploadingRecord] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Audio Recorder Hook for live recording in Pad Editor
+  const {
+    isRecording,
+    recordingDuration,
+    audioBlob: recordedBlob,
+    audioUrl: recordedLocalUrl,
+    error: recorderError,
+    startRecording,
+    stopRecording,
+    resetRecording,
+  } = useAudioRecorder();
 
   const touchTimerRef = useRef<Map<number, NodeJS.Timeout>>(new Map());
   const didLongPressRef = useRef<Map<number, boolean>>(new Map());
@@ -360,9 +382,144 @@ export default function PerformanceSoundboard({
     setEditColor(pad.color || "#DFBB7D");
     setEditAudioUrl(pad.audioUrl || null);
     setEditDropId(pad.drop_id || null);
+    setClipSourceTab("vault");
+    setUploadError(null);
+    resetRecording();
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
       setPreviewingUrl(null);
+    }
+  };
+
+  // Handle direct audio file upload via Presigned R2 URL
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+    setUploadError(null);
+
+    // Validate MIME and extension
+    const isAudioType = file.type.startsWith("audio/") || /\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(file.name);
+    if (!isAudioType) {
+      setUploadError("Invalid file type. Please upload an audio file (MP3, WAV, AAC, etc.).");
+      return;
+    }
+
+    // Max 10MB
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setUploadError("Audio file exceeds maximum allowed size of 10MB.");
+      return;
+    }
+
+    setIsUploadingFile(true);
+    setUploadProgress(5);
+
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const presignRes = await fetch("/api/admin/radio/multipart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "presigned",
+          filename: `soundboard_${Date.now()}_${cleanName}`,
+          contentType: file.type || "audio/mpeg",
+          isHighQuality: true,
+        }),
+      });
+
+      if (!presignRes.ok) {
+        const errJson = await presignRes.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to generate presigned upload URL.");
+      }
+
+      const { uploadUrl, publicUrl } = await presignRes.json();
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || "audio/mpeg");
+
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const pct = Math.round((evt.loaded / evt.total) * 90);
+            setUploadProgress(Math.max(5, pct));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Storage provider rejected upload (HTTP ${xhr.status})`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during audio upload"));
+        xhr.send(file);
+      });
+
+      setUploadProgress(100);
+      setEditAudioUrl(publicUrl);
+      setEditDropId(null);
+      if (!editLabel || editLabel === "New Pad") {
+        const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ").trim();
+        setEditLabel(baseName.slice(0, 50));
+      }
+      showToast("Audio file uploaded and attached to pad!", "success");
+    } catch (err: any) {
+      setUploadError(err.message || "Failed to upload audio file.");
+    } finally {
+      setIsUploadingFile(false);
+      setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Upload recorded mic audio to R2
+  const handleUploadRecordedAudio = async () => {
+    if (!recordedBlob || recordedBlob.size === 0) return;
+    setIsUploadingRecord(true);
+    setUploadError(null);
+
+    try {
+      const presignRes = await fetch("/api/admin/radio/multipart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "presigned",
+          filename: `soundboard_mic_${Date.now()}.webm`,
+          contentType: recordedBlob.type || "audio/webm",
+          isHighQuality: true,
+        }),
+      });
+
+      if (!presignRes.ok) {
+        const errJson = await presignRes.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to generate presigned URL for recording.");
+      }
+
+      const { uploadUrl, publicUrl } = await presignRes.json();
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": recordedBlob.type || "audio/webm" },
+        body: recordedBlob,
+      });
+
+      if (!putRes.ok) {
+        throw new Error(`Failed to upload recording (HTTP ${putRes.status})`);
+      }
+
+      setEditAudioUrl(publicUrl);
+      setEditDropId(null);
+      if (!editLabel || editLabel === "New Pad") {
+        setEditLabel("Live Mic Drop");
+      }
+      resetRecording();
+      showToast("Live mic recording uploaded and attached to pad!", "success");
+    } catch (err: any) {
+      setUploadError(err.message || "Failed to upload mic recording.");
+    } finally {
+      setIsUploadingRecord(false);
     }
   };
 
@@ -1106,6 +1263,7 @@ export default function PerformanceSoundboard({
             onClick={() => {
               if (previewAudioRef.current) previewAudioRef.current.pause();
               setPreviewingUrl(null);
+              resetRecording();
               setEditingPad(null);
             }}
             className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 animate-in fade-in duration-150"
@@ -1134,6 +1292,7 @@ export default function PerformanceSoundboard({
                 onClick={() => {
                   if (previewAudioRef.current) previewAudioRef.current.pause();
                   setPreviewingUrl(null);
+                  resetRecording();
                   setEditingPad(null);
                 }}
                 className="p-1.5 text-white/60 hover:text-white rounded hover:bg-white/10 cursor-pointer"
@@ -1306,87 +1465,271 @@ export default function PerformanceSoundboard({
               )}
             </div>
 
-            {/* Drops Vault Picker */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono uppercase text-white/70 flex items-center gap-1.5">
-                  <FolderOpen className="w-3.5 h-3.5 text-[#DFBB7D]" />
-                  Choose Clip from Drops Vault ({filteredVaultDrops.length})
+            {/* Choose Clip Source: 3 Tabs (Vault, Upload, Record) */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
+                <span className="text-xs font-mono uppercase text-[#DFBB7D] font-bold tracking-wider">
+                  Assign Audio Clip:
                 </span>
+                <div className="flex items-center border border-white/20 p-0.5 bg-black/40 rounded shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClipSourceTab("vault");
+                      setUploadError(null);
+                    }}
+                    className={`px-2.5 py-1 font-mono text-[11px] font-bold flex items-center space-x-1 rounded cursor-pointer transition-colors ${
+                      clipSourceTab === "vault"
+                        ? "bg-[#DFBB7D] text-[#16181D]"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <FolderOpen className="w-3 h-3" />
+                    <span>Vault ({filteredVaultDrops.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClipSourceTab("upload");
+                      setUploadError(null);
+                    }}
+                    className={`px-2.5 py-1 font-mono text-[11px] font-bold flex items-center space-x-1 rounded cursor-pointer transition-colors ${
+                      clipSourceTab === "upload"
+                        ? "bg-[#DFBB7D] text-[#16181D]"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Upload</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClipSourceTab("record");
+                      setUploadError(null);
+                    }}
+                    className={`px-2.5 py-1 font-mono text-[11px] font-bold flex items-center space-x-1 rounded cursor-pointer transition-colors ${
+                      clipSourceTab === "record"
+                        ? "bg-[#DFBB7D] text-[#16181D]"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>Record Mic</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Search Drops (16px text on mobile prevents auto-zoom) */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                <input
-                  type="text"
-                  value={dropSearch}
-                  onChange={(e) => setDropSearch(e.target.value)}
-                  placeholder="Search drops by title, persona or script..."
-                  className="w-full bg-[#1A1D24] text-white font-mono text-base sm:text-xs pl-9 pr-3 py-2.5 sm:py-2 border border-white/10 rounded focus:border-[#DFBB7D] focus:outline-none"
-                />
-              </div>
+              {/* Upload Error Banner */}
+              {uploadError && (
+                <div className="p-2.5 bg-red-500/20 border border-red-500/40 rounded text-red-200 text-xs font-mono flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{uploadError}</span>
+                </div>
+              )}
 
-              {/* Drops List */}
-              <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                {filteredVaultDrops.length === 0 ? (
-                  <div className="py-6 text-center text-white/40 font-mono text-xs">
-                    No drops found.
+              {/* TAB 1: DROPS VAULT */}
+              {clipSourceTab === "vault" && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <input
+                      type="text"
+                      value={dropSearch}
+                      onChange={(e) => setDropSearch(e.target.value)}
+                      placeholder="Search drops by title, persona or script..."
+                      className="w-full bg-[#1A1D24] text-white font-mono text-base sm:text-xs pl-9 pr-3 py-2.5 sm:py-2 border border-white/10 rounded focus:border-[#DFBB7D] focus:outline-none"
+                    />
                   </div>
-                ) : (
-                  filteredVaultDrops.map((d) => {
-                    const isSelected = editAudioUrl === d.audio_url;
-                    return (
-                      <div
-                        key={d.id}
-                        className={`p-2 rounded border flex items-center justify-between gap-2 font-mono text-xs transition-colors ${
-                          isSelected
-                            ? "bg-[#DFBB7D]/20 border-[#DFBB7D] text-white"
-                            : "bg-white/5 border-white/10 hover:bg-white/10"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold truncate text-white">{d.title}</div>
-                          <div className="text-[10px] text-[#DFBB7D] truncate">
-                            {d.persona} · {d.mood}
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Private Audition */}
-                          <button
-                            type="button"
-                            onClick={() => togglePreviewAudio(d.audio_url)}
-                            title="Audition in headphones"
-                            className="p-2 bg-black/50 text-[#DFBB7D] hover:text-white rounded border border-white/10 cursor-pointer"
-                          >
-                            {previewingUrl === d.audio_url ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                          </button>
-
-                          {/* Select Clip */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditAudioUrl(d.audio_url);
-                              setEditDropId(d.id);
-                              if (!editLabel || editLabel === "New Pad") {
-                                setEditLabel(d.title.slice(0, 50));
-                              }
-                            }}
-                            className={`px-3 py-1.5 text-[11px] font-bold rounded transition-colors cursor-pointer ${
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                    {filteredVaultDrops.length === 0 ? (
+                      <div className="py-6 text-center text-white/40 font-mono text-xs">
+                        No drops found.
+                      </div>
+                    ) : (
+                      filteredVaultDrops.map((d) => {
+                        const isSelected = editAudioUrl === d.audio_url;
+                        return (
+                          <div
+                            key={d.id}
+                            className={`p-2 rounded border flex items-center justify-between gap-2 font-mono text-xs transition-colors ${
                               isSelected
-                                ? "bg-emerald-500 text-black font-black"
-                                : "bg-[#DFBB7D] text-[#16181D] hover:bg-[#F5C842]"
+                                ? "bg-[#DFBB7D]/20 border-[#DFBB7D] text-white"
+                                : "bg-white/5 border-white/10 hover:bg-white/10"
                             }`}
                           >
-                            {isSelected ? "ATTACHED" : "SELECT"}
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold truncate text-white">{d.title}</div>
+                              <div className="text-[10px] text-[#DFBB7D] truncate">
+                                {d.persona} · {d.mood}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => togglePreviewAudio(d.audio_url)}
+                                title="Audition in headphones"
+                                className="p-2 bg-black/50 text-[#DFBB7D] hover:text-white rounded border border-white/10 cursor-pointer"
+                              >
+                                {previewingUrl === d.audio_url ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditAudioUrl(d.audio_url);
+                                  setEditDropId(d.id);
+                                  if (!editLabel || editLabel === "New Pad") {
+                                    setEditLabel(d.title.slice(0, 50));
+                                  }
+                                }}
+                                className={`px-3 py-1.5 text-[11px] font-bold rounded transition-colors cursor-pointer ${
+                                  isSelected
+                                    ? "bg-emerald-500 text-black font-black"
+                                    : "bg-[#DFBB7D] text-[#16181D] hover:bg-[#F5C842]"
+                                }`}
+                              >
+                                {isSelected ? "ATTACHED" : "SELECT"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: UPLOAD AUDIO FILE */}
+              {clipSourceTab === "upload" && (
+                <div className="p-4 bg-[#1A1D24] border border-white/10 rounded space-y-3 text-center">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload(file);
+                    }}
+                    className="hidden"
+                    id="soundboard-pad-file-input"
+                  />
+                  <label
+                    htmlFor="soundboard-pad-file-input"
+                    className="min-h-[52px] py-4 px-3 border-2 border-dashed border-white/20 hover:border-[#DFBB7D] rounded flex flex-col items-center justify-center space-y-1.5 cursor-pointer bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    <Upload className="w-6 h-6 text-[#DFBB7D]" />
+                    <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                      {isUploadingFile ? `Uploading (${uploadProgress}%)...` : "Select Audio File to Upload"}
+                    </span>
+                    <span className="font-mono text-[10px] text-white/50">
+                      MP3, WAV, AAC, WebM (Max 10MB) · Direct to Cloudflare R2
+                    </span>
+                  </label>
+
+                  {isUploadingFile && (
+                    <div className="space-y-1 pt-1">
+                      <div className="w-full bg-black/40 h-2 rounded overflow-hidden">
+                        <div
+                          className="bg-[#DFBB7D] h-full transition-all duration-150"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                      <p className="font-mono text-[10px] text-[#DFBB7D] text-right">
+                        {uploadProgress}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: RECORD MIC */}
+              {clipSourceTab === "record" && (
+                <div className="p-4 bg-[#1A1D24] border border-white/10 rounded space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono uppercase text-white/70">
+                      Live Mic Recording:
+                    </span>
+                    {isRecording && (
+                      <span className="flex items-center space-x-1.5 text-xs font-mono font-bold text-[#E84855] animate-pulse">
+                        <span className="w-2 h-2 rounded-full bg-[#E84855]" />
+                        <span>REC {Math.floor(recordingDuration / 60).toString().padStart(2, "0")}:{(recordingDuration % 60).toString().padStart(2, "0")} / 02:00</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {recorderError && (
+                    <div className="p-2.5 bg-red-500/20 border border-red-500/40 rounded text-red-200 text-xs font-mono flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{recorderError}</span>
+                    </div>
+                  )}
+
+                  {!recordedBlob && !isRecording && (
+                    <button
+                      type="button"
+                      onClick={() => startRecording()}
+                      className="w-full min-h-[44px] py-3 px-4 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold rounded flex items-center justify-center space-x-2 cursor-pointer transition-colors shadow-md"
+                    >
+                      <Mic className="w-4 h-4" />
+                      <span>Start Recording Live Drop</span>
+                    </button>
+                  )}
+
+                  {isRecording && (
+                    <button
+                      type="button"
+                      onClick={() => stopRecording()}
+                      className="w-full min-h-[44px] py-3 px-4 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-black rounded flex items-center justify-center space-x-2 cursor-pointer transition-colors shadow-md"
+                    >
+                      <Square className="w-4 h-4 fill-current" />
+                      <span>Stop & Review Recording</span>
+                    </button>
+                  )}
+
+                  {recordedBlob && !isRecording && (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between p-2.5 bg-black/40 border border-white/10 rounded">
+                        <div className="font-mono text-xs text-white">
+                          <span className="text-emerald-400 font-bold block text-[10px]">RECORDED AUDIO READY</span>
+                          <span>Duration: {recordingDuration}s · {(recordedBlob.size / 1024).toFixed(1)} KB</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          {recordedLocalUrl && (
+                            <button
+                              type="button"
+                              onClick={() => togglePreviewAudio(recordedLocalUrl)}
+                              title="Audition recorded audio locally in headphones"
+                              className="px-2.5 py-1.5 bg-[#DFBB7D] text-[#16181D] font-mono text-xs font-bold rounded flex items-center space-x-1 cursor-pointer"
+                            >
+                              {previewingUrl === recordedLocalUrl ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                              <span>{previewingUrl === recordedLocalUrl ? "PAUSE" : "AUDITION"}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => resetRecording()}
+                            className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white font-mono text-xs rounded cursor-pointer"
+                          >
+                            Re-record
                           </button>
                         </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+
+                      <button
+                        type="button"
+                        onClick={handleUploadRecordedAudio}
+                        disabled={isUploadingRecord}
+                        className="w-full min-h-[44px] py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-mono text-xs font-black rounded flex items-center justify-center space-x-2 cursor-pointer transition-colors disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>{isUploadingRecord ? "Uploading to Cloud..." : "Upload & Attach Recording to Pad"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -1407,6 +1750,7 @@ export default function PerformanceSoundboard({
                   onClick={() => {
                     if (previewAudioRef.current) previewAudioRef.current.pause();
                     setPreviewingUrl(null);
+                    resetRecording();
                     setEditingPad(null);
                   }}
                   className="min-h-[44px] px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold rounded transition-colors flex-1 sm:flex-none text-center cursor-pointer"
