@@ -316,14 +316,14 @@ export default function TransportBar({
         <div className="flex items-center justify-between text-xs mb-1">
           <div className="truncate pr-1 sm:pr-2">
             <span className="font-bold text-white tracking-wide text-[11px] sm:text-xs">
-              {song?.title && formatTrackTitle(song.title) !== "Updating..."
+              {song?.title && formatTrackTitle(song.title) !== "Station Rotation Active" && formatTrackTitle(song.title) !== "Updating..."
                 ? formatTrackTitle(song.title)
                 : statusState === "connecting"
                 ? "Connecting live playout..."
                 : "Station Rotation Active"}
             </span>
             <span className="text-[#DFBB7D] ml-1 sm:ml-2 text-[10px] sm:text-xs hidden sm:inline">
-              — {song?.artist || (statusState === "connecting" ? "GOODLIFE 254" : "GOODLIFE Resident")}
+              — {song?.artist || "GOODLIFE 254"}
             </span>
           </div>
           <div className="font-mono text-[10px] sm:text-[11px] text-white/60 shrink-0">

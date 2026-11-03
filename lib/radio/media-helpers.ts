@@ -50,8 +50,8 @@ export function resolveFallbackCoverArt(thumbnailUrl?: string | null): string {
  * Strictly adheres to NO INVENTED DATA: never substitutes "Unknown Track".
  */
 export function formatTrackTitle(title?: string | null): string {
-  if (!title || typeof title !== "string" || title.trim() === "") {
-    return "Updating...";
+  if (!title || typeof title !== "string" || title.trim() === "" || title.trim() === "Updating...") {
+    return "Station Rotation Active";
   }
 
   let cleaned = title.trim();
@@ -87,7 +87,13 @@ export const normalizeTrackTitle = formatTrackTitle;
  * (Boomplay is dropped because its public web search endpoint is unverified/bot-blocked).
  */
 export function buildSongSearchUrls(title?: string | null, artist?: string | null): SongSearchLink[] {
-  if (!title || typeof title !== "string" || title.trim() === "" || title.trim() === "Updating...") {
+  if (
+    !title ||
+    typeof title !== "string" ||
+    title.trim() === "" ||
+    title.trim() === "Updating..." ||
+    title.trim() === "Station Rotation Active"
+  ) {
     return [];
   }
 
