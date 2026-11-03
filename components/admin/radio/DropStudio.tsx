@@ -198,12 +198,17 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         throw new Error(data.error || "Failed to generate script.");
       }
 
-      if (data.script) {
-        setScriptText(data.script);
+      const returnedScript = data.script?.trim();
+      const stripped = returnedScript ? returnedScript.replace(/\[[a-zA-Z\s]+\]/g, "").trim() : "";
+
+      if (returnedScript && stripped.length >= 15) {
+        setScriptText(returnedScript);
         setSuccessMsg(`✨ AI script written for ${data.persona || activePersona}! Ready to audition or fire.`);
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
+      } else {
+        throw new Error("AI returned an incomplete script. Please click 'AI WRITE SCRIPT' again.");
       }
     } catch (err: any) {
       setError(err?.message || "AI script generation failed.");
