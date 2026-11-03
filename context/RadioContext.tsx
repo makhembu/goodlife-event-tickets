@@ -179,7 +179,56 @@ const RadioContext = createContext<RadioContextType | null>(null);
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
-const DEFAULT_STATION_DROPS: RadioDrop[] = [];
+const DEFAULT_STATION_DROPS: RadioDrop[] = [
+  {
+    id: "drop-sudi-pulse",
+    title: "DJ Sudi · Nairobi Evening Pulse",
+    persona: "DJ Sudi",
+    mood: "HYPE",
+    audio_url: "/drops/samples/dj-sudi_context_drop.mp3",
+    script: "Goodlife Radio 254, your evening pulse! Vibe ya jioni ni safe, matatus full, mbele ya 254. Tune in, piga luku safi.",
+  },
+  {
+    id: "drop-sney-freq",
+    title: "DJ Sney · Kenya Frequency",
+    persona: "DJ Sney",
+    mood: "HYPE",
+    audio_url: "/drops/samples/dj-sney_context_drop.mp3",
+    script: "Kila banger unapenda, kila rhythm unataka. Hii ndio frequency ya Kenya, hii ndio GOODLIFE Radio 254!",
+  },
+  {
+    id: "drop-cheche-flow",
+    title: "MC Cheche · Hustle Flow",
+    persona: "MC Cheche",
+    mood: "HYPE",
+    audio_url: "/drops/samples/mc-cheche_context_drop.mp3",
+    script: "Hustle ya mchana inahitaji ngoma nzito kama hizi. Cheza kama wewe, shika flow kwenye GOODLIFE Radio 254!",
+  },
+  {
+    id: "drop-fusion-marara",
+    title: "DJ Fusion · Marara Vibes",
+    persona: "DJ Fusion",
+    mood: "HYPE",
+    audio_url: "/drops/samples/dj_fusion_marara_drop.mp3",
+    script: "DJ Fusion inside the building on GOODLIFE Radio 254!",
+  },
+  {
+    id: "drop-vibes-1",
+    title: "Station ID · 254 Heat",
+    persona: "GOODLIFE 254",
+    mood: "HYPE",
+    audio_url: "/drops/samples/kenyan_vibes_1.mp3",
+    script: "GOODLIFE Radio 254 Station Sweeper",
+  },
+  {
+    id: "drop-vibes-2",
+    title: "Station ID · Nairobi Bounce",
+    persona: "GOODLIFE 254",
+    mood: "HYPE",
+    audio_url: "/drops/samples/kenyan_vibes_2.mp3",
+    script: "GOODLIFE Radio 254 Station Sweeper",
+  },
+];
 
 
 import { computeLiveTimeline as computeLiveTimelineCore } from "@/lib/radio/timeline";
@@ -673,9 +722,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         triggerOutroDropCrossoverRef.current();
       }
 
-      // JIT Drop Generation: Request a fresh AI drop ~30s before track ends so it's ready for outro/intro
+      // JIT Drop Generation: Request a fresh AI drop ~60s before track ends so it's ready for outro/intro
       if (
-        remainingSec <= 30 &&
+        remainingSec <= 60 &&
         remainingSec > 15 &&
         !hasFiredOutroDropRef.current &&
         !isDropPlayingRef.current &&
@@ -1366,19 +1415,27 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetId = String(nextTrack.id || "");
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    const drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+    let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+    if (drops.length === 0) {
+      availableDropsRef.current = [...DEFAULT_STATION_DROPS];
+      drops = availableDropsRef.current;
+    }
     if (drops.length === 0) return;
 
-    // 2. Strict matching: ONLY play a drop specifically verified and targeted for THIS upcoming track
-    const drop = drops.find((d) => {
+    // 2. Prioritize drop explicitly targeted to upcoming track; fallback to evergreen station ID/DJ drop
+    let drop = drops.find((d) => {
       const idMatch = d.target_track_id && String(d.target_track_id) === targetId;
       const titleMatch = d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim());
       return idMatch || titleMatch;
     });
 
-    // 3. If no verified matching drop exists, DO NOT PLAY ANY DROP (prevents wrong song name / repeating DJ clips!)
     if (!drop) {
-      console.log(`[RadioContext] ⏭️ Skipping 15s drop: No verified drop targeting "${nextTrack.title}". Clean musical transition.`);
+      // Pick an evergreen station drop that doesn't target another song
+      drop = drops.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url);
+    }
+
+    if (!drop) {
+      console.log(`[RadioContext] ⏭️ Skipping 15s drop: No valid drop available for "${nextTrack.title}". Clean musical transition.`);
       return;
     }
 
@@ -1545,11 +1602,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (hasFiredOutroDropRef.current || (Date.now() - lastDropPlayedTimestampRef.current < 120000)) {
       drop = undefined;
     } else {
-      // Strict match ONLY: only air drop if explicitly generated for this upcoming track
+      // Prioritize track-specific drop; fallback to evergreen station drop
       drop = drops.find((d) =>
         (d.target_track_id && String(d.target_track_id) === targetId) ||
         (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
       );
+      if (!drop) {
+        drop = drops.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url);
+      }
       if (drop) {
         lastDropPlayedTimestampRef.current = Date.now();
       }
