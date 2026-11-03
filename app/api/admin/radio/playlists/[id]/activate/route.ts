@@ -27,7 +27,7 @@ export async function POST(
         `SELECT COUNT(pt.id)::int as count 
          FROM radio_playlists p
          JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-         JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+         JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
          WHERE p.id = $1 AND p.deleted_at IS NULL`,
         [playlistId]
       );
@@ -55,6 +55,13 @@ export async function POST(
         [playlistId]
       );
 
+      // Reset radio_settings so station broadcast is immediately in autodj mode on track #1 of this playlist
+      await neonQuery(
+        `UPDATE radio_settings 
+         SET broadcast_mode = 'autodj', active_set_id = NULL, active_started_at = NOW(), updated_at = NOW() 
+         WHERE id = 1`
+      );
+
       return NextResponse.json({
         success: true,
         message: "Playlist is now ON AIR! 24/7 broadcast timeline has been locked to this playlist.",
@@ -68,6 +75,13 @@ export async function POST(
          WHERE id = $1 AND deleted_at IS NULL 
          RETURNING *`,
         [playlistId]
+      );
+
+      // Reset radio_settings back to standard autodj
+      await neonQuery(
+        `UPDATE radio_settings 
+         SET broadcast_mode = 'autodj', active_set_id = NULL, active_started_at = NOW(), updated_at = NOW() 
+         WHERE id = 1`
       );
 
       return NextResponse.json({

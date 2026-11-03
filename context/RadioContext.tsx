@@ -265,6 +265,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [activePlaylist, setActivePlaylist] = useState<ActivePlaylist | null>(null);
   const activePlaylistRef = useRef<ActivePlaylist | null>(null);
   activePlaylistRef.current = activePlaylist;
+  const currentBroadcastPlaylistNameRef = useRef<string | null>(null);
+  const currentBroadcastPlaylistIdRef = useRef<number | null>(null);
   // Station Drops Playout State
   const [isDropPlaying, setIsDropPlaying] = useState(false);
   const [activeDropTitle, setActiveDropTitle] = useState<string | null>(null);
@@ -440,6 +442,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.now_playing) {
+        const prevPlName = currentBroadcastPlaylistNameRef.current;
+        const newPlName = data.playlist_name || null;
+        const isPlaylistSwitch = Boolean(prevPlName && newPlName && prevPlName !== newPlName);
+        currentBroadcastPlaylistNameRef.current = newPlName;
+
+        const prevPlId = currentBroadcastPlaylistIdRef.current;
+        const newPlId = (data as any).playlist_id || null;
+        const isPlaylistIdSwitch = Boolean(prevPlId && newPlId && prevPlId !== newPlId);
+        currentBroadcastPlaylistIdRef.current = newPlId;
+
         const track = {
           ...data.now_playing,
           title: formatTrackTitle(data.now_playing.title),
@@ -463,17 +475,54 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 : 0;
 
               // Guard against premature cutoff: swap if in outro window (<=15s), song has stopped/ended,
-              // or station diverged significantly (e.g. DJ locked a new track in Mania mode or skipped)
+              // playlist changed, DJ locked a new track in Mania mode, track just started, or diverged >15s
               const isOutroWindow = remaining > 0 && remaining <= 15;
               const isStalledOrEnded = audio.ended || audio.paused || remaining <= 0;
               const isDjManiaOverride = (data as any)?.mode === "mania";
-              const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 30;
+              const isExplicitPlaylistChange = isPlaylistSwitch || isPlaylistIdSwitch;
+              const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 15;
+              const isServerTrackFresh = typeof track.elapsed === "number" && track.elapsed <= 15;
 
-              if (isOutroWindow || isStalledOrEnded || isDjManiaOverride || hasDivergedSignificantly) {
+              if (
+                isExplicitPlaylistChange ||
+                isDjManiaOverride ||
+                isStalledOrEnded ||
+                isOutroWindow ||
+                hasDivergedSignificantly ||
+                isServerTrackFresh
+              ) {
                 if (!isTransitioningRef.current) {
-                  audio.src = track.audio_url;
-                  safeSeekAudio(audio, track.elapsed || 0);
-                  audio.play().catch(() => {});
+                  isTransitioningRef.current = true;
+                  const targetSeek = track.elapsed || 0;
+                  const newAudioSrc = track.audio_url;
+
+                  audio.src = newAudioSrc;
+                  audio.load();
+
+                  const handleCanPlay = () => {
+                    audio.removeEventListener("canplay", handleCanPlay);
+                    safeSeekAudio(audio, targetSeek);
+                    audio.play().then(() => {
+                      isTransitioningRef.current = false;
+                      setIsPlaying(true);
+                      setEngineState("live");
+                    }).catch((playErr) => {
+                      console.warn("[RadioContext] auto-play on skip/advance error:", playErr);
+                      isTransitioningRef.current = false;
+                    });
+                  };
+
+                  audio.addEventListener("canplay", handleCanPlay, { once: true });
+
+                  // Fallback timeout in case canplay is delayed
+                  setTimeout(() => {
+                    if (isTransitioningRef.current) {
+                      isTransitioningRef.current = false;
+                      if (!audio.paused) {
+                        setIsPlaying(true);
+                      }
+                    }
+                  }, 3000);
                 }
               }
             }

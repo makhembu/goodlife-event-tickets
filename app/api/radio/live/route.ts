@@ -47,7 +47,7 @@ async function getTimelineFallback() {
                s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] })),
@@ -69,7 +69,7 @@ async function getTimelineFallback() {
       const setsRes = await neonQuery(`
         SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
         FROM radio_sets
-        WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
+        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
         ORDER BY display_order ASC, id ASC
       `);
       sets = setsRes.rows || [];
@@ -84,22 +84,41 @@ async function getTimelineFallback() {
     let activeIdx = 0;
     let offsetSec = 0;
     let activeMode: "autodj" | "mania" = "autodj";
+    let currentTrack: any = null;
+    let nextTracks: any[] = [];
 
-    if (isMania && maniaIdx !== -1) {
-      const trackDur = (sets[maniaIdx].duration_sec && sets[maniaIdx].duration_sec > 0) ? sets[maniaIdx].duration_sec : 180;
-      const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
-      const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+    if (isMania) {
+      let maniaTrack = maniaIdx !== -1 ? sets[maniaIdx] : null;
+      if (!maniaTrack && settings.active_set_id) {
+        try {
+          const directSetRes = await neonQuery(
+            `SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre 
+             FROM radio_sets WHERE id = $1 AND deleted_at IS NULL`,
+            [Number(settings.active_set_id)]
+          );
+          if (directSetRes.rows.length > 0) {
+            maniaTrack = directSetRes.rows[0];
+          }
+        } catch {}
+      }
 
-      if (elapsed < trackDur) {
-        activeIdx = maniaIdx;
-        offsetSec = elapsed;
-        activeMode = "mania";
-      } else {
-        neonQuery("UPDATE radio_settings SET broadcast_mode = 'autodj', active_set_id = NULL, updated_at = NOW() WHERE id = 1").catch(() => {});
+      if (maniaTrack) {
+        const trackDur = (maniaTrack.duration_sec && maniaTrack.duration_sec > 0) ? maniaTrack.duration_sec : 180;
+        const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+        const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+
+        if (elapsed < trackDur) {
+          currentTrack = maniaTrack;
+          offsetSec = elapsed;
+          activeMode = "mania";
+          nextTracks = sets.slice(0, 3);
+        } else {
+          neonQuery("UPDATE radio_settings SET broadcast_mode = 'autodj', active_set_id = NULL, updated_at = NOW() WHERE id = 1").catch(() => {});
+        }
       }
     }
 
-    if (activeMode === "autodj") {
+    if (activeMode === "autodj" || !currentTrack) {
       const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
       const nowSec = Math.floor(Date.now() / 1000);
       let cycleSec = 0;
@@ -123,19 +142,22 @@ async function getTimelineFallback() {
         }
         cumulative += dur;
       }
+
+      currentTrack = sets[activeIdx] || sets[0];
+      nextTracks = [
+        sets[(activeIdx + 1) % sets.length],
+        sets[(activeIdx + 2) % sets.length],
+        sets[(activeIdx + 3) % sets.length],
+      ].filter(Boolean);
     }
 
-    const currentTrack = sets[activeIdx];
-    const nextTracks = [
-      sets[(activeIdx + 1) % sets.length],
-      sets[(activeIdx + 2) % sets.length],
-      sets[(activeIdx + 3) % sets.length],
-    ].filter(Boolean);
+    if (!currentTrack) return null;
 
     return {
       offline: false,
       stale: false,
       mode: activeMode,
+      playlist_id: playlistRes.rows[0]?.playlist_id || null,
       playlist_name: activePlaylistName,
       now_playing: {
         id: currentTrack.id,

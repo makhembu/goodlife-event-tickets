@@ -143,6 +143,10 @@ export default function QueueNextTrack() {
         body: JSON.stringify({
           url: urlToUse,
           track_id: track?.id,
+          title: track?.title,
+          artist: track?.artist,
+          duration_sec: track?.duration_sec,
+          thumbnail_url: track?.thumbnail_url,
           voice_preference: voicePreference,
           include_intro_drop: includeIntroDrop,
           play_now: action === "play_now",

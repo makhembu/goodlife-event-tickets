@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Layers,
   Play,
@@ -42,6 +42,23 @@ export default function OnAirRundown() {
   const [searchQuery, setSearchQuery] = useState("");
   const [notification, setNotification] = useState<string | null>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<number | null>(null);
+
+  const activeTrackRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll to center the currently playing track when it loads or changes
+  useEffect(() => {
+    if (!activeSetId) return;
+    const timer = setTimeout(() => {
+      if (activeTrackRef.current) {
+        activeTrackRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [activeSetId, sets]);
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -264,7 +281,7 @@ export default function OnAirRundown() {
       )}
 
       {/* Track List */}
-      <div className="space-y-2 overflow-y-auto max-h-[420px] pr-1">
+      <div ref={containerRef} className="space-y-2 overflow-y-auto max-h-[420px] pr-1 scroll-smooth">
         {loading && sets.length === 0 ? (
           <div className="p-6 text-center text-white/40 font-mono text-xs">
             Loading broadcast rundown...
@@ -279,6 +296,7 @@ export default function OnAirRundown() {
             return (
               <div
                 key={track.id}
+                ref={isPlaying ? activeTrackRef : undefined}
                 className={`p-2.5 border transition-all flex items-center justify-between relative ${
                   isPlaying
                     ? "bg-[#DFBB7D]/15 border-[#DFBB7D] shadow-[2px_2px_0px_#DFBB7D]"

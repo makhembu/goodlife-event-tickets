@@ -78,7 +78,7 @@ export async function GET() {
                s.duration, s.duration_sec, s.genre, s.file_size, s.bitrate, s.play_count, s.created_at, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] }));
@@ -99,7 +99,7 @@ export async function GET() {
             id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
             duration, duration_sec, genre, file_size, bitrate, play_count, created_at
           FROM radio_sets
-          WHERE deleted_at IS NULL AND is_active = true AND processing_status = 'ready'
+          WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
           ORDER BY display_order ASC, id ASC
           LIMIT 60
         `);
@@ -160,24 +160,41 @@ export async function GET() {
       const isMania = settings.broadcast_mode === "mania" && settings.active_set_id;
       const maniaIdx = isMania ? sets.findIndex((s: any) => s.id === Number(settings.active_set_id)) : -1;
 
-      if (isMania && maniaIdx !== -1) {
-        activeIdx = maniaIdx;
-        const trackDur = (sets[activeIdx].duration_sec && sets[activeIdx].duration_sec > 0) ? sets[activeIdx].duration_sec : 180;
-        const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
-        const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-        offsetSec = elapsed % trackDur;
+      if (isMania) {
+        let maniaTrack = maniaIdx !== -1 ? sets[maniaIdx] : null;
+        if (!maniaTrack && settings.active_set_id) {
+          try {
+            const directSetRes = await neonQuery(
+              `SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre 
+               FROM radio_sets WHERE id = $1 AND deleted_at IS NULL`,
+              [Number(settings.active_set_id)]
+            );
+            if (directSetRes.rows.length > 0) {
+              maniaTrack = directSetRes.rows[0];
+            }
+          } catch {}
+        }
 
-        broadcastSchedule = {
-          active_index: activeIdx,
-          active_set_id: sets[activeIdx].id,
-          offset_sec: offsetSec,
-          server_time: nowSec,
-          total_duration_sec: totalDurationSec,
-          is_mania: true,
-          playlist_id: activePlaylistId,
-          playlist_name: activePlaylistName,
-        };
-      } else {
+        if (maniaTrack) {
+          const trackDur = (maniaTrack.duration_sec && maniaTrack.duration_sec > 0) ? maniaTrack.duration_sec : 180;
+          const startedAtMs = settings.active_started_at ? new Date(settings.active_started_at).getTime() : Date.now();
+          const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+          offsetSec = elapsed % trackDur;
+
+          broadcastSchedule = {
+            active_index: maniaIdx !== -1 ? maniaIdx : 0,
+            active_set_id: maniaTrack.id,
+            offset_sec: offsetSec,
+            server_time: nowSec,
+            total_duration_sec: totalDurationSec,
+            is_mania: true,
+            playlist_id: activePlaylistId,
+            playlist_name: activePlaylistName,
+          };
+        }
+      }
+
+      if (!broadcastSchedule) {
         // AUTODJ: Virtual Synchronized Playout Loop across active playlist (or festival library fallback)
         let cycleSec = 0;
         if (activatedAt) {

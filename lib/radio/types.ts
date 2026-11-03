@@ -131,6 +131,9 @@ export interface RadioLiveBffResponse {
   offline: boolean;
   stale: boolean;
   reason?: string;
+  mode?: string;
+  playlist_id?: number | null;
+  playlist_name?: string | null;
   now_playing: LiveNowPlayingTrack | null;
   up_next: LiveQueueItem[];
   history: LiveHistoryItem[];

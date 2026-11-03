@@ -10,26 +10,19 @@ export async function POST() {
   const authErr = await requireAdmin();
   if (authErr) return authErr;
 
-  // 1. If bridge / AzuraCast is reachable, dispatch skip to upstream Icecast daemon
-  try {
-    const res = await bridgeSkipTrack();
-    if (res && res.ok) {
-      return NextResponse.json(res.data);
-    }
-  } catch {
-    // Upstream bridge unreachable or off; seamlessly advance internal 24/7 timeline
-  }
+  // 1. Dispatch skip to upstream Icecast daemon in parallel/background if reachable
+  bridgeSkipTrack().catch(() => {});
 
-  // 2. Seamless Station Fallback: Advance 24/7 Neon broadcast schedule to next track
+  // 2. Advance 24/7 Neon broadcast schedule to next track
   try {
-    // 2. Query active broadcast playlist first (if one exists)
+    // Query active broadcast playlist first (if one exists)
     const [playlistRes, settingsRes] = await Promise.all([
       neonQuery(`
         SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
                s.id, s.title, s.dj_name, s.audio_url, s.duration_sec, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] })),

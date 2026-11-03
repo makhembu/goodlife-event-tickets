@@ -357,43 +357,47 @@ export default function PlaylistManagerPanel({
       )}
 
       {/* Broadcast Airwave Status Bar */}
-      <div className="p-5 rounded-2xl bg-neutral-900/80 border border-neutral-800 backdrop-blur-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className={`p-5 rounded-2xl border-2 backdrop-blur-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all ${
+        activeBroadcastPlaylist
+          ? "bg-[#1A1D24] border-[#DFBB7D] shadow-[4px_4px_0px_#DFBB7D]"
+          : "bg-[#16181D] border-white/20"
+      }`}>
         <div className="flex items-center gap-4">
           <div
-            className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+            className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
               activeBroadcastPlaylist
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse"
-                : "bg-neutral-800 text-neutral-400"
+                ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] shadow-md animate-pulse"
+                : "bg-white/10 text-white/60 border-white/20"
             }`}
           >
             <RadioTower className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-widest font-black text-neutral-400">
+              <span className="text-xs uppercase tracking-widest font-mono font-bold text-white/70">
                 24/7 Airwave Automation
               </span>
               {activeBroadcastPlaylist ? (
-                <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-emerald-500 text-black animate-pulse">
+                <span className="px-2.5 py-0.5 text-[10px] font-black uppercase rounded bg-[#DFBB7D] text-[#16181D] shadow-sm animate-pulse">
                   PLAYLIST ON AIR
                 </span>
               ) : (
-                <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-neutral-800 text-neutral-400">
+                <span className="px-2.5 py-0.5 text-[10px] font-black uppercase rounded bg-white/10 text-white/70 border border-white/20">
                   FULL CATALOG (AUTODJ)
                 </span>
               )}
             </div>
-            <div className="text-lg font-black text-white mt-0.5">
+            <div className="text-lg font-black font-mono text-white mt-1">
               {activeBroadcastPlaylist ? (
                 <>
-                  Locked to: <span className="text-emerald-400">{activeBroadcastPlaylist.name}</span>{" "}
-                  <span className="text-xs text-neutral-400 font-normal">
+                  Locked to: <span className="text-[#DFBB7D]">{activeBroadcastPlaylist.name}</span>{" "}
+                  <span className="text-xs text-white/70 font-mono font-normal">
                     ({activeBroadcastPlaylist.track_count} tracks •{" "}
                     {formatDuration(activeBroadcastPlaylist.total_duration_sec)})
                   </span>
                 </>
               ) : (
-                <span className="text-neutral-300">
+                <span className="text-white/80 font-mono">
                   Broadcasting across all {library.length} festival tracks seamlessly.
                 </span>
               )}
@@ -404,7 +408,7 @@ export default function PlaylistManagerPanel({
         {activeBroadcastPlaylist && (
           <button
             onClick={() => handleToggleBroadcast(activeBroadcastPlaylist)}
-            className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-black uppercase tracking-wider rounded-xl transition-all border border-neutral-700 hover:border-neutral-600"
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white hover:text-[#DFBB7D] text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border border-white/20 hover:border-[#DFBB7D]"
           >
             Return to Full Catalog
           </button>
@@ -416,13 +420,13 @@ export default function PlaylistManagerPanel({
         {/* Left Column: Playlist Index (4 cols) */}
         <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black uppercase tracking-wider text-neutral-300 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-mono font-black uppercase tracking-wider text-white flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#DFBB7D]" />
               Your Playlists ({playlists.length})
             </h3>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-500/20"
+              className="px-3 py-1.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-mono font-black uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#fff]"
             >
               <Plus className="w-3.5 h-3.5" />
               New Playlist
@@ -430,19 +434,19 @@ export default function PlaylistManagerPanel({
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-neutral-500 text-xs uppercase tracking-wider">
+            <div className="p-8 text-center text-white/50 text-xs font-mono uppercase tracking-wider">
               Loading playlists...
             </div>
           ) : playlists.length === 0 ? (
-            <div className="p-8 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-center">
-              <Layers className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
-              <div className="text-sm font-bold text-neutral-300">No playlists yet</div>
-              <p className="text-xs text-neutral-500 mt-1 mb-4">
+            <div className="p-8 rounded-2xl bg-[#16181D] border-2 border-dashed border-white/20 text-center">
+              <Layers className="w-8 h-8 text-white/40 mx-auto mb-2" />
+              <div className="text-sm font-bold text-white">No playlists yet</div>
+              <p className="text-xs text-white/60 mt-1 mb-4">
                 Create a playlist to curate specific vibe sets or take over the airwaves.
               </p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-emerald-500 text-black font-black text-xs uppercase rounded-xl"
+                className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#fff]"
               >
                 Create Playlist
               </button>
@@ -455,14 +459,14 @@ export default function PlaylistManagerPanel({
                   <div
                     key={pl.id}
                     onClick={() => setSelectedPlaylistId(pl.id)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3.5 ${
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
                       isSelected
-                        ? "bg-neutral-800/90 border-emerald-500/60 shadow-lg shadow-emerald-500/10"
-                        : "bg-neutral-900/60 border-neutral-800/80 hover:bg-neutral-800/50 hover:border-neutral-700"
+                        ? "bg-[#1E222B] border-[#DFBB7D] shadow-[3px_3px_0px_#DFBB7D]"
+                        : "bg-[#16181D] border-white/15 hover:border-white/40 hover:bg-[#1A1D24]"
                     }`}
                   >
                     {/* Cover art or fallback */}
-                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-neutral-700/60 relative">
+                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-black shrink-0 border border-white/20 relative">
                       {pl.cover_url ? (
                         <img
                           src={pl.cover_url}
@@ -470,31 +474,31 @@ export default function PlaylistManagerPanel({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-neutral-600">
+                        <div className="w-full h-full flex items-center justify-center text-white/40">
                           <Music2 className="w-6 h-6" />
                         </div>
                       )}
                       {pl.is_broadcast_active && (
-                        <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping" />
+                        <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-[#DFBB7D] rounded-full animate-ping" />
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-black text-white truncate">{pl.name}</span>
+                        <span className="text-sm font-mono font-bold text-white truncate">{pl.name}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">
+                        <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/20">
                           {pl.genre}
                         </span>
-                        <span className="text-xs text-neutral-400">
+                        <span className="text-xs font-mono text-[#DFBB7D]">
                           {pl.track_count} tracks • {formatDuration(pl.total_duration_sec)}
                         </span>
                       </div>
                     </div>
 
                     {pl.is_broadcast_active && (
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[9px] font-black uppercase shrink-0">
+                      <span className="px-2 py-0.5 rounded bg-[#DFBB7D] text-[#16181D] text-[9px] font-mono font-black uppercase shrink-0 shadow-sm">
                         ON AIR
                       </span>
                     )}
@@ -508,11 +512,11 @@ export default function PlaylistManagerPanel({
         {/* Right Column: Playlist Tracks & Order Manager (8 cols) */}
         <div className="lg:col-span-8 space-y-4">
           {selectedPlaylist ? (
-            <div className="p-6 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 backdrop-blur-xl space-y-6">
+            <div className="p-6 rounded-2xl bg-[#16181D] border-2 border-white/20 backdrop-blur-xl space-y-6 shadow-[4px_4px_0px_#000]">
               {/* Header Info */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/15">
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl overflow-hidden bg-neutral-800 shrink-0 border border-neutral-700/80">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-black shrink-0 border-2 border-white/20">
                     {selectedPlaylist.cover_url ? (
                       <img
                         src={selectedPlaylist.cover_url}
@@ -520,24 +524,24 @@ export default function PlaylistManagerPanel({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-neutral-600">
+                      <div className="w-full h-full flex items-center justify-center text-white/40">
                         <Music2 className="w-8 h-8" />
                       </div>
                     )}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="text-xl font-black text-white">{selectedPlaylist.name}</h2>
-                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-neutral-800 text-neutral-300">
+                      <h2 className="text-xl font-mono font-black text-white">{selectedPlaylist.name}</h2>
+                      <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase rounded bg-[#DFBB7D] text-[#16181D]">
                         {selectedPlaylist.genre}
                       </span>
                     </div>
                     {selectedPlaylist.description && (
-                      <p className="text-xs text-neutral-400 mt-1 max-w-lg">
+                      <p className="text-xs font-mono text-white/80 mt-1 max-w-lg">
                         {selectedPlaylist.description}
                       </p>
                     )}
-                    <div className="text-xs text-neutral-500 mt-1.5 flex items-center gap-3">
+                    <div className="text-xs font-mono text-[#DFBB7D] mt-1.5 flex items-center gap-3">
                       <span>{selectedPlaylistTracks.length} tracks</span>
                       <span>•</span>
                       <span>{formatDuration(selectedPlaylist.total_duration_sec)}</span>
@@ -549,10 +553,10 @@ export default function PlaylistManagerPanel({
                   {/* Put On Air button */}
                   <button
                     onClick={() => handleToggleBroadcast(selectedPlaylist)}
-                    className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                    className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
                       selectedPlaylist.is_broadcast_active
-                        ? "bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30"
-                        : "bg-emerald-500 text-black hover:bg-emerald-400 shadow-lg shadow-emerald-500/20"
+                        ? "bg-[#E84855] text-white border-2 border-white/30 hover:bg-red-600 shadow-[2px_2px_0px_#fff]"
+                        : "bg-[#DFBB7D] text-[#16181D] hover:bg-[#F2CE8A] border-2 border-[#16181D] shadow-[2px_2px_0px_#DFBB7D]"
                     }`}
                   >
                     <Radio className="w-4 h-4" />
@@ -561,7 +565,7 @@ export default function PlaylistManagerPanel({
 
                   <button
                     onClick={() => handleDeletePlaylist(selectedPlaylist.id, selectedPlaylist.name)}
-                    className="p-2.5 rounded-xl bg-neutral-800/80 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 border border-neutral-700/60 transition-all"
+                    className="p-2.5 rounded-xl bg-white/10 text-white/70 hover:text-white hover:bg-red-500/20 border border-white/20 transition-all"
                     title="Delete playlist"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -571,14 +575,14 @@ export default function PlaylistManagerPanel({
 
               {/* Action Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs font-black uppercase tracking-wider text-neutral-400">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">
                   Tracklist Sequence (Plays In This Order On Air)
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowHarmonizeModal(true)}
                     disabled={selectedPlaylistTracks.length < 2}
-                    className="px-3 py-1.5 bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/25 text-[#DFBB7D] border border-[#DFBB7D]/40 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all disabled:opacity-30 shadow-[1px_1px_0px_#DFBB7D]"
+                    className="px-3 py-1.5 bg-[#DFBB7D]/20 hover:bg-[#DFBB7D] text-[#DFBB7D] hover:text-[#16181D] border-2 border-[#DFBB7D] rounded-xl text-xs font-mono font-black uppercase flex items-center gap-1.5 transition-all disabled:opacity-30 shadow-[1px_1px_0px_#DFBB7D]"
                     title="Order tracks by Camelot key wheel & tempo progression"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
@@ -587,7 +591,7 @@ export default function PlaylistManagerPanel({
 
                   <button
                     onClick={handleUndoReorder}
-                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all"
+                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-xl text-xs font-mono font-bold uppercase flex items-center gap-1.5 transition-all"
                     title="Undo last reorder from database snapshot"
                   >
                     <Undo2 className="w-3.5 h-3.5" />
@@ -596,7 +600,7 @@ export default function PlaylistManagerPanel({
 
                   <button
                     onClick={() => setShowAddTracks(!showAddTracks)}
-                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 transition-all"
+                    className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-black border-2 border-emerald-500/50 rounded-xl text-xs font-mono font-bold uppercase flex items-center gap-1.5 transition-all"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     {showAddTracks ? "Close Selector" : "Add Tracks"}
@@ -606,47 +610,47 @@ export default function PlaylistManagerPanel({
 
               {/* Add Tracks Drawer */}
               {showAddTracks && (
-                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-3">
+                <div className="p-4 rounded-2xl bg-[#121316] border-2 border-white/20 space-y-3">
                   <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
                     <input
                       type="text"
                       placeholder="Search music library to add..."
                       value={trackSearchQuery}
                       onChange={(e) => setTrackSearchQuery(e.target.value)}
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-[#1A1D24] border-2 border-white/20 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
                     />
                   </div>
 
                   <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
                     {availableTracks.length === 0 ? (
-                      <div className="text-center py-4 text-xs text-neutral-500">
+                      <div className="text-center py-4 text-xs font-mono text-white/60">
                         {trackSearchQuery ? "No matching tracks found." : "All library tracks are already in this playlist."}
                       </div>
                     ) : (
                       availableTracks.slice(0, 30).map((t) => (
                         <div
                           key={t.id}
-                          className="p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800/80 flex items-center justify-between gap-3 hover:border-neutral-700"
+                          className="p-2.5 rounded-xl bg-[#1A1D24] border border-white/15 flex items-center justify-between gap-3 hover:border-[#DFBB7D]"
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             {t.cover_url && (
                               <img
                                 src={t.cover_url}
                                 alt={t.title}
-                                className="w-9 h-9 rounded-lg object-cover shrink-0"
+                                className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/20"
                               />
                             )}
                             <div className="min-w-0">
-                              <div className="text-xs font-bold text-white truncate">{t.title}</div>
-                              <div className="text-[10px] text-neutral-400 truncate">
+                              <div className="text-xs font-mono font-bold text-white truncate">{t.title}</div>
+                              <div className="text-[10px] font-mono text-[#DFBB7D] truncate">
                                 {t.dj_name} • {t.duration}
                               </div>
                             </div>
                           </div>
                           <button
                             onClick={() => handleAddTrack(t.id)}
-                            className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-black border border-emerald-500/30 rounded-lg text-[10px] font-black uppercase shrink-0 transition-all"
+                            className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] hover:bg-[#F2CE8A] rounded-lg text-[10px] font-mono font-black uppercase shrink-0 transition-all shadow-sm"
                           >
                             + Add
                           </button>
@@ -659,19 +663,19 @@ export default function PlaylistManagerPanel({
 
               {/* Tracks List with Reordering */}
               {loadingTracks ? (
-                <div className="p-8 text-center text-neutral-500 text-xs uppercase tracking-wider">
+                <div className="p-8 text-center text-white/60 text-xs font-mono uppercase tracking-wider">
                   Loading tracklist...
                 </div>
               ) : selectedPlaylistTracks.length === 0 ? (
-                <div className="p-12 text-center rounded-2xl bg-neutral-950/60 border border-dashed border-neutral-800">
-                  <Music2 className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
-                  <div className="text-sm font-bold text-neutral-300">Playlist is empty</div>
-                  <p className="text-xs text-neutral-500 mt-1 mb-4">
-                    Click "Add Tracks from Library" above to add songs to this playlist.
+                <div className="p-12 text-center rounded-2xl bg-[#121316] border-2 border-dashed border-white/20">
+                  <Music2 className="w-8 h-8 text-white/40 mx-auto mb-2" />
+                  <div className="text-sm font-bold text-white">Playlist is empty</div>
+                  <p className="text-xs text-white/60 mt-1 mb-4">
+                    Click "Add Tracks" above to add songs to this playlist.
                   </p>
                   <button
                     onClick={() => setShowAddTracks(true)}
-                    className="px-4 py-2 bg-emerald-500 text-black font-black text-xs uppercase rounded-xl"
+                    className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#fff]"
                   >
                     Add Songs
                   </button>
@@ -681,13 +685,13 @@ export default function PlaylistManagerPanel({
                   {selectedPlaylistTracks.map((track, idx) => (
                     <div
                       key={track.id}
-                      className="p-2.5 sm:p-3 rounded-xl bg-neutral-950/70 border border-neutral-800/80 flex items-center gap-2 sm:gap-3.5 group hover:border-neutral-700 transition-all"
+                      className="p-2.5 sm:p-3 rounded-xl bg-[#1A1D24] border border-white/15 flex items-center gap-2 sm:gap-3.5 group hover:border-[#DFBB7D] hover:bg-[#202530] transition-all"
                     >
-                      <span className="text-xs font-black text-neutral-600 w-4 sm:w-5 text-right shrink-0">
+                      <span className="text-xs font-mono font-bold text-[#DFBB7D] w-5 sm:w-6 text-right shrink-0">
                         {idx + 1}
                       </span>
 
-                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-neutral-800 shrink-0 border border-neutral-800">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border border-white/20">
                         {track.cover_url ? (
                           <img
                             src={track.cover_url}
@@ -695,29 +699,29 @@ export default function PlaylistManagerPanel({
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-neutral-600">
+                          <div className="w-full h-full flex items-center justify-center text-white/40">
                             <Music2 className="w-4 h-4" />
                           </div>
                         )}
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-white truncate flex items-center gap-2">
+                        <div className="text-sm font-mono font-bold text-white truncate flex items-center gap-2">
                           <span>{track.title}</span>
                           {track.is_full_set && (
-                            <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-black uppercase">
+                            <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-500/50 text-[9px] font-mono font-black uppercase">
                               DJ MIX
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-neutral-400 truncate flex items-center gap-2 mt-0.5">
-                          <span>{track.dj_name}</span>
-                          <span className="text-neutral-600">•</span>
-                          <span className="text-neutral-500">{track.genre}</span>
+                        <div className="text-xs font-mono text-white/80 truncate flex items-center gap-2 mt-0.5">
+                          <span className="text-white/90">{track.dj_name}</span>
+                          <span className="text-white/40">•</span>
+                          <span className="text-[#DFBB7D]">{track.genre}</span>
                           {track.musical_key && (
                             <>
-                              <span className="text-neutral-600">•</span>
-                              <span className="text-emerald-400 font-mono font-bold text-[10px]">
+                              <span className="text-white/40">•</span>
+                              <span className="text-emerald-300 font-mono font-bold text-[10px]">
                                 {track.musical_key}
                               </span>
                               {track.key_source && (
@@ -727,7 +731,7 @@ export default function PlaylistManagerPanel({
                                       ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
                                       : track.key_source === "analyzed"
                                       ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                      : "bg-white/10 text-white/70"
+                                      : "bg-white/10 text-white/80"
                                   }`}
                                   title={`Key Source: ${track.key_source}`}
                                 >
@@ -738,8 +742,8 @@ export default function PlaylistManagerPanel({
                           )}
                           {track.bpm && (
                             <>
-                              <span className="text-neutral-600">•</span>
-                              <span className="text-neutral-400 font-mono text-[10px]">
+                              <span className="text-white/40">•</span>
+                              <span className="text-[#DFBB7D] font-mono text-[10px]">
                                 {track.bpm} BPM
                               </span>
                             </>
@@ -747,7 +751,7 @@ export default function PlaylistManagerPanel({
                         </div>
                       </div>
 
-                      <div className="hidden sm:block text-xs text-neutral-500 font-mono shrink-0">
+                      <div className="hidden sm:block text-xs text-[#DFBB7D] font-mono font-bold shrink-0">
                         {track.duration}
                       </div>
 
@@ -756,7 +760,7 @@ export default function PlaylistManagerPanel({
                         <button
                           disabled={idx === 0}
                           onClick={() => handleMoveTrack(idx, "up")}
-                          className="p-1 rounded bg-neutral-900 text-neutral-400 hover:text-white disabled:opacity-30 disabled:hover:text-neutral-400 transition-all"
+                          className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
                           title="Move up"
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
@@ -764,14 +768,14 @@ export default function PlaylistManagerPanel({
                         <button
                           disabled={idx === selectedPlaylistTracks.length - 1}
                           onClick={() => handleMoveTrack(idx, "down")}
-                          className="p-1 rounded bg-neutral-900 text-neutral-400 hover:text-white disabled:opacity-30 disabled:hover:text-neutral-400 transition-all"
+                          className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
                           title="Move down"
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleRemoveTrack(track.id)}
-                          className="p-1 rounded bg-neutral-900 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-all ml-1"
+                          className="p-1.5 rounded-lg bg-white/10 text-white/80 hover:text-white hover:bg-red-500/30 border border-white/20 transition-all ml-1"
                           title="Remove from playlist"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -783,7 +787,7 @@ export default function PlaylistManagerPanel({
               )}
             </div>
           ) : (
-            <div className="p-12 text-center rounded-2xl bg-neutral-900/60 border border-neutral-800 text-neutral-500">
+            <div className="p-12 text-center rounded-2xl bg-[#16181D] border-2 border-white/20 text-white/60 font-mono">
               Select a playlist from the left or create a new one to manage tracks.
             </div>
           )}
@@ -793,15 +797,15 @@ export default function PlaylistManagerPanel({
       {/* Create Playlist Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-              <h3 className="text-base font-black text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-emerald-400" />
+          <div className="bg-[#16181D] border-2 border-white/30 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-[6px_6px_0px_#DFBB7D]">
+            <div className="flex items-center justify-between border-b border-white/20 pb-3">
+              <h3 className="text-base font-mono font-black text-white flex items-center gap-2">
+                <Layers className="w-5 h-5 text-[#DFBB7D]" />
                 Create New Playlist
               </h3>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-white"
+                className="p-1 rounded-lg text-white/60 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -809,7 +813,7 @@ export default function PlaylistManagerPanel({
 
             <form onSubmit={handleCreatePlaylist} className="space-y-4">
               <div>
-                <label className="text-xs font-bold uppercase text-neutral-400 block mb-1.5">
+                <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1.5">
                   Playlist Title *
                 </label>
                 <input
@@ -818,12 +822,12 @@ export default function PlaylistManagerPanel({
                   placeholder="e.g. Sunset Piano Chords"
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#121316] border-2 border-white/20 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase text-neutral-400 block mb-1.5">
+                <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1.5">
                   Description
                 </label>
                 <textarea
@@ -831,12 +835,12 @@ export default function PlaylistManagerPanel({
                   placeholder="Brief vibe description or festival theme..."
                   value={createDesc}
                   onChange={(e) => setCreateDesc(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#121316] border-2 border-white/20 rounded-xl px-3.5 py-2 text-sm font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase text-neutral-400 block mb-1.5">
+                <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1.5">
                   Primary Genre
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -845,10 +849,10 @@ export default function PlaylistManagerPanel({
                       key={g}
                       type="button"
                       onClick={() => setCreateGenre(g)}
-                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                      className={`px-3 py-1 text-xs font-mono font-bold rounded-lg border transition-all ${
                         createGenre === g
-                          ? "bg-emerald-500 text-black border-emerald-500"
-                          : "bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700"
+                          ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D]"
+                          : "bg-[#121316] text-white/80 border-white/20 hover:border-white/50"
                       }`}
                     >
                       {g}
@@ -858,7 +862,7 @@ export default function PlaylistManagerPanel({
               </div>
 
               <div>
-                <label className="text-xs font-bold uppercase text-neutral-400 block mb-1.5">
+                <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1.5">
                   Cover Art Image URL (Optional)
                 </label>
                 <input
@@ -866,7 +870,7 @@ export default function PlaylistManagerPanel({
                   placeholder="https://... (or leave empty to inherit from first track)"
                   value={createCoverUrl}
                   onChange={(e) => setCreateCoverUrl(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#121316] border-2 border-white/20 rounded-xl px-3.5 py-2 text-sm font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
                 />
               </div>
 
@@ -874,14 +878,14 @@ export default function PlaylistManagerPanel({
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-neutral-400 hover:text-white"
+                  className="px-4 py-2 text-xs font-mono font-bold text-white/60 hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creating || !createName.trim()}
-                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase rounded-xl transition-all disabled:opacity-50"
+                  className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-xl transition-all disabled:opacity-50 shadow-[2px_2px_0px_#fff]"
                 >
                   {creating ? "Creating..." : "Create Playlist"}
                 </button>
