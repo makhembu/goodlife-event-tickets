@@ -45,8 +45,30 @@ const SoundboardContext = createContext<SoundboardContextType | null>(null);
 const CACHE_KEY = "goodlife_soundboard_cache";
 
 export function SoundboardProvider({ children }: { children: React.ReactNode }) {
-  const [banks, setBanks] = useState<SoundboardBankItem[]>([]);
-  const [activeBankId, setActiveBankId] = useState<number>(1);
+  const [banks, setBanks] = useState<SoundboardBankItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return [];
+  });
+  const [activeBankId, setActiveBankId] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id;
+        }
+      } catch {}
+    }
+    return 1;
+  });
   const [vaultDrops, setVaultDrops] = useState<DropVaultOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignModalState, setAssignModalState] = useState<AssignModalState | null>(null);
@@ -82,19 +104,6 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   useEffect(() => {
-    // 1. Load localStorage cache first for zero-flash render
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setBanks(parsed);
-          setActiveBankId(parsed[0].id);
-        }
-      }
-    } catch {}
-
-    // 2. Fetch fresh data
     refreshSoundboard();
   }, [refreshSoundboard]);
 
