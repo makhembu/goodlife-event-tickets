@@ -66,11 +66,49 @@ export default function BroadcastConsole({
 
   // Telemetry Poller: Checks AzuraCast first with exponential backoff on offline, seamlessly falls back to internal 24/7 timeline
   const fetchTelemetry = async () => {
+    // 1. Primary 24/7 BFF live playout endpoint
+    try {
+      const liveRes = await fetch(`/api/radio/live?t=${Date.now()}`);
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        if (liveData && liveData.now_playing && liveData.now_playing.title && liveData.now_playing.title !== "Updating...") {
+          const track = liveData.now_playing;
+          if (audioEl && isPlayingRef.current && track.audio_url) {
+            if (track.id !== currentTrackIdRef.current) {
+              currentTrackIdRef.current = track.id;
+              audioEl.src = track.audio_url;
+              audioEl.currentTime = track.elapsed || 0;
+              audioEl.play().catch((e) => console.warn("Playout track switch error:", e));
+            }
+          }
+          setNowPlaying({
+            station: { name: "GOODLIFE Radio 254", mounts: [{ bitrate: 192 }] },
+            listeners: { total: liveData.listeners_count ?? 0 },
+            live: { is_live: liveData.mode === "live" },
+            mode: liveData.mode || "autodj",
+            now_playing: {
+              song: {
+                title: track.title,
+                artist: track.artist || "GOODLIFE Resident",
+                art: track.thumbnail || "/flyer.png",
+              },
+              elapsed: track.elapsed || 0,
+              duration: track.duration || 180,
+            },
+          });
+          setStatusState("live");
+          setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+          azuracastPollIntervalRef.current = 3500;
+          return;
+        }
+      }
+    } catch {}
+
     try {
       const res = await fetch("/api/admin/radio/azuracast/nowplaying");
       if (res.ok) {
         const data = await res.json();
-        if (data && data.online !== false && (data.now_playing?.song?.title || data.station)) {
+        if (data && data.online !== false && data.now_playing?.song?.title && data.now_playing.song.title.trim() !== "" && data.now_playing.song.title !== "Updating...") {
           setNowPlaying(data);
           setStatusState("live");
           setLastUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));

@@ -119,25 +119,12 @@ export default function TransportBar({
 
   // Telemetry Poller: Synchronized with /api/radio/live (identical source of truth as public listener player)
   const fetchTelemetry = async () => {
-    // 1. AzuraCast bridge telemetry if present and active
+    // 1. Real-time BFF live playout endpoint (primary 24/7 truth)
     try {
-      const res = await fetch("/api/admin/radio/azuracast/nowplaying");
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.online !== false && (data.now_playing?.song?.title || data.station)) {
-          setNowPlaying(data);
-          setStatusState("live");
-          return;
-        }
-      }
-    } catch {}
-
-    // 2. Real-time BFF live playout endpoint (primary 24/7 truth)
-    try {
-      const liveRes = await fetch("/api/radio/live");
+      const liveRes = await fetch(`/api/radio/live?t=${Date.now()}`);
       if (liveRes.ok) {
         const liveData = await liveRes.json();
-        if (liveData && liveData.now_playing) {
+        if (liveData && liveData.now_playing && liveData.now_playing.title && liveData.now_playing.title !== "Updating...") {
           const track = liveData.now_playing;
           currentAudioUrlRef.current = track.audio_url || "";
           currentElapsedRef.current = track.elapsed || 0;
@@ -158,7 +145,7 @@ export default function TransportBar({
             now_playing: {
               id: track.id,
               song: {
-                title: track.title || "GOODLIFE Broadcast Mix",
+                title: track.title,
                 artist: track.artist || "GOODLIFE Resident",
                 art: track.thumbnail || "/flyer.png",
               },
@@ -170,6 +157,19 @@ export default function TransportBar({
             listeners: { total: liveData.listeners_count ?? 0, unique: liveData.listeners_count ?? 0 },
             live: { is_live: liveData.mode === "live" },
           });
+          setStatusState("live");
+          return;
+        }
+      }
+    } catch {}
+
+    // 2. AzuraCast bridge telemetry fallback if active with a real playing song
+    try {
+      const res = await fetch("/api/admin/radio/azuracast/nowplaying");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.online !== false && data.now_playing?.song?.title && data.now_playing.song.title.trim() !== "" && data.now_playing.song.title !== "Updating...") {
+          setNowPlaying(data);
           setStatusState("live");
           return;
         }
@@ -316,10 +316,14 @@ export default function TransportBar({
         <div className="flex items-center justify-between text-xs mb-1">
           <div className="truncate pr-1 sm:pr-2">
             <span className="font-bold text-white tracking-wide text-[11px] sm:text-xs">
-              {formatTrackTitle(song?.title) || "Station Rotation Active"}
+              {song?.title && formatTrackTitle(song.title) !== "Updating..."
+                ? formatTrackTitle(song.title)
+                : statusState === "connecting"
+                ? "Connecting live playout..."
+                : "Station Rotation Active"}
             </span>
             <span className="text-[#DFBB7D] ml-1 sm:ml-2 text-[10px] sm:text-xs hidden sm:inline">
-              — {song?.artist || "GOODLIFE Resident"}
+              — {song?.artist || (statusState === "connecting" ? "GOODLIFE 254" : "GOODLIFE Resident")}
             </span>
           </div>
           <div className="font-mono text-[10px] sm:text-[11px] text-white/60 shrink-0">
