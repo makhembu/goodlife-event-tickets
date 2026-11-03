@@ -34,6 +34,8 @@ export interface SoundboardContextType {
   createBank: (name: string) => Promise<boolean>;
   renameBank: (bankId: number, newName: string) => Promise<boolean>;
   deleteBank: (bankId: number) => Promise<boolean>;
+  reorderPads: (bankId: number, orderedPadIds: number[]) => Promise<boolean>;
+  movePadToBank: (padId: number, targetBankId: number) => Promise<boolean>;
   toastMsg: { text: string; type: "success" | "error" } | null;
   showToast: (text: string, type?: "success" | "error") => void;
 }
@@ -301,6 +303,110 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
     }
   }, [banks, activeBankId, showToast]);
 
+  const reorderPads = useCallback(
+    async (bankId: number, orderedPadIds: number[]): Promise<boolean> => {
+      const targetBank = banks.find((b) => b.id === bankId);
+      if (!targetBank) return false;
+
+      const previousBanks = banks;
+      const padMap = new Map((targetBank.pads || []).map((p) => [p.id, p]));
+      const newPads: SoundboardPadItem[] = [];
+      orderedPadIds.forEach((id, idx) => {
+        const pad = padMap.get(id);
+        if (pad) {
+          newPads.push({ ...pad, position: idx });
+        }
+      });
+
+      const optimisticBanks = banks.map((b) =>
+        b.id === bankId ? { ...b, pads: newPads } : b
+      );
+      setBanks(optimisticBanks);
+
+      try {
+        const res = await fetch("/api/admin/radio/soundboard/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bank_id: bankId, ordered_pad_ids: orderedPadIds }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to reorder pads");
+        }
+
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(optimisticBanks));
+        } catch {}
+
+        return true;
+      } catch (err: any) {
+        setBanks(previousBanks);
+        showToast(err.message || "Failed to reorder pads", "error");
+        return false;
+      }
+    },
+    [banks, showToast]
+  );
+
+  const movePadToBank = useCallback(
+    async (padId: number, targetBankId: number): Promise<boolean> => {
+      const sourceBank = banks.find((b) => (b.pads || []).some((p) => p.id === padId));
+      const targetBank = banks.find((b) => b.id === targetBankId);
+      if (!sourceBank || !targetBank || sourceBank.id === targetBankId) return false;
+
+      const pad = (sourceBank.pads || []).find((p) => p.id === padId);
+      if (!pad) return false;
+
+      const previousBanks = banks;
+      // Optimistic update: remove from source bank, append to target bank
+      const optimisticBanks = banks.map((b) => {
+        if (b.id === sourceBank.id) {
+          return {
+            ...b,
+            pads: (b.pads || []).filter((p) => p.id !== padId).map((p, idx) => ({ ...p, position: idx })),
+          };
+        }
+        if (b.id === targetBank.id) {
+          const nextPos = (b.pads || []).length;
+          return {
+            ...b,
+            pads: [...(b.pads || []), { ...pad, bank_id: targetBankId, position: nextPos }],
+          };
+        }
+        return b;
+      });
+
+      setBanks(optimisticBanks);
+      setActiveBankId(targetBankId);
+
+      try {
+        const res = await fetch(`/api/admin/radio/soundboard/pads/${padId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bank_id: targetBankId }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to move pad to bank");
+        }
+
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(optimisticBanks));
+        } catch {}
+
+        showToast(`Moved pad "${pad.label}" to "${targetBank.name}"`, "success");
+        return true;
+      } catch (err: any) {
+        setBanks(previousBanks);
+        showToast(err.message || "Failed to move pad", "error");
+        return false;
+      }
+    },
+    [banks, showToast]
+  );
+
   return (
     <SoundboardContext.Provider
       value={{
@@ -318,6 +424,8 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
         createBank,
         renameBank,
         deleteBank,
+        reorderPads,
+        movePadToBank,
         toastMsg,
         showToast,
       }}

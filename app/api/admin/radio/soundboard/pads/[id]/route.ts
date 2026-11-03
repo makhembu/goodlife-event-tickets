@@ -21,7 +21,7 @@ export async function PATCH(
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { label, emoji, color, audio_url, drop_id, position } = body;
+    const { label, emoji, color, audio_url, drop_id, position, bank_id } = body;
 
     // Check pad existence
     const existing = await neonQuery(
@@ -53,24 +53,34 @@ export async function PATCH(
       }
     }
 
+    const newBankId = bank_id !== undefined ? Number(bank_id) : current.bank_id;
     const newLabel = label !== undefined ? String(label).trim().slice(0, 100) : current.label;
     const newEmoji = emoji !== undefined ? String(emoji).trim().slice(0, 16) : current.emoji;
     const newColor = color !== undefined ? String(color).trim().slice(0, 32) : current.color;
     const newDropId = drop_id !== undefined ? (drop_id === null ? null : Number(drop_id)) : current.drop_id;
-    const newPosition = position !== undefined ? Number(position) : current.position;
+    
+    let newPosition = position !== undefined ? Number(position) : current.position;
+    if (bank_id !== undefined && Number(bank_id) !== current.bank_id && position === undefined) {
+      const posRes = await neonQuery(
+        `SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM soundboard_pads WHERE bank_id = $1`,
+        [newBankId]
+      );
+      newPosition = posRes.rows[0]?.next_pos ?? 0;
+    }
 
     const updateRes = await neonQuery(
       `UPDATE soundboard_pads
-       SET label = $1,
-           emoji = $2,
-           color = $3,
-           audio_url = $4,
-           drop_id = $5,
-           position = $6,
+       SET bank_id = $1,
+           label = $2,
+           emoji = $3,
+           color = $4,
+           audio_url = $5,
+           drop_id = $6,
+           position = $7,
            updated_at = NOW()
-       WHERE id = $7
+       WHERE id = $8
        RETURNING id, bank_id, position, label, emoji, color, audio_url, drop_id, created_at, updated_at`,
-      [newLabel, newEmoji, newColor, newAudioUrl, newDropId, newPosition, padId]
+      [newBankId, newLabel, newEmoji, newColor, newAudioUrl, newDropId, newPosition, padId]
     );
 
     return NextResponse.json({ pad: updateRes.rows[0] }, { status: 200 });

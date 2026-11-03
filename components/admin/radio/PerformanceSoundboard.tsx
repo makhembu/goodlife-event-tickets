@@ -23,6 +23,9 @@ import {
   Search,
   RefreshCw,
   FolderOpen,
+  ArrowLeft,
+  ArrowRight,
+  GripVertical,
 } from "lucide-react";
 import { SoundboardBankItem, SoundboardPadItem, DropVaultOption } from "@/lib/radio/soundboard-helpers";
 import { useSoundboard } from "@/context/SoundboardContext";
@@ -110,9 +113,15 @@ export default function PerformanceSoundboard({
     createBank,
     renameBank,
     deleteBank,
+    reorderPads,
+    movePadToBank,
     toastMsg,
     showToast,
   } = useSoundboard();
+
+  // Drag and drop state for desktop pad reordering
+  const [draggedPadId, setDraggedPadId] = useState<number | null>(null);
+  const [dragOverPadId, setDragOverPadId] = useState<number | null>(null);
 
   // Edit Mode & Pad Editor Modal State
   const [isEditMode, setIsEditMode] = useState(false);
@@ -370,6 +379,37 @@ export default function PerformanceSoundboard({
     } else {
       previewAudioRef.current.src = url;
       previewAudioRef.current.play().then(() => setPreviewingUrl(url)).catch(() => {});
+    }
+  };
+
+  // Step reordering inside pad editor (Move Earlier / Later)
+  const handleMoveStep = async (direction: "earlier" | "later") => {
+    if (!editingPad || editingPad.id < 0) return;
+    const currentIds = activePads.map((p) => p.id);
+    const curIdx = currentIds.indexOf(editingPad.id);
+    if (curIdx === -1) return;
+    const targetIdx = direction === "earlier" ? curIdx - 1 : curIdx + 1;
+    if (targetIdx < 0 || targetIdx >= currentIds.length) return;
+
+    const reordered = [...currentIds];
+    const [removed] = reordered.splice(curIdx, 1);
+    reordered.splice(targetIdx, 0, removed);
+    await reorderPads(activeBankId, reordered);
+  };
+
+  // Move pad across banks
+  const handleMovePadBank = async (newBankId: number) => {
+    if (!editingPad || newBankId === activeBankId) return;
+    if (editingPad.id < 0) {
+      setEditingPad((prev) => (prev ? { ...prev, bank_id: newBankId } : null));
+      setActiveBankId(newBankId);
+      return;
+    }
+    const success = await movePadToBank(editingPad.id, newBankId);
+    if (success) {
+      if (previewAudioRef.current) previewAudioRef.current.pause();
+      setPreviewingUrl(null);
+      setEditingPad(null);
     }
   };
 
@@ -842,7 +882,50 @@ export default function PerformanceSoundboard({
             const padColor = pad.color || "#DFBB7D";
 
             return (
-              <div key={pad.id} className="relative group">
+              <div
+                key={pad.id}
+                draggable={isEditMode}
+                onDragStart={(e) => {
+                  if (!isEditMode) return;
+                  e.dataTransfer.setData("text/plain", String(pad.id));
+                  setDraggedPadId(pad.id);
+                }}
+                onDragOver={(e) => {
+                  if (!isEditMode || !draggedPadId || draggedPadId === pad.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverPadId !== pad.id) setDragOverPadId(pad.id);
+                }}
+                onDragLeave={() => {
+                  if (dragOverPadId === pad.id) setDragOverPadId(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (!isEditMode || !draggedPadId || draggedPadId === pad.id) return;
+                  const currentIds = activePads.map((p) => p.id);
+                  const fromIdx = currentIds.indexOf(draggedPadId);
+                  const toIdx = currentIds.indexOf(pad.id);
+                  if (fromIdx !== -1 && toIdx !== -1) {
+                    const reordered = [...currentIds];
+                    const [removed] = reordered.splice(fromIdx, 1);
+                    reordered.splice(toIdx, 0, removed);
+                    reorderPads(activeBankId, reordered);
+                  }
+                  setDraggedPadId(null);
+                  setDragOverPadId(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedPadId(null);
+                  setDragOverPadId(null);
+                }}
+                className={`relative group transition-all ${
+                  isEditMode ? "cursor-grab active:cursor-grabbing" : ""
+                } ${
+                  draggedPadId === pad.id ? "opacity-30 scale-95" : ""
+                } ${
+                  dragOverPadId === pad.id ? "ring-2 ring-[#F5C842] scale-105 z-10" : ""
+                }`}
+              >
                 <button
                   onClick={() => triggerPad(pad)}
                   onTouchStart={() => handleTouchStart(pad)}
@@ -878,6 +961,9 @@ export default function PerformanceSoundboard({
                   {/* Top Row: Key Number & Emoji */}
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center space-x-1.5">
+                      {isEditMode && (
+                        <GripVertical className="w-3.5 h-3.5 text-white/50 cursor-grab shrink-0" />
+                      )}
                       <span
                         className={`font-mono text-xs font-bold px-1.5 py-0.5 border ${
                           isPlaying
@@ -1117,6 +1203,59 @@ export default function PerformanceSoundboard({
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Position in Bank & Bank Movement Section */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+              <div>
+                <label className="block text-xs font-mono uppercase text-white/70 tracking-wider mb-1.5">
+                  Pad Position:
+                </label>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveStep("earlier")}
+                    disabled={
+                      editingPad.id < 0 ||
+                      activePads.findIndex((p) => p.id === editingPad.id) <= 0
+                    }
+                    className="flex-1 min-h-[44px] px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none text-white font-mono text-xs font-bold rounded flex items-center justify-center space-x-1 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Move Earlier</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveStep("later")}
+                    disabled={
+                      editingPad.id < 0 ||
+                      activePads.findIndex((p) => p.id === editingPad.id) === -1 ||
+                      activePads.findIndex((p) => p.id === editingPad.id) >= activePads.length - 1
+                    }
+                    className="flex-1 min-h-[44px] px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:pointer-events-none text-white font-mono text-xs font-bold rounded flex items-center justify-center space-x-1 transition-colors cursor-pointer"
+                  >
+                    <span>Move Later</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono uppercase text-white/70 tracking-wider mb-1.5">
+                  Move to Bank:
+                </label>
+                <select
+                  value={editingPad.bank_id || activeBankId}
+                  onChange={(e) => handleMovePadBank(Number(e.target.value))}
+                  className="w-full min-h-[44px] bg-[#1A1D24] text-white font-mono text-base sm:text-xs p-2.5 border border-white/20 focus:border-[#DFBB7D] focus:outline-none rounded cursor-pointer"
+                >
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} {b.id === activeBankId ? "(Current Bank)" : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
