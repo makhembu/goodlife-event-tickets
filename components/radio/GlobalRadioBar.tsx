@@ -20,6 +20,9 @@ import { cleanTrackInfo } from "@/lib/radio/utils";
 
 export default function GlobalRadioBar() {
   const pathname = usePathname();
+
+  // Completely unmount on admin routes so it never overlays console/soundboard
+  if (pathname?.startsWith("/admin")) return null;
   const {
     currentSet,
     isPlaying,

@@ -245,7 +245,8 @@ export default function OnAirRundown() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search rundown by title or artist..."
+          placeholder="Search rundown…"
+          aria-label="Search rundown"
           className="w-full bg-[#1A1D24] text-white font-mono text-xs pl-9 pr-3 py-2 border border-white/20 focus:border-[#DFBB7D] focus:outline-none rounded"
         />
       </div>

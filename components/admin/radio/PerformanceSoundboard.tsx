@@ -1266,11 +1266,11 @@ export default function PerformanceSoundboard({
               resetRecording();
               setEditingPad(null);
             }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 animate-in fade-in duration-150"
+            className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[60] animate-in fade-in duration-150"
           />
 
           {/* Drawer Container: Bottom Sheet on Mobile, Centered Modal on Desktop */}
-          <div className="fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 left-0 right-0 z-50 bg-[#16181D] border-t-2 sm:border-2 border-[#DFBB7D] rounded-t-2xl sm:rounded-xl p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,20px))] shadow-2xl max-w-xl w-full max-h-[90dvh] overflow-y-auto space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+          <div className="fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 left-0 right-0 z-[70] bg-[#16181D] border-t-2 sm:border-2 border-[#DFBB7D] rounded-t-2xl sm:rounded-xl p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,20px))] shadow-2xl max-w-xl w-full max-h-[90dvh] overflow-y-auto space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             {/* Header with 1-based pad position number */}
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center space-x-2">

@@ -215,26 +215,56 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       </div>
 
-      {/* Voice Selection Avatars (Horizontal scroll on mobile, grid on desktop) */}
+      {/* Voice Selection Avatars (Horizontal scroll chip row on mobile, grid on desktop) */}
       <div>
-        <label className="block text-xs font-mono text-white/70 uppercase tracking-wider mb-1.5">
-          Station Voice Persona:
-        </label>
-        <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar py-0.5 sm:grid sm:grid-cols-5 sm:gap-2">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-mono text-white/70 uppercase tracking-wider">
+            Station Voice Persona:
+          </label>
+          <span className="text-[10px] font-mono text-[#DFBB7D]">
+            Active: {VOICES.find((v) => v.id === selectedVoice)?.label}
+          </span>
+        </div>
+
+        {/* Mobile: Horizontally Scrollable Compact Chip Row (< sm) */}
+        <div className="sm:hidden flex overflow-x-auto gap-1.5 pb-1 no-scrollbar py-0.5">
           {VOICES.map((v) => {
             const isSelected = selectedVoice === v.id;
             return (
               <button
                 key={v.id}
+                type="button"
                 onClick={() => setSelectedVoice(v.id)}
-                className={`p-2 border text-left transition-all flex items-center sm:flex-col sm:items-start justify-between shrink-0 min-w-[140px] sm:min-w-0 ${
+                className={`px-3 py-2 border rounded font-mono text-xs font-bold transition-all flex items-center space-x-1.5 shrink-0 whitespace-nowrap cursor-pointer touch-manipulation min-h-[44px] ${
+                  isSelected
+                    ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] shadow-sm"
+                    : "bg-white/5 text-white border-white/10 hover:border-white/30"
+                }`}
+              >
+                <span>{v.icon}</span>
+                <span>{v.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Desktop: Grid (>= sm) */}
+        <div className="hidden sm:grid sm:grid-cols-5 gap-2">
+          {VOICES.map((v) => {
+            const isSelected = selectedVoice === v.id;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setSelectedVoice(v.id)}
+                className={`p-2 border text-left transition-all flex flex-col justify-between cursor-pointer ${
                   isSelected
                     ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] font-bold shadow-[2px_2px_0px_#16181D]"
                     : "bg-white/5 text-white border-white/10 hover:border-white/30"
                 }`}
               >
-                <div className="text-xl mr-2 sm:mr-0 sm:mb-1">{v.icon}</div>
-                <div className="min-w-0 flex-1">
+                <div className="text-xl mb-1">{v.icon}</div>
+                <div className="min-w-0 w-full">
                   <div className="font-mono text-xs font-bold truncate">{v.label}</div>
                   <div className="text-[10px] font-mono opacity-70 truncate">{v.role}</div>
                 </div>
@@ -308,13 +338,13 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       )}
 
-      {/* Action Buttons (Stacked & full-width on mobile, side-by-side on desktop) */}
+      {/* Action Buttons (Stacked & full-width on mobile, balanced on desktop) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-2.5 pt-2 w-full">
         <button
           type="button"
           onClick={() => handleGenerate("cue")}
           disabled={generating || !scriptText.trim()}
-          className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] flex items-center justify-center space-x-2 shadow-[2px_2px_0px_#16181D] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+          className="w-full sm:flex-1 min-h-[44px] px-4 py-2.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] flex items-center justify-center space-x-2 shadow-[2px_2px_0px_#16181D] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
         >
           <Headphones className="w-4 h-4 shrink-0" />
           <span>{generating ? "SYNTHESIZING..." : "✨ GENERATE TO CUE (PREVIEW)"}</span>
@@ -324,7 +354,7 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           type="button"
           onClick={() => handleGenerate("air")}
           disabled={generating || !scriptText.trim()}
-          className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-black border-2 border-red-400 flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(232,72,85,0.4)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+          className="w-full sm:flex-1 min-h-[44px] px-4 py-2.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-black border-2 border-red-400 flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(232,72,85,0.4)] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
         >
           <Radio className="w-4 h-4 shrink-0 animate-pulse" />
           <span>{generating ? "SYNTHESIZING..." : "🔴 FIRE TO LIVE STREAM (MID-SONG)"}</span>

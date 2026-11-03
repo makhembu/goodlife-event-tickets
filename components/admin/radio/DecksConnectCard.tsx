@@ -67,22 +67,34 @@ Format: MP3 320kbps (or 256kbps)`;
     <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-3">
-        <div className="flex items-center space-x-2">
-          <div className="p-1.5 bg-[#10B981] text-[#16181D] font-bold shrink-0">
+        <div className="flex items-start sm:items-center space-x-2">
+          <div className="p-1.5 bg-[#10B981] text-[#16181D] font-bold shrink-0 mt-0.5 sm:mt-0">
             <RadioTower className="w-4 h-4" />
           </div>
-          <div className="min-w-0">
-            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white truncate">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-mono text-xs sm:text-sm font-bold tracking-wider uppercase text-white truncate">
               LIVE DJ HARBOR · BUTT / CDJ / TRAKTOR
             </h3>
-            <p className="text-[11px] font-mono text-[#DFBB7D]">
+            <p className="text-[11px] font-mono text-[#DFBB7D] mt-0.5">
               Direct Icecast source harbor · AutoDJ automatically crossfades on connection
             </p>
+
+            {/* Live DJ Status Badge on Mobile (< sm) */}
+            <div className="sm:hidden mt-2">
+              <div className={`inline-flex px-2 py-1 font-mono text-[11px] font-bold border items-center space-x-1.5 ${
+                djConnected === true
+                  ? "bg-[#10B981] text-[#16181D] border-[#10B981] animate-pulse"
+                  : "bg-white/10 text-white/90 border-white/20"
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${djConnected === true ? "bg-[#16181D]" : "bg-emerald-400"}`} />
+                <span>{djConnected === true ? "LIVE DJ ON AIR" : "HARBOR IDLE (AUTODJ ACTIVE)"}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Live DJ Status Badge */}
-        <div className={`px-2.5 py-1 font-mono text-xs font-bold border flex items-center space-x-1.5 self-start sm:self-auto shrink-0 ${
+        {/* Live DJ Status Badge on Desktop (>= sm) */}
+        <div className={`hidden sm:flex px-2.5 py-1 font-mono text-xs font-bold border items-center space-x-1.5 shrink-0 ${
           djConnected === true
             ? "bg-[#10B981] text-[#16181D] border-[#10B981] animate-pulse"
             : "bg-white/10 text-white/80 border-white/20"
@@ -97,7 +109,7 @@ Format: MP3 320kbps (or 256kbps)`;
         {/* Host */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
-            <span className="text-[10px] text-white/50 block">SERVER / HOST</span>
+            <span className="text-[11px] text-white/50 block">SERVER / HOST</span>
             <span className="text-white font-bold">{harborHost}</span>
           </div>
           <button
@@ -112,7 +124,7 @@ Format: MP3 320kbps (or 256kbps)`;
         {/* Port */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
-            <span className="text-[10px] text-white/50 block">PORT</span>
+            <span className="text-[11px] text-white/50 block">PORT</span>
             <span className="text-[#DFBB7D] font-bold">{harborPort}</span>
           </div>
           <button
@@ -127,7 +139,7 @@ Format: MP3 320kbps (or 256kbps)`;
         {/* Mount */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
-            <span className="text-[10px] text-white/50 block">MOUNTPOINT</span>
+            <span className="text-[11px] text-white/50 block">MOUNTPOINT</span>
             <span className="text-white font-bold">{harborMount}</span>
           </div>
           <button
@@ -142,7 +154,7 @@ Format: MP3 320kbps (or 256kbps)`;
         {/* Password */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
-            <span className="text-[10px] text-white/50 block">PASSWORD</span>
+            <span className="text-[11px] text-white/50 block">PASSWORD</span>
             <span className="text-white font-bold">{passRevealed ? harborPass : "••••••••••••"}</span>
           </div>
           <div className="flex items-center space-x-1">
