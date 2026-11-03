@@ -307,29 +307,29 @@ export default function PerformanceSoundboard({
   }, [pads, volume, muted, broadcastMode, playingPads]);
 
   return (
-    <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
+    <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-3 sm:p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-3 sm:space-y-4">
       {/* Header Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
         <div className="flex items-center space-x-2">
-          <div className="p-1.5 bg-[#DFBB7D] text-[#16181D] font-bold">
+          <div className="p-1.5 bg-[#DFBB7D] text-[#16181D] font-bold shrink-0">
             <Radio className="w-4 h-4" />
           </div>
-          <div>
-            <h3 className="font-mono text-sm font-bold tracking-wider uppercase text-white">
+          <div className="min-w-0">
+            <h3 className="font-mono text-xs sm:text-sm font-bold tracking-wider uppercase text-white truncate">
               CARTWALL SOUNDBOARD · {activeBank === "djs" ? "15 DJ VOICES ROSTER" : "STATION FX & LIVE MIC"}
             </h3>
-            <p className="text-[11px] font-mono text-[#DFBB7D]">
-              Keys 1-0 · Mid-song ducking (-12dB) · Esc/Space to Choke
+            <p className="text-[10px] sm:text-[11px] font-mono text-[#DFBB7D] truncate">
+              <span className="hidden sm:inline">Keys 1-0 · </span>Tap pad to fire on-air · Mid-song ducking (-12dB)
             </p>
           </div>
         </div>
 
         {/* Bank Switcher & Global Choke */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center border border-white/20 p-0.5 bg-black/40">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+          <div className="flex items-center border border-white/20 p-0.5 bg-black/40 flex-1 sm:flex-none">
             <button
               onClick={() => setActiveBank("djs")}
-              className={`px-2.5 py-1 font-mono text-xs font-bold transition-all ${
+              className={`flex-1 sm:flex-none px-2.5 py-1.5 sm:py-1 font-mono text-xs font-bold transition-all text-center ${
                 activeBank === "djs"
                   ? "bg-[#DFBB7D] text-[#16181D]"
                   : "text-white/60 hover:text-white"
@@ -339,7 +339,7 @@ export default function PerformanceSoundboard({
             </button>
             <button
               onClick={() => setActiveBank("fx")}
-              className={`px-2.5 py-1 font-mono text-xs font-bold transition-all ${
+              className={`flex-1 sm:flex-none px-2.5 py-1.5 sm:py-1 font-mono text-xs font-bold transition-all text-center ${
                 activeBank === "fx"
                   ? "bg-[#DFBB7D] text-[#16181D]"
                   : "text-white/60 hover:text-white"
@@ -352,7 +352,7 @@ export default function PerformanceSoundboard({
           <button
             onClick={stopAllPads}
             title="Choke / Silence All Soundboard Drops Immediately (Esc)"
-            className="px-3 py-1 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1 shadow-[2px_2px_0px_#DFBB7D]"
+            className="px-3 py-1.5 sm:py-1 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1 shrink-0 active:scale-95 transition-transform shadow-[2px_2px_0px_#DFBB7D]"
           >
             <X className="w-3.5 h-3.5" />
             <span>CHOKE ALL</span>
@@ -361,7 +361,7 @@ export default function PerformanceSoundboard({
       </div>
 
       {/* Cartwall Pads Grid */}
-      <div className={`grid gap-2.5 ${activeBank === "djs" ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-3"}`}>
+      <div className={`grid gap-2 sm:gap-2.5 ${activeBank === "djs" ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-5" : "grid-cols-2 sm:grid-cols-3"}`}>
         {pads.map((pad, idx) => {
           const isPlaying = playingPads.has(pad.id);
           const rem = padCountdowns.get(pad.id);
@@ -381,7 +381,7 @@ export default function PerformanceSoundboard({
                   if (onSendToCue) onSendToCue(pad);
                 }}
                 title={`Pad ${pad.id}: ${pad.name} (Right-click to send to Cue)`}
-                className={`w-full h-24 p-2.5 text-left border-2 transition-all flex flex-col justify-between relative overflow-hidden select-none ${
+                className={`w-full min-h-[78px] sm:min-h-[92px] h-auto p-2 sm:p-2.5 text-left border-2 transition-all flex flex-col justify-between relative overflow-hidden select-none active:scale-[0.98] ${
                   isPlaying
                     ? "bg-[#DFBB7D] text-[#16181D] border-[#F5C842] shadow-[0_0_15px_#F5C842]"
                     : isCustom

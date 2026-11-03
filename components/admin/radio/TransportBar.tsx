@@ -285,53 +285,53 @@ export default function TransportBar({
   const uniqueListeners = nowPlaying?.listeners?.unique ?? totalListeners;
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-14 bg-[#16181D] border-b-2 border-[#DFBB7D] z-50 text-[#FBF9F6] flex items-center justify-between px-3 select-none">
+    <header className="fixed top-0 left-0 right-0 h-14 bg-[#16181D] border-b-2 border-[#DFBB7D] z-50 text-[#FBF9F6] flex items-center justify-between px-2 sm:px-3 select-none">
       {/* 1. Left: Station Status & ON AIR Pill */}
-      <div className="flex items-center space-x-3 min-w-[200px]">
+      <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
         {isDucking ? (
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#F5C842] text-[#16181D] font-mono text-xs font-bold border border-[#16181D] animate-pulse">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>DUCKING -12dB</span>
+          <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-2.5 py-1 bg-[#F5C842] text-[#16181D] font-mono text-[10px] sm:text-xs font-bold border border-[#16181D] animate-pulse">
+            <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span>DUCKING</span>
           </div>
         ) : isLiveDj ? (
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#10B981] text-[#16181D] font-mono text-xs font-bold border border-[#16181D]">
-            <RadioTower className="w-3.5 h-3.5 animate-pulse" />
+          <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-2.5 py-1 bg-[#10B981] text-[#16181D] font-mono text-[10px] sm:text-xs font-bold border border-[#16181D]">
+            <RadioTower className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-pulse" />
             <span>LIVE DJ</span>
           </div>
         ) : (
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] font-mono text-xs font-bold border border-[#16181D]">
-            <div className="w-2 h-2 rounded-full bg-[#E84855] animate-ping" />
+          <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] font-mono text-[10px] sm:text-xs font-bold border border-[#16181D]">
+            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#E84855] animate-ping" />
             <span>ON AIR</span>
           </div>
         )}
 
-        <div className="hidden sm:flex flex-col">
+        <div className="hidden md:flex flex-col">
           <span className="text-[10px] text-[#DFBB7D] uppercase font-bold tracking-wider">GOODLIFE 254</span>
           <span className="text-xs font-mono font-semibold text-white/90">RADIO BROADCAST</span>
         </div>
       </div>
 
       {/* 2. Center: Track Metadata & Progress Scrubber */}
-      <div className="flex-1 max-w-xl mx-4 flex flex-col justify-center">
+      <div className="flex-1 max-w-xl mx-2 sm:mx-4 min-w-0 flex flex-col justify-center">
         <div className="flex items-center justify-between text-xs mb-1">
-          <div className="truncate pr-2">
-            <span className="font-bold text-white tracking-wide">
+          <div className="truncate pr-1 sm:pr-2">
+            <span className="font-bold text-white tracking-wide text-[11px] sm:text-xs">
               {formatTrackTitle(song?.title) || "Station Rotation Active"}
             </span>
-            <span className="text-[#DFBB7D] ml-2">
+            <span className="text-[#DFBB7D] ml-1 sm:ml-2 text-[10px] sm:text-xs hidden sm:inline">
               — {song?.artist || "GOODLIFE Resident"}
             </span>
           </div>
-          <div className="font-mono text-[11px] text-white/60 shrink-0">
+          <div className="font-mono text-[10px] sm:text-[11px] text-white/60 shrink-0">
             {duration > 0 ? (
               <>
                 <span>{formatSec(elapsed)}</span>
-                <span className="mx-1">/</span>
+                <span className="mx-0.5 sm:mx-1">/</span>
                 <span>{formatSec(duration)}</span>
-                <span className="text-[#DFBB7D] ml-2 font-bold">(-{formatSec(remaining)})</span>
+                <span className="text-[#DFBB7D] ml-1 sm:ml-2 font-bold hidden xs:inline">(-{formatSec(remaining)})</span>
               </>
             ) : (
-              <span>LIVE STREAM</span>
+              <span>LIVE</span>
             )}
           </div>
         </div>
@@ -346,7 +346,7 @@ export default function TransportBar({
       </div>
 
       {/* 3. Right: Skip, Fade, VU, Listeners, EAT Clock */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
         {/* Skip Track */}
         <button
           onClick={handleSkip}
@@ -426,7 +426,7 @@ export default function TransportBar({
         </div>
 
         {/* Listeners Count */}
-        <div className="flex items-center space-x-1.5 px-2 py-1 bg-black/40 border border-white/10 font-mono text-xs" title={`${uniqueListeners} unique listeners`}>
+        <div className="hidden sm:flex items-center space-x-1.5 px-2 py-1 bg-black/40 border border-white/10 font-mono text-xs" title={`${uniqueListeners} unique listeners`}>
           <Users className="w-3.5 h-3.5 text-[#DFBB7D]" />
           <span className="font-bold text-white">{totalListeners}</span>
           <span className="hidden xl:inline text-[10px] text-white/50">LIVE</span>

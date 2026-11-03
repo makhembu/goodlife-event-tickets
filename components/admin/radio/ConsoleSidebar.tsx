@@ -65,9 +65,12 @@ export default function ConsoleSidebar({
   ];
 
   return (
-    <aside className="fixed top-14 left-0 bottom-0 w-16 hover:w-56 bg-[#1A1D24] border-r-2 border-[#16181D] z-40 transition-all duration-200 group flex flex-col justify-between py-3 select-none overflow-hidden">
-      {/* Top Nav Items */}
-      <div className="flex flex-col space-y-1">
+    <>
+      {/* Mobile Bottom Docked Navigation Bar (< md) */}
+      <nav
+        aria-label="Mobile Cockpit Navigation"
+        className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-[#1A1D24] border-t-2 border-[#16181D] z-40 flex items-center justify-around px-1 select-none overflow-x-auto shadow-[0_-2px_10px_rgba(0,0,0,0.5)]"
+      >
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
@@ -75,40 +78,79 @@ export default function ConsoleSidebar({
               key={item.id}
               onClick={() => onTabChange(item.id)}
               title={item.label}
-              className={`flex items-center h-11 px-4 transition-colors relative text-left ${
+              className={`flex flex-col items-center justify-center py-1 px-2 min-w-[44px] h-full relative transition-colors ${
                 isActive
-                  ? "bg-[#DFBB7D] text-[#16181D] font-bold"
-                  : "text-[#FBF9F6]/70 hover:text-white hover:bg-white/5"
+                  ? "text-[#DFBB7D] font-bold"
+                  : "text-white/60 hover:text-white"
               }`}
             >
-              {/* Active left indicator */}
+              {/* Active top indicator pill */}
               {isActive && (
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#F5C842]" />
+                <div className="absolute top-0 left-2 right-2 h-1 bg-[#F5C842] rounded-full" />
               )}
-              <div className="shrink-0 flex items-center justify-center">
-                {item.icon}
-              </div>
-              <span className="ml-4 font-mono text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider">
-                {item.label}
+              <div className="shrink-0">{item.icon}</div>
+              <span className="text-[9px] font-mono mt-0.5 tracking-tight uppercase truncate max-w-[50px]">
+                {item.id}
               </span>
             </button>
           );
         })}
-      </div>
-
-      {/* Bottom Back to Admin Link */}
-      <div className="flex flex-col space-y-2 px-2 border-t border-white/10 pt-3">
         <Link
           href="/admin"
-          className="flex items-center h-10 px-2 text-white/50 hover:text-white hover:bg-white/5 transition-colors font-mono text-xs rounded"
-          title="Back to Admin Dashboard"
+          className="flex flex-col items-center justify-center py-1 px-2 min-w-[44px] h-full text-white/50 hover:text-white transition-colors"
+          title="Exit to Admin Dashboard"
         >
-          <ArrowLeft className="w-4 h-4 shrink-0" />
-          <span className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider truncate">
-            Admin Exit
-          </span>
+          <ArrowLeft className="w-5 h-5 shrink-0" />
+          <span className="text-[9px] font-mono mt-0.5 uppercase">Exit</span>
         </Link>
-      </div>
-    </aside>
+      </nav>
+
+      {/* Desktop Left Rail Navigation (>= md) */}
+      <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-16 hover:w-56 bg-[#1A1D24] border-r-2 border-[#16181D] z-40 transition-all duration-200 group flex-col justify-between py-3 select-none overflow-hidden">
+        {/* Top Nav Items */}
+        <div className="flex flex-col space-y-1">
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onTabChange(item.id)}
+                title={item.label}
+                className={`flex items-center h-11 px-4 transition-colors relative text-left ${
+                  isActive
+                    ? "bg-[#DFBB7D] text-[#16181D] font-bold"
+                    : "text-[#FBF9F6]/70 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                {/* Active left indicator */}
+                {isActive && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#F5C842]" />
+                )}
+                <div className="shrink-0 flex items-center justify-center">
+                  {item.icon}
+                </div>
+                <span className="ml-4 font-mono text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bottom Back to Admin Link */}
+        <div className="flex flex-col space-y-2 px-2 border-t border-white/10 pt-3">
+          <Link
+            href="/admin"
+            className="flex items-center h-10 px-2 text-white/50 hover:text-white hover:bg-white/5 transition-colors font-mono text-xs rounded"
+            title="Back to Admin Dashboard"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 uppercase tracking-wider truncate">
+              Admin Exit
+            </span>
+          </Link>
+        </div>
+      </aside>
+    </>
   );
 }

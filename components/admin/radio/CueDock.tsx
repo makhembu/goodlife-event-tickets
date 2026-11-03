@@ -153,47 +153,49 @@ export default function CueDock({
       )}
 
       {/* Bottom Controls Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 font-mono text-xs">
-        {/* Private Play/Pause */}
-        <button
-          onClick={handleTogglePreview}
-          className={`px-3 py-1.5 border font-bold flex items-center space-x-1.5 transition-colors ${
-            isPlaying
-              ? "bg-[#F5C842] text-[#16181D] border-[#F5C842]"
-              : "bg-white/10 text-white border-white/20 hover:border-white"
-          }`}
-        >
-          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-          <span>{isPlaying ? "PAUSE PREVIEW" : "PREVIEW IN EAR"}</span>
-        </button>
-
-        {/* Load to Pad Selector */}
-        <div className="flex items-center space-x-1 bg-white/5 px-2 py-1 border border-white/10">
-          <span className="text-white/60 text-[11px]">PAD:</span>
-          <select
-            value={selectedPad}
-            onChange={(e) => setSelectedPad(parseInt(e.target.value))}
-            className="bg-transparent text-[#DFBB7D] font-bold text-xs focus:outline-none"
-          >
-            {[...Array(8)].map((_, i) => (
-              <option key={i} value={i} className="bg-[#16181D] text-white">
-                Pad {i + 1}
-              </option>
-            ))}
-          </select>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 font-mono text-xs">
+        {/* Private Play/Pause & Load to Pad Group */}
+        <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
           <button
-            onClick={() => onAssignToPad(cueItem, selectedPad)}
-            title="Assign to Cartwall Pad"
-            className="ml-1 text-white hover:text-[#DFBB7D] px-1 font-bold"
+            onClick={handleTogglePreview}
+            className={`flex-1 sm:flex-none px-3 py-1.5 border font-bold flex items-center justify-center space-x-1.5 transition-colors ${
+              isPlaying
+                ? "bg-[#F5C842] text-[#16181D] border-[#F5C842]"
+                : "bg-white/10 text-white border-white/20 hover:border-white"
+            }`}
           >
-            LOAD
+            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+            <span>{isPlaying ? "PAUSE PREVIEW" : "PREVIEW IN EAR"}</span>
           </button>
+
+          {/* Load to Pad Selector */}
+          <div className="flex items-center space-x-1 bg-white/5 px-2 py-1 border border-white/10 shrink-0">
+            <span className="text-white/60 text-[11px]">PAD:</span>
+            <select
+              value={selectedPad}
+              onChange={(e) => setSelectedPad(parseInt(e.target.value))}
+              className="bg-transparent text-[#DFBB7D] font-bold text-xs focus:outline-none"
+            >
+              {[...Array(8)].map((_, i) => (
+                <option key={i} value={i} className="bg-[#16181D] text-white">
+                  Pad {i + 1}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => onAssignToPad(cueItem, selectedPad)}
+              title="Assign to Cartwall Pad"
+              className="ml-1 text-white hover:text-[#DFBB7D] px-1 font-bold"
+            >
+              LOAD
+            </button>
+          </div>
         </div>
 
         {/* Fire on Air Immediately */}
         <button
           onClick={() => onFireOnAir(cueItem)}
-          className="px-4 py-1.5 bg-[#E84855] hover:bg-red-600 text-white font-bold border border-white/20 flex items-center space-x-1.5 shadow-[2px_2px_0px_#DFBB7D]"
+          className="w-full sm:w-auto px-4 py-2 sm:py-1.5 bg-[#E84855] hover:bg-red-600 text-white font-bold border border-white/20 flex items-center justify-center space-x-1.5 shadow-[2px_2px_0px_#DFBB7D] active:scale-95 transition-transform"
         >
           <Radio className="w-3.5 h-3.5 animate-pulse" />
           <span>FIRE ON AIR (DUCK -12dB)</span>

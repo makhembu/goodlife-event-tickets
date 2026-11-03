@@ -44,9 +44,10 @@ export default function GlobalRadioBar() {
     switchQuality,
   } = useRadio();
 
-  // If on the dedicated /radio page or scanner, don't show the sticky bar
+  // If on the dedicated /radio page, scanner, or admin pages, don't show the sticky bar
   const isDedicatedRadioPage = pathname === "/radio";
   const isScannerPage = pathname?.startsWith("/scanner");
+  const isAdminPage = pathname?.startsWith("/admin");
 
   // Format mm:ss
   const formatTime = (secs: number) => {
@@ -76,7 +77,7 @@ export default function GlobalRadioBar() {
   }, [isDropPlaying, activeDropTitle, activePersona, isLive, liveTitle, currentSet?.title, currentSet?.dj_name]);
 
   if (!currentSet && !isLive) return null;
-  if (isDedicatedRadioPage || isScannerPage) return null;
+  if (isDedicatedRadioPage || isScannerPage || isAdminPage) return null;
 
   // 1. MINIMIZED STATE: Right-side compact box FAB (Non-distracting from M-Pesa goal)
   if (isMinimized) {
