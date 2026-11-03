@@ -686,9 +686,9 @@ export default function AdminRadioPage() {
               {library.map((set, idx) => (
                 <div
                   key={set.id}
-                  className="p-3 bg-white/5 border border-white/10 flex items-center justify-between gap-3 font-mono text-xs"
+                  className="p-3 bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs"
                 >
-                  <div className="flex items-center space-x-3 truncate">
+                  <div className="flex items-center space-x-3 min-w-0 flex-1 truncate">
                     <div className="flex flex-col space-y-0.5">
                       <button
                         onClick={() => moveTrack(idx, "up")}
@@ -742,7 +742,7 @@ export default function AdminRadioPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
+                  <div className="flex items-center justify-between sm:justify-end space-x-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 w-full sm:w-auto">
                     <select
                       value={quickAddPlaylistMap[set.id] ?? ""}
                       onChange={(e) => setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: Number(e.target.value) }))}

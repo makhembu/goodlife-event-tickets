@@ -44,7 +44,7 @@ export default function RadioConsoleLayout({
       />
 
       {/* 3. Main Operational Content Workspace */}
-      <main className="ml-0 md:ml-16 mt-14 mb-16 md:mb-0 p-3 sm:p-4 md:p-6 flex-1 max-w-[1920px] w-full md:w-[calc(100%-4rem)] transition-all overflow-x-hidden">
+      <main className="ml-0 lg:ml-16 mt-14 mb-0 pb-36 lg:pb-6 p-3 sm:p-4 lg:p-6 flex-1 max-w-[1920px] w-full lg:w-[calc(100%-4rem)] transition-all overflow-x-hidden">
         {children}
       </main>
     </div>

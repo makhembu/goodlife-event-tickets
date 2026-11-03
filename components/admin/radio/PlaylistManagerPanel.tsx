@@ -681,9 +681,9 @@ export default function PlaylistManagerPanel({
                   {selectedPlaylistTracks.map((track, idx) => (
                     <div
                       key={track.id}
-                      className="p-3 rounded-xl bg-neutral-950/70 border border-neutral-800/80 flex items-center gap-3.5 group hover:border-neutral-700 transition-all"
+                      className="p-2.5 sm:p-3 rounded-xl bg-neutral-950/70 border border-neutral-800/80 flex items-center gap-2 sm:gap-3.5 group hover:border-neutral-700 transition-all"
                     >
-                      <span className="text-xs font-black text-neutral-600 w-5 text-right shrink-0">
+                      <span className="text-xs font-black text-neutral-600 w-4 sm:w-5 text-right shrink-0">
                         {idx + 1}
                       </span>
 
@@ -747,7 +747,7 @@ export default function PlaylistManagerPanel({
                         </div>
                       </div>
 
-                      <div className="text-xs text-neutral-500 font-mono shrink-0">
+                      <div className="hidden sm:block text-xs text-neutral-500 font-mono shrink-0">
                         {track.duration}
                       </div>
 
