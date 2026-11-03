@@ -343,7 +343,7 @@ export default function PerformanceSoundboard({
   // Open Pad Editor
   const openPadEditor = (pad: SoundPad) => {
     setEditingPad(pad);
-    setEditLabel(pad.name);
+    setEditLabel(pad.name === "New Pad" ? "" : pad.name);
     setEditEmoji(pad.emoji || "🔥");
     setEditColor(pad.color || "#DFBB7D");
     setEditAudioUrl(pad.audioUrl || null);
@@ -370,13 +370,31 @@ export default function PerformanceSoundboard({
     }
   };
 
-  // Save Pad Changes to Database (Optimistic Update with Rollback & Cache Sync)
+  // Add a New Pad (Draft pad in memory until Save is pressed)
+  const handleAddNewPad = () => {
+    const currentBank = banks.find((b) => b.id === activeBankId);
+    const nextPos = (currentBank?.pads?.length || 0) + 1;
+    const draftPad: SoundPad = {
+      id: -Date.now(),
+      bank_id: activeBankId,
+      position: nextPos,
+      name: "New Pad",
+      emoji: "🔥",
+      color: "#DFBB7D",
+      soundType: "audio",
+      category: "CUSTOM",
+    };
+    openPadEditor(draftPad);
+  };
+
+  // Save Pad Changes to Database (Handles both Draft creation and Existing Pad update)
   const handleSavePad = async () => {
     if (!editingPad) return;
     setSavingPad(true);
 
-    const padId = editingPad.id;
+    const isDraft = editingPad.id < 0;
     const payload = {
+      bank_id: activeBankId,
       label: editLabel.trim() || "Untitled Pad",
       emoji: editEmoji,
       color: editColor,
@@ -384,10 +402,47 @@ export default function PerformanceSoundboard({
       drop_id: editDropId,
     };
 
-    // Keep snapshot for rollback
-    const previousBanks = banks;
+    if (isDraft) {
+      // POST new pad to database
+      try {
+        const res = await fetch("/api/admin/radio/soundboard/pads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-    // Optimistically update local banks state
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to create pad");
+        }
+
+        const resData = await res.json();
+        if (resData.pad) {
+          const updatedBanks = banks.map((b) =>
+            b.id === activeBankId ? { ...b, pads: [...b.pads, resData.pad] } : b
+          );
+          setBanks(updatedBanks);
+          try {
+            localStorage.setItem("goodlife_soundboard_cache", JSON.stringify(updatedBanks));
+          } catch {}
+          showToast(`Pad "${payload.label}" created!`, "success");
+        }
+        if (previewAudioRef.current) {
+          previewAudioRef.current.pause();
+          setPreviewingUrl(null);
+        }
+        setEditingPad(null);
+      } catch (err: any) {
+        showToast(err.message || "Failed to create pad", "error");
+      } finally {
+        setSavingPad(false);
+      }
+      return;
+    }
+
+    // Existing pad update (PATCH)
+    const padId = editingPad.id;
+    const previousBanks = banks;
     const optimisticBanks = banks.map((b) => ({
       ...b,
       pads: b.pads.map((p) =>
@@ -406,7 +461,7 @@ export default function PerformanceSoundboard({
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to update pad");
       }
 
@@ -417,7 +472,6 @@ export default function PerformanceSoundboard({
       }));
       setBanks(updatedBanks);
 
-      // Persist to local cache
       try {
         localStorage.setItem("goodlife_soundboard_cache", JSON.stringify(updatedBanks));
       } catch {}
@@ -429,7 +483,6 @@ export default function PerformanceSoundboard({
       }
       setEditingPad(null);
     } catch (err: any) {
-      // Rollback on failure
       setBanks(previousBanks);
       showToast(err.message || "Failed to save pad changes", "error");
     } finally {
@@ -437,19 +490,27 @@ export default function PerformanceSoundboard({
     }
   };
 
-  // Remove Pad from Database (Optimistic Update with Rollback & Cache Sync)
+  // Remove Pad from Database
   const handleDeletePad = async () => {
     if (!editingPad) return;
+
+    if (editingPad.id < 0) {
+      // Draft pad was never created in DB
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        setPreviewingUrl(null);
+      }
+      setEditingPad(null);
+      return;
+    }
+
     if (!confirm(`Are you sure you want to remove pad "${editingPad.name}"? This removes the pad from the soundboard but does NOT delete any audio from the Drops Vault.`)) {
       return;
     }
 
     setDeletingPad(true);
     const padId = editingPad.id;
-
-    // Keep snapshot for rollback
     const previousBanks = banks;
-
     const optimisticBanks = banks.map((b) => ({
       ...b,
       pads: b.pads.filter((p) => p.id !== padId),
@@ -462,11 +523,10 @@ export default function PerformanceSoundboard({
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to delete pad");
       }
 
-      // Persist to local cache
       try {
         localStorage.setItem("goodlife_soundboard_cache", JSON.stringify(optimisticBanks));
       } catch {}
@@ -478,47 +538,10 @@ export default function PerformanceSoundboard({
       }
       setEditingPad(null);
     } catch (err: any) {
-      // Rollback on failure
       setBanks(previousBanks);
       showToast(err.message || "Failed to remove pad", "error");
     } finally {
       setDeletingPad(false);
-    }
-  };
-
-  // Add a New Pad to Active Bank
-  const handleAddNewPad = async () => {
-    try {
-      const res = await fetch("/api/admin/radio/soundboard/pads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bank_id: activeBankId,
-          label: "New Pad",
-          emoji: "🔥",
-          color: "#DFBB7D",
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.pad) {
-          const updatedBanks = banks.map((b) =>
-            b.id === activeBankId ? { ...b, pads: [...b.pads, data.pad] } : b
-          );
-          setBanks(updatedBanks);
-          try {
-            localStorage.setItem("goodlife_soundboard_cache", JSON.stringify(updatedBanks));
-          } catch {}
-          showToast("New pad added! Opening editor...", "success");
-          openPadEditor(mapDbPadToSoundPad(data.pad));
-        }
-      } else {
-        const err = await res.json();
-        showToast(err.error || "Failed to add pad", "error");
-      }
-    } catch {
-      showToast("Network error creating pad", "error");
     }
   };
 
