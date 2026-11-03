@@ -2104,7 +2104,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onEnded={() => {
           sendPlayBeaconOnce(true);
-          playDropAndAdvance();
+          if (isLiveRef.current) {
+            fetchRadioLive();
+          } else {
+            playDropAndAdvance();
+          }
         }}
         preload="none"
         playsInline
