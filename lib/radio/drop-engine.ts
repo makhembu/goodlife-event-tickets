@@ -325,6 +325,27 @@ export function selectDropPersona(daypart: RadioDaypart, preferredPersonaId?: st
 }
 
 /**
+ * Persona voice guide for realistic on-air characterization
+ */
+function buildPersonaVoiceGuide(personaName: string, persona?: any): string {
+  const guides: Record<string, string> = {
+    "DJ Fusion": "Voice: Conversational, street-smart, warm charisma. Uses 'msee', 'baze', 'squad'. Feels like a friend on air.",
+    "DJ Sudi": "Voice: Rapid-fire hype. Short punchy sentences. Uses 'twende!', 'kanyaga!', 'iko moto!'. High energy.",
+    "DJ Sney": "Voice: Electric Swahili stager. Mostly Swahili with English drops. Uses 'weka volume!', 'inaboom!'.",
+    "MC Cheche": "Voice: Sharp, fast, youth culture. Street Sheng-heavy. Uses 'maze', 'ni gani', 'form ni legit'.",
+    "DJ Shax": "Voice: Big room festival commander. Declarative sentences, heavy pauses. 'This. Is. GOODLIFE.'",
+    "Amina": "Voice: Smooth, warm, atmospheric. Gentle transitions. 'Karibu', 'pumzika', 'asubuhi njema'.",
+    "Bwana Mkubwa": "Voice: Deep baritone broadcaster. Formal Swahili with gravitas. 'Ndugu wasikilizaji', authoritative.",
+    "Malkia Kenya": "Voice: Vibrant, upbeat, daytime energy. Friendly Swahili-English. 'Hey Nairobi!', 'tunakupenda!'",
+    "Wigman": "Voice: Authoritative Afro-tech. Crisp, precise transitions. Minimal words, maximum weight.",
+    "Zari": "Voice: Chill, coastal, soulful. Slow and smooth. Uses coastal Swahili phrases, relaxed delivery.",
+  };
+  return guides[personaName]
+    ? `VOICE CHARACTER for ${personaName}: ${guides[personaName]}`
+    : `VOICE CHARACTER: ${persona?.style || "Professional Nairobi radio presenter."}`;
+}
+
+/**
  * Builds the strict broadcast facts block and system/user prompt
  */
 export function buildDropPrompt(
@@ -348,40 +369,76 @@ export function buildDropPrompt(
     case "track_stager":
       archetypeDirectives = `DROP ARCHETYPE: TRACK STAGER (80% MUSIC ANTICIPATION)
 - Focus heavily on hyping the incoming track ("${facts.next_track?.title || "upcoming banger"}" by "${facts.next_track?.artist || "the artist"}") and the DJ transition.
+- Structure: [incoming artist/track name in natural Swahili/English code-switch] -> [energy/bassline descriptor] -> [station tag or city callout].
+- The artist name and track title MUST appear.
 - Emphasize bassline, rhythm, and dancefloor energy.
 - Do NOT spend time advertising tickets or dates; keep the musical hype front and center.`;
       break;
     case "station_callout":
       archetypeDirectives = `DROP ARCHETYPE: STATION CALLOUT & URBAN FREQUENCY
 - Focus on GOODLIFE Radio 254 identity, the heartbeat of Nairobi streets, and the current ${facts.daypart} mood.
+- Structure: [city/hood shoutout e.g. Eastlands, Westlands, Thika Road, matatus] -> [vibe connection] -> [GOODLIFE Radio 254 tag].
 - Shout out the listeners, matatus, hoods, and sound lovers across 254.
 - Pure station pride, zero marketing pitch.`;
       break;
     case "event_spotlight":
       archetypeDirectives = `DROP ARCHETYPE: LIVE EVENT SPOTLIGHT
 - Focus on the upcoming live festival experience (${facts.event?.name_spoken || "the festival"}) at ${facts.event?.venue_spoken || "the grounds"}.
+- Structure: [countdown or day] -> [venue and festival atmosphere] -> [clear call to action].
+- Use ONLY: event name="${facts.event?.name_spoken || ""}", venue="${facts.event?.venue_spoken || ""}", countdown="${facts.event?.countdown_phrase || ""}".
 - Mention the countdown and open-air festival vibe. Keep it vivid and sensory.`;
       break;
     case "host_banter":
       archetypeDirectives = `DROP ARCHETYPE: HOST BANTER & STREET FLAVOR
 - Showcase the distinctive personality of host "${facts.persona}".
+- Structure: [spontaneous presenter personality moment] -> [listener connection] -> [station tag].
 - Use natural, witty Nairobi banter, conversational storytelling, and authentic slang.`;
       break;
     case "ticket_cta":
       archetypeDirectives = `DROP ARCHETYPE: TICKET CALL-TO-ACTION
-- Deliver a clear, punchy call-to-action directing the squad to secure passes on "the Goodlife website".
+- Deliver a clear, punchy call-to-action directing the squad to secure passes on "${facts.event?.spoken_ticket_url || "the Goodlife website"}".
+- Structure: [urgency hook in natural Swahili/English mix] -> [action step] -> [where to get tickets].
 - Keep it natural and casual, like a friend reminding the squad to lock down tickets.`;
       break;
   }
+
+  const personaVoiceGuide = buildPersonaVoiceGuide(facts.persona);
 
   const system = `You are a professional on-air radio presenter for ${facts.station_callout}.
 You write ultra-punchy, high-energy on-air drops and stagers for host "${facts.persona}".
 
 CRITICAL BROADCAST STYLE & RULES:
-1. LANGUAGE MIX (STRICT 70/30): 70% Kenyan English, 30% Sheng.
-   - The presenter speaks predominantly fluent, confident Nairobi urban English.
-   - DO NOT speak entirely in Swahili or Sheng! Only pepper in natural Sheng expressions or urban slang for ~30% of the words (e.g. ${shengSample}).
-   - Never sound like an AI translating slogans. Sound like a real, top-tier Nairobi FM presenter (NRG, Capital, Homeboyz style).
+1. LANGUAGE MIX (AUTHENTIC URBAN CODE-SWITCHING ~ 70% Kenyan English, 30% Sheng):
+   - Nairobi presenters do NOT write English sentences and randomly append Swahili words at the end.
+   - They code-switch NATURALLY MID-SENTENCE, interleaving Kenyan English and Sheng/Swahili.
+   - Blend phrases naturally (e.g. ${shengSample}).
+   - Sound like a real, top-tier Nairobi FM presenter (NRG, Capital, Homeboyz style).
+
+AUTHENTIC NAIROBI FM BROADCAST EXAMPLES (study how languages blend mid-sentence):
+track_stager examples:
+• "De Mthuda anaingia saa hii — Sgudi Snyc inakuja — GOODLIFE Radio 254, Nairobi twende!"
+• "Ke Star inaboom — Focalistic na Davido wanakuletea hii moja — shika sound, msee!"
+• "Hii ni ile track ulitaka — Sam Deep anapiga iMpumelelo vizuri sana — cheza nayo!"
+
+station_callout examples:
+• "Kuanzia mtaa hadi mtaa — kutoka Eastlands mpaka Westlands — hii ndio GOODLIFE Radio 254!"
+• "Wasee wa boda, makanga wa tao, hustle ya mchana — sisi tunaendelea — GOODLIFE Radio!"
+• "Frequency ya 254, usiku au mchana, tuko hapa — GOODLIFE Radio, haiachi!"
+
+event_spotlight examples:
+• "The festival iko Saturday — grounds ziko ready — na lineup ya kutisha, msee — fungua website!"
+• "Siku mbili zimebaki — festival inakuja — tickets zinaisha, shika yako haraka!"
+
+ticket_cta examples:
+• "Squad, fungua website ya Goodlife saa hii — tickets bado zipo — usibaki nyuma!"
+• "Tell your mbogi — festival iko Saturday — secure ticket yako sasa, msee!"
+
+host_banter examples:
+• "Saa hii tunaendelea — Nairobi yote iko hapa — mimi ni ${facts.persona} na hii ni frequency yenu!"
+• "Usiku wa aina hii unahitaji ngoma kama hizi — tuko pamoja mpaka asubuhi!"
+
+${personaVoiceGuide}
+
 2. WEBSITE & TICKETS (NO .co.ke):
    - When mentioning where to buy tickets, 80% of the time say "the Goodlife website" (e.g. "tickets on the Goodlife website").
    - 20% of the time say "s m w h r" or "goodlife dot somewhere dot space".
@@ -742,8 +799,8 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   // Ensure recent drops memory is seeded from Postgres database
   await seedRecentScriptsCache();
 
-  // Retention cleanup: automatically prune drops older than 24h
-  cleanupExpiredRadioDrops(24).catch(() => {});
+  // Retention cleanup: automatically prune drops older than 168h (7 days)
+  cleanupExpiredRadioDrops(168).catch(() => {});
 
   const now = new Date();
   const station = getStationConfig();

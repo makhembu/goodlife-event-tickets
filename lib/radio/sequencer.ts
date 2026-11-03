@@ -130,6 +130,163 @@ export function isCamelotCompatible(keyA: string, keyB: string): boolean {
   return false;
 }
 
+export type CamelotRelation = 'exact' | 'relative' | 'adjacent' | 'energy_boost' | 'clash';
+
+export function getCamelotRelation(keyA: string, keyB: string): CamelotRelation {
+  if (!keyA || !keyB) return 'clash';
+
+  const parse = (k: string) => {
+    const m = k.trim().toUpperCase().match(/^(\d{1,2})([AB])$/);
+    if (!m) return null;
+    return { num: parseInt(m[1], 10), letter: m[2] };
+  };
+
+  const a = parse(keyA);
+  const b = parse(keyB);
+  if (!a || !b) return 'clash';
+
+  // Exact same key (e.g. 8A -> 8A)
+  if (a.num === b.num && a.letter === b.letter) return 'exact';
+
+  // Relative major/minor (e.g. 8A -> 8B)
+  if (a.num === b.num && a.letter !== b.letter) return 'relative';
+
+  // Adjacent step (+/- 1 around the 12-hour wheel)
+  if (a.letter === b.letter) {
+    const diff = Math.abs(a.num - b.num);
+    if (diff === 1 || diff === 11) return 'adjacent';
+    // Energy boost: modulation up by 1 semitone (+7 on circle of fifths) or +2 on Camelot wheel
+    if ((a.num + 2 - 1) % 12 + 1 === b.num || (a.num + 7 - 1) % 12 + 1 === b.num) {
+      return 'energy_boost';
+    }
+  }
+
+  return 'clash';
+}
+
+export interface TempoRelationResult {
+  compatible: boolean;
+  relation: 'exact' | 'close' | 'half_time' | 'double_time' | 'clash';
+  deltaPercent: number;
+}
+
+export function evaluateTempoRelation(bpmA: number, bpmB: number): TempoRelationResult {
+  if (!bpmA || !bpmB || bpmA <= 0 || bpmB <= 0) {
+    return { compatible: false, relation: 'clash', deltaPercent: 0 };
+  }
+
+  const directDelta = ((bpmB - bpmA) / bpmA) * 100;
+  const absDelta = Math.abs(directDelta);
+
+  if (absDelta <= 0.5) {
+    return { compatible: true, relation: 'exact', deltaPercent: Math.round(directDelta * 10) / 10 };
+  }
+
+  if (absDelta <= 6.0) {
+    return { compatible: true, relation: 'close', deltaPercent: Math.round(directDelta * 10) / 10 };
+  }
+
+  // Check half-time (e.g. 140 -> 70, or 120 -> 60)
+  const halfBpmA = bpmA / 2;
+  const halfDelta = Math.abs((bpmB - halfBpmA) / halfBpmA) * 100;
+  if (halfDelta <= 6.0) {
+    return { compatible: true, relation: 'half_time', deltaPercent: Math.round(halfDelta * 10) / 10 };
+  }
+
+  // Check double-time (e.g. 70 -> 140, or 60 -> 120)
+  const doubleBpmA = bpmA * 2;
+  const doubleDelta = Math.abs((bpmB - doubleBpmA) / doubleBpmA) * 100;
+  if (doubleDelta <= 6.0) {
+    return { compatible: true, relation: 'double_time', deltaPercent: Math.round(doubleDelta * 10) / 10 };
+  }
+
+  return { compatible: false, relation: 'clash', deltaPercent: Math.round(directDelta * 10) / 10 };
+}
+
+export interface DjTransitionScore {
+  score: number;
+  harmonicRelation: CamelotRelation;
+  tempoRelation: TempoRelationResult['relation'];
+  isCompatible: boolean;
+  reasons: string[];
+}
+
+export function scoreDjTransition(prev: TrackMetadata, next: TrackMetadata): DjTransitionScore {
+  let score = 100;
+  const reasons: string[] = [];
+
+  // 1. Harmonic Compatibility
+  const hRel = getCamelotRelation(prev.key, next.key);
+  switch (hRel) {
+    case 'exact':
+      score += 35;
+      reasons.push('Exact key match (+35)');
+      break;
+    case 'relative':
+      score += 30;
+      reasons.push('Relative major/minor harmonic blend (+30)');
+      break;
+    case 'adjacent':
+      score += 25;
+      reasons.push('Adjacent Camelot step (+25)');
+      break;
+    case 'energy_boost':
+      score += 15;
+      reasons.push('Modulation energy boost (+15)');
+      break;
+    case 'clash':
+      score -= 35;
+      reasons.push('Harmonic key clash (-35)');
+      break;
+  }
+
+  // 2. Tempo Compatibility
+  const tRel = evaluateTempoRelation(prev.bpm, next.bpm);
+  switch (tRel.relation) {
+    case 'exact':
+      score += 25;
+      reasons.push('Exact BPM match (+25)');
+      break;
+    case 'close':
+      score += 20;
+      reasons.push(`BPM within +/-6% (${tRel.deltaPercent}%) (+20)`);
+      break;
+    case 'half_time':
+    case 'double_time':
+      score += 10;
+      reasons.push(`${tRel.relation} metric transition (+10)`);
+      break;
+    case 'clash':
+      score -= 30;
+      reasons.push(`BPM mismatch delta ${tRel.deltaPercent}% (-30)`);
+      break;
+  }
+
+  // 3. Artist Separation
+  if (prev.artist && next.artist && prev.artist.toLowerCase() === next.artist.toLowerCase()) {
+    score -= 40;
+    reasons.push('Immediate artist repeat (-40)');
+  }
+
+  // 4. Energy Progression
+  if (prev.energy && next.energy) {
+    const eDiff = Math.abs(prev.energy - next.energy);
+    if (eDiff <= 1) {
+      score += 15;
+      reasons.push('Smooth energy transition (+15)');
+    } else if (eDiff <= 2) {
+      score += 5;
+      reasons.push('Moderate energy transition (+5)');
+    } else {
+      score -= eDiff * 5;
+      reasons.push(`Abrupt energy leap ${prev.energy} -> ${next.energy} (-${eDiff * 5})`);
+    }
+  }
+
+  const isCompatible = (hRel !== 'clash') && tRel.compatible;
+  return { score, harmonicRelation: hRel, tempoRelation: tRel.relation, isCompatible, reasons };
+}
+
 /**
  * Section 7.4: Daypart Energy Curves
  * 06:00-12:00: energy 3 to 5

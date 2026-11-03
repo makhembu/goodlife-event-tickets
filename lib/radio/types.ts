@@ -31,6 +31,11 @@ export interface RadioSet {
   energy?: number | null;
   is_full_set?: boolean;
   key_source?: 'manual' | 'tunebat' | 'analyzed' | null;
+  key_confidence?: number | null;
+  bpm_confidence?: number | null;
+  analysis_method?: string | null;
+  analysis_version?: string | null;
+  analyzed_at?: string | null;
   created_at: string;
   deleted_at?: string | null;
 }

@@ -280,6 +280,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const swellIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const triggerOutroDropCrossoverRef = useRef<() => void>(() => {});
   const lastLiveDropIdRef = useRef<string | number | null>(null);
+  const isTransitioningRef = useRef<boolean>(false);
+  const isGeneratingDropRef = useRef<boolean>(false);
 
 
   // Smooth local progress interpolation anchored at poll time
@@ -466,9 +468,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 30;
 
               if (isOutroWindow || isStalledOrEnded || isDjManiaOverride || hasDivergedSignificantly) {
-                audio.src = track.audio_url;
-                safeSeekAudio(audio, track.elapsed || 0);
-                audio.play().catch(() => {});
+                if (!isTransitioningRef.current) {
+                  audio.src = track.audio_url;
+                  safeSeekAudio(audio, track.elapsed || 0);
+                  audio.play().catch(() => {});
+                }
               }
             }
           }
@@ -615,6 +619,67 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const remainingSec = nowPlayingTrack?.duration && clamped ? nowPlayingTrack.duration - clamped : 999;
       if (remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
         triggerOutroDropCrossoverRef.current();
+      }
+
+      // JIT Drop Generation: Request a fresh AI drop ~30s before track ends so it's ready for outro/intro
+      if (
+        remainingSec <= 30 &&
+        remainingSec > 15 &&
+        !hasFiredOutroDropRef.current &&
+        !isDropPlayingRef.current &&
+        !isGeneratingDropRef.current
+      ) {
+        let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+        if (!nextCandidate && backupSetsRef.current.length > 0) {
+          const sets = backupSetsRef.current;
+          const rawId = currentTrackIdRef.current || "";
+          const cleanId = rawId.replace(/^(set-|vault-|pl-\d+-)/, "");
+          let cIdx = sets.findIndex(
+            (s) => String(s.id) === cleanId || (audioRef.current && s.audio_url === audioRef.current.src)
+          );
+          if (cIdx === -1) cIdx = 0;
+          const nIdx = (cIdx + 1) % sets.length;
+          nextCandidate = sets[nIdx];
+        }
+
+        if (nextCandidate?.title) {
+          const nextKey = `jit-${(nextCandidate as any).id || nextCandidate.title}`;
+          if (lastPrefetchedTrackKeyRef.current !== nextKey) {
+            lastPrefetchedTrackKeyRef.current = nextKey;
+            isGeneratingDropRef.current = true;
+            fetch("/api/radio/drops/dynamic", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nextTrackId: (nextCandidate as any).id,
+                nextTrackTitle: nextCandidate.title,
+                nextTrackArtist: nextCandidate.artist || nextCandidate.dj_name,
+                nextTrackGenre: (nextCandidate as any).genre,
+              }),
+            })
+              .then((r) => r.json())
+              .then((data) => {
+                if (data?.drop_url && data?.script) {
+                  const freshDrop: RadioDrop = {
+                    id: `dyn-${Date.now()}`,
+                    title: data.title || `${data.persona} · ${nextCandidate.title}`,
+                    audio_url: data.drop_url,
+                    persona: data.persona,
+                    mood: data.mood,
+                    target_track_id: (nextCandidate as any).id ? String((nextCandidate as any).id) : undefined,
+                    target_track_title: nextCandidate.title,
+                    script: data.script,
+                  };
+                  availableDropsRef.current = [freshDrop, ...availableDropsRef.current];
+                  console.log(`[RadioContext] 🎙️ JIT drop ready: "${data.script?.slice(0, 60)}..."`);
+                }
+              })
+              .catch((err) => console.warn("[RadioContext] JIT drop generation failed:", err))
+              .finally(() => {
+                isGeneratingDropRef.current = false;
+              });
+          }
+        }
       }
 
       // Preload next matching drop if available from station pool
@@ -1301,6 +1366,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (engineStateRef.current === "paused" || !radioEnabledRef.current) {
       return;
     }
+    isTransitioningRef.current = true;
 
     const dropAudio = dropAudioRef.current;
     // Strictly dynamic drops: only air freshly generated AI voice drops, never stale hardcoded sweepers
@@ -1325,6 +1391,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
 
     if (!nextTrack || !nextTrack.audio_url || !audio) {
+      isTransitioningRef.current = false;
       if (activePlaylistRef.current) return;
       attachAndPlayLiveStream();
       return;
@@ -1381,9 +1448,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       audio.volume = duckedVol; // Keep new track ducked while drop finishes!
       try {
         await audio.play();
+        isTransitioningRef.current = false;
         setIsPlaying(true);
         setEngineState("live");
       } catch (err) {
+        isTransitioningRef.current = false;
         console.warn("[RadioContext] Crossover track play error:", err);
       }
       return;
@@ -1394,13 +1463,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetId = String(nextTrack.id);
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    // 1. Strict match ONLY: Drop explicitly targeting THIS track by ID or title
+    // 1. Strict match: Drop explicitly targeting THIS track by ID or title
     drop = drops.find((d) =>
       (d.target_track_id && String(d.target_track_id) === targetId) ||
       (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
     );
 
-    // 2. Remove the aired drop if matched; if no verified drop targeting this track, transition cleanly with NO drop!
+    // 2. Generic station sweeper fallback: if no track-specific drop, fallback to generic sweeper
+    if (!drop && drops.length > 0) {
+      drop = drops.find((d) => !d.target_track_id && !d.target_track_title);
+    }
+
+    // 3. Remove the aired drop if matched
     if (drop) {
       availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
     }
@@ -1445,10 +1519,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       // Start music bed immediately (zero dead air!)
       try {
         await audio.play();
+        isTransitioningRef.current = false;
         setIsPlaying(true);
         setEngineState("live");
       } catch (err: any) {
-        console.warn("[RadioContext] Music play rejected:", err);
+        isTransitioningRef.current = false;
+        if (err?.name === "AbortError") {
+          audio.addEventListener("canplay", () => audio.play().catch(() => {}), { once: true });
+        } else {
+          console.warn("[RadioContext] Music play rejected:", err);
+        }
       }
 
       // Start voice drop simultaneously over the ducked music bed
@@ -1467,9 +1547,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       audio.volume = masterVol;
       try {
         await audio.play();
+        isTransitioningRef.current = false;
         setIsPlaying(true);
         setEngineState("live");
       } catch {
+        isTransitioningRef.current = false;
         attachAndPlayLiveStream();
       }
     }
@@ -1931,7 +2013,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         onTimeUpdate={handleTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => {
-          if (audioRef.current?.ended || isDropPlayingRef.current) return;
+          if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current) return;
           setIsPlaying(false);
         }}
         onError={() => {
