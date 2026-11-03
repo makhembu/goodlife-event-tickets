@@ -109,6 +109,7 @@ export interface RadioContextType {
   prevTrack: () => void;
   seek: (percent: number) => void;
   airLiveDrop: (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => Promise<boolean>;
+  setManualDucking: (ducked: boolean) => void;
   fetchRadioState: () => Promise<void>;
   fetchRadioLive: () => Promise<void>;
 }
@@ -168,6 +169,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   prevTrack: () => {},
   seek: () => {},
   airLiveDrop: async () => false,
+  setManualDucking: () => {},
   fetchRadioState: async () => {},
   fetchRadioLive: async () => {},
 };
@@ -1259,6 +1261,25 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     [triggerLiveInjectedDrop]
   );
 
+  const setManualDucking = useCallback(
+    (ducked: boolean) => {
+      if (ducked) {
+        if (swellIntervalRef.current) {
+          clearInterval(swellIntervalRef.current);
+          swellIntervalRef.current = null;
+        }
+        const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+        const duckedVol = masterVol > 0 ? Math.max(0.10, Math.min(0.22, masterVol * 0.20)) : 0;
+        if (audioRef.current) {
+          audioRef.current.volume = duckedVol;
+        }
+      } else {
+        swellMusicToFullVolume();
+      }
+    },
+    [swellMusicToFullVolume]
+  );
+
   // 12A. Outro Drop Crossover Trigger (Starts at 15s before track ends, bridges into next song)
   const triggerOutroDropCrossover = useCallback(() => {
     if (
@@ -2005,6 +2026,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         prevTrack,
         seek,
         airLiveDrop,
+        setManualDucking,
         fetchRadioState,
         fetchRadioLive,
       }}

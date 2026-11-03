@@ -46,7 +46,7 @@ import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export default function AdminRadioPage() {
-  const { airLiveDrop } = useRadio();
+  const { airLiveDrop, setManualDucking } = useRadio();
   const [activeTab, setActiveTab] = useState<ConsoleTab>("studio");
   const [studioDeck, setStudioDeck] = useState<"perform" | "playout" | "drops">("perform");
   const [library, setLibrary] = useState<RadioSet[]>([]);
@@ -543,7 +543,10 @@ export default function AdminRadioPage() {
                 />
 
                 <BrowserMicRecorder
-                  onTalkoverToggle={(active) => setIsDucking(active)}
+                  onTalkoverToggle={(active) => {
+                    setIsDucking(active);
+                    setManualDucking(active);
+                  }}
                   onSendToCue={(cue) => setCueItem(cue)}
                   onAirLive={async (audioUrl, title, persona, script) => {
                     return await airLiveDrop({ audioUrl, title, persona, script });
