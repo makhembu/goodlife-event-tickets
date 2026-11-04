@@ -387,6 +387,19 @@ export default function ScheduledEventClientPage({
           <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
             {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
           </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase mt-2.5 text-brand-navy/70">
+            <Link href="/terms" className="underline hover:text-brand-navy transition-colors">
+              Terms of Service
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/privacy" className="underline hover:text-brand-navy transition-colors">
+              Privacy Policy
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/refunds" className="underline hover:text-brand-navy transition-colors">
+              Refund Policy
+            </Link>
+          </div>
         </footer>
       </div>
     </div>

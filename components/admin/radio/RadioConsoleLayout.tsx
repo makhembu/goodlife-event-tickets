@@ -26,7 +26,7 @@ export default function RadioConsoleLayout({
   onMasterFade,
 }: RadioConsoleLayoutProps) {
   return (
-    <div className="min-h-screen bg-[#F3ECE1] text-[#16181D] font-sans antialiased flex flex-col">
+    <div className="min-h-screen bg-[#0D0F14] text-[#FBF9F6] font-sans antialiased flex flex-col">
       {/* 1. Persistent Top Transport Bar */}
       <TransportBar
         streamUrl={streamUrl}

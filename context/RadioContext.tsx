@@ -181,11 +181,35 @@ const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
 const DEFAULT_STATION_DROPS: RadioDrop[] = [
   {
+    id: "drop-bwana-afterhours",
+    title: "Bwana Mkubwa · After Hours Frequencies",
+    persona: "Bwana Mkubwa",
+    mood: "LATE NIGHT",
+    audio_url: "/drops/samples/sample_drop_3_bwana_afterhours.mp3",
+    script: "Nairobi usiku sana. Hewani ni GOODLIFE Radio 254, safe frequencies, no rush, vibe safi hadi che.",
+  },
+  {
+    id: "drop-bwana-station-id",
+    title: "Bwana Mkubwa · Nairobi Station ID",
+    persona: "Bwana Mkubwa",
+    mood: "CHILL",
+    audio_url: "/drops/samples/bwana-mkubwa_context_drop.mp3",
+    script: "GOODLIFE Radio 254. Kutoka katikati ya jiji la Nairobi hadi pembe zote za nchi. Muziki safi bila kelele.",
+  },
+  {
+    id: "drop-cheche-hype",
+    title: "MC Cheche · Energy Flow",
+    persona: "MC Cheche",
+    mood: "HYPE",
+    audio_url: "/drops/samples/sample_drop_1_cheche_hype.mp3",
+    script: "Yo yo yo! Massive na wanavybe! GOODLIFE Radio 254 tuko locked in, shika vibe!",
+  },
+  {
     id: "drop-sudi-pulse",
     title: "DJ Sudi · Nairobi Evening Pulse",
     persona: "DJ Sudi",
     mood: "HYPE",
-    audio_url: "/drops/samples/dj-sudi_context_drop.mp3",
+    audio_url: "/drops/samples/sample_drop_2_sudi_station_id.mp3",
     script: "Goodlife Radio 254, your evening pulse! Vibe ya jioni ni safe, matatus full, mbele ya 254. Tune in, piga luku safi.",
   },
   {
@@ -336,6 +360,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const lastDropPlayedTimestampRef = useRef<number>(0);
   const isTransitioningRef = useRef<boolean>(false);
   const isGeneratingDropRef = useRef<boolean>(false);
+
+  // Dual-Cadence & Multi-Drop Stacking Tracking (every 2 tracks + every 15 minutes)
+  const tracksSinceLastDropRef = useRef<number>(0);
+  const lastClockDropTimestampRef = useRef<number>(Date.now());
+  const dropAudioQueueRef = useRef<RadioDrop[]>([]);
 
 
   // Smooth local progress interpolation anchored at poll time
@@ -699,7 +728,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // 5. Smooth Local Progress Interpolation (Between 10s polls)
   useEffect(() => {
-    if (!isPlaying || !nowPlayingTrack?.duration || nowPlayingTrack.duration <= 0) {
+    if (!isPlaying) {
       return;
     }
 
@@ -707,7 +736,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (!lastPollTimestampRef.current) return;
       const secondsSincePoll = (Date.now() - lastPollTimestampRef.current) / 1000;
       const current = lastPollElapsedRef.current + secondsSincePoll;
-      const clamped = Math.min(current, nowPlayingTrack.duration || current);
+      const trackDuration =
+        nowPlayingTrack?.duration && nowPlayingTrack.duration > 0
+          ? nowPlayingTrack.duration
+          : Math.round(audioRef.current?.duration || 180);
+      const clamped = Math.min(current, trackDuration);
       setInterpolatedElapsed(clamped);
 
       // Track actual listening time
@@ -717,7 +750,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 15s Outro Crossover Trigger: Drop starts 15 seconds before the track ends, continuing across next track start
-      const remainingSec = nowPlayingTrack?.duration && clamped ? nowPlayingTrack.duration - clamped : 999;
+      const remainingSec = trackDuration - clamped;
       if (remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
         triggerOutroDropCrossoverRef.current();
       }
@@ -1388,9 +1421,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       engineStateRef.current === "paused" ||
       !radioEnabledRef.current ||
       !audioRef.current ||
-      !dropAudioRef.current ||
-      (Date.now() - lastDropPlayedTimestampRef.current < 120000)
+      !dropAudioRef.current
     ) {
+      return;
+    }
+
+    // Dual-cadence check: Trigger outro drop if at least 2 tracks have elapsed or 15 mins passed
+    const isTrackCadenceDue = tracksSinceLastDropRef.current >= 2;
+    const isClockDue = (Date.now() - lastClockDropTimestampRef.current) >= 15 * 60 * 1000;
+    if (!isTrackCadenceDue && !isClockDue) {
+      return;
+    }
+    // Prevent rapid re-triggering within 20s
+    if (Date.now() - lastDropPlayedTimestampRef.current < 20000) {
       return;
     }
 
@@ -1415,11 +1458,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetId = String(nextTrack.id || "");
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
-    if (drops.length === 0) {
-      availableDropsRef.current = [...DEFAULT_STATION_DROPS];
-      drops = availableDropsRef.current;
+    if (availableDropsRef.current.length <= 1) {
+      const pendingDyn = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-"));
+      availableDropsRef.current = [...pendingDyn, ...DEFAULT_STATION_DROPS];
     }
+
+    let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
     if (drops.length === 0) return;
 
     // 2. Prioritize drop explicitly targeted to upcoming track; fallback to evergreen station ID/DJ drop
@@ -1442,6 +1486,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop.id);
 
     lastDropPlayedTimestampRef.current = Date.now();
+    tracksSinceLastDropRef.current = 0;
+    if (isClockDue) {
+      lastClockDropTimestampRef.current = Date.now();
+    }
     hasFiredOutroDropRef.current = true;
     isDropPlayingRef.current = true;
     setIsDropPlaying(true);
@@ -1593,31 +1641,87 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Otherwise, standard talkover bed: drop fires right at boundary over incoming track intro
+    // 2. Dual-cadence evaluation: every 2 tracks + every 15 minutes
+    tracksSinceLastDropRef.current += 1;
+    const isTrackCadenceDue = tracksSinceLastDropRef.current >= 2;
+    const isClockDue = (Date.now() - lastClockDropTimestampRef.current) >= 15 * 60 * 1000;
+
+    // Replenish drop pool if low
+    if (availableDropsRef.current.length <= 1) {
+      const pendingDyn = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-"));
+      availableDropsRef.current = [...pendingDyn, ...DEFAULT_STATION_DROPS];
+    }
+    const currentDrops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+
     let drop: RadioDrop | undefined;
+    dropAudioQueueRef.current = [];
+
     const targetId = String(nextTrack.id);
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
-    // If outro drop already fired, or a drop played within 120s, DO NOT stack another drop!
-    if (hasFiredOutroDropRef.current || (Date.now() - lastDropPlayedTimestampRef.current < 120000)) {
-      drop = undefined;
-    } else {
-      // Prioritize track-specific drop; fallback to evergreen station drop
-      drop = drops.find((d) =>
+    // Helper to find track-specific intro tease or energetic DJ drop
+    const findIntroDrop = (pool: RadioDrop[]) => {
+      let found = pool.find((d) =>
         (d.target_track_id && String(d.target_track_id) === targetId) ||
         (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
       );
-      if (!drop) {
-        drop = drops.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url);
+      if (!found) {
+        found = pool.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url && d.persona !== "Bwana Mkubwa");
       }
-      if (drop) {
+      return found;
+    };
+
+    // Helper to find authentic Station ID / Clock Bulletin (Bwana Mkubwa or Station Sweeper)
+    const findStationIdDrop = (pool: RadioDrop[]) => {
+      let found = pool.find((d) => d.persona === "Bwana Mkubwa" && d.audio_url);
+      if (!found) {
+        found = pool.find((d) => d.id.includes("vibes") || d.persona === "GOODLIFE 254" && d.audio_url);
+      }
+      if (!found) {
+        found = pool.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url);
+      }
+      return found;
+    };
+
+    if (isTrackCadenceDue && isClockDue) {
+      // Authentic Multi-Drop Stacking ("Double-Drop"): Station ID -> Song Intro Tease
+      const stationDrop = findStationIdDrop(currentDrops);
+      const remainingPool = currentDrops.filter((d) => d.id !== stationDrop?.id);
+      const introDrop = findIntroDrop(remainingPool);
+
+      if (stationDrop && introDrop) {
+        drop = stationDrop;
+        dropAudioQueueRef.current = [introDrop];
+        availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== stationDrop.id && d.id !== introDrop.id);
+        tracksSinceLastDropRef.current = 0;
+        lastClockDropTimestampRef.current = Date.now();
+        lastDropPlayedTimestampRef.current = Date.now();
+        console.log(`[RadioContext] 🎙️ Double-Drop Stacked: "${stationDrop.title}" -> "${introDrop.title}"`);
+      } else if (stationDrop || introDrop) {
+        drop = stationDrop || introDrop;
+        availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
+        if (drop === stationDrop) lastClockDropTimestampRef.current = Date.now();
+        if (drop === introDrop) tracksSinceLastDropRef.current = 0;
         lastDropPlayedTimestampRef.current = Date.now();
       }
-    }
-
-    // 3. Remove the aired drop if matched
-    if (drop) {
-      availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
+    } else if (isTrackCadenceDue) {
+      // Single Song Intro Tease every 2 tracks
+      drop = findIntroDrop(currentDrops);
+      if (drop) {
+        availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
+        tracksSinceLastDropRef.current = 0;
+        lastDropPlayedTimestampRef.current = Date.now();
+        console.log(`[RadioContext] 🎙️ Song Intro Tease (Track Cadence): "${drop.title}"`);
+      }
+    } else if (isClockDue) {
+      // Single Station ID / Clock Bulletin every 15 minutes
+      drop = findStationIdDrop(currentDrops);
+      if (drop) {
+        availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop?.id);
+        lastClockDropTimestampRef.current = Date.now();
+        lastDropPlayedTimestampRef.current = Date.now();
+        console.log(`[RadioContext] 🎙️ Station ID (15-min Clock Cadence): "${drop.title}"`);
+      }
     }
 
     // Prepare incoming music track
@@ -1631,6 +1735,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         dropAudio.removeEventListener("ended", onDropEnded);
         dropAudio.removeEventListener("error", onDropError);
       }
+      dropAudioQueueRef.current = [];
       swellMusicToFullVolume();
       isDropPlayingRef.current = false;
       setIsDropPlaying(false);
@@ -1640,7 +1745,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onDropEnded = () => {
-      cleanupDropPlayout();
+      if (dropAudioQueueRef.current.length > 0 && dropAudio) {
+        const nextInQueue = dropAudioQueueRef.current.shift()!;
+        console.log(`[RadioContext] 🎙️ Chaining stacked drop in talkover bed: "${nextInQueue.title}"`);
+        setActiveDropTitle(nextInQueue.title);
+        setActivePersona(nextInQueue.persona || "GOODLIFE DJ");
+        setActiveMood(nextInQueue.mood || "HYPE");
+        dropAudio.src = nextInQueue.audio_url;
+        dropAudio.play().catch((err) => {
+          console.warn("[RadioContext] Chained drop error, finishing queue:", err);
+          cleanupDropPlayout();
+        });
+      } else {
+        cleanupDropPlayout();
+      }
     };
 
     const onDropError = () => {
@@ -1942,6 +2060,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         dropAudio.pause();
         dropAudio.currentTime = 0;
       }
+      dropAudioQueueRef.current = [];
       isDropPlayingRef.current = false;
       setIsDropPlaying(false);
       setActiveDropTitle(null);

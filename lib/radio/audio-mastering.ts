@@ -135,7 +135,11 @@ export async function synthesizeFishAudioTts(
   voiceOrPersona = "dj-fusion",
   explicitVoiceId?: string
 ): Promise<Buffer | null> {
-  const apiKey = getEnv("FISH_AUDIO_KEY") || process.env.FISH_AUDIO_KEY;
+  const apiKey =
+    getEnv("FISH_AUDIO_KEY") ||
+    getEnv("FISH_AUDIO_API_KEY") ||
+    process.env.FISH_AUDIO_KEY ||
+    process.env.FISH_AUDIO_API_KEY;
   if (!apiKey) return null;
 
   const normalized = normalizeRadioScriptForTts(sanitizeScriptForTts(script, true));

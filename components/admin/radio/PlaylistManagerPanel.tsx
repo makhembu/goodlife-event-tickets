@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Layers,
   Radio,
@@ -18,9 +18,11 @@ import {
   RadioTower,
   Sparkles,
   Undo2,
+  Zap,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
 import HarmonizeModal from "./HarmonizeModal";
+import AutoPlaylistModal from "./AutoPlaylistModal";
 
 export interface PlaylistSummary {
   id: number;
@@ -84,6 +86,46 @@ export default function PlaylistManagerPanel({
   const [selectedBulkTrackIds, setSelectedBulkTrackIds] = useState<Set<number>>(new Set());
   const [bulkAdding, setBulkAdding] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Auto-Playlist & Harmonization State
+  const [showAutoPlaylistModal, setShowAutoPlaylistModal] = useState(false);
+  const [harmonizingAll, setHarmonizingAll] = useState(false);
+
+  const unindexedCount = useMemo(() => {
+    return library.filter((t) => !t.bpm || !t.musical_key || t.musical_key.trim() === "").length;
+  }, [library]);
+
+  const handleHarmonizeAll = async () => {
+    if (harmonizingAll) return;
+    if (unindexedCount === 0) {
+      showBanner("All tracks in your library are already harmonically indexed with Camelot keys and BPM!", "success");
+      return;
+    }
+    if (!confirm(`Harmonize all ${unindexedCount} unindexed festival tracks via Cloudflare Tunnel?\n\nThis analyzes audio tempo (BPM) and Camelot musical keys using audio intelligence.`)) {
+      return;
+    }
+
+    setHarmonizingAll(true);
+    try {
+      const res = await fetch("/api/admin/radio/library/harmonize-all", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showBanner(
+          `⚡ Harmonization complete: ${data.succeeded || 0} tracks indexed${data.failed ? ` (${data.failed} failed/skipped)` : ""}!`,
+          "success"
+        );
+        if (onRefreshLive) onRefreshLive();
+      } else {
+        showBanner(data.error || "Failed to harmonize unindexed tracks", "error");
+      }
+    } catch {
+      showBanner("Network error while harmonizing unindexed tracks", "error");
+    } finally {
+      setHarmonizingAll(false);
+    }
+  };
 
   const handleUndoReorder = async () => {
     if (!selectedPlaylistId) return;
@@ -449,14 +491,43 @@ export default function PlaylistManagerPanel({
           </div>
         </div>
 
-        {activeBroadcastPlaylist && (
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => handleToggleBroadcast(activeBroadcastPlaylist)}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white hover:text-[#DFBB7D] text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border border-white/20 hover:border-[#DFBB7D]"
+            onClick={handleHarmonizeAll}
+            disabled={harmonizingAll}
+            className={`px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border flex items-center gap-2 ${
+              unindexedCount > 0
+                ? "bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/20 text-[#DFBB7D] border-[#DFBB7D]/40 shadow-[2px_2px_0px_#DFBB7D]"
+                : "bg-white/5 hover:bg-white/10 text-white/60 border-white/10 hover:border-white/20"
+            }`}
+            title="Harmonize unindexed catalog tracks via audio intelligence"
           >
-            Return to Full Catalog
+            <Zap className={`w-3.5 h-3.5 ${harmonizingAll ? "animate-spin text-[#DFBB7D]" : unindexedCount > 0 ? "text-[#DFBB7D]" : "text-white/40"}`} />
+            {harmonizingAll
+              ? "Indexing Tracks..."
+              : unindexedCount > 0
+              ? `Harmonize Unindexed (${unindexedCount})`
+              : `All Harmonized (${library.length})`}
           </button>
-        )}
+
+          <button
+            onClick={() => setShowAutoPlaylistModal(true)}
+            className="px-3.5 py-2 bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/25 text-[#DFBB7D] hover:text-white text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border border-[#DFBB7D]/40 flex items-center gap-1.5 shadow-[2px_2px_0px_#DFBB7D]"
+            title="Create an algorithmic harmonic playlist (Late Night Drive, Club Peak, etc.)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#DFBB7D]" />
+            Auto-Playlist
+          </button>
+
+          {activeBroadcastPlaylist && (
+            <button
+              onClick={() => handleToggleBroadcast(activeBroadcastPlaylist)}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white hover:text-[#DFBB7D] text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border border-white/20 hover:border-[#DFBB7D]"
+            >
+              Return to Full Catalog
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Playlist Two-Column Workspace */}
@@ -470,7 +541,7 @@ export default function PlaylistManagerPanel({
             </h3>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-3 py-1.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-mono font-black uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#fff]"
+              className="px-3 py-1.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-mono font-black uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#000]"
             >
               <Plus className="w-3.5 h-3.5" />
               New Playlist
@@ -490,7 +561,7 @@ export default function PlaylistManagerPanel({
               </p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#fff]"
+                className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#000]"
               >
                 Create Playlist
               </button>
@@ -599,7 +670,7 @@ export default function PlaylistManagerPanel({
                     onClick={() => handleToggleBroadcast(selectedPlaylist)}
                     className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl font-mono font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
                       selectedPlaylist.is_broadcast_active
-                        ? "bg-[#E84855] text-white border-2 border-white/30 hover:bg-red-600 shadow-[2px_2px_0px_#fff]"
+                        ? "bg-[#E84855] text-white border-2 border-white/30 hover:bg-red-600 shadow-[2px_2px_0px_#000]"
                         : "bg-[#DFBB7D] text-[#16181D] hover:bg-[#F2CE8A] border-2 border-[#16181D] shadow-[2px_2px_0px_#DFBB7D]"
                     }`}
                   >
@@ -698,7 +769,7 @@ export default function PlaylistManagerPanel({
                       <button
                         onClick={handleBulkAddTracks}
                         disabled={bulkAdding}
-                        className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
+                        className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#000] disabled:opacity-50"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         {bulkAdding ? "Adding Tracks..." : `➕ Bulk Add (${selectedBulkTrackIds.size}) Songs to Playlist`}
@@ -777,7 +848,7 @@ export default function PlaylistManagerPanel({
                   </p>
                   <button
                     onClick={() => setShowAddTracks(true)}
-                    className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#fff]"
+                    className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#000]"
                   >
                     Add Songs
                   </button>
@@ -987,7 +1058,7 @@ export default function PlaylistManagerPanel({
                 <button
                   type="submit"
                   disabled={creating || !createName.trim()}
-                  className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-xl transition-all disabled:opacity-50 shadow-[2px_2px_0px_#fff]"
+                  className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-xl transition-all disabled:opacity-50 shadow-[2px_2px_0px_#000]"
                 >
                   {creating ? "Creating..." : "Create Playlist"}
                 </button>
@@ -1013,6 +1084,18 @@ export default function PlaylistManagerPanel({
           }}
         />
       )}
+
+      {/* Auto-Playlist Vibe Creator Modal */}
+      <AutoPlaylistModal
+        isOpen={showAutoPlaylistModal}
+        onClose={() => setShowAutoPlaylistModal(false)}
+        onPlaylistCreated={(newId) => {
+          fetchPlaylists();
+          setSelectedPlaylistId(newId);
+          fetchPlaylistDetails(newId);
+        }}
+        showBanner={showBanner}
+      />
     </div>
   );
 }

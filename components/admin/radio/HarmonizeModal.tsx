@@ -371,7 +371,7 @@ export default function HarmonizeModal({
                 <button
                   onClick={handleRunAnalysis}
                   disabled={analyzing || loading}
-                  className="flex-1 py-2.5 px-4 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
+                  className="flex-1 py-2.5 px-4 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_#000] disabled:opacity-50"
                 >
                   <RefreshCw className={`w-4 h-4 ${analyzing ? "animate-spin" : ""}`} />
                   <span>

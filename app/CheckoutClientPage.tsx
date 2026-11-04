@@ -2116,6 +2116,14 @@ export default function TicketCheckoutPage({
                     <span>{totalPrice === 0 ? "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP." : "AN INSTANT M-PESA PIN PROMPT WILL BE SENT."}</span>
                   </p>
 
+                  {/* Legal Terms Disclosure */}
+                  <p className="text-[10px] text-center font-mono text-brand-navy/70 mt-1.5 px-1 leading-snug select-none">
+                    By checking out, you agree to our{" "}
+                    <Link href="/terms" target="_blank" className="underline font-bold hover:text-brand-navy">Terms &amp; Admission</Link>,{" "}
+                    <Link href="/privacy" target="_blank" className="underline font-bold hover:text-brand-navy">Privacy</Link>, and{" "}
+                    <Link href="/refunds" target="_blank" className="underline font-bold hover:text-brand-navy">Refund Policy</Link>.
+                  </p>
+
                   {/* Manual Till Payment Alternative - collapsed accordion.
                       The till number itself is already shown in the venue/till
                       strip near the top, so nothing is hidden by closing this. */}
@@ -2398,6 +2406,19 @@ export default function TicketCheckoutPage({
           <p className="font-mono text-[11px] uppercase mt-1 text-brand-navy/60">
             {eventDetails.venue} · {eventDetails.footer_legal || "STRICTLY 18+ NO OUTSIDE DRINKS"}
           </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase mt-2.5 text-brand-navy/70">
+            <Link href="/terms" className="underline hover:text-brand-navy transition-colors">
+              Terms of Service
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/privacy" className="underline hover:text-brand-navy transition-colors">
+              Privacy Policy
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link href="/refunds" className="underline hover:text-brand-navy transition-colors">
+              Refund Policy
+            </Link>
+          </div>
           {/* No staff links in the footer. It advertised "Staff & POS Login"
               and "Admin Portal" to every customer on every checkout page, which
               is a worse leak than the header: a footer link reads as routine

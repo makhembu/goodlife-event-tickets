@@ -46,6 +46,7 @@ import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
 import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
 import TrackEditDrawer from "@/components/admin/radio/TrackEditDrawer";
+import LibraryIngestDock from "@/components/admin/radio/LibraryIngestDock";
 import { SoundboardProvider } from "@/context/SoundboardContext";
 import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
 import { useRadio } from "@/context/RadioContext";
@@ -514,16 +515,16 @@ export default function AdminRadioPage() {
       <SoundboardProvider>
         {/* Toast Alert Banner */}
       {message && (
-        <div className={`mb-4 p-3 border-2 font-mono text-xs flex items-center justify-between shadow-[2px_2px_0px_#16181D] ${
+        <div className={`mb-4 p-3 border-2 font-mono text-xs flex items-center justify-between shadow-[2px_2px_0px_#000] ${
           message.type === "success"
-            ? "bg-[#10B981]/20 border-[#10B981] text-emerald-900 font-bold"
-            : "bg-[#E84855]/20 border-[#E84855] text-red-900 font-bold"
+            ? "bg-[#10B981]/20 border-[#10B981] text-emerald-300 font-bold"
+            : "bg-[#E84855]/20 border-[#E84855] text-red-300 font-bold"
         }`}>
           <div className="flex items-center space-x-2">
-            {message.type === "success" ? <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" /> : <AlertCircle className="w-4 h-4 text-red-700 shrink-0" />}
+            {message.type === "success" ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
             <span>{message.text}</span>
           </div>
-          <button onClick={() => setMessage(null)} className="font-bold px-1 text-sm">×</button>
+          <button onClick={() => setMessage(null)} className="font-bold px-1 text-sm text-white/70 hover:text-white">×</button>
         </div>
       )}
 
@@ -687,6 +688,9 @@ export default function AdminRadioPage() {
       {/* VIEW 3: MUSIC LIBRARY */}
       {activeTab === "library" && (
         <div className="space-y-6">
+          {/* Quick On-The-Fly Ingest Dock */}
+          <LibraryIngestDock onTrackAdded={fetchLibrary} showBanner={showMsg} />
+
           {/* Direct Upload Form */}
           <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-5 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
             <div className="flex items-center space-x-2 border-b border-white/10 pb-2">

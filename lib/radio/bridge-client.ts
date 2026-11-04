@@ -289,6 +289,7 @@ export async function bridgeAnalyzeAudio(payload: {
   audio_url: string;
   genre?: string;
   is_full_set?: boolean;
+  snippet_only?: boolean;
 }): Promise<{ ok: boolean; data?: BridgeAnalyzeResult; error?: string }> {
   const bodyStr = JSON.stringify(payload);
   const { timestamp, signature } = signRequest(bodyStr);

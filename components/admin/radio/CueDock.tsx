@@ -72,12 +72,12 @@ export default function CueDock({
 
   if (!cueItem) {
     return (
-      <div className="bg-[#16181D]/5 border-2 border-dashed border-[#16181D]/20 p-4 rounded flex items-center justify-between text-[#16181D]/60 font-mono text-xs">
+      <div className="bg-[#16181D] border-2 border-dashed border-white/20 p-4 rounded-xl flex items-center justify-between text-white/60 font-mono text-xs">
         <div className="flex items-center space-x-2">
           <Headphones className="w-4 h-4 text-[#DFBB7D]" />
           <span>CUE DOCK (PFL) STANDBY · Audition drops privately before airing</span>
         </div>
-        <span className="text-[11px] text-[#16181D]/40">Generate or record a drop to load</span>
+        <span className="text-[11px] text-white/40">Generate or record a drop to load</span>
       </div>
     );
   }

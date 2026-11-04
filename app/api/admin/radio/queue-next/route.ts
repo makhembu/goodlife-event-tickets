@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
       artist,
       duration_sec,
       thumbnail_url,
+      playlist_id,
     } = body;
 
     let targetTrack: {
@@ -132,6 +133,20 @@ export async function POST(req: NextRequest) {
           queued_as_up_next: false,
           played_now: true,
         });
+      }
+
+      if (playlist_id && typeof playlist_id === "number") {
+        const posRes = await neonQuery(
+          `SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM radio_playlist_tracks WHERE playlist_id = $1`,
+          [playlist_id]
+        );
+        const nextPos = posRes.rows[0]?.next_pos || 1;
+        await neonQuery(
+          `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT DO NOTHING`,
+          [playlist_id, targetTrack.id, nextPos]
+        );
       }
 
       // Slot into active broadcast playlist as UP NEXT
@@ -200,6 +215,20 @@ export async function POST(req: NextRequest) {
     const createdTrack = upsertRes.rows[0];
     if (!createdTrack) {
       return NextResponse.json({ error: "Failed to record track for ingestion." }, { status: 500 });
+    }
+
+    if (playlist_id && typeof playlist_id === "number") {
+      const posRes = await neonQuery(
+        `SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM radio_playlist_tracks WHERE playlist_id = $1`,
+        [playlist_id]
+      );
+      const nextPos = posRes.rows[0]?.next_pos || 1;
+      await neonQuery(
+        `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT DO NOTHING`,
+        [playlist_id, createdTrack.id, nextPos]
+      );
     }
 
     // Trigger Ingest on Radio Bridge (yt-dlp -> R2 upload -> /api/webhooks/radio-ingest)
