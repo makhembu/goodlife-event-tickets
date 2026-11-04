@@ -66,11 +66,45 @@ export default function HarmonizeModal({
   // Default unchecked so admins never accidentally reset broadcast clock on apply
   const [reanchorBroadcast, setReanchorBroadcast] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
 
   // Eligible opener candidates (indexed tracks only)
   const indexedTracks = tracks.filter(
     (t) => t.bpm && t.musical_key && /^(1[0-2]|[1-9])[AB]$/i.test(t.musical_key.trim())
   );
+
+  const handleRunAnalysis = async (forceAll = false) => {
+    setAnalyzing(true);
+    setError(null);
+    setAnalysisStatus("Connecting to .29 via Cloudflare tunnel to calculate BPM & Camelot Keys...");
+    try {
+      const res = await fetch(`/api/admin/radio/playlists/${playlist.id}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forceAll }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Analysis failed");
+      }
+      setAnalysisStatus(data.message || `Analyzed ${data.analyzedCount} tracks.`);
+      if (onApplied) onApplied();
+      await fetchHarmonizePreview(selectedOpenerId);
+    } catch (err: any) {
+      setError(err.message || "Failed to analyze playlist audio metadata");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleRecalculate = () => {
+    if (indexedTracks.length === 0) {
+      handleRunAnalysis();
+    } else {
+      fetchHarmonizePreview(selectedOpenerId);
+    }
+  };
 
   const fetchHarmonizePreview = async (openerId?: number | null) => {
     setLoading(true);
@@ -185,6 +219,44 @@ export default function HarmonizeModal({
             </div>
           )}
 
+          {/* Audio Intelligence / Tunnel BPM & Key Calculation Box */}
+          {(indexedTracks.length < tracks.length || error) && (
+            <div className="p-4 bg-[#DFBB7D]/10 border-2 border-[#DFBB7D] rounded-xl space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-[#DFBB7D]" />
+                  <span>Audio Intelligence & Harmonic Indexing (.29 Tunnel)</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/10 text-white/80 border border-white/20">
+                  {indexedTracks.length} / {tracks.length} Tracks Indexed
+                </span>
+              </div>
+              <p className="text-[11px] text-white/80 leading-relaxed font-mono">
+                {indexedTracks.length === 0
+                  ? "None of the tracks in this playlist have verified BPM and Camelot Key metadata. Click below to automatically calculate BPM and harmonic keys via the Cloudflare Tunnel to the .29 home server."
+                  : `${tracks.length - indexedTracks.length} track(s) in this playlist still need BPM & Camelot key calculation.`}
+              </p>
+              {analysisStatus && (
+                <div className="text-[11px] font-mono text-[#DFBB7D] flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>{analysisStatus}</span>
+                </div>
+              )}
+              <button
+                onClick={() => handleRunAnalysis(false)}
+                disabled={analyzing || loading}
+                className="w-full py-2.5 px-4 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${analyzing ? "animate-spin" : ""}`} />
+                <span>
+                  {analyzing
+                    ? "Calculating BPM & Keys on .29 via Tunnel..."
+                    : `⚡ Calculate BPM & Camelot Keys (${tracks.length - indexedTracks.length || tracks.length} Tracks)`}
+                </span>
+              </button>
+            </div>
+          )}
+
           {/* On-Air Warning */}
           {playlist.is_broadcast_active && (
             <div className="p-3 bg-[#DFBB7D]/10 border-2 border-[#DFBB7D] text-[#DFBB7D] space-y-2">
@@ -230,12 +302,12 @@ export default function HarmonizeModal({
             </div>
 
             <button
-              onClick={() => fetchHarmonizePreview(selectedOpenerId)}
-              disabled={loading}
+              onClick={handleRecalculate}
+              disabled={loading || analyzing}
               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[11px] flex items-center space-x-1.5"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>Recalculate</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading || analyzing ? "animate-spin" : ""}`} />
+              <span>{indexedTracks.length === 0 ? "Calculate BPM / Keys" : "Recalculate"}</span>
             </button>
           </div>
 

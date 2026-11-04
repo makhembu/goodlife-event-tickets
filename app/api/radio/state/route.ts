@@ -101,7 +101,6 @@ export async function GET() {
           FROM radio_sets
           WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
           ORDER BY display_order ASC, id ASC
-          LIMIT 60
         `);
         rawSets = setsRes.rows || [];
       }

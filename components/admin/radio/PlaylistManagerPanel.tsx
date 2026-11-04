@@ -81,6 +81,8 @@ export default function PlaylistManagerPanel({
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [showHarmonizeModal, setShowHarmonizeModal] = useState(false);
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
+  const [selectedBulkTrackIds, setSelectedBulkTrackIds] = useState<Set<number>>(new Set());
+  const [bulkAdding, setBulkAdding] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const handleUndoReorder = async () => {
@@ -252,6 +254,48 @@ export default function PlaylistManagerPanel({
       await fetchPlaylists();
     } catch (err: any) {
       showBanner(err.message || "Network error", "error");
+    }
+  };
+
+  const handleToggleTrackSelection = (trackId: number) => {
+    setSelectedBulkTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) next.delete(trackId);
+      else next.add(trackId);
+      return next;
+    });
+  };
+
+  const handleSelectAllAvailable = () => {
+    setSelectedBulkTrackIds(new Set(availableTracks.map((t) => t.id)));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedBulkTrackIds(new Set());
+  };
+
+  const handleBulkAddTracks = async () => {
+    if (!selectedPlaylistId || selectedBulkTrackIds.size === 0) return;
+    try {
+      setBulkAdding(true);
+      const res = await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_ids: Array.from(selectedBulkTrackIds) }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showBanner(`Successfully added ${selectedBulkTrackIds.size} tracks to playlist`, "success");
+        setSelectedBulkTrackIds(new Set());
+        fetchPlaylistDetails(selectedPlaylistId);
+        fetchPlaylists();
+      } else {
+        showBanner(data.error || "Failed to bulk add tracks", "error");
+      }
+    } catch (err: any) {
+      showBanner(err.message || "Network error", "error");
+    } finally {
+      setBulkAdding(false);
     }
   };
 
@@ -611,51 +655,109 @@ export default function PlaylistManagerPanel({
               {/* Add Tracks Drawer */}
               {showAddTracks && (
                 <div className="p-4 rounded-2xl bg-[#121316] border-2 border-white/20 space-y-3">
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
-                    <input
-                      type="text"
-                      placeholder="Search music library to add..."
-                      value={trackSearchQuery}
-                      onChange={(e) => setTrackSearchQuery(e.target.value)}
-                      className="w-full bg-[#1A1D24] border-2 border-white/20 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
-                    />
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                      <input
+                        type="text"
+                        placeholder="Search music library to add..."
+                        value={trackSearchQuery}
+                        onChange={(e) => setTrackSearchQuery(e.target.value)}
+                        className="w-full bg-[#1A1D24] border-2 border-white/20 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSelectAllAvailable}
+                        disabled={availableTracks.length === 0}
+                        className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white text-[11px] font-mono font-bold uppercase transition-all disabled:opacity-40"
+                      >
+                        Select All ({availableTracks.length})
+                      </button>
+                      {selectedBulkTrackIds.size > 0 && (
+                        <button
+                          onClick={handleClearSelection}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-[11px] font-mono font-bold uppercase transition-all"
+                        >
+                          Clear ({selectedBulkTrackIds.size})
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                  {/* Bulk Action Sticky Bar */}
+                  {selectedBulkTrackIds.size > 0 && (
+                    <div className="p-3 bg-[#DFBB7D]/15 border-2 border-[#DFBB7D] rounded-xl flex items-center justify-between gap-3 animate-fadeIn">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-[#DFBB7D]" />
+                        <span className="text-xs font-mono font-bold text-white">
+                          <span className="text-[#DFBB7D] font-black">{selectedBulkTrackIds.size}</span> tracks selected
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleBulkAddTracks}
+                        disabled={bulkAdding}
+                        className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        {bulkAdding ? "Adding Tracks..." : `➕ Bulk Add (${selectedBulkTrackIds.size}) Songs to Playlist`}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
                     {availableTracks.length === 0 ? (
-                      <div className="text-center py-4 text-xs font-mono text-white/60">
+                      <div className="text-center py-6 text-xs font-mono text-white/60">
                         {trackSearchQuery ? "No matching tracks found." : "All library tracks are already in this playlist."}
                       </div>
                     ) : (
-                      availableTracks.slice(0, 30).map((t) => (
-                        <div
-                          key={t.id}
-                          className="p-2.5 rounded-xl bg-[#1A1D24] border border-white/15 flex items-center justify-between gap-3 hover:border-[#DFBB7D]"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            {t.cover_url && (
-                              <img
-                                src={t.cover_url}
-                                alt={t.title}
-                                className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/20"
+                      availableTracks.map((t) => {
+                        const isSelected = selectedBulkTrackIds.has(t.id);
+                        return (
+                          <div
+                            key={t.id}
+                            onClick={() => handleToggleTrackSelection(t.id)}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                              isSelected
+                                ? "bg-[#DFBB7D]/15 border-[#DFBB7D]"
+                                : "bg-[#1A1D24] border-white/15 hover:border-white/40"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleTrackSelection(t.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-4 h-4 accent-[#DFBB7D] rounded cursor-pointer shrink-0"
                               />
-                            )}
-                            <div className="min-w-0">
-                              <div className="text-xs font-mono font-bold text-white truncate">{t.title}</div>
-                              <div className="text-[10px] font-mono text-[#DFBB7D] truncate">
-                                {t.dj_name} • {t.duration}
+                              {t.cover_url && (
+                                <img
+                                  src={t.cover_url}
+                                  alt={t.title}
+                                  className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/20"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div className="text-xs font-mono font-bold text-white truncate">{t.title}</div>
+                                <div className="text-[10px] font-mono text-[#DFBB7D] truncate">
+                                  {t.dj_name} • {t.duration}
+                                </div>
                               </div>
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddTrack(t.id);
+                              }}
+                              className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] hover:bg-[#F2CE8A] rounded-lg text-[10px] font-mono font-black uppercase shrink-0 transition-all shadow-sm"
+                            >
+                              + Add
+                            </button>
                           </div>
-                          <button
-                            onClick={() => handleAddTrack(t.id)}
-                            className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] hover:bg-[#F2CE8A] rounded-lg text-[10px] font-mono font-black uppercase shrink-0 transition-all shadow-sm"
-                          >
-                            + Add
-                          </button>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>

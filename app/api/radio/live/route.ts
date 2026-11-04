@@ -69,31 +69,16 @@ async function getTimelineFallback() {
       activatedAt = playlistRes.rows[0].activated_at;
       activePlaylistName = playlistRes.rows[0].playlist_name;
     } else {
-      // If no playlist explicitly marked active, activate and lock primary broadcast playlist (e.g. Millennial Hip-Hop Anthems #2)
-      const defaultPlRes = await neonQuery(`
-        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
-               s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
-        FROM radio_playlists p
-        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
-        WHERE p.deleted_at IS NULL AND p.id = 2
-        ORDER BY pt.position ASC, pt.id ASC
-      `).catch(() => ({ rows: [] }));
-
-      if (defaultPlRes.rows.length > 0) {
-        sets = defaultPlRes.rows;
-        activatedAt = defaultPlRes.rows[0].activated_at || new Date().toISOString();
-        activePlaylistName = defaultPlRes.rows[0].playlist_name;
-        neonQuery(`UPDATE radio_playlists SET is_broadcast_active = true, activated_at = NOW(), updated_at = NOW() WHERE id = 2`).catch(() => {});
-      } else {
-        const setsRes = await neonQuery(`
-          SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
-          FROM radio_sets
-          WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
-          ORDER BY display_order ASC, id ASC
-        `);
-        sets = setsRes.rows || [];
-      }
+      // Full Catalog AutoDJ rotation across all library tracks (no playlist locked)
+      const setsRes = await neonQuery(`
+        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+        FROM radio_sets
+        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
+        ORDER BY display_order ASC, id ASC
+      `);
+      sets = setsRes.rows || [];
+      activatedAt = null;
+      activePlaylistName = null;
     }
 
     if (sets.length === 0) return null;

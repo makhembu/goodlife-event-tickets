@@ -272,4 +272,63 @@ export async function bridgeMasterAudioFfmpeg(
   return null;
 }
 
+export interface BridgeAnalyzeResult {
+  success: boolean;
+  track_id?: number;
+  bpm: number;
+  musical_key: string;
+  key_source: "analyzed";
+  energy: number;
+  confidence: number;
+  duration_sec: number;
+}
+
+export async function bridgeAnalyzeAudio(payload: {
+  track_id?: number;
+  audio_url: string;
+  genre?: string;
+  is_full_set?: boolean;
+}): Promise<{ ok: boolean; data?: BridgeAnalyzeResult; error?: string }> {
+  const bodyStr = JSON.stringify(payload);
+  const { timestamp, signature } = signRequest(bodyStr);
+
+  const candidateUrls = [
+    process.env.RADIO_BRIDGE_LAN_URL || "http://192.168.100.29:8283",
+    BRIDGE_BASE_URL,
+  ];
+
+  for (const baseUrl of candidateUrls) {
+    if (!baseUrl) continue;
+    const cleanBase = baseUrl.replace(/\/+$/, "");
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+    try {
+      const res = await fetch(`${cleanBase}/api/radio/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Bridge-Timestamp": timestamp,
+          "X-Bridge-Signature": signature,
+          "X-Goodlife-Timestamp": timestamp,
+          "X-Goodlife-Radio-Key": signature,
+        },
+        body: bodyStr,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, data };
+      }
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      console.warn(`[bridge-client] Analyze attempt failed on ${cleanBase}:`, err.message);
+    }
+  }
+
+  return { ok: false, error: "Failed to reach audio analyzer on .29 bridge or Cloudflare tunnel" };
+}
+
 export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };
