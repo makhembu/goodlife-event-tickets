@@ -100,8 +100,13 @@ function isValidScript(s?: string | null): boolean {
   return stripped.length >= 25 && words.length >= 6;
 }
 
+function pickRandom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
 /**
  * Deterministic localized Sheng / Swahili / English DJ drop generator fallback
+ * Provides dynamic randomized variations so clicking never repeats the exact same script
  */
 function generateDeterministicScript(
   prompt: string,
@@ -134,27 +139,60 @@ function generateDeterministicScript(
     pr.includes("goodlife")
   ) {
     if (p.includes("sudi") || p.includes("swahili")) {
-      return `[confident] Mambo vipi watu wangu! Ni DJ Sudi hapa. ${ctx.date}, tuko ${ctx.venue} kwa vibe ya ${ctx.event_name}. Tiketi ni ${ctx.price} pekee kupitia ${ticketUrlSpoken}. Usikose manze!`;
+      return pickRandom([
+        `[confident] Mambo vipi watu wangu! Ni DJ Sudi hapa. ${ctx.date}, tuko ${ctx.venue} kwa vibe ya ${ctx.event_name}. Tiketi ni ${ctx.price} pekee kupitia ${ticketUrlSpoken}. Usikose manze!`,
+        `[warm tone] Salamu kwa wana 254! Ni DJ Sudi. ${ctx.date} tunakutana ${ctx.venue} kwa ${ctx.event_name}. Muziki mzuri na mandhari tulivu, pass ni ${ctx.price} kwa ${ticketUrlSpoken}. Wahi yako mapema!`,
+        `[confident] DJ Sudi ndani ya nyumba! ${ctx.date} vibe yote inahamia ${ctx.venue}. Usibaki nyuma, tiketi ni ${ctx.price} pekee kwa ${ticketUrlSpoken}. Tukutane kule!`,
+      ]);
     }
     if (p.includes("cheche") || p.includes("sheng")) {
-      return `[hype] Yoo wasee wa Nairobi na Thika! MC Cheche pande hii. ${ctx.date} tunaruka ${ctx.venue} kwa ${ctx.event_name}! Form ni ${ctx.price} pekee. Wahi tiketi yako sasa hivi kwa ${ticketUrlSpoken}!`;
+      return pickRandom([
+        `[hype] Yoo wasee wa Nairobi na Thika! MC Cheche pande hii. ${ctx.date} tunaruka ${ctx.venue} kwa ${ctx.event_name}! Form ni ${ctx.price} pekee. Wahi tiketi yako sasa hivi kwa ${ticketUrlSpoken}!`,
+        `[energetic] Wanavybe maze! MC Cheche on the mic. ${ctx.date} form ndio hiyo pale ${ctx.venue}. Pass yako ni ${ctx.price} tu kwenye ${ticketUrlSpoken}. We outside kabisa!`,
+        `[hype] Big shouts kwa wanajeshi wote! ${ctx.date} tukutane ${ctx.venue} tuchill river-side. Entry ni ${ctx.price} pekee via ${ticketUrlSpoken}. Piga luku ucome!`,
+      ]);
     }
     if (p.includes("amina") || p.includes("sunset")) {
-      return `[warm tone] Sunset vibes on ${ctx.station_name}. Join us ${ctx.date} at ${ctx.venue} for ${ctx.event_name}. River breeze, cold drinks, and advance passes are ${ctx.price} at ${ticketUrlSpoken}.`;
+      return pickRandom([
+        `[warm tone] Sunset vibes on ${ctx.station_name}. Join us ${ctx.date} at ${ctx.venue} for ${ctx.event_name}. River breeze, cold drinks, and advance passes are ${ctx.price} at ${ticketUrlSpoken}.`,
+        `[relaxed] Golden hour in Nairobi. Join the vibe this ${ctx.date} at ${ctx.venue} for ${ctx.event_name}. Passes are ${ctx.price} on ${ticketUrlSpoken}. See you by the river.`,
+      ]);
     }
-    return `[hype] Yo, what's good Thika! DJ Fusion in the mix. ${ctx.date}, we park and chill at ${ctx.venue}! Entry ni ${ctx.price} pekee. Grab your advance passes at ${ticketUrlSpoken}. We outside!`;
+    if (p.includes("bwana") || p.includes("mkubwa")) {
+      return pickRandom([
+        `[relaxed] Nairobi usiku sana. Hewani ni ${ctx.station_name}. ${ctx.date} tukutane ${ctx.venue} kwa ${ctx.event_name}. Tiketi ni ${ctx.price} pekee kupitia ${ticketUrlSpoken}. Vibe safi bila rush.`,
+        `[confident] Bwana Mkubwa hewani. ${ctx.date} safari ni moja tu hadi ${ctx.venue}. Muziki mzuri, mazingira tulivu. Pata tiketi yako ya ${ctx.price} kwa ${ticketUrlSpoken}.`,
+      ]);
+    }
+    // Default / DJ Fusion variations
+    return pickRandom([
+      `[hype] Yo, what's good Thika! DJ Fusion in the mix. ${ctx.date}, we park and chill at ${ctx.venue}! Entry ni ${ctx.price} pekee. Grab your advance passes at ${ticketUrlSpoken}. We outside!`,
+      `[energetic] Squad, it's your boy DJ Fusion! Form ya ${ctx.date} ni Park & Chill kule ${ctx.venue}. Vibe safi, good music, na pass ni ${ctx.price} pekee kwa ${ticketUrlSpoken}. Kaa chonjo!`,
+      `[hype] Maze wasee, DJ Fusion ndani ya 254! ${ctx.date} tukutane ${ctx.venue} kwa vibe ya ${ctx.event_name}. Tiketi ni ${ctx.price} tu via ${ticketUrlSpoken}. Come through tufurahi!`,
+      `[confident] Yo Thika massive! DJ Fusion on the decks. Don't sleep on ${ctx.date} at ${ctx.venue}. Advance passes ziko live for ${ctx.price} on ${ticketUrlSpoken}. Twendeni wote!`,
+      `[hype] Big energy kutoka kwa DJ Fusion! ${ctx.event_name} ndio kusema ${ctx.date} pale ${ctx.venue}. Shika yako sasa hivi kwa ${ticketUrlSpoken} kwa ${ctx.price} pekee!`,
+    ]);
   }
 
   // If prompt is about up next track
   if (pr.includes("next") || pr.includes("song") || pr.includes("track") || pr.includes("coming up")) {
     const nextSong = ctx.up_next || "pure festival fire";
     if (p.includes("sudi")) {
-      return `[confident] Hii ni ${ctx.station_name}. Ngoma inayofuata ni kali kinoma: ${nextSong}. Kaa hapo hapo!`;
+      return pickRandom([
+        `[confident] Hii ni ${ctx.station_name}. Ngoma inayofuata ni kali kinoma: ${nextSong}. Kaa hapo hapo!`,
+        `[warm tone] DJ Sudi hewani. Inayofuata sasa hivi ni banger safi: ${nextSong}. Shika frequency!`,
+      ]);
     }
     if (p.includes("cheche")) {
-      return `[energetic] Moto unazidi kuwaka! Inayodrop sasa hivi ni ${nextSong}. Inua mikono juu, we outside!`;
+      return pickRandom([
+        `[energetic] Moto unazidi kuwaka! Inayodrop sasa hivi ni ${nextSong}. Inua mikono juu, we outside!`,
+        `[hype] Wazi wazi! Track inayokuja inaitwa ${nextSong}. Volume juu wasee!`,
+      ]);
     }
-    return `[hype] You are locked into ${ctx.station_name}! Up next, brand new heat: ${nextSong}. Crank up that volume!`;
+    return pickRandom([
+      `[hype] You are locked into ${ctx.station_name}! Up next, brand new heat: ${nextSong}. Crank up that volume!`,
+      `[energetic] DJ Fusion loading up the decks. Up next is ${nextSong}. Let's get it!`,
+    ]);
   }
 
   // Default hype drop
@@ -167,7 +205,13 @@ function generateDeterministicScript(
   if (p.includes("amina")) {
     return `[relaxed] Chilled beats, golden hour warmth, right here on ${ctx.station_name}. Keep it locked for the finest festival energy.`;
   }
-  return `[hype] Yo Nairobi! DJ Fusion on the decks. Non-stop festival anthems 24/7 on ${ctx.station_name}. We outside!`;
+  if (p.includes("bwana")) {
+    return `[relaxed] Frequencies za ukweli, bila haraka. Bwana Mkubwa on the airwaves, GOODLIFE Radio 254.`;
+  }
+  return pickRandom([
+    `[hype] Yo Nairobi! DJ Fusion on the decks. Non-stop festival anthems 24/7 on ${ctx.station_name}. We outside!`,
+    `[confident] Straight bangers only on ${ctx.station_name}. DJ Fusion keeping your playlist lively all day, all night!`,
+  ]);
 }
 
 /**
@@ -193,8 +237,8 @@ PERSONA EXAMPLES:
   "[energetic] Wazi wazi wasee wa Nairobi na Thika! MC Cheche on the mic. This Saturday form ni Marara Camp. Entry ni soo tano tu! Wahi tiketi yako sasa hivi kwa goodlife.smwhr.space!"
 - If DJ Sudi:
   "[confident] Mambo vipi watu wangu! Ni DJ Sudi hapa. Jumamosi hii tuko Marara Camp kwa muziki safi. Tiketi ni mia tano pekee kupitia goodlife.smwhr.space. Usipitwe!"
-- If Amina:
-  "[warm tone] Good evening Nairobi. You're locked into the sunset sessions with Amina. Join us this Saturday at Marara Camp for river vibes and great music. Tickets are 500 shillings at goodlife.smwhr.space."
+- If Bwana Mkubwa:
+  "[relaxed] Nairobi usiku sana. Hewani ni GOODLIFE Radio 254. Safe frequencies, no rush, vibe safi hadi che. Tiketi ni mia tano pekee kwa goodlife.smwhr.space."
 
 GROUND TRUTH CONTEXT TO USE:
 - Event: ${ctx.event_name}
@@ -207,10 +251,44 @@ ${ctx.up_next ? `- Up Next Track: ${ctx.up_next}` : ""}
 
 Return ONLY the spoken script starting with the emotion tag. No quotes, no markdown, no conversational commentary.`;
 
-  // 1. Gemini
+  // 1. Primary: OpenRouter (meta-llama/llama-3.3-70b-instruct)
+  const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (openrouterKey) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openrouterKey}`,
+        },
+        body: JSON.stringify({
+          model: "meta-llama/llama-3.3-70b-instruct",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Write a 25-to-35 word radio drop for persona "${persona}" based on: ${userPrompt}` },
+          ],
+          temperature: 0.85,
+          max_tokens: 160,
+        }),
+        signal: AbortSignal.timeout(4500),
+      });
+
+      if (res.ok) {
+        const j = await res.json();
+        const text = j.choices?.[0]?.message?.content?.trim();
+        if (isValidScript(text)) {
+          return text!.replace(/^["“”']|["“”']$/g, "").trim();
+        }
+      }
+    } catch (err: any) {
+      console.warn("[write-script] OpenRouter failed:", err?.message);
+    }
+  }
+
+  // 2. Secondary: Gemini (gemini-2.0-flash, gemini-1.5-flash)
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   if (geminiKey) {
-    for (const model of ["gemini-2.5-flash", "gemini-3.8-flash"]) {
+    for (const model of ["gemini-2.0-flash", "gemini-1.5-flash"]) {
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
@@ -220,7 +298,7 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
             body: JSON.stringify({
               contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nUser Request: ${userPrompt}\nPersona: ${persona}` }] }],
               generationConfig: {
-                temperature: 0.75,
+                temperature: 0.85,
                 maxOutputTokens: 160,
               },
             }),
@@ -242,38 +320,38 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
     }
   }
 
-  // 2. Groq
+  // 3. Tertiary: Groq
   const groqKey = process.env.GROQ_API_KEY?.trim() || process.env.GROQ_API_KEY_FALLBACK?.trim();
   if (groqKey) {
-    try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: `Write a 25-word radio drop for persona "${persona}" based on: ${userPrompt}` },
-          ],
-          max_tokens: 160,
-          temperature: 0.75,
-        }),
-        signal: AbortSignal.timeout(4000),
-      });
-      if (res.ok) {
-        const j = await res.json();
-        const text = j.choices?.[0]?.message?.content?.trim();
-        if (isValidScript(text)) {
-          return text!.replace(/^["“”']|["“”']$/g, "").trim();
-        } else {
-          console.warn(`[write-script] Groq returned incomplete script: "${text}"`);
+    for (const model of ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]) {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: `Write a 25-word radio drop for persona "${persona}" based on: ${userPrompt}` },
+            ],
+            max_tokens: 160,
+            temperature: 0.85,
+          }),
+          signal: AbortSignal.timeout(4000),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          const text = j.choices?.[0]?.message?.content?.trim();
+          if (isValidScript(text)) {
+            return text!.replace(/^["“”']|["“”']$/g, "").trim();
+          }
         }
+      } catch (err: any) {
+        console.warn(`[write-script] Groq (${model}) failed:`, err?.message);
       }
-    } catch (err: any) {
-      console.warn("[write-script] Groq failed:", err?.message);
     }
   }
 
