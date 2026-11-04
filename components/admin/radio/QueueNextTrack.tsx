@@ -49,6 +49,8 @@ export default function QueueNextTrack() {
     drop_script: string;
     queued: boolean;
     played_now?: boolean;
+    ingesting?: boolean;
+    message?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,13 +160,57 @@ export default function QueueNextTrack() {
         throw new Error(data.error || `Server error (${res.status})`);
       }
 
-      setResult({
-        artist: data.artist || track?.artist || "Goodlife Ingest",
-        title: data.title || track?.title || "Track Added",
-        drop_script: data.drop_script || "",
-        queued: Boolean(data.queued_as_up_next),
-        played_now: Boolean(data.played_now),
-      });
+      if (data.status === "ingesting") {
+        setResult({
+          artist: data.artist || track?.artist || "Goodlife Ingest",
+          title: data.title || track?.title || "Track Added",
+          drop_script: data.drop_script || "",
+          queued: false,
+          played_now: false,
+          ingesting: true,
+          message: data.message || "Downloading from YouTube & mirroring to Cloudflare R2 (-14 LUFS)...",
+        });
+
+        // Background poll every 3 seconds until track is ready on R2
+        const targetVideoId = data.video_id;
+        const targetTrackId = data.track_id;
+        let attempts = 0;
+        const pollTimer = setInterval(async () => {
+          attempts++;
+          if (attempts > 30) {
+            clearInterval(pollTimer);
+            return;
+          }
+          try {
+            const pollParam = targetVideoId ? `video_id=${targetVideoId}` : `track_id=${targetTrackId}`;
+            const pollRes = await fetch(`/api/admin/radio/queue-next?${pollParam}`);
+            if (pollRes.ok) {
+              const pollData = await pollRes.json();
+              if (pollData.is_ready) {
+                clearInterval(pollTimer);
+                setResult({
+                  artist: pollData.track?.artist || data.artist,
+                  title: pollData.track?.title || data.title,
+                  drop_script: data.drop_script || "",
+                  queued: true,
+                  played_now: action === "play_now",
+                  ingesting: false,
+                  message: "✓ Mirror to Cloudflare R2 complete! Track queued on air as UP NEXT.",
+                });
+              }
+            }
+          } catch {}
+        }, 3000);
+      } else {
+        setResult({
+          artist: data.artist || track?.artist || "Goodlife Ingest",
+          title: data.title || track?.title || "Track Added",
+          drop_script: data.drop_script || "",
+          queued: Boolean(data.queued_as_up_next),
+          played_now: Boolean(data.played_now),
+          ingesting: false,
+        });
+      }
 
       // Clear search states on success
       setInputValue("");
@@ -211,19 +257,37 @@ export default function QueueNextTrack() {
       )}
 
       {result && (
-        <div className="p-3 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs space-y-1.5">
+        <div
+          className={`p-3 border font-mono text-xs space-y-1.5 ${
+            result.ingesting
+              ? "bg-[#DFBB7D]/10 border-[#DFBB7D] text-[#DFBB7D]"
+              : "bg-[#10B981]/20 border-[#10B981] text-emerald-200"
+          }`}
+        >
           <div className="flex items-center space-x-1.5 font-bold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>
-              {result.played_now
-                ? "⚡ Track is now playing live on broadcast!"
-                : "✓ Track successfully queued as UP NEXT!"}
-            </span>
+            {result.ingesting ? (
+              <>
+                <RefreshCw className="w-4 h-4 text-[#DFBB7D] animate-spin shrink-0" />
+                <span>⚡ INGESTING TO CLOUDFLARE R2 · Audio mastering to -14 LUFS...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  {result.played_now
+                    ? "⚡ Track is now playing live on broadcast!"
+                    : "✓ Track mirrored to Cloudflare R2 & queued as UP NEXT!"}
+                </span>
+              </>
+            )}
           </div>
-          <div className="bg-black/30 p-2 border border-emerald-500/30 text-[11px]">
+          <div className="bg-black/30 p-2 border border-white/10 text-[11px]">
             <p>
-              <span className="text-emerald-400 font-bold">Track:</span> {result.artist} - {formatTrackTitle(result.title)}
+              <span className="text-white/60 font-bold">Track:</span> {result.artist} - {formatTrackTitle(result.title)}
             </p>
+            {result.message && (
+              <p className="text-white/80 mt-1 italic">{result.message}</p>
+            )}
             {result.drop_script && (
               <p className="text-white/80 mt-1 italic">&ldquo;{result.drop_script}&rdquo;</p>
             )}

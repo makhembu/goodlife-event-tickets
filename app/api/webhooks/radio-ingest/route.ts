@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { neonQuery } from "@/lib/supabase-db";
+import { slotTrackAsPlaylistUpNext } from "@/lib/radio/playlist-slotter";
 
 const rawSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
 const BRIDGE_SECRET =
@@ -90,6 +91,15 @@ export async function POST(req: NextRequest) {
     ];
 
     const { rows } = await neonQuery(query, params);
+    if (rows && rows.length > 0) {
+      const trackId = rows[0].id;
+      // Automatically slot newly mastered track into the active playlist as UP NEXT
+      try {
+        await slotTrackAsPlaylistUpNext(trackId);
+      } catch (slotErr) {
+        console.warn("[radio-ingest webhook] Auto-slot playlist warning:", slotErr);
+      }
+    }
     return NextResponse.json({ success: true, item: rows[0] });
   } catch (err: any) {
     console.error("[radio-ingest webhook] Error:", err);
