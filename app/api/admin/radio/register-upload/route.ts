@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
     const bitrate = body.bitrate ?? 192;
     const event_id = body.event_id || body.eventId || 2;
     const is_high_quality = body.is_high_quality ?? body.isHighQuality;
+    const is_full_set = Boolean(body.is_full_set ?? body.isFullSet);
+    const bpm = typeof body.bpm === "number" && body.bpm > 0 ? Math.round(body.bpm) : null;
+    const musical_key = body.musical_key || body.musicalKey || null;
     const targetPlaylistId = body.playlist_id ? Number(body.playlist_id) : (body.playlistId ? Number(body.playlistId) : null);
 
     if (!title || typeof title !== "string" || !title.trim()) {
@@ -41,14 +44,14 @@ export async function POST(req: NextRequest) {
       INSERT INTO radio_sets (
         event_id, title, dj_name, audio_url, audio_high_url, r2_key, r2_high_key, cover_url, 
         duration, duration_sec, genre, file_size, file_size_high, bitrate, bitrate_high, 
-        source_type, processing_status, display_order, is_active
+        source_type, processing_status, display_order, is_active, is_full_set, bpm, musical_key
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, $15,
-        'r2', 'ready', 0, true
+        'r2', 'ready', 0, true, $16, $17, $18
       )
-      RETURNING id, title, dj_name, audio_url, r2_key, created_at;
+      RETURNING id, title, dj_name, audio_url, r2_key, created_at, is_full_set, bpm, musical_key;
     `;
 
     const params = [
@@ -67,6 +70,9 @@ export async function POST(req: NextRequest) {
       isHq ? targetFileSize : 0,
       targetBitrate,
       isHq ? targetBitrate : 320,
+      is_full_set,
+      bpm,
+      musical_key,
     ];
 
     const { rows } = await neonQuery(query, params);

@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (action === "update") {
-      const { id, title, dj_name, genre, is_active, bpm, musical_key, energy, is_full_set, key_source } = body;
+      const { id, title, dj_name, genre, cover_url, is_active, bpm, musical_key, energy, is_full_set, key_source } = body;
       if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
       const updates: string[] = [];
@@ -76,6 +76,10 @@ export async function PATCH(req: NextRequest) {
       if (genre !== undefined) {
         updates.push(`genre = $${pIdx++}`);
         params.push(genre);
+      }
+      if (cover_url !== undefined) {
+        updates.push(`cover_url = $${pIdx++}`);
+        params.push(cover_url || "");
       }
       if (is_active !== undefined) {
         updates.push(`is_active = $${pIdx++}`);

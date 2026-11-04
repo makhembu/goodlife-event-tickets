@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
   Radio,
@@ -24,6 +24,11 @@ import {
   Square,
   RadioTower,
   Mic,
+  Sliders,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  X,
 } from "lucide-react";
 import { RadioSet, IngestJobTrack, RadioSettings, BroadcastMode } from "@/lib/radio/types";
 import RadioConsoleLayout from "@/components/admin/radio/RadioConsoleLayout";
@@ -40,6 +45,7 @@ import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
 import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor";
 import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
+import TrackEditDrawer from "@/components/admin/radio/TrackEditDrawer";
 import { SoundboardProvider } from "@/context/SoundboardContext";
 import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
 import { useRadio } from "@/context/RadioContext";
@@ -115,6 +121,13 @@ export default function AdminRadioPage() {
   const [uploadDj, setUploadDj] = useState("");
   const [uploadGenre, setUploadGenre] = useState("Afro House");
   const [isHighQuality, setIsHighQuality] = useState(true);
+  const [uploadDurationSec, setUploadDurationSec] = useState<number | null>(null);
+  const [uploadIsFullSet, setUploadIsFullSet] = useState(false);
+  const [libSearchQuery, setLibSearchQuery] = useState("");
+  const [libSelectedGenre, setLibSelectedGenre] = useState("ALL");
+  const [libPage, setLibPage] = useState(1);
+  const libPageSize = 25;
+  const [editingTrack, setEditingTrack] = useState<RadioSet | null>(null);
   const [uploadTargetPlaylistId, setUploadTargetPlaylistId] = useState<number | null>(null);
   const [availablePlaylists, setAvailablePlaylists] = useState<{ id: number; name: string; genre: string }[]>([]);
   const [quickAddPlaylistMap, setQuickAddPlaylistMap] = useState<Record<number, number>>({});
@@ -356,7 +369,8 @@ export default function AdminRadioPage() {
           djName: uploadDj.trim() || "Goodlife Resident",
           genre: uploadGenre,
           audioUrl: publicUrl,
-          durationSec: 180,
+          durationSec: uploadDurationSec || 180,
+          is_full_set: uploadIsFullSet,
           isHighQuality,
           playlistId: uploadTargetPlaylistId,
         }),
@@ -372,6 +386,8 @@ export default function AdminRadioPage() {
       setUploadFile(null);
       setUploadTitle("");
       setUploadDj("");
+      setUploadDurationSec(null);
+      setUploadIsFullSet(false);
       fetchLibrary();
     } catch (err: any) {
       setUploadState("error");
@@ -452,6 +468,40 @@ export default function AdminRadioPage() {
       });
     } catch {}
   };
+
+  // Music Library filtering & pagination
+  const filteredLibrary = useMemo(() => {
+    let list = library;
+    if (libSelectedGenre && libSelectedGenre !== "ALL") {
+      list = list.filter((s) => s.genre?.toLowerCase() === libSelectedGenre.toLowerCase());
+    }
+    if (libSearchQuery.trim()) {
+      const q = libSearchQuery.toLowerCase();
+      list = list.filter((s) =>
+        s.title?.toLowerCase().includes(q) ||
+        s.dj_name?.toLowerCase().includes(q) ||
+        s.genre?.toLowerCase().includes(q) ||
+        (s.bpm && String(s.bpm).includes(q))
+      );
+    }
+    return list;
+  }, [library, libSelectedGenre, libSearchQuery]);
+
+  const totalLibPages = Math.max(1, Math.ceil(filteredLibrary.length / libPageSize));
+  const currentLibPage = Math.min(libPage, totalLibPages);
+  const paginatedLibrary = useMemo(() => {
+    const start = (currentLibPage - 1) * libPageSize;
+    return filteredLibrary.slice(start, start + libPageSize);
+  }, [filteredLibrary, currentLibPage, libPageSize]);
+
+  // Unique genres for filter pills
+  const availableGenres = useMemo(() => {
+    const set = new Set<string>();
+    library.forEach((s) => {
+      if (s.genre) set.add(s.genre);
+    });
+    return Array.from(set);
+  }, [library]);
 
   return (
     <RadioConsoleLayout
@@ -649,43 +699,74 @@ export default function AdminRadioPage() {
             <form onSubmit={handleDirectUpload} className="space-y-3 font-mono text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] text-white/60 mb-1">SELECT AUDIO FILE (.mp3, .wav, .aac, .m4a)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] text-white/70 font-bold">SELECT AUDIO FILE (.mp3, .wav, .aac, .m4a)</label>
+                    {uploadDurationSec ? (
+                      <span className="text-[10px] text-[#DFBB7D] font-mono font-bold">
+                        ⏱ {Math.floor(uploadDurationSec / 60)}m {uploadDurationSec % 60}s detected
+                      </span>
+                    ) : null}
+                  </div>
                   <input
                     type="file"
                     accept="audio/*"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setUploadFile(f);
+                      if (f) {
+                        if (!uploadTitle.trim()) {
+                          setUploadTitle(f.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "));
+                        }
+                        try {
+                          const url = URL.createObjectURL(f);
+                          const audio = new Audio(url);
+                          audio.onloadedmetadata = () => {
+                            if (audio.duration && isFinite(audio.duration)) {
+                              const d = Math.round(audio.duration);
+                              setUploadDurationSec(d);
+                              if (d >= 1200) {
+                                setUploadIsFullSet(true);
+                              }
+                            }
+                            URL.revokeObjectURL(url);
+                          };
+                        } catch {}
+                      } else {
+                        setUploadDurationSec(null);
+                      }
+                    }}
+                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20 text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-white/60 mb-1">TRACK OR SET TITLE</label>
+                  <label className="block text-[11px] text-white/70 font-bold mb-1">TRACK OR SET TITLE</label>
                   <input
                     type="text"
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
                     placeholder="e.g. Nairobi Sunset Session Pt. 2"
-                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20"
+                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20 text-xs"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-[11px] text-white/60 mb-1">DJ / ARTIST</label>
+                  <label className="block text-[11px] text-white/70 font-bold mb-1">DJ / ARTIST</label>
                   <input
                     type="text"
                     value={uploadDj}
                     onChange={(e) => setUploadDj(e.target.value)}
                     placeholder="e.g. DJ Shax"
-                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20"
+                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20 text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-white/60 mb-1">GENRE</label>
+                  <label className="block text-[11px] text-white/70 font-bold mb-1">GENRE</label>
                   <select
                     value={uploadGenre}
                     onChange={(e) => setUploadGenre(e.target.value)}
-                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20"
+                    className="w-full bg-[#1A1D24] text-white p-2 border border-white/20 text-xs"
                   >
                     <option value="Afro House">Afro House</option>
                     <option value="Amapiano">Amapiano</option>
@@ -700,11 +781,11 @@ export default function AdminRadioPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] text-white/60 mb-1">ADD TO PLAYLIST</label>
+                  <label className="block text-[11px] text-white/70 font-bold mb-1">ADD TO PLAYLIST</label>
                   <select
                     value={uploadTargetPlaylistId ?? ""}
                     onChange={(e) => setUploadTargetPlaylistId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full bg-[#1A1D24] text-[#DFBB7D] font-bold p-2 border border-[#DFBB7D]/40"
+                    className="w-full bg-[#1A1D24] text-[#DFBB7D] font-bold p-2 border border-[#DFBB7D]/40 text-xs"
                   >
                     <option value="">-- No Playlist (Library Only) --</option>
                     {availablePlaylists.map((pl) => (
@@ -714,15 +795,27 @@ export default function AdminRadioPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center space-x-2 pt-6">
-                  <input
-                    type="checkbox"
-                    id="hifi"
-                    checked={isHighQuality}
-                    onChange={(e) => setIsHighQuality(e.target.checked)}
-                    className="accent-[#DFBB7D] w-4 h-4"
-                  />
-                  <label htmlFor="hifi" className="text-white/80 cursor-pointer">Flag as Hi-Fi 320k</label>
+                <div className="flex flex-col justify-center space-y-1.5 pt-2">
+                  <label className="flex items-center space-x-2 text-white/90 cursor-pointer text-xs">
+                    <input
+                      type="checkbox"
+                      id="hifi"
+                      checked={isHighQuality}
+                      onChange={(e) => setIsHighQuality(e.target.checked)}
+                      className="accent-[#DFBB7D] w-4 h-4"
+                    />
+                    <span>Flag as Hi-Fi 320k</span>
+                  </label>
+                  <label className="flex items-center space-x-2 text-[#DFBB7D] cursor-pointer text-xs font-bold">
+                    <input
+                      type="checkbox"
+                      id="fullset"
+                      checked={uploadIsFullSet}
+                      onChange={(e) => setUploadIsFullSet(e.target.checked)}
+                      className="accent-[#DFBB7D] w-4 h-4"
+                    />
+                    <span>Full DJ Mix / Set</span>
+                  </label>
                 </div>
               </div>
 
@@ -741,16 +834,17 @@ export default function AdminRadioPage() {
               <button
                 type="submit"
                 disabled={uploading || !uploadFile}
-                className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold border border-[#16181D] shadow-[2px_2px_0px_#16181D]"
+                className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold border border-[#16181D] shadow-[2px_2px_0px_#16181D] cursor-pointer active:scale-98 transition-all"
               >
                 {uploading ? "UPLOADING TO R2..." : "UPLOAD SET TO STATION"}
               </button>
             </form>
           </div>
 
-          {/* Library Table */}
+          {/* Library Table with Search, Filter & Pagination */}
           <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-5 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
               <div className="flex items-center space-x-2">
                 <ListMusic className="w-5 h-5 text-[#DFBB7D]" />
                 <h3 className="font-mono text-sm font-bold uppercase text-white tracking-wider">
@@ -759,128 +853,327 @@ export default function AdminRadioPage() {
               </div>
               <button
                 onClick={fetchLibrary}
-                className="p-1.5 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] border border-white/20"
+                className="p-1.5 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] border border-white/20 self-start sm:self-auto cursor-pointer"
+                title="Refresh Library"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingLib ? "animate-spin" : ""}`} />
               </button>
             </div>
 
-            <div className="space-y-2">
-              {library.map((set, idx) => (
-                <div
-                  key={set.id}
-                  className="p-3 bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs"
+            {/* Search Bar & Instant Filter */}
+            <div className="space-y-3 font-mono">
+              <div className="relative">
+                <Search className="w-4 h-4 text-[#DFBB7D] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={libSearchQuery}
+                  onChange={(e) => {
+                    setLibSearchQuery(e.target.value);
+                    setLibPage(1);
+                  }}
+                  placeholder="Search tracks by title, artist, genre, or BPM..."
+                  className="w-full bg-[#121316] text-white pl-9 pr-9 py-2 border border-white/20 text-xs focus:outline-none focus:border-[#DFBB7D]"
+                />
+                {libSearchQuery && (
+                  <button
+                    onClick={() => {
+                      setLibSearchQuery("");
+                      setLibPage(1);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Genre Filter Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <button
+                  onClick={() => {
+                    setLibSelectedGenre("ALL");
+                    setLibPage(1);
+                  }}
+                  className={`px-2.5 py-1 font-bold uppercase border cursor-pointer transition-all ${
+                    libSelectedGenre === "ALL"
+                      ? "bg-[#DFBB7D] text-[#16181D] border-[#16181D] shadow-[2px_2px_0px_#16181D]"
+                      : "bg-[#1A1D24] text-white/70 border-white/20 hover:text-white"
+                  }`}
                 >
-                  <div className="flex items-center space-x-3 min-w-0 flex-1 truncate">
-                    <div className="flex flex-col space-y-0.5">
-                      <button
-                        onClick={() => moveTrack(idx, "up")}
-                        disabled={idx === 0}
-                        className="text-white/40 hover:text-white disabled:opacity-20"
-                      >
-                        <ArrowUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => moveTrack(idx, "down")}
-                        disabled={idx === library.length - 1}
-                        className="text-white/40 hover:text-white disabled:opacity-20"
-                      >
-                        <ArrowDown className="w-3 h-3" />
-                      </button>
-                    </div>
-
+                  ALL ({library.length})
+                </button>
+                {availableGenres.map((g) => {
+                  const count = library.filter((s) => s.genre?.toLowerCase() === g.toLowerCase()).length;
+                  return (
                     <button
-                      onClick={() => togglePreview(set.audio_url)}
-                      className="p-2 bg-[#DFBB7D] text-[#16181D] hover:bg-[#F5C842]"
+                      key={g}
+                      onClick={() => {
+                        setLibSelectedGenre(g);
+                        setLibPage(1);
+                      }}
+                      className={`px-2.5 py-1 font-bold uppercase border cursor-pointer transition-all ${
+                        libSelectedGenre.toLowerCase() === g.toLowerCase()
+                          ? "bg-[#DFBB7D] text-[#16181D] border-[#16181D] shadow-[2px_2px_0px_#16181D]"
+                          : "bg-[#1A1D24] text-white/70 border-white/20 hover:text-white"
+                      }`}
                     >
-                      {previewTrackUrl === set.audio_url && isPreviewPlaying ? (
-                        <Pause className="w-3.5 h-3.5" />
-                      ) : (
-                        <Play className="w-3.5 h-3.5" />
-                      )}
+                      {g} ({count})
                     </button>
+                  );
+                })}
+              </div>
 
-                    <div className="truncate">
-                      <div className="font-bold text-white truncate flex items-center space-x-2">
-                        <span className="truncate">{formatTrackTitle(set.title)}</span>
-                        {set.is_full_set && (
-                          <span className="px-1.5 py-0.2 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[8px] font-mono font-bold uppercase shrink-0">
-                            DJ MIX
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#DFBB7D] flex items-center space-x-2 truncate">
-                        <span>{set.dj_name} · {set.genre}</span>
-                        {set.musical_key && (
-                          <span className="px-1 py-0.2 bg-[#DFBB7D]/20 text-[#DFBB7D] border border-[#DFBB7D]/40 font-mono font-bold text-[9px] shrink-0">
-                            {set.musical_key}
-                          </span>
-                        )}
-                        {set.bpm && (
-                          <span className="text-white/60 font-mono text-[9px] shrink-0">
-                            {set.bpm} BPM
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between sm:justify-end space-x-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 w-full sm:w-auto">
-                    <select
-                      value={quickAddPlaylistMap[set.id] ?? ""}
-                      onChange={(e) => setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: Number(e.target.value) }))}
-                      className="bg-[#1A1D24] text-white/90 text-[10px] p-1 border border-white/20"
-                    >
-                      <option value="">+ To Playlist...</option>
-                      {availablePlaylists.map((pl) => (
-                        <option key={pl.id} value={pl.id}>
-                          {pl.name}
-                        </option>
-                      ))}
-                    </select>
-
-                    {quickAddPlaylistMap[set.id] ? (
-                      <button
-                        onClick={async () => {
-                          const plId = quickAddPlaylistMap[set.id];
-                          if (!plId) return;
-                          try {
-                            const res = await fetch(`/api/admin/radio/playlists/${plId}/tracks`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ track_ids: [set.id] }),
-                            });
-                            const d = await res.json();
-                            if (res.ok) {
-                              showMsg(`Added track to ${availablePlaylists.find((p) => p.id === plId)?.name || "playlist"}!`, "success");
-                              setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: 0 }));
-                            } else {
-                              showMsg(d.error || "Failed to add track to playlist", "error");
-                            }
-                          } catch {
-                            showMsg("Network error adding to playlist", "error");
-                          }
-                        }}
-                        className="px-2 py-1 bg-[#DFBB7D] text-[#16181D] text-[10px] font-bold hover:bg-[#F5C842]"
-                      >
-                        ADD
-                      </button>
-                    ) : null}
-
-                    <span className="text-white/50 text-[11px]">{set.duration || "Full Set"}</span>
-                    <button
-                      onClick={() => deleteTrack(set.id)}
-                      className="p-1.5 text-white/30 hover:text-[#E84855]"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              {/* Pagination Bar (Top) */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/10 text-xs text-white/70">
+                <div>
+                  Showing <span className="text-white font-bold">{filteredLibrary.length === 0 ? 0 : (currentLibPage - 1) * libPageSize + 1}</span>–
+                  <span className="text-white font-bold">{Math.min(currentLibPage * libPageSize, filteredLibrary.length)}</span> of{" "}
+                  <span className="text-[#DFBB7D] font-bold">{filteredLibrary.length}</span> sets
+                  {(libSearchQuery || libSelectedGenre !== "ALL") && (
+                    <span className="text-white/40 ml-1"> (filtered from {library.length})</span>
+                  )}
                 </div>
-              ))}
+
+                {totalLibPages > 1 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setLibPage((p) => Math.max(1, p - 1))}
+                      disabled={currentLibPage <= 1}
+                      className="px-2.5 py-1 bg-[#1A1D24] border border-white/20 text-white disabled:opacity-30 hover:bg-white/10 flex items-center gap-1 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                    </button>
+                    <span className="text-white font-mono font-bold">
+                      Page {currentLibPage} of {totalLibPages}
+                    </span>
+                    <button
+                      onClick={() => setLibPage((p) => Math.min(totalLibPages, p + 1))}
+                      disabled={currentLibPage >= totalLibPages}
+                      className="px-2.5 py-1 bg-[#1A1D24] border border-white/20 text-white disabled:opacity-30 hover:bg-white/10 flex items-center gap-1 cursor-pointer"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Track Listing */}
+            <div className="space-y-2">
+              {filteredLibrary.length === 0 ? (
+                <div className="py-12 text-center text-white/50 font-mono text-xs border border-dashed border-white/20 p-6">
+                  No tracks match your current filter or search query.
+                </div>
+              ) : (
+                paginatedLibrary.map((set, idx) => {
+                  const globalIdx = (currentLibPage - 1) * libPageSize + idx;
+                  return (
+                    <div
+                      key={set.id}
+                      className="p-3 bg-[#121316] hover:bg-white/5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 font-mono text-xs transition-colors"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0 flex-1 truncate">
+                        {/* Position Move Controls (disabled when filtered or searched) */}
+                        <div className="flex flex-col space-y-0.5">
+                          <button
+                            onClick={() => moveTrack(globalIdx, "up")}
+                            disabled={globalIdx === 0 || libSearchQuery.trim() !== "" || libSelectedGenre !== "ALL"}
+                            className="text-white/40 hover:text-white disabled:opacity-10 cursor-pointer"
+                            title="Move track up"
+                          >
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => moveTrack(globalIdx, "down")}
+                            disabled={globalIdx === library.length - 1 || libSearchQuery.trim() !== "" || libSelectedGenre !== "ALL"}
+                            className="text-white/40 hover:text-white disabled:opacity-10 cursor-pointer"
+                            title="Move track down"
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {/* Play Preview */}
+                        <button
+                          onClick={() => togglePreview(set.audio_url)}
+                          className={`p-2 border cursor-pointer transition-all ${
+                            previewTrackUrl === set.audio_url && isPreviewPlaying
+                              ? "bg-red-600 text-white border-red-500 font-bold"
+                              : "bg-[#DFBB7D] text-[#16181D] hover:bg-[#F5C842] border-[#16181D]"
+                          }`}
+                          title="Listen to preview"
+                        >
+                          {previewTrackUrl === set.audio_url && isPreviewPlaying ? (
+                            <Pause className="w-3.5 h-3.5" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {/* Cover thumbnail */}
+                        <div className="w-10 h-10 bg-black/60 border border-white/20 shrink-0 overflow-hidden relative">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={set.cover_url || "/flyer.png"}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "/flyer.png";
+                            }}
+                          />
+                        </div>
+
+                        {/* Title, Artist, Badges */}
+                        <div className="truncate">
+                          <div className="font-bold text-white truncate flex items-center space-x-2">
+                            <span className="truncate">{formatTrackTitle(set.title)}</span>
+                            {set.is_full_set && (
+                              <span className="px-1.5 py-0.2 bg-purple-500/30 text-purple-200 border border-purple-400/50 text-[9px] font-mono font-bold uppercase shrink-0">
+                                DJ MIX
+                              </span>
+                            )}
+                            {set.is_active === false && (
+                              <span className="px-1.5 py-0.2 bg-red-600/30 text-red-200 border border-red-500/50 text-[9px] font-mono font-bold uppercase shrink-0">
+                                BENCHED
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[#DFBB7D] flex items-center space-x-2 truncate mt-0.5">
+                            <span>{set.dj_name || "Goodlife Resident"} · {set.genre}</span>
+                            {set.musical_key && (
+                              <span className="px-1.5 py-0.2 bg-[#DFBB7D]/20 text-[#DFBB7D] border border-[#DFBB7D]/40 font-mono font-bold text-[9px] shrink-0">
+                                {set.musical_key}
+                              </span>
+                            )}
+                            {set.bpm && (
+                              <span className="px-1.5 py-0.2 bg-sky-500/20 text-sky-300 border border-sky-500/40 font-mono font-bold text-[9px] shrink-0">
+                                {set.bpm} BPM
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right actions */}
+                      <div className="flex items-center justify-between md:justify-end space-x-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-white/5 w-full md:w-auto">
+                        {/* EDIT BUTTON (Opens Control Drawer) */}
+                        <button
+                          onClick={() => setEditingTrack(set)}
+                          className="px-2.5 py-1 bg-[#1A1D24] hover:bg-[#DFBB7D] hover:text-[#16181D] text-white border border-white/20 text-[11px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-all"
+                          title="Edit track properties"
+                        >
+                          <Sliders className="w-3 h-3 text-[#DFBB7D]" />
+                          Edit
+                        </button>
+
+                        {/* Add to Playlist Selector */}
+                        <select
+                          value={quickAddPlaylistMap[set.id] ?? ""}
+                          onChange={(e) => setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: Number(e.target.value) }))}
+                          className="bg-[#1A1D24] text-white/90 text-[11px] p-1 border border-white/20"
+                        >
+                          <option value="">+ To Playlist...</option>
+                          {availablePlaylists.map((pl) => (
+                            <option key={pl.id} value={pl.id}>
+                              {pl.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        {quickAddPlaylistMap[set.id] ? (
+                          <button
+                            onClick={async () => {
+                              const plId = quickAddPlaylistMap[set.id];
+                              if (!plId) return;
+                              try {
+                                const res = await fetch(`/api/admin/radio/playlists/${plId}/tracks`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ track_ids: [set.id] }),
+                                });
+                                const d = await res.json();
+                                if (res.ok) {
+                                  showMsg(`Added track to ${availablePlaylists.find((p) => p.id === plId)?.name || "playlist"}!`, "success");
+                                  setQuickAddPlaylistMap((prev) => ({ ...prev, [set.id]: 0 }));
+                                } else {
+                                  showMsg(d.error || "Failed to add track to playlist", "error");
+                                }
+                              } catch {
+                                showMsg("Network error adding to playlist", "error");
+                              }
+                            }}
+                            className="px-2 py-1 bg-[#DFBB7D] text-[#16181D] text-[10px] font-bold hover:bg-[#F5C842] cursor-pointer"
+                          >
+                            ADD
+                          </button>
+                        ) : null}
+
+                        <span className="text-white/60 text-[11px] font-mono px-1">
+                          {set.duration || `${Math.floor((set.duration_sec || 0) / 60)}:${String((set.duration_sec || 0) % 60).padStart(2, "0")}`}
+                        </span>
+
+                        <button
+                          onClick={() => deleteTrack(set.id)}
+                          className="p-1.5 text-white/30 hover:text-[#E84855] cursor-pointer"
+                          title="Delete from library"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Bottom Pagination Bar */}
+            {totalLibPages > 1 && (
+              <div className="flex items-center justify-between pt-3 border-t border-white/10 text-xs font-mono text-white/70">
+                <span>
+                  Page {currentLibPage} of {totalLibPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setLibPage((p) => Math.max(1, p - 1));
+                      window.scrollTo({ top: 400, behavior: "smooth" });
+                    }}
+                    disabled={currentLibPage <= 1}
+                    className="px-3 py-1 bg-[#1A1D24] border border-white/20 text-white disabled:opacity-30 hover:bg-white/10 flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                  </button>
+                  <button
+                    onClick={() => {
+                      setLibPage((p) => Math.min(totalLibPages, p + 1));
+                      window.scrollTo({ top: 400, behavior: "smooth" });
+                    }}
+                    disabled={currentLibPage >= totalLibPages}
+                    className="px-3 py-1 bg-[#1A1D24] border border-white/20 text-white disabled:opacity-30 hover:bg-white/10 flex items-center gap-1 cursor-pointer"
+                  >
+                    Next <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* TRACK INSPECTOR / CONTROL DRAWER */}
+      <TrackEditDrawer
+        track={editingTrack}
+        isOpen={Boolean(editingTrack)}
+        onClose={() => setEditingTrack(null)}
+        onTrackUpdated={(updated) => {
+          setLibrary((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          showMsg(`Saved changes for "${updated.title}"`, "success");
+        }}
+        onTrackDeleted={(delId) => {
+          setLibrary((prev) => prev.filter((t) => t.id !== delId));
+          showMsg("Track deleted from library", "success");
+        }}
+      />
 
       {/* VIEW: PLAYLISTS & PROGRAMMING */}
       {activeTab === "playlists" && (

@@ -113,30 +113,30 @@ export default function DropManagerPanel() {
   return (
     <div className="space-y-6">
       {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-zinc-900 border border-zinc-800 p-4 rounded-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D]">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amber-400" />
+          <h2 className="text-base font-bold font-mono uppercase tracking-wider text-white flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-[#DFBB7D]" />
             AI Radio Drops (Last 50 Generated)
           </h2>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-[#DFBB7D] font-mono mt-0.5">
             Pre-generated drops grounded on live Neon facts, Drop Gate checked, mastered at -14 LUFS.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 font-mono">
           <button
             onClick={fetchDrops}
             disabled={loading}
-            className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-1.5 bg-[#1A1D24] hover:bg-white/10 text-white border border-white/20 text-xs font-bold uppercase flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#DFBB7D]" : ""}`} />
             Refresh
           </button>
           <button
             onClick={handlePreviewNext}
             disabled={generating}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-lg shadow-amber-500/20"
+            className="px-4 py-1.5 bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] font-bold text-xs uppercase border border-[#16181D] shadow-[2px_2px_0px_#16181D] flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             {generating ? "Generating Drop v2..." : "Preview Next Drop"}
@@ -145,8 +145,8 @@ export default function DropManagerPanel() {
       </div>
 
       {feedback && (
-        <div className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
-          feedback.type === "success" ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800" : "bg-red-950/60 text-red-300 border border-red-800"
+        <div className={`p-3 font-mono text-xs flex items-center gap-2 border ${
+          feedback.type === "success" ? "bg-emerald-950/80 text-emerald-300 border-emerald-600" : "bg-red-950/80 text-red-300 border-red-600"
         }`}>
           {feedback.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           {feedback.text}
@@ -154,59 +154,59 @@ export default function DropManagerPanel() {
       )}
 
       {/* Drops Table / List */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+      <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] shadow-[4px_4px_0px_#DFBB7D] overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-zinc-500 text-xs">Loading drops history...</div>
+          <div className="p-8 text-center text-white/50 font-mono text-xs">Loading drops history...</div>
         ) : drops.length === 0 ? (
-          <div className="p-8 text-center text-zinc-500 text-xs">
+          <div className="p-8 text-center text-white/60 font-mono text-xs">
             No drops logged yet. Click "Preview Next Drop" above to trigger Drop Engine v2.
           </div>
         ) : (
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-white/10">
             {drops.map((drop) => {
               const isPlaying = currentlyPlayingId === drop.id;
               return (
-                <div key={drop.id} className="p-4 hover:bg-zinc-850/50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1.5 flex-1">
+                <div key={drop.id} className="p-4 hover:bg-white/5 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono">
+                  <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-white text-sm">{drop.persona || "Presenter"}</span>
-                      <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full text-[10px] font-mono">
+                      <span className="font-bold text-white text-sm">{drop.persona || "Presenter"}</span>
+                      <span className="px-2 py-0.5 bg-[#DFBB7D] text-[#16181D] text-[10px] font-bold uppercase border border-[#16181D]">
                         {drop.timing_type || "drop"}
                       </span>
                       {drop.mood && (
-                        <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded-full text-[10px] font-mono">
+                        <span className="px-2 py-0.5 bg-black/40 text-white/80 border border-white/20 text-[10px] font-bold uppercase">
                           {drop.mood}
                         </span>
                       )}
-                      <span className="text-[10px] text-zinc-500">
+                      <span className="text-[11px] text-[#DFBB7D] font-bold">
                         {new Date(drop.created_at).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+                    <p className="text-xs text-white leading-relaxed font-sans bg-[#121316] p-2.5 border border-white/10">
                       "{drop.script}"
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end md:self-center">
+                  <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                     {drop.audio_url ? (
                       <button
                         onClick={() => handlePlayToggle(drop)}
-                        className={`p-2 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                        className={`px-3 py-1.5 text-xs font-bold uppercase flex items-center gap-1.5 transition-all border cursor-pointer ${
                           isPlaying
-                            ? "bg-amber-500 text-black font-semibold"
-                            : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                            ? "bg-red-600 text-white border-red-500 font-bold"
+                            : "bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] border-[#16181D] shadow-[2px_2px_0px_#16181D]"
                         }`}
                       >
-                        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                         {isPlaying ? "Playing" : "Listen"}
                       </button>
                     ) : (
-                      <span className="text-[10px] text-zinc-500 italic px-2">No audio</span>
+                      <span className="text-[10px] text-white/40 italic px-2">No audio</span>
                     )}
 
                     <button
                       onClick={() => handleDelete(drop.id)}
-                      className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-colors"
+                      className="p-1.5 text-white/40 hover:text-red-400 hover:bg-red-950/40 border border-transparent hover:border-red-500/30 transition-colors cursor-pointer"
                       title="Delete drop"
                     >
                       <Trash2 className="w-4 h-4" />
