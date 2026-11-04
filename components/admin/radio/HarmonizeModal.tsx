@@ -47,6 +47,15 @@ interface HarmonizeModalProps {
   onApplied: () => void;
 }
 
+interface AnalysisProgress {
+  current: number;
+  total: number;
+  currentTitle: string;
+  percent: number;
+  completedTracks: Array<{ id: number; title: string; bpm: number; key: string; energy?: number }>;
+  failedTracks: Array<{ id: number; title: string; error: string }>;
+}
+
 export default function HarmonizeModal({
   playlist,
   tracks,
@@ -68,27 +77,90 @@ export default function HarmonizeModal({
   const [applying, setApplying] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
 
   // Eligible opener candidates (indexed tracks only)
   const indexedTracks = tracks.filter(
     (t) => t.bpm && t.musical_key && /^(1[0-2]|[1-9])[AB]$/i.test(t.musical_key.trim())
   );
 
-  const handleRunAnalysis = async (forceAll = false) => {
+  const handleRunAnalysis = async () => {
     setAnalyzing(true);
     setError(null);
-    setAnalysisStatus("Analyzing tracks via Cloudflare tunnel for BPM & harmonic keys...");
+    setAnalysisStatus("Loading unindexed tracks...");
+
     try {
-      const res = await fetch(`/api/admin/radio/playlists/${playlist.id}/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forceAll }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Analysis failed");
+      const statusRes = await fetch(`/api/admin/radio/playlists/${playlist.id}/analyze`);
+      const statusData = await statusRes.json();
+      if (!statusRes.ok || !statusData.success) {
+        throw new Error(statusData.error || "Failed to load unindexed tracklist");
       }
-      setAnalysisStatus(data.message || `Analyzed ${data.analyzedCount} tracks.`);
+
+      const toProcess = statusData.unindexedTracks || [];
+      if (toProcess.length === 0) {
+        setAnalysisStatus("All tracks already indexed!");
+        setAnalysisProgress(null);
+        if (onApplied) onApplied();
+        await fetchHarmonizePreview(selectedOpenerId);
+        return;
+      }
+
+      const progressState: AnalysisProgress = {
+        current: 0,
+        total: toProcess.length,
+        currentTitle: toProcess[0].title,
+        percent: 0,
+        completedTracks: [],
+        failedTracks: [],
+      };
+      setAnalysisProgress({ ...progressState });
+
+      for (let i = 0; i < toProcess.length; i++) {
+        const trk = toProcess[i];
+        progressState.current = i + 1;
+        progressState.currentTitle = trk.title;
+        progressState.percent = Math.round((i / toProcess.length) * 100);
+        setAnalysisProgress({ ...progressState });
+
+        try {
+          const res = await fetch(`/api/admin/radio/playlists/${playlist.id}/analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ track_id: trk.id }),
+          });
+          const resData = await res.json();
+          if (res.ok && resData.success) {
+            progressState.completedTracks.unshift({
+              id: trk.id,
+              title: trk.title,
+              bpm: resData.bpm,
+              key: resData.musical_key,
+              energy: resData.energy,
+            });
+          } else {
+            progressState.failedTracks.push({
+              id: trk.id,
+              title: trk.title,
+              error: resData.error || "Analysis failed",
+            });
+          }
+        } catch (fetchErr: any) {
+          // Timeout or network drop on one track does NOT break the remaining tracks!
+          progressState.failedTracks.push({
+            id: trk.id,
+            title: trk.title,
+            error: fetchErr.message || "Timeout / network interruption",
+          });
+        }
+
+        progressState.percent = Math.round(((i + 1) / toProcess.length) * 100);
+        setAnalysisProgress({ ...progressState });
+      }
+
+      setAnalysisStatus(
+        `Batch finished: ${progressState.completedTracks.length} analyzed, ${progressState.failedTracks.length} skipped/failed.`
+      );
+
       if (onApplied) onApplied();
       await fetchHarmonizePreview(selectedOpenerId);
     } catch (err: any) {
@@ -220,7 +292,7 @@ export default function HarmonizeModal({
           )}
 
           {/* Audio Intelligence / Tunnel BPM & Key Calculation Box */}
-          {(indexedTracks.length < tracks.length || error) && (
+          {(indexedTracks.length < tracks.length || error || analysisProgress) && (
             <div className="p-4 bg-[#DFBB7D]/10 border-2 border-[#DFBB7D] rounded-xl space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
@@ -231,29 +303,86 @@ export default function HarmonizeModal({
                   {indexedTracks.length} / {tracks.length} Tracks Indexed
                 </span>
               </div>
-              <p className="text-[11px] text-white/80 leading-relaxed font-mono">
-                {indexedTracks.length === 0
-                  ? "None of the tracks in this playlist have verified BPM and Camelot Key metadata. Click below to automatically calculate BPM and harmonic keys via the Cloudflare Tunnel."
-                  : `${tracks.length - indexedTracks.length} track(s) in this playlist still need BPM & Camelot key calculation.`}
-              </p>
-              {analysisStatus && (
-                <div className="text-[11px] font-mono text-[#DFBB7D] flex items-center gap-1.5">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>{analysisStatus}</span>
+
+              {/* Progress Bar & Current Status */}
+              {analysisProgress ? (
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-[#DFBB7D] font-bold flex items-center gap-1.5">
+                      {analyzing && <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#DFBB7D]" />}
+                      <span>
+                        [{analysisProgress.current} / {analysisProgress.total}] {analyzing ? "Analyzing:" : "Processed:"}
+                      </span>
+                      <span className="text-white truncate max-w-[220px] sm:max-w-xs">
+                        "{analysisProgress.currentTitle}"
+                      </span>
+                    </span>
+                    <span className="text-white/80 font-bold">{analysisProgress.percent}%</span>
+                  </div>
+
+                  <div className="w-full bg-[#16181D] h-2.5 rounded-full overflow-hidden border border-white/20">
+                    <div
+                      className="bg-[#DFBB7D] h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${analysisProgress.percent}%` }}
+                    />
+                  </div>
+
+                  {/* Live Finished Log */}
+                  {analysisProgress.completedTracks.length > 0 && (
+                    <div className="max-h-28 overflow-y-auto space-y-1 pr-1 bg-[#16181D]/80 p-2 rounded-lg border border-white/10 text-[10px] font-mono">
+                      {analysisProgress.completedTracks.slice(0, 5).map((t) => (
+                        <div key={t.id} className="flex items-center justify-between text-white/90">
+                          <span className="truncate max-w-[200px] text-emerald-400">✓ {t.title}</span>
+                          <span className="text-[#DFBB7D] font-bold">
+                            {t.bpm} BPM · Key {t.key}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Resilient Error Log (does not break overall process) */}
+                  {analysisProgress.failedTracks.length > 0 && (
+                    <div className="p-2 rounded-lg bg-[#E84855]/20 border border-[#E84855]/40 text-red-200 text-[10px] space-y-1">
+                      <div className="font-bold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-[#E84855]" />
+                        <span>{analysisProgress.failedTracks.length} track(s) timed out or had errors:</span>
+                      </div>
+                      <div className="max-h-20 overflow-y-auto space-y-0.5">
+                        {analysisProgress.failedTracks.map((f) => (
+                          <div key={f.id} className="truncate text-red-300">
+                            • "{f.title}": {f.error}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <p className="text-[11px] text-white/80 leading-relaxed font-mono">
+                  {indexedTracks.length === 0
+                    ? "None of the tracks in this playlist have verified BPM and Camelot Key metadata. Click below to automatically calculate BPM and harmonic keys via the Cloudflare Tunnel."
+                    : `${tracks.length - indexedTracks.length} track(s) in this playlist still need BPM & Camelot key calculation.`}
+                </p>
               )}
-              <button
-                onClick={() => handleRunAnalysis(false)}
-                disabled={analyzing || loading}
-                className="w-full py-2.5 px-4 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${analyzing ? "animate-spin" : ""}`} />
-                <span>
-                  {analyzing
-                    ? "Calculating BPM & Camelot Keys via Cloudflare Tunnel..."
-                    : `⚡ Calculate BPM & Camelot Keys (${tracks.length - indexedTracks.length || tracks.length} Tracks)`}
-                </span>
-              </button>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  onClick={handleRunAnalysis}
+                  disabled={analyzing || loading}
+                  className="flex-1 py-2.5 px-4 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-lg flex items-center justify-center gap-2 transition-all shadow-[2px_2px_0px_#fff] disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${analyzing ? "animate-spin" : ""}`} />
+                  <span>
+                    {analyzing
+                      ? `Calculating (${analysisProgress?.current || 0}/${analysisProgress?.total || 0})...`
+                      : analysisProgress?.failedTracks.length
+                      ? `⚡ Resume Remaining (${analysisProgress.failedTracks.length} Tracks)`
+                      : `⚡ Calculate BPM & Camelot Keys (${tracks.length - indexedTracks.length || tracks.length} Tracks)`}
+                  </span>
+                </button>
+              </div>
             </div>
           )}
 
