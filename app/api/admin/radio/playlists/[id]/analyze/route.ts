@@ -73,17 +73,25 @@ export async function POST(
       });
 
       if (res.ok && res.data && res.data.bpm && res.data.musical_key) {
+        const roundedBpm = Math.round(Number(res.data.bpm));
+        const keyStr = String(res.data.musical_key).trim().toUpperCase();
+        const energyVal = res.data.energy ? Math.min(10, Math.max(1, Math.round(res.data.energy))) : null;
+        const durSec = res.data.duration_sec ? Math.round(res.data.duration_sec) : null;
+
         await neonQuery(
           `UPDATE radio_sets
-           SET bpm = $2, musical_key = $3, key_source = 'analyzed',
-               duration_sec = COALESCE(NULLIF(duration_sec, 0), $4),
-               updated_at = NOW()
+           SET bpm = $2,
+               musical_key = $3,
+               key_source = 'analyzed',
+               energy = COALESCE($4, energy),
+               duration_sec = COALESCE(NULLIF(duration_sec, 0), $5)
            WHERE id = $1`,
           [
             track.id,
-            res.data.bpm,
-            res.data.musical_key,
-            res.data.duration_sec || 0,
+            roundedBpm,
+            keyStr,
+            energyVal,
+            durSec,
           ]
         );
         analyzedCount++;

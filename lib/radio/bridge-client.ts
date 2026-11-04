@@ -217,11 +217,12 @@ export async function bridgeMasterAudioFfmpeg(
   const { timestamp, signature } = signRequest("multipart");
   const timeoutMs = options.timeoutMs || 12000;
 
-  // Prefer LAN IP if running in local network, fall back to Cloudflare tunnel
-  const candidateUrls = [
-    process.env.RADIO_BRIDGE_LAN_URL || "http://192.168.100.29:8283",
-    BRIDGE_BASE_URL,
-  ];
+  // Primary: Cloudflare Tunnel (accessible from Vercel & anywhere)
+  // Optional: LAN URL if explicitly set via RADIO_BRIDGE_LAN_URL
+  const candidateUrls: string[] = [BRIDGE_BASE_URL];
+  if (process.env.RADIO_BRIDGE_LAN_URL && process.env.RADIO_BRIDGE_LAN_URL.trim() !== "") {
+    candidateUrls.push(process.env.RADIO_BRIDGE_LAN_URL.trim());
+  }
 
   for (const baseUrl of candidateUrls) {
     if (!baseUrl) continue;
@@ -292,10 +293,12 @@ export async function bridgeAnalyzeAudio(payload: {
   const bodyStr = JSON.stringify(payload);
   const { timestamp, signature } = signRequest(bodyStr);
 
-  const candidateUrls = [
-    process.env.RADIO_BRIDGE_LAN_URL || "http://192.168.100.29:8283",
-    BRIDGE_BASE_URL,
-  ];
+  // Primary: Cloudflare Tunnel (accessible from Vercel & anywhere)
+  // Optional: LAN URL if explicitly set via RADIO_BRIDGE_LAN_URL
+  const candidateUrls: string[] = [BRIDGE_BASE_URL];
+  if (process.env.RADIO_BRIDGE_LAN_URL && process.env.RADIO_BRIDGE_LAN_URL.trim() !== "") {
+    candidateUrls.push(process.env.RADIO_BRIDGE_LAN_URL.trim());
+  }
 
   for (const baseUrl of candidateUrls) {
     if (!baseUrl) continue;
@@ -322,13 +325,15 @@ export async function bridgeAnalyzeAudio(payload: {
         const data = await res.json();
         return { ok: true, data };
       }
+      const text = await res.text().catch(() => "");
+      console.warn(`[bridge-client] ${cleanBase} returned HTTP ${res.status}: ${text.slice(0, 150)}`);
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.warn(`[bridge-client] Analyze attempt failed on ${cleanBase}:`, err.message);
     }
   }
 
-  return { ok: false, error: "Failed to reach audio analyzer on .29 bridge or Cloudflare tunnel" };
+  return { ok: false, error: "Failed to reach audio analyzer through Cloudflare tunnel" };
 }
 
 export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };

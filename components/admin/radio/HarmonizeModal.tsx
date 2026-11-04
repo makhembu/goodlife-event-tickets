@@ -77,7 +77,7 @@ export default function HarmonizeModal({
   const handleRunAnalysis = async (forceAll = false) => {
     setAnalyzing(true);
     setError(null);
-    setAnalysisStatus("Connecting to .29 via Cloudflare tunnel to calculate BPM & Camelot Keys...");
+    setAnalysisStatus("Analyzing tracks via Cloudflare tunnel for BPM & harmonic keys...");
     try {
       const res = await fetch(`/api/admin/radio/playlists/${playlist.id}/analyze`, {
         method: "POST",
@@ -225,7 +225,7 @@ export default function HarmonizeModal({
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-white font-bold text-xs uppercase tracking-wider">
                   <Sparkles className="w-4 h-4 text-[#DFBB7D]" />
-                  <span>Audio Intelligence & Harmonic Indexing (.29 Tunnel)</span>
+                  <span>Audio Intelligence & Harmonic Indexing (Cloudflare Tunnel)</span>
                 </div>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/10 text-white/80 border border-white/20">
                   {indexedTracks.length} / {tracks.length} Tracks Indexed
@@ -233,7 +233,7 @@ export default function HarmonizeModal({
               </div>
               <p className="text-[11px] text-white/80 leading-relaxed font-mono">
                 {indexedTracks.length === 0
-                  ? "None of the tracks in this playlist have verified BPM and Camelot Key metadata. Click below to automatically calculate BPM and harmonic keys via the Cloudflare Tunnel to the .29 home server."
+                  ? "None of the tracks in this playlist have verified BPM and Camelot Key metadata. Click below to automatically calculate BPM and harmonic keys via the Cloudflare Tunnel."
                   : `${tracks.length - indexedTracks.length} track(s) in this playlist still need BPM & Camelot key calculation.`}
               </p>
               {analysisStatus && (
@@ -250,7 +250,7 @@ export default function HarmonizeModal({
                 <RefreshCw className={`w-4 h-4 ${analyzing ? "animate-spin" : ""}`} />
                 <span>
                   {analyzing
-                    ? "Calculating BPM & Keys on .29 via Tunnel..."
+                    ? "Calculating BPM & Camelot Keys via Cloudflare Tunnel..."
                     : `⚡ Calculate BPM & Camelot Keys (${tracks.length - indexedTracks.length || tracks.length} Tracks)`}
                 </span>
               </button>
