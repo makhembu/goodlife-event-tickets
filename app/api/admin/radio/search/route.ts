@@ -72,13 +72,18 @@ export async function GET(req: NextRequest) {
     );
     if (rows && rows.length > 0) {
       for (const row of rows) {
+        let safeCover = row.cover_image_url || row.cover_url || "";
+        if (safeCover.includes("192.168.") || safeCover.includes("localhost") || safeCover.includes("127.0.0.1") || safeCover.includes(":3000")) {
+          const match = safeCover.match(/\/vi\/([a-zA-Z0-9_-]{11})/);
+          safeCover = match ? `https://i.ytimg.com/vi/${match[1]}/hqdefault.jpg` : "/flyer.png";
+        }
         libItems.push({
           id: row.id,
           video_id: `lib_${row.id}`,
           title: row.title,
           artist: row.dj_name || "Library Track",
           duration_sec: row.duration_sec || 0,
-          thumbnail_url: row.cover_image_url || "",
+          thumbnail_url: safeCover,
           source: "library",
           url: row.audio_url || "",
         });
@@ -93,15 +98,21 @@ export async function GET(req: NextRequest) {
   try {
     const bridgeRes = await bridgeSearch(q);
     if (bridgeRes.ok && Array.isArray(bridgeRes.data) && bridgeRes.data.length > 0) {
-      onlineItems = bridgeRes.data.map((item: any) => ({
-        video_id: item.video_id,
-        title: item.title,
-        artist: item.artist,
-        duration_sec: item.duration_sec || 0,
-        thumbnail_url: item.thumbnail_url,
-        source: "invidious",
-        url: `https://www.youtube.com/watch?v=${item.video_id}`,
-      }));
+      onlineItems = bridgeRes.data.map((item: any) => {
+        // Guarantee clean public YouTube CDN thumbnail so browser never makes private LAN requests
+        const safeThumb = item.video_id
+          ? `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`
+          : (item.thumbnail_url && !item.thumbnail_url.includes("192.168.") && !item.thumbnail_url.includes(":3000") ? item.thumbnail_url : "/flyer.png");
+        return {
+          video_id: item.video_id,
+          title: item.title,
+          artist: item.artist,
+          duration_sec: item.duration_sec || 0,
+          thumbnail_url: safeThumb,
+          source: "invidious",
+          url: `https://www.youtube.com/watch?v=${item.video_id}`,
+        };
+      });
     }
   } catch (e) {
     console.warn("[api/admin/radio/search] bridge error, falling back to direct search:", e);

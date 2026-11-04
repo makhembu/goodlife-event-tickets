@@ -20,6 +20,15 @@ export function resolveCoverArt(thumbnailUrl?: string | null): string {
 
   const trimmed = thumbnailUrl.trim();
 
+  // Guard: Never expose private RFC1918 / LAN URLs to the browser (prevents Chrome Private Network Access prompt)
+  if (/^(?:https?:)?\/\/(?:192\x2e168\x2e|10\x2e|172\x2e|127\x2e|localhost)/i.test(trimmed)) {
+    const vidMatch = trimmed.match(/\/vi\/([a-zA-Z0-9_-]{11})/);
+    if (vidMatch) {
+      return `https://i.ytimg.com/vi/${vidMatch[1]}/maxresdefault.jpg`;
+    }
+    return "/flyer.png";
+  }
+
   // Prioritize high-resolution 16:9 maxresdefault (1280x720) for crisp retina display
   if (trimmed.includes("ytimg.com") || trimmed.includes("youtube.com")) {
     return trimmed.replace(/\/(?:hqdefault|mqdefault|default|sddefault)\.jpg(\?.*)?$/i, "/maxresdefault.jpg$1");
@@ -37,6 +46,16 @@ export function resolveFallbackCoverArt(thumbnailUrl?: string | null): string {
   }
 
   const trimmed = thumbnailUrl.trim();
+
+  // Guard: Never expose private RFC1918 / LAN URLs to the browser
+  if (/^(?:https?:)?\/\/(?:192\x2e168\x2e|10\x2e|172\x2e|127\x2e|localhost)/i.test(trimmed)) {
+    const vidMatch = trimmed.match(/\/vi\/([a-zA-Z0-9_-]{11})/);
+    if (vidMatch) {
+      return `https://i.ytimg.com/vi/${vidMatch[1]}/mqdefault.jpg`;
+    }
+    return "/flyer.png";
+  }
+
   if (trimmed.includes("ytimg.com") || trimmed.includes("youtube.com")) {
     return trimmed.replace(/\/(?:hqdefault|maxresdefault|default|sddefault)\.jpg(\?.*)?$/i, "/mqdefault.jpg$1");
   }

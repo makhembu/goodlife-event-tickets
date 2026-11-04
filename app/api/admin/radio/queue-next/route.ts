@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
         const secs = durSec % 60;
         const durationStr = `${mins}:${secs.toString().padStart(2, "0")}`;
 
+        let safeThumbnail = (thumbnail_url && typeof thumbnail_url === "string") ? thumbnail_url.trim() : "";
+        if (
+          !safeThumbnail ||
+          safeThumbnail.includes("192.168.") ||
+          safeThumbnail.includes("localhost") ||
+          safeThumbnail.includes("127.0.0.1") ||
+          safeThumbnail.includes(":3000")
+        ) {
+          const match = trimmedUrl.match(/(?:v=|youtu\.be\/|embed\/|\/v\/)([a-zA-Z0-9_-]{11})/);
+          safeThumbnail = match ? `https://i.ytimg.com/vi/${match[1]}/hqdefault.jpg` : "/flyer.png";
+        }
+
         const insertRes = await neonQuery(
           `INSERT INTO radio_sets (
             event_id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre,
@@ -69,7 +81,7 @@ export async function POST(req: NextRequest) {
             (title && typeof title === "string" && title.trim()) || "Quick Insert Track",
             (artist && typeof artist === "string" && artist.trim()) || "Guest Artist",
             trimmedUrl,
-            (thumbnail_url && typeof thumbnail_url === "string") ? thumbnail_url.trim() : "",
+            safeThumbnail,
             durationStr,
             durSec,
           ]
