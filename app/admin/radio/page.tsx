@@ -53,7 +53,7 @@ import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export default function AdminRadioPage() {
-  const { airLiveDrop, setManualDucking } = useRadio();
+  const { airLiveDrop, setManualDucking, fetchRadioLive } = useRadio();
   const [activeTab, setActiveTab] = useState<ConsoleTab>("studio");
   const [studioDeck, setStudioDeck] = useState<"perform" | "playout" | "drops">("perform");
   const [library, setLibrary] = useState<RadioSet[]>([]);
@@ -504,6 +504,21 @@ export default function AdminRadioPage() {
     return Array.from(set);
   }, [library]);
 
+  const handleSkipBroadcast = async () => {
+    try {
+      const res = await fetch("/api/admin/radio/azuracast/skip", { method: "POST" });
+      if (res.ok) {
+        showMsg("Broadcast advanced to next track", "success");
+        // Immediately synchronize local audio playback with new broadcast track
+        await fetchRadioLive();
+      } else {
+        showMsg("Failed to skip track on broadcast server", "error");
+      }
+    } catch {
+      showMsg("Network error issuing skip command", "error");
+    }
+  };
+
   return (
     <RadioConsoleLayout
       activeTab={activeTab}
@@ -511,6 +526,7 @@ export default function AdminRadioPage() {
       streamUrl={liveStreamUrl}
       isDucking={isDucking}
       bridgeOnline={bridgeOnline}
+      onSkip={handleSkipBroadcast}
     >
       <SoundboardProvider>
         {/* Toast Alert Banner */}

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRadio } from "@/context/RadioContext";
 import {
   Play,
   Pause,
@@ -37,6 +38,7 @@ export default function TransportBar({
   const [masterGain, setMasterGain] = useState(1.0);
   const [nowPlaying, setNowPlaying] = useState<any>(null);
   const [isSkipping, setIsSkipping] = useState(false);
+  const { fetchRadioLive } = useRadio();
   const [statusState, setStatusState] = useState<"connecting" | "live" | "offline">("connecting");
   const [eatTime, setEatTime] = useState<string>("");
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
@@ -252,6 +254,7 @@ export default function TransportBar({
       } else {
         const res = await fetch("/api/admin/radio/azuracast/skip", { method: "POST" });
         if (!res.ok) console.warn("Skip failed");
+        await fetchRadioLive();
       }
       // Re-fetch telemetry immediately so the cockpit displays the new track in lockstep
       await fetchTelemetry();

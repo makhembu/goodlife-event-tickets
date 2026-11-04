@@ -575,33 +575,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   const targetSeek = track.elapsed || 0;
                   const newAudioSrc = track.audio_url;
 
+                  // Update audio source directly without calling audio.load() which wipes the background audio session on mobile
                   audio.src = newAudioSrc;
-                  audio.load();
-
-                  const handleCanPlay = () => {
-                    audio.removeEventListener("canplay", handleCanPlay);
-                    safeSeekAudio(audio, targetSeek);
-                    audio.play().then(() => {
-                      isTransitioningRef.current = false;
-                      setIsPlaying(true);
-                      setEngineState("live");
-                    }).catch((playErr) => {
-                      console.warn("[RadioContext] auto-play on skip/advance error:", playErr);
-                      isTransitioningRef.current = false;
-                    });
-                  };
-
-                  audio.addEventListener("canplay", handleCanPlay, { once: true });
-
-                  // Fallback timeout in case canplay is delayed
-                  setTimeout(() => {
-                    if (isTransitioningRef.current) {
-                      isTransitioningRef.current = false;
-                      if (!audio.paused) {
-                        setIsPlaying(true);
-                      }
-                    }
-                  }, 3000);
+                  safeSeekAudio(audio, targetSeek);
+                  audio.play().then(() => {
+                    isTransitioningRef.current = false;
+                    setIsPlaying(true);
+                    setEngineState("live");
+                  }).catch((playErr) => {
+                    console.warn("[RadioContext] auto-play on skip/advance error:", playErr);
+                    isTransitioningRef.current = false;
+                  });
                 }
               }
             }
@@ -663,18 +647,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
 
       const isOnRadioPage = pathname?.startsWith("/radio");
-      const shouldPoll =
-        radioEnabled &&
-        (isOnRadioPage || isPlaying) &&
-        typeof document !== "undefined" &&
-        document.visibilityState === "visible";
+      const isVisible = typeof document !== "undefined" && document.visibilityState === "visible";
+
+      // Polling criteria:
+      // 1. Audio is actively playing (MUST poll even if phone screen is locked/backgrounded so live broadcast track changes in pocket!)
+      // 2. OR user is viewing the radio page and tab is visible
+      const shouldPoll = radioEnabled && (isPlaying || (isOnRadioPage && isVisible));
 
       if (!shouldPoll) {
-        // Pause polling until resumed
+        // Pause polling until resumed (e.g. paused audio on non-radio page or hidden inactive tab)
         return;
       }
 
-      const cadenceMs = (isOnRadioPage && isPlaying) ? 3500 : pollBackoffMsRef.current;
+      // If phone display is off/locked but audio is playing, use a steady 5.5s cadence to conserve battery
+      // while guaranteeing stream transitions work seamlessly without needing screen unlock!
+      const cadenceMs = isPlaying && !isVisible
+        ? 5500
+        : (isOnRadioPage && isPlaying) ? 3500 : pollBackoffMsRef.current;
       pollTimerRef.current = setTimeout(async () => {
         await fetchRadioLive();
         scheduleNextPoll();
@@ -1253,8 +1242,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // 12. MediaSession API (Lockscreen & Bluetooth Controls)
   const togglePlayDispatcherRef = useRef<() => void>(() => {});
+  const nextTrackDispatcherRef = useRef<() => void>(() => {});
+  const prevTrackDispatcherRef = useRef<() => void>(() => {});
   useEffect(() => {
     togglePlayDispatcherRef.current = () => togglePlay();
+    nextTrackDispatcherRef.current = () => advanceBroadcastTrack(true);
+    prevTrackDispatcherRef.current = () => prevTrack();
   });
 
   useEffect(() => {
@@ -1277,12 +1270,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       ],
     });
 
-    // In live station mode, seek and skip controls are explicitly cleared
     navigator.mediaSession.setActionHandler("seekto", null);
     navigator.mediaSession.setActionHandler("seekforward", null);
     navigator.mediaSession.setActionHandler("seekbackward", null);
-    navigator.mediaSession.setActionHandler("previoustrack", null);
-    navigator.mediaSession.setActionHandler("nexttrack", null);
+
+    // Support hardware headset buttons & phone lock-screen skip in background
+    navigator.mediaSession.setActionHandler("previoustrack", () => prevTrackDispatcherRef.current());
+    navigator.mediaSession.setActionHandler("nexttrack", () => nextTrackDispatcherRef.current());
 
     navigator.mediaSession.setActionHandler("play", () => togglePlayDispatcherRef.current());
     navigator.mediaSession.setActionHandler("pause", () => togglePlayDispatcherRef.current());
