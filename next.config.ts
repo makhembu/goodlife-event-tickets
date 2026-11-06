@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: '**.hearthis.at',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 
