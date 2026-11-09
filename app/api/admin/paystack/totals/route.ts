@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-auth";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API = "https://api.paystack.co";
 
 export async function GET() {
+  const authErr = await requireAdmin();
+  if (authErr) return authErr;
+
   if (!PAYSTACK_SECRET_KEY) {
     return NextResponse.json({ error: "Paystack not configured" }, { status: 500 });
   }

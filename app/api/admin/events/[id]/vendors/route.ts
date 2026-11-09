@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/neon-client';
+import { requireAdmin } from '@/lib/admin-auth';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const authErr = await requireAdmin(req);
+  if (authErr) return authErr;
+
   try {
     const resolvedParams = await params;
     const eventId = parseInt(resolvedParams.id, 10);

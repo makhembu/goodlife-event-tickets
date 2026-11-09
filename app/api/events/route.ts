@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllEvents, createEvent } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,6 +16,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const body = await request.json();
     const event = await createEvent(body);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neonQuery, fetchActiveEvent } from "@/lib/supabase-db";
 import { sendTextMessage } from "@/lib/whatsapp";
+import { requireAdmin } from "@/lib/admin-auth";
 
 // Helper to ensure gate_pin column exists in event_details
 async function ensureGatePinColumn() {
@@ -15,10 +16,8 @@ async function ensureGatePinColumn() {
 }
 
 export async function GET(request: NextRequest) {
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   await ensureGatePinColumn();
 
@@ -61,10 +60,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   await ensureGatePinColumn();
 

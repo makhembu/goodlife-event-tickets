@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neonQuery, fetchActiveEvent } from "@/lib/supabase-db";
 import { phoneMatchKey, normalizePhone } from "@/lib/phone";
+import { requireAdmin } from "@/lib/admin-auth";
 
 /**
  * A tab counts as "money owed" only when it is neither settled nor written
@@ -23,10 +24,8 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   const { id } = await context.params;
   const vendorId = parseInt(id, 10);
@@ -743,10 +742,8 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   const { id } = await context.params;
   const vendorId = parseInt(id, 10);

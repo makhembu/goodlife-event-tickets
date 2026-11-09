@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { getVendorById, fetchOperatorsForVendor, updateOperator, createOperator } from "@/lib/supabase-db";
 import { sendTextMessage } from "@/lib/whatsapp";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   const { id } = await context.params;
   const vendorId = parseInt(id, 10);
@@ -55,10 +54,8 @@ async function handlePinReset(
   context: { params: Promise<{ id: string }> }
 ) {
   // 1. Authenticate admin session
-  const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-  if (adminSession !== "true") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
 
   // 2. Resolve params.id (vendorId)
   const { id } = await context.params;

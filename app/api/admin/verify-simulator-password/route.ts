@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
+import { requireAdmin } from "@/lib/admin-auth";
+import { getClientIp, checkKeyRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
+  const ip = getClientIp(request);
+  const rl = checkKeyRateLimit(`sim-pwd:${ip}`, { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ valid: false, error: "Too many attempts. Please try again later." }, { status: 429 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const { password } = body;

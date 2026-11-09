@@ -74,11 +74,33 @@ async function isValidVendorSession(cookieValue: string | undefined): Promise<bo
   return Boolean(parsed && parsed.vendorId);
 }
 
+async function isValidAdminSession(cookieValue: string | undefined): Promise<boolean> {
+  if (!cookieValue) return false;
+  // Dual-accept legacy cookie during 24h migration window unless disabled
+  if (process.env.ALLOW_LEGACY_ADMIN_COOKIE !== "false" && cookieValue === "true") {
+    return true;
+  }
+  if (!cookieValue.includes(".")) return false;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return false;
+  const secret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD || "goodlife_admin_secret_fallback_salt";
+  const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
+  if (!isSigValid) return false;
+  const parsed = decodePayload(payloadB64);
+  if (!parsed || parsed.role !== "admin") return false;
+  if (typeof parsed.exp === "number" && Math.floor(Date.now() / 1000) > parsed.exp) {
+    return false;
+  }
+  return true;
+}
+
 export async function middleware(request: NextRequest) {
   const session = request.cookies.get("goodlife_admin_session")?.value;
   const vendorSession = request.cookies.get("goodlife_vendor_session")?.value;
   const scannerSession = request.cookies.get("goodlife_scanner_session")?.value;
   const pathname = request.nextUrl.pathname;
+
+  const isAdmin = await isValidAdminSession(session);
 
   // Protect admin page routes
   if (pathname.startsWith("/admin")) {
@@ -87,7 +109,7 @@ export async function middleware(request: NextRequest) {
       url.pathname = "/scanner";
       return NextResponse.redirect(url);
     }
-    if (session !== "true") {
+    if (!isAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       return NextResponse.redirect(url);
@@ -98,13 +120,13 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/scanner") || pathname === "/scanner") {
     const isScannerValid = await isValidScannerSession(scannerSession);
     if (pathname === "/scanner/login") {
-      if (isScannerValid || session === "true") {
+      if (isScannerValid || isAdmin) {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!isScannerValid && session !== "true") {
+      if (!isScannerValid && !isAdmin) {
         const url = request.nextUrl.clone();
         url.pathname = "/scanner/login";
         return NextResponse.redirect(url);
@@ -119,7 +141,7 @@ export async function middleware(request: NextRequest) {
       pathname === "/api/scanner/logout" ||
       pathname === "/api/scanner/session";
 
-    if (!isPublicScannerRoute && !(await isValidScannerSession(scannerSession)) && session !== "true") {
+    if (!isPublicScannerRoute && !(await isValidScannerSession(scannerSession)) && !isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -130,7 +152,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api/event-details") && request.method === "PUT") {
-    if (session !== "true") {
+    if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -140,18 +162,18 @@ export async function middleware(request: NextRequest) {
     const publicAdminRoutes = ["/api/admin/login", "/api/admin/logout", "/api/admin/me"];
     
     // Gate scanners can call ticket scan verification API
-    if (pathname.startsWith("/api/admin/scan")) {
-      if (session !== "true" && !(await isValidScannerSession(scannerSession))) {
+    if (pathname.startsWith("/api/admin/scan/")) {
+      if (!isAdmin && !(await isValidScannerSession(scannerSession))) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
-    } else if (!publicAdminRoutes.includes(pathname) && session !== "true") {
+    } else if (!publicAdminRoutes.includes(pathname) && !isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
   // Protect ticket-tiers mutations
   if (pathname.startsWith("/api/ticket-tiers") && request.method !== "GET") {
-    if (session !== "true") {
+    if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -163,7 +185,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     // Protect all other event routes
-    if (session !== "true") {
+    if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -203,7 +225,7 @@ export async function middleware(request: NextRequest) {
     // The handlers re-check ownership via lib/vendor-tab-auth.ts — this is a
     // gate, not the authorization.
     const isAdminTabAction =
-      session === "true" && pathname.startsWith("/api/vendor/tabs/");
+      isAdmin && pathname.startsWith("/api/vendor/tabs/");
 
     if (
       !isPublicRoute &&
@@ -216,7 +238,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect to dashboard if logged in and trying to access login page
   if (pathname === "/login") {
-    if (session === "true") {
+    if (isAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/admin/dashboard";
       return NextResponse.redirect(url);

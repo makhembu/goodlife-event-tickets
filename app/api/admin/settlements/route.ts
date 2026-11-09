@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { fetchSettlementsForEvent, recordSettlement, fetchActiveEvent, neonQuery } from '@/lib/supabase-db';
+import { requireAdmin } from '@/lib/admin-auth';
 
 export async function GET(req: Request) {
+  const authErr = await requireAdmin(req);
+  if (authErr) return authErr;
+
   try {
     const { searchParams } = new URL(req.url);
     const eventParam = searchParams.get('eventId');
@@ -29,6 +33,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authErr = await requireAdmin(req);
+  if (authErr) return authErr;
+
   try {
     const body = await req.json().catch(() => ({}));
     let { assignmentId, vendor_id, event_id, amount, mode } = body;

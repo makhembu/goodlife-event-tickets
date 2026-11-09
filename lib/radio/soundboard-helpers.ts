@@ -187,11 +187,13 @@ export async function validateSoundboardAudioLimits(
   }
 }
 
+import { verifyAdminSession } from "@/lib/admin-session";
+
 /**
  * Validates admin session cookie value for fail-closed security.
  */
-export function checkAdminSessionValid(cookieValue?: string | null): boolean {
-  return cookieValue === "true";
+export async function checkAdminSessionValid(cookieValue?: string | null): Promise<boolean> {
+  return await verifyAdminSession(cookieValue);
 }
 
 /**

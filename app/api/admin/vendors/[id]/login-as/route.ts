@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getVendorById, fetchOperatorsForVendor, createOperator, neonQuery } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function POST(
   request: NextRequest,
@@ -8,10 +9,8 @@ export async function POST(
 ) {
   try {
     // 1. Authenticate admin session
-    const adminSession = request.cookies.get("goodlife_admin_session")?.value;
-    if (adminSession !== "true") {
-      return NextResponse.json({ success: false, error: "Unauthorized: Admin session required" }, { status: 401 });
-    }
+    const authErr = await requireAdmin(request);
+    if (authErr) return authErr;
 
     // 2. Parse vendor ID
     const { id } = await context.params;

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
 import { getTicketById } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const body = await request.json().catch(() => ({}));
     const { ticketId, phoneNumber } = body;

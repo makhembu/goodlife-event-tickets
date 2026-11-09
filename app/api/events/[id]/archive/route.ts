@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { archiveEvent, closeEvent, setActiveEvent } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 /**
  * Event lifecycle transitions.
@@ -21,6 +22,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { id: idStr } = await params;
     const id = parseInt(idStr);

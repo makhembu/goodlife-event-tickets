@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTicketById, updateTicket, deleteTicket } from "@/lib/supabase-db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { id } = await params;
     const ticket = await getTicketById(id);
@@ -21,6 +25,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
@@ -38,6 +45,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authErr = await requireAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { id } = await params;
     const { searchParams } = new URL(request.url);

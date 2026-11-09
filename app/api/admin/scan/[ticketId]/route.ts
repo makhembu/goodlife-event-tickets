@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processTicketScan } from "@/lib/supabase-db";
+import { requireScannerOrAdmin } from "@/lib/scanner-auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
+  const authErr = await requireScannerOrAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { ticketId } = await params;
     if (!ticketId) {
@@ -44,6 +48,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
+  const authErr = await requireScannerOrAdmin(request);
+  if (authErr) return authErr;
+
   try {
     const { ticketId } = await params;
     const { scanned_by = "Admin Guard", event_id, admit_count = 1 } = await request.json().catch(() => ({}));
