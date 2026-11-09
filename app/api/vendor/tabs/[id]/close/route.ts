@@ -7,7 +7,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = getTabActor(request);
+    const actor = await getTabActor(request);
     if (!actor) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }

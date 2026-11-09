@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAdminSession } from "@/lib/admin-session";
 
 /**
  * Who is acting on a customer tab.
@@ -27,13 +28,14 @@ export interface TabActor {
 }
 
 /** The admin dashboard session. */
-export function isAdminSession(request: NextRequest): boolean {
-  return request.cookies.get("goodlife_admin_session")?.value === "true";
+export async function isAdminSession(request: NextRequest): Promise<boolean> {
+  const session = request.cookies.get("goodlife_admin_session")?.value;
+  return await verifyAdminSession(session);
 }
 
 /** Decode the vendor session, or null when absent/unparseable. */
-export function getTabActor(request: NextRequest): TabActor | null {
-  if (isAdminSession(request)) {
+export async function getTabActor(request: NextRequest): Promise<TabActor | null> {
+  if (await isAdminSession(request)) {
     return { vendorId: null, operatorId: null, isAdmin: true };
   }
 

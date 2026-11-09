@@ -3,6 +3,8 @@ import { fetchEventDetails, updateEventDetails } from "@/lib/supabase-db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { verifyAdminSession } from "@/lib/admin-session";
 
+export const dynamic = "force-dynamic";
+
 const PUBLIC_EVENT_DETAILS_FIELDS = [
   "id",
   "title",
@@ -34,7 +36,6 @@ const PUBLIC_EVENT_DETAILS_FIELDS = [
   "recap_video_url",
   "video_url",
   "story_media",
-  "budget_allocated",
   "max_tent_inventory",
   "max_shared_beds",
 ] as const;
@@ -43,13 +44,20 @@ export async function GET(request: NextRequest) {
   try {
     const details = await fetchEventDetails();
     if (!details || typeof details !== "object") {
-      return NextResponse.json(details);
+      return NextResponse.json(details, {
+        headers: { "Cache-Control": "private, no-cache" }
+      });
     }
 
-    // If request carries a valid admin session, return full details (including gate_pin)
+    // If request carries a valid admin session, return full details (including gate_pin & budget)
     const adminCookie = request.cookies.get("goodlife_admin_session")?.value;
     if (adminCookie && (await verifyAdminSession(adminCookie))) {
-      return NextResponse.json(details);
+      return NextResponse.json(details, {
+        headers: {
+          "Cache-Control": "private, no-store, must-revalidate",
+          "Vary": "Cookie"
+        }
+      });
     }
 
     // Public response: strictly project onto the public allowlist
@@ -60,7 +68,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(publicDetails);
+    return NextResponse.json(publicDetails, {
+      headers: {
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        "Vary": "Cookie"
+      }
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

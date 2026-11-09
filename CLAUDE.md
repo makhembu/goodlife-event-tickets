@@ -20,7 +20,7 @@ npm run clean      # next clean
 
 - **Dual database**: Supabase (`@supabase/ssr`) for client-side RLS; Neon PostgreSQL (raw `pg` pool via `lib/neon-client.ts`) for server-side heavy ops.
 - **`lib/supabase-db.ts`** is the main data access layer — isomorphic file. Server-side code uses Neon `pg` pool directly; client-side falls back to `localStorage` or `fetch`-to-API guarded by `typeof window === "undefined"`.
-- **Auth**: Admin creds (`admin@goodlife.com` / `<set in env: ADMIN_PASSWORD>`). Cookie-based session (`goodlife_admin_session=true`, 1 day). No Supabase Auth for admin. See `app/api/admin/login/route.ts`.
+- **Auth**: Admin creds (`admin@goodlife.com` / `<set in env: ADMIN_PASSWORD>`). Signed HMAC session cookie (`goodlife_admin_session`, 1 day, httpOnly, sameSite=strict) verified via `verifyAdminSession()`. Legacy `"true"` cookie accepted only while `ALLOW_LEGACY_ADMIN_COOKIE !== "false"`. No Supabase Auth for admin. See `app/api/admin/login/route.ts` and `lib/admin-session.ts`.
 - **Tables**: `tickets` (soft-delete via `deleted_at`), `event_details` (singleton row id=1), `pending_payments` (orphaned M-Pesa), `ticket_tiers` (soft-delete), `payment_logs` (webhook audit).
 
 ### Payment Flow

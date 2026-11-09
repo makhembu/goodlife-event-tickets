@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neonQuery, fetchActiveEvent } from "@/lib/supabase-db";
+import { verifyAdminSession } from "@/lib/admin-session";
 
 function getVendorSession(request: NextRequest) {
   const sessionCookie = request.cookies.get("goodlife_vendor_session");
@@ -19,7 +20,7 @@ function getVendorSession(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const vendorSession = getVendorSession(request);
-    const isAdmin = request.cookies.get("goodlife_admin_session")?.value === "true";
+    const isAdmin = await verifyAdminSession(request.cookies.get("goodlife_admin_session")?.value);
 
     if (!vendorSession && !isAdmin) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });

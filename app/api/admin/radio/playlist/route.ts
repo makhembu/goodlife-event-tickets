@@ -7,6 +7,9 @@ import { computeLiveTimeline } from "@/lib/radio/timeline";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdmin(req);
+  if (unauthorized) return unauthorized;
+
   try {
     // 1. Check for active broadcast playlist first
     const [playlistRes, settingsRes] = await Promise.all([
@@ -16,7 +19,7 @@ export async function GET(req: NextRequest) {
                s.duration, s.duration_sec, s.genre, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] })),
@@ -90,7 +93,7 @@ export async function GET(req: NextRequest) {
           id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
           duration, duration_sec, genre, display_order, is_active, created_at
         FROM radio_sets
-        WHERE deleted_at IS NULL AND is_active = true
+        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
         ORDER BY display_order ASC, id ASC
       `);
 
@@ -183,7 +186,7 @@ export async function POST(req: NextRequest) {
 
       // Get current list of sets ordered by display_order
       const allSets = await neonQuery(
-        "SELECT id, display_order FROM radio_sets WHERE deleted_at IS NULL AND is_active = true ORDER BY display_order ASC, id ASC"
+        "SELECT id, display_order FROM radio_sets WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready' ORDER BY display_order ASC, id ASC"
       );
       const rows = allSets.rows;
       const idx = rows.findIndex((r: any) => r.id === Number(setId));

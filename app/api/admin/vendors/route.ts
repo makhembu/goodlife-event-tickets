@@ -30,6 +30,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const unauthorized = await requireAdmin(req);
+  if (unauthorized) return unauthorized;
+
   try {
     const data = await req.json().catch(() => ({}));
     const { name, contact_phone, contact_name, logo_url, eventId, flatFee, operator_name, operator_pin } = data;

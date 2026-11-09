@@ -5,6 +5,9 @@ import { neonQuery } from "@/lib/supabase-db";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdmin(req);
+  if (unauthorized) return unauthorized;
+
   try {
     const res = await neonQuery(
       "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"

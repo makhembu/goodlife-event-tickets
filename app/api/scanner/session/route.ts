@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { fetchActiveEvent, fetchAllEvents } from "@/lib/supabase-db";
+import { verifyAdminSession } from "@/lib/admin-session";
 
 export async function GET(request: NextRequest) {
   const scannerCookie = request.cookies.get("goodlife_scanner_session")?.value;
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     } catch {}
   }
 
-  if (adminCookie === "true") {
+  if (await verifyAdminSession(adminCookie)) {
     const active = await fetchActiveEvent();
     return NextResponse.json({
       authenticated: true,
@@ -45,7 +46,8 @@ export async function PATCH(request: NextRequest) {
   const scannerCookie = request.cookies.get("goodlife_scanner_session")?.value;
   const adminCookie = request.cookies.get("goodlife_admin_session")?.value;
 
-  if (!scannerCookie && adminCookie !== "true") {
+  const isAdmin = await verifyAdminSession(adminCookie);
+  if (!scannerCookie && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -73,7 +75,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updatedSession = {
-      role: existingSession.role || (adminCookie === "true" ? "admin" : "scanner"),
+      role: existingSession.role || (isAdmin ? "admin" : "scanner"),
       stewardName: (stewardName || existingSession.stewardName || "Gate Steward").trim(),
       gateName: (gateName || existingSession.gateName || "Main Gate").trim(),
       eventId: eventId ? Number(eventId) : existingSession.eventId,

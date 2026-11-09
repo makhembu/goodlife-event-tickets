@@ -14,7 +14,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ saleId: string }> }
 ) {
-  const authError = await requireAdmin();
+  const authError = await requireAdmin(request);
   if (authError) return authError;
 
   const { saleId } = await context.params;
@@ -55,4 +55,11 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ saleId: string }> }
+) {
+  return POST(request, context);
 }

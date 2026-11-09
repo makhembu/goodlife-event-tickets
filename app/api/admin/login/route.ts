@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { signAdminSession } from "@/lib/admin-session";
 
 export async function POST(request: NextRequest) {
   const rl = checkRateLimit(request, "admin-login", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
@@ -29,9 +30,10 @@ export async function POST(request: NextRequest) {
 
     if (effectiveEmail === "admin@goodlife.com" && passwordMatch) {
       const response = NextResponse.json({ success: true, message: "Authenticated successfully" });
+      const signedToken = await signAdminSession(60 * 60 * 24);
       
       // Set session cookie
-      response.cookies.set("goodlife_admin_session", "true", {
+      response.cookies.set("goodlife_admin_session", signedToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
