@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       response.cookies.set("goodlife_admin_session", signedToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         path: "/",
         maxAge: 60 * 60 * 24 // 1 day
       });

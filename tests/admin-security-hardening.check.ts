@@ -114,8 +114,8 @@ async function runTests() {
     process.env.ALLOW_LEGACY_ADMIN_COOKIE = prevEnv;
   }
 
-  // 6. Security check on gate_pin stripping
-  console.log("\n[6] event-details Secret Leak Prevention");
+  // 6. Security check on gate_pin stripping and Cache-Control headers
+  console.log("\n[6] event-details Secret Leak Prevention & Cache Policy");
   const rawDetails = {
     id: 1,
     title: "GOODLIFE 4",
@@ -126,6 +126,17 @@ async function runTests() {
   const { gate_pin, ...safeDetails } = rawDetails as any;
   check("gate_pin is deleted from sanitized object", (safeDetails as any).gate_pin === undefined);
   check("other fields (title, venue, till_number) preserved", safeDetails.title === "GOODLIFE 4" && safeDetails.venue === "Marara Camp");
+
+  const fs = await import("fs");
+  const path = await import("path");
+  const eventDetailsSrc = fs.readFileSync(path.resolve(__dirname, "../app/api/event-details/route.ts"), "utf-8");
+  check("event-details sets public s-maxage=10 without stale-while-revalidate", eventDetailsSrc.includes('"Cache-Control": "public, s-maxage=10, must-revalidate"') && !eventDetailsSrc.includes("stale-while-revalidate"));
+  check("event-details sets admin response to private no-store", eventDetailsSrc.includes('"Cache-Control": "private, no-store, must-revalidate"'));
+
+  // 7. Login cookie sameSite policy
+  console.log("\n[7] Admin Login Cookie Policy");
+  const loginSrc = fs.readFileSync(path.resolve(__dirname, "../app/api/admin/login/route.ts"), "utf-8");
+  check("login route sets sameSite: 'lax'", loginSrc.includes('sameSite: "lax"'));
 
   console.log("\n✓ All Commit 1 offline security checks passed successfully!");
 }
