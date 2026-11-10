@@ -13,7 +13,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { signRequest, BRIDGE_SECRET } from "../lib/radio/bridge-client";
+import { signRequest, getBridgeSecret } from "../lib/radio/bridge-client";
 
 function assert(condition: boolean, message: string, detail?: string) {
   if (condition) {
@@ -174,7 +174,7 @@ const { timestamp, signature } = signRequest(payload);
 
 // Verify signature calculation matches expected HMAC-SHA256 digest
 const expectedSig = crypto
-  .createHmac("sha256", BRIDGE_SECRET)
+  .createHmac("sha256", getBridgeSecret())
   .update(`${timestamp}:${payload}`)
   .digest("hex");
 
@@ -186,7 +186,7 @@ assert(
 // Verify tampering fails
 const tamperedPayload = JSON.stringify({ action: "unauthorized_drop" });
 const tamperedSig = crypto
-  .createHmac("sha256", BRIDGE_SECRET)
+  .createHmac("sha256", getBridgeSecret())
   .update(`${timestamp}:${tamperedPayload}`)
   .digest("hex");
 

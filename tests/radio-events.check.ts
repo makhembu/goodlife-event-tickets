@@ -17,9 +17,34 @@
 import fs from "fs";
 import path from "path";
 
+function isProductionDatabaseUrl(candidateUrl: string | undefined): boolean {
+  if (!candidateUrl) return false;
+  const cand = candidateUrl.trim();
+  const currentDbUrl = process.env.DATABASE_URL?.trim();
+  if (currentDbUrl && currentDbUrl === cand) return true;
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      for (const line of content.split(/\r?\n/)) {
+        const m = line.match(/^\s*DATABASE_URL\s*=\s*"?([^"#]+?)"?\s*$/);
+        if (m && m[1].trim() === cand) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
+
 // Invariant: Do not auto-load .env.local; require TEST_DATABASE_URL for live DB operations
 if (process.env.TEST_DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  const testUrl = process.env.TEST_DATABASE_URL.trim();
+  if (isProductionDatabaseUrl(testUrl)) {
+    console.error("SAFETY REFUSAL: TEST_DATABASE_URL matches production DATABASE_URL (or .env.local). Refusing to run live DB queries against production!");
+    process.exit(1);
+  }
+  process.env.DATABASE_URL = testUrl;
 }
 
 async function runVerification() {

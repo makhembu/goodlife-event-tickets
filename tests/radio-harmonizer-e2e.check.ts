@@ -16,12 +16,37 @@
 import fs from "fs";
 import path from "path";
 
+function isProductionDatabaseUrl(candidateUrl: string | undefined): boolean {
+  if (!candidateUrl) return false;
+  const cand = candidateUrl.trim();
+  const currentDbUrl = process.env.DATABASE_URL?.trim();
+  if (currentDbUrl && currentDbUrl === cand) return true;
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      for (const line of content.split(/\r?\n/)) {
+        const m = line.match(/^\s*DATABASE_URL\s*=\s*"?([^"#]+?)"?\s*$/);
+        if (m && m[1].trim() === cand) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
+
 // Gate behind TEST_DATABASE_URL and RUN_LIVE_E2E=1 so tests NEVER mutate production DB
 if (!process.env.TEST_DATABASE_URL || !process.env.RUN_LIVE_E2E || process.env.RUN_LIVE_E2E !== "1") {
   console.log("SKIP: radio-harmonizer-e2e.check.ts (set TEST_DATABASE_URL and RUN_LIVE_E2E=1 to run against a test database)");
   process.exit(0);
 }
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+const testUrl = process.env.TEST_DATABASE_URL.trim();
+if (isProductionDatabaseUrl(testUrl)) {
+  console.error("SAFETY REFUSAL: TEST_DATABASE_URL matches production DATABASE_URL (or .env.local). Refusing to run live mutation tests against production!");
+  process.exit(1);
+}
+process.env.DATABASE_URL = testUrl;
 
 const PLAYLIST_ID = 3; // Playlist 3: Millennial Rock & Alternative (13 tracks, not live on-air)
 const BASE_URL = process.env.TEST_APP_URL || "https://goodlife.smwhr.space";

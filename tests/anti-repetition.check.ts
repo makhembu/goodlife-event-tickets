@@ -1,4 +1,6 @@
 import assert from "assert";
+import fs from "fs";
+import path from "path";
 import {
   isScriptTooClose,
   buildDropPrompt,
@@ -8,6 +10,26 @@ import {
   RECENT_SCRIPTS_CAPACITY,
   DropVerifiedFacts,
 } from "../lib/radio/drop-engine";
+
+function isProductionDatabaseUrl(candidateUrl: string | undefined): boolean {
+  if (!candidateUrl) return false;
+  const cand = candidateUrl.trim();
+  const currentDbUrl = process.env.DATABASE_URL?.trim();
+  if (currentDbUrl && currentDbUrl === cand) return true;
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      for (const line of content.split(/\r?\n/)) {
+        const m = line.match(/^\s*DATABASE_URL\s*=\s*"?([^"#]+?)"?\s*$/);
+        if (m && m[1].trim() === cand) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
 
 async function main() {
   console.log("=== Goodlife Radio 254: Anti-Repetition & Memory Verification ===\n");
@@ -74,7 +96,12 @@ async function main() {
   if (!process.env.TEST_DATABASE_URL) {
     console.log("  PASS: Live DB drop cleanup skipped (TEST_DATABASE_URL is not set; preventing database mutations)");
   } else {
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+    const testUrl = process.env.TEST_DATABASE_URL.trim();
+    if (isProductionDatabaseUrl(testUrl)) {
+      console.error("SAFETY REFUSAL: TEST_DATABASE_URL matches production DATABASE_URL (or .env.local). Refusing to run live DB drop cleanup against production!");
+      process.exit(1);
+    }
+    process.env.DATABASE_URL = testUrl;
     const cleanupRes = await cleanupExpiredRadioDrops(24);
     assert(typeof cleanupRes.deletedDbRows === "number", "Retention cleanup reports deleted DB rows");
     assert(typeof cleanupRes.deletedFiles === "number", "Retention cleanup reports deleted files");

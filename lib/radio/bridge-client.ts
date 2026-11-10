@@ -10,17 +10,13 @@ const BRIDGE_BASE_URL = (
 function getBridgeSecret(): string {
   const rawBridgeSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
   if (!rawBridgeSecret) {
-    if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+    if (process.env.NODE_ENV === "production") {
       throw new Error("RADIO_BRIDGE_SECRET environment variable is required in production");
     }
     return "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
   }
   return rawBridgeSecret;
 }
-
-const BRIDGE_SECRET =
-  process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim() ||
-  "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
 
 function signRequest(body: string): { timestamp: string; signature: string } {
   const secret = getBridgeSecret();
@@ -342,4 +338,4 @@ export async function bridgeAnalyzeAudio(payload: {
   return { ok: false, error: "Failed to reach audio analyzer through Cloudflare tunnel" };
 }
 
-export { signRequest, BRIDGE_BASE_URL, BRIDGE_SECRET };
+export { signRequest, BRIDGE_BASE_URL, getBridgeSecret };
