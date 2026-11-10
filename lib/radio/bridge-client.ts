@@ -7,21 +7,26 @@ const BRIDGE_BASE_URL = (
     : "https://invidious-bridge.darajadigital.com"
 ).replace(/\/+$/, "");
 
-const rawBridgeSecret = process.env.RADIO_BRIDGE_SECRET?.trim();
-if (!rawBridgeSecret || rawBridgeSecret === '""' || rawBridgeSecret === "''") {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("RADIO_BRIDGE_SECRET environment variable is required in production");
+function getBridgeSecret(): string {
+  const rawBridgeSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
+  if (!rawBridgeSecret) {
+    if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+      throw new Error("RADIO_BRIDGE_SECRET environment variable is required in production");
+    }
+    return "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
   }
+  return rawBridgeSecret;
 }
+
 const BRIDGE_SECRET =
-  rawBridgeSecret && rawBridgeSecret !== '""' && rawBridgeSecret !== "''"
-    ? rawBridgeSecret
-    : "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
+  process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim() ||
+  "dev-placeholder-set-RADIO_BRIDGE_SECRET-in-env";
 
 function signRequest(body: string): { timestamp: string; signature: string } {
+  const secret = getBridgeSecret();
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signature = crypto
-    .createHmac("sha256", BRIDGE_SECRET)
+    .createHmac("sha256", secret)
     .update(`${timestamp}:${body}`)
     .digest("hex");
   return { timestamp, signature };

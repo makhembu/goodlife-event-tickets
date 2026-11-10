@@ -28,7 +28,7 @@ function runTest() {
     "Scanner auto-dismiss countdown only starts when data.success is true",
     scannerCode.includes("if (data.success) {") &&
     scannerCode.includes("autoDismissTimerRef.current = setInterval") &&
-    scannerCode.includes("} else {\n        setAutoDismissCountdown(null);")
+    /\}\s*else\s*\{\s*setAutoDismissCountdown\(null\);/m.test(scannerCode)
   );
 
   check(

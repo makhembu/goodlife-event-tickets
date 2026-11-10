@@ -73,10 +73,10 @@ async function runTests() {
   );
 
   console.log("\n--- SECTION 2: Behavioral Unit Tests (Admin Session Auth Verification) ---");
-  check("checkAdminSessionValid accepts valid session cookie", checkAdminSessionValid("true") === true);
-  check("checkAdminSessionValid rejects false string", checkAdminSessionValid("false") === false);
-  check("checkAdminSessionValid rejects undefined cookie", checkAdminSessionValid(undefined) === false);
-  check("checkAdminSessionValid rejects arbitrary token injection", checkAdminSessionValid("bearer-token-123") === false);
+  check("checkAdminSessionValid accepts valid session cookie", (await checkAdminSessionValid("true")) === true);
+  check("checkAdminSessionValid rejects false string", (await checkAdminSessionValid("false")) === false);
+  check("checkAdminSessionValid rejects undefined cookie", (await checkAdminSessionValid(undefined)) === false);
+  check("checkAdminSessionValid rejects arbitrary token injection", (await checkAdminSessionValid("bearer-token-123")) === false);
 
   console.log("\n--- SECTION 3: Behavioral Unit Tests (Server-Side Audio Limits) ---");
   // Test existing local file within limit

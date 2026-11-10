@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { createTicket, fetchTicketTiers, getEventById, fetchActiveEvent } from "@/lib/supabase-db";
 import { getEventAvailability, unavailabilityMessage } from "@/lib/event-availability";
 import { sendTicketViaWhatsApp } from "@/lib/whatsapp";
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Free RSVP quota for this tier is fully booked." }, { status: 400 });
     }
 
-    const reference = `RSVP-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+    const reference = `RSVP-${randomBytes(4).toString("hex").toUpperCase()}`;
     const ticket = await createTicket({
       id: reference,
       mpesa_receipt: `RSVP-FREE-${Date.now()}`,

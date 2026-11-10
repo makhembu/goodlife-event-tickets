@@ -12,21 +12,18 @@ import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-f
  * Reconciliation Cron Job.
  * Can be called by Vercel Cron, GitHub Actions, or periodic monitoring.
  * Re-checks pending_payments older than 3 minutes (and younger than 24 hours).
- * Guarded by CRON_SECRET or ADMIN_PASSWORD.
+ * Guarded strictly by CRON_SECRET via Authorization: Bearer <CRON_SECRET>.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = (process.env.CRON_SECRET || process.env.ADMIN_PASSWORD)?.replace(/^["']|["']$/g, "").trim();
+  const cronSecret = process.env.CRON_SECRET?.replace(/^["']|["']$/g, "").trim();
 
   if (!cronSecret) {
-    console.error("[payhero/reconcile] Neither CRON_SECRET nor ADMIN_PASSWORD is set. Failing closed.");
+    console.error("[payhero/reconcile] CRON_SECRET is not set. Failing closed.");
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
 
   const authHeader = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-  const token = new URL(request.url).searchParams.get("secret") || "";
-  const incoming = authHeader || token;
-
-  const incBuf = Buffer.from(incoming);
+  const incBuf = Buffer.from(authHeader);
   const expBuf = Buffer.from(cronSecret);
   if (incBuf.length !== expBuf.length || !timingSafeEqual(incBuf, expBuf)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

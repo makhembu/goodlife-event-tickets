@@ -108,8 +108,8 @@ function analyzeRouteFile(filePath: string): RouteHandlerInfo[] {
           auth = "PAYHERO_CALLBACK_TOKEN (Bearer/Query) + PayHero Status API back-channel";
           unsetSecret = "Token check logs warning; active back-channel query to PayHero API required";
         } else if (normalizedFilePath.endsWith("payhero/reconcile/route.ts")) {
-          auth = "CRON_SECRET or ADMIN_PASSWORD (Bearer/Query with timingSafeEqual)";
-          unsetSecret = "Fails closed (500 if neither CRON_SECRET nor ADMIN_PASSWORD is set)";
+          auth = "CRON_SECRET (Authorization: Bearer with timingSafeEqual)";
+          unsetSecret = "Fails closed (500 if CRON_SECRET is unset)";
         } else if (normalizedFilePath.endsWith("paystack/callback/route.ts")) {
           auth = "Paystack HMAC-SHA512 (x-paystack-signature)";
           unsetSecret = "Fails closed (500 if PAYSTACK_SECRET_KEY unset)";
