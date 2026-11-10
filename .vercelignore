@@ -10,3 +10,10 @@ tests/
 *.log
 webhook-logs.txt
 SECURITY-AUDIT.md
+RADIO-*.md
+.workbuddy-ai/
+*-report.json
+lint-results.json
+parse-lint.js
+eslint-report.json
+
