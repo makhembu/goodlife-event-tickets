@@ -9,6 +9,7 @@ import { NextRequest } from "next/server";
 import { signAdminSession, verifyAdminSession } from "../lib/admin-session";
 import { requireAdmin } from "../lib/admin-auth";
 import { requireScannerOrAdmin, isValidScannerSession } from "../lib/scanner-auth";
+import { PUBLIC_EVENT_DETAILS_FIELDS } from "../app/api/event-details/route";
 
 function check(desc: string, condition: boolean) {
   if (condition) {
@@ -116,16 +117,29 @@ async function runTests() {
 
   // 6. Security check on gate_pin stripping and Cache-Control headers
   console.log("\n[6] event-details Secret Leak Prevention & Cache Policy");
-  const rawDetails = {
-    id: 1,
-    title: "GOODLIFE 4",
-    venue: "Marara Camp",
+  check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include gate_pin", !PUBLIC_EVENT_DETAILS_FIELDS.includes("gate_pin" as any));
+  check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include internal secrets", !PUBLIC_EVENT_DETAILS_FIELDS.includes("budget_total" as any));
+  check("PUBLIC_EVENT_DETAILS_FIELDS allows dynamic title and venue", PUBLIC_EVENT_DETAILS_FIELDS.includes("title") && PUBLIC_EVENT_DETAILS_FIELDS.includes("venue"));
+
+  // Verify allowlist projection with arbitrary dynamic event data (e.g. GOODLIFE 7, GOODLIFE 8, etc.)
+  const dynamicDbRow = {
+    id: 7,
+    title: "GOODLIFE 7",
+    venue: "Naivasha Crater",
     gate_pin: "4829",
     till_number: "444555",
+    secret_internal_notes: "do not expose",
   };
-  const { gate_pin, ...safeDetails } = rawDetails as any;
-  check("gate_pin is deleted from sanitized object", (safeDetails as any).gate_pin === undefined);
-  check("other fields (title, venue, till_number) preserved", safeDetails.title === "GOODLIFE 4" && safeDetails.venue === "Marara Camp");
+  const projectedPublic: Record<string, any> = {};
+  for (const key of PUBLIC_EVENT_DETAILS_FIELDS) {
+    if (key in dynamicDbRow) {
+      projectedPublic[key] = (dynamicDbRow as any)[key];
+    }
+  }
+  check("gate_pin is stripped by public allowlist projection", projectedPublic.gate_pin === undefined);
+  check("internal secrets are stripped by public allowlist projection", projectedPublic.secret_internal_notes === undefined);
+  check("dynamic title (e.g. GOODLIFE 7) is preserved", projectedPublic.title === "GOODLIFE 7");
+  check("dynamic venue is preserved", projectedPublic.venue === "Naivasha Crater");
 
   const fs = await import("fs");
   const path = await import("path");

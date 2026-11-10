@@ -5,7 +5,7 @@ import { verifyAdminSession } from "@/lib/admin-session";
 
 export const dynamic = "force-dynamic";
 
-const PUBLIC_EVENT_DETAILS_FIELDS = [
+export const PUBLIC_EVENT_DETAILS_FIELDS = [
   "id",
   "title",
   "subtitle",
