@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 /**
  * Inbound WhatsApp webhook (WAHA / n8n).
@@ -96,37 +96,55 @@ function summarize(value: unknown, depth = 0): unknown {
 }
 
 export async function POST(request: NextRequest) {
-  const rawSecret = (
-    process.env.WHATSAPP_WEBHOOK_SECRET ||
-    process.env.WHATSAPP_API_KEY ||
-    process.env.WAHA_API_KEY
-  )?.replace(/^["']|["']$/g, "").trim();
+  const webhookSecret = process.env.WHATSAPP_WEBHOOK_SECRET?.replace(/^["']|["']$/g, "").trim();
 
-  if (!rawSecret) {
-    console.error("[whatsapp/webhook] Webhook secret not configured on server. Failing closed.");
+  if (!webhookSecret) {
+    console.error("[whatsapp/webhook] WHATSAPP_WEBHOOK_SECRET not configured on server. Failing closed.");
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
 
-  const incomingKey =
-    request.headers.get("x-webhook-secret") ||
-    request.headers.get("x-api-key") ||
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    request.nextUrl.searchParams.get("secret");
+  const hmacHeader = request.headers.get("x-webhook-hmac") || request.headers.get("x-webhook-hmac-sha256");
+  const secretHeader = request.headers.get("x-webhook-secret");
 
-  if (!incomingKey) {
+  if (!hmacHeader && !secretHeader) {
     return NextResponse.json({ error: "Missing authentication" }, { status: 401 });
   }
 
-  const incBuf = Buffer.from(incomingKey);
-  const expBuf = Buffer.from(rawSecret);
-  if (incBuf.length !== expBuf.length || !timingSafeEqual(incBuf, expBuf)) {
+  const rawBody = await request.text();
+
+  let authorized = false;
+
+  // 1. Verify via WAHA native HMAC (X-Webhook-Hmac)
+  if (hmacHeader) {
+    try {
+      const expectedHmac = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+      const hmacBuf = Buffer.from(hmacHeader.trim(), "hex");
+      const expBuf = Buffer.from(expectedHmac, "hex");
+      if (hmacBuf.length === expBuf.length && timingSafeEqual(hmacBuf, expBuf)) {
+        authorized = true;
+      }
+    } catch {
+      authorized = false;
+    }
+  }
+
+  // 2. Verify via WAHA custom header (X-Webhook-Secret)
+  if (!authorized && secretHeader) {
+    const secBuf = Buffer.from(secretHeader.trim());
+    const expSecBuf = Buffer.from(webhookSecret);
+    if (secBuf.length === expSecBuf.length && timingSafeEqual(secBuf, expSecBuf)) {
+      authorized = true;
+    }
+  }
+
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let payload: unknown;
 
   try {
-    payload = await request.json();
+    payload = JSON.parse(rawBody);
   } catch {
     // A body we cannot parse is still a delivery we should acknowledge. Answering
     // 400/500 here is what turns one bad gateway payload into a retry loop.
