@@ -16,27 +16,12 @@
 import fs from "fs";
 import path from "path";
 
-// 1. Load environment variables from .env.local
-let adminPassword = "";
-if (!process.env.DATABASE_URL) {
-  const envPath = path.resolve(process.cwd(), ".env.local");
-  if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, "utf8");
-    for (const line of content.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?([^"#\r\n]+?)"?\s*$/);
-      if (m) {
-        if (!process.env[m[1]]) process.env[m[1]] = m[2].trim();
-        if (m[1] === "ADMIN_PASSWORD") adminPassword = m[2].trim();
-      }
-    }
-  }
-}
-
-// Gate behind RUN_LIVE_E2E=1 so routine test suites and CI runs do not mutate live data
-if (!process.env.RUN_LIVE_E2E || process.env.RUN_LIVE_E2E !== "1") {
-  console.log("SKIP: radio-harmonizer-e2e.check.ts (set RUN_LIVE_E2E=1 to run live database mutation test)");
+// Gate behind TEST_DATABASE_URL and RUN_LIVE_E2E=1 so tests NEVER mutate production DB
+if (!process.env.TEST_DATABASE_URL || !process.env.RUN_LIVE_E2E || process.env.RUN_LIVE_E2E !== "1") {
+  console.log("SKIP: radio-harmonizer-e2e.check.ts (set TEST_DATABASE_URL and RUN_LIVE_E2E=1 to run against a test database)");
   process.exit(0);
 }
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 const PLAYLIST_ID = 3; // Playlist 3: Millennial Rock & Alternative (13 tracks, not live on-air)
 const BASE_URL = process.env.TEST_APP_URL || "https://goodlife.smwhr.space";

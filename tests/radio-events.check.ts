@@ -17,20 +17,9 @@
 import fs from "fs";
 import path from "path";
 
-// Ensure DATABASE_URL is set before any module initializes db connection
-if (!process.env.DATABASE_URL) {
-  try {
-    const envPath = path.resolve(process.cwd(), ".env.local");
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, "utf8");
-      for (const line of content.split(/\r?\n/)) {
-        const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?([^"#\r\n]+?)"?\s*$/);
-        if (m && !process.env[m[1]]) {
-          process.env[m[1]] = m[2].trim();
-        }
-      }
-    }
-  } catch {}
+// Invariant: Do not auto-load .env.local; require TEST_DATABASE_URL for live DB operations
+if (process.env.TEST_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
 async function runVerification() {
@@ -281,28 +270,32 @@ async function runVerification() {
   // ============================================================================
   console.log("\n--- 8. Live DB Query Verification ---");
 
-  const events = await getPromotableEvents();
-  assert(Array.isArray(events), "getPromotableEvents returns an array");
-  console.log(`Discovered ${events.length} promotable event(s) from live Neon DB.`);
+  if (!process.env.TEST_DATABASE_URL) {
+    console.log("SKIP: Section 8 live DB query skipped (requires TEST_DATABASE_URL; refusing to connect to production DB).");
+  } else {
+    const events = await getPromotableEvents();
+    assert(Array.isArray(events), "getPromotableEvents returns an array");
+    console.log(`Discovered ${events.length} promotable event(s) from live Neon DB.`);
 
-  for (const ev of events) {
-    console.log(`\nEvent [${ev.id}]: "${ev.name_spoken}"`);
-    console.log(`- State: ${ev.state}, Countdown: "${ev.countdown_phrase}"`);
-    console.log(`- Gates: ${ev.gates_open_phrase || "N/A"}`);
-    console.log(`- Ticket URL: ${ev.ticket_url}`);
-    console.log(`- Spoken URL: "${ev.spoken_ticket_url}"`);
-    console.log(`- Lineup confirmed: ${ev.lineup.length > 0 ? "YES (" + ev.lineup.join(", ") + ")" : "NO (Lineup empty)"}`);
-    console.log(`- Active entry tiers (${ev.tiers.length}):`);
-    for (const t of ev.tiers) {
-      console.log(`  * ${t.name}: ${t.price} KES ("${t.price_spoken}")`);
+    for (const ev of events) {
+      console.log(`\nEvent [${ev.id}]: "${ev.name_spoken}"`);
+      console.log(`- State: ${ev.state}, Countdown: "${ev.countdown_phrase}"`);
+      console.log(`- Gates: ${ev.gates_open_phrase || "N/A"}`);
+      console.log(`- Ticket URL: ${ev.ticket_url}`);
+      console.log(`- Spoken URL: "${ev.spoken_ticket_url}"`);
+      console.log(`- Lineup confirmed: ${ev.lineup.length > 0 ? "YES (" + ev.lineup.join(", ") + ")" : "NO (Lineup empty)"}`);
+      console.log(`- Active entry tiers (${ev.tiers.length}):`);
+      for (const t of ev.tiers) {
+        console.log(`  * ${t.name}: ${t.price} KES ("${t.price_spoken}")`);
+      }
+      console.log(`- Facts Hash: ${ev.facts_hash.slice(0, 16)}...`);
+      console.log(`- Valid Until: ${new Date(ev.valid_until).toISOString()}`);
+
+      assert(Boolean(ev.name_spoken), `Event ${ev.id} has a non-empty spoken name`);
+      assert(ev.ticket_url.startsWith("http"), `Event ${ev.id} has a valid ticket URL`);
+      assert(ev.valid_until > Date.now(), `Event ${ev.id} valid_until is in the future`);
+      assert(ev.facts_hash.length === 64, `Event ${ev.id} facts_hash is a 64-char hex string`);
     }
-    console.log(`- Facts Hash: ${ev.facts_hash.slice(0, 16)}...`);
-    console.log(`- Valid Until: ${new Date(ev.valid_until).toISOString()}`);
-
-    assert(Boolean(ev.name_spoken), `Event ${ev.id} has a non-empty spoken name`);
-    assert(ev.ticket_url.startsWith("http"), `Event ${ev.id} has a valid ticket URL`);
-    assert(ev.valid_until > Date.now(), `Event ${ev.id} valid_until is in the future`);
-    assert(ev.facts_hash.length === 64, `Event ${ev.id} facts_hash is a 64-char hex string`);
   }
 
   console.log("\n========================================================");

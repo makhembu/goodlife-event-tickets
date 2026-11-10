@@ -21,20 +21,9 @@ import path from "path";
 import https from "https";
 import http from "http";
 
-// Ensure DATABASE_URL is set from .env.local before DB modules initialize
-if (!process.env.DATABASE_URL) {
-  try {
-    const envPath = path.resolve(process.cwd(), ".env.local");
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, "utf8");
-      for (const line of content.split(/\r?\n/)) {
-        const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?([^"#\r\n]+?)"?\s*$/);
-        if (m && !process.env[m[1]]) {
-          process.env[m[1]] = m[2].trim();
-        }
-      }
-    }
-  } catch {}
+// Invariant: Do not auto-load .env.local; require TEST_DATABASE_URL for live DB operations
+if (process.env.TEST_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
 let passes = 0;
@@ -103,12 +92,15 @@ function isValidMp3Header(buf: Buffer): boolean {
 async function run() {
   console.log("=== GOODLIFE Radio 254: E2E Playout Audio & Synchronization Verification ===\n");
 
-  const { neonQuery } = await import("../lib/supabase-db");
+  if (!process.env.TEST_DATABASE_URL) {
+    console.log("[1/4 & 2/4] SKIP: Live DB & stream verification requires TEST_DATABASE_URL. Refusing to connect to production DB.");
+  } else {
+    const { neonQuery } = await import("../lib/supabase-db");
 
-  // ---------------------------------------------------------------------------
-  // TEST SECTION 1: Real Audio Streams Verification (R2 Range Request)
-  // ---------------------------------------------------------------------------
-  console.log("[1/4] Real Audio Streams Verification (Cloudflare R2)");
+    // ---------------------------------------------------------------------------
+    // TEST SECTION 1: Real Audio Streams Verification (R2 Range Request)
+    // ---------------------------------------------------------------------------
+    console.log("[1/4] Real Audio Streams Verification (Cloudflare R2)");
 
   const setsRes = await neonQuery(`
     SELECT id, title, dj_name, audio_url, duration_sec, is_active, processing_status
@@ -300,6 +292,7 @@ async function run() {
        WHERE id = 1`,
       [origSettings.broadcast_mode, origSettings.active_set_id, origSettings.active_started_at]
     );
+  }
   }
 
   // ---------------------------------------------------------------------------

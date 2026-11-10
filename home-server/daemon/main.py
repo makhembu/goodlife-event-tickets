@@ -73,7 +73,15 @@ audio_mixer = AudioMixer()
 azuracast_client = AzuraCastClient()
 session_archiver = SessionArchiver()
 
-SECRET_KEY = os.getenv("GOODLIFE_RADIO_SECRET_KEY", "goodlife_radio_default_secret")
+SECRET_KEY = (
+    os.getenv("GOODLIFE_RADIO_SECRET_KEY")
+    or os.getenv("BRIDGE_SECRET")
+    or os.getenv("RADIO_BRIDGE_SECRET")
+    or ""
+).strip()
+if not SECRET_KEY:
+    logger.critical("[FATAL] GOODLIFE_RADIO_SECRET_KEY / BRIDGE_SECRET environment variable is required and must not be empty.")
+    raise SystemExit(1)
 
 
 # ------------------------------------------------------------------------------
