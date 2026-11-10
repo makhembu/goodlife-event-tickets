@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const isDryRun = url.searchParams.get("dry_run") === "true" || url.searchParams.get("dry_run") === "1";
+
   try {
     // Find pending payments created between 3 minutes ago and 24 hours ago
     const { rows: stalePending } = await neonQuery(
@@ -42,17 +45,18 @@ export async function GET(request: NextRequest) {
     );
 
     if (!stalePending || stalePending.length === 0) {
-      return NextResponse.json({ message: "No stale pending payments to reconcile", count: 0 });
+      return NextResponse.json({ message: "No stale pending payments to reconcile", count: 0, dry_run: isDryRun });
     }
 
-    const results: Array<{ reference: string; outcome: string; status?: string }> = [];
+    const results: Array<{ reference: string; outcome: string; status?: string; action?: string; amount?: number }> = [];
 
     for (const payment of stalePending) {
       const ref = payment.checkout_request_id;
       try {
         const statusRes = await getPayheroTransactionStatus(ref);
         if (!statusRes.ok || !statusRes.data) {
-          results.push({ reference: ref, outcome: "payhero_status_check_failed" });
+          // IMPORTANT: PayHero API network errors or timeouts NEVER mark a payment failed.
+          results.push({ reference: ref, outcome: "payhero_status_check_failed", action: "skipped_safely" });
           continue;
         }
 
@@ -60,43 +64,39 @@ export async function GET(request: NextRequest) {
         if (payheroStatusIsSuccess(data)) {
           const amountPaid = Number(data.amount) || Number(payment.amount) || 0;
           const providerReference = String(data.provider_reference || data.reference || ref);
-          const fulfilled = await fulfillPayheroPayment({
-            reference: ref,
-            providerReference,
-            amountPaid,
-            source: "polling",
-            raw: data,
-          });
-          results.push({ reference: ref, outcome: "fulfilled", status: "SUCCESS" });
-        } else if (payheroStatusIsFailed(data)) {
-          await markPayheroPaymentFailed(
-            ref,
-            data.message || data.result_desc || "Reconciliation marked failed",
-            data
-          );
-          results.push({ reference: ref, outcome: "marked_failed", status: data.status });
-        } else {
-          // Documented QUEUED or unknown - if older than 30 minutes and still pending/queued in PayHero, mark timed out
-          const createdAt = new Date(payment.created_at).getTime();
-          const ageMinutes = (Date.now() - createdAt) / (1000 * 60);
-          if (ageMinutes > 30) {
-            await markPayheroPaymentFailed(
-              ref,
-              "Payment timed out after 30 minutes with no PIN entry",
-              data
-            );
-            results.push({ reference: ref, outcome: "expired_over_30m", status: "TIMED_OUT" });
+          if (isDryRun) {
+            results.push({ reference: ref, outcome: "would_fulfill", status: "SUCCESS", amount: amountPaid, action: "dry_run_preview" });
           } else {
-            results.push({ reference: ref, outcome: "still_pending_in_payhero", status: data.status });
+            const fulfilled = await fulfillPayheroPayment({
+              reference: ref,
+              providerReference,
+              amountPaid,
+              source: "polling",
+              raw: data,
+            });
+            results.push({ reference: ref, outcome: "fulfilled", status: "SUCCESS", amount: amountPaid });
           }
+        } else if (payheroStatusIsFailed(data)) {
+          const reason = data.message || data.result_desc || "Reconciliation marked failed";
+          if (isDryRun) {
+            results.push({ reference: ref, outcome: "would_mark_failed", status: data.status, action: "dry_run_preview" });
+          } else {
+            await markPayheroPaymentFailed(ref, reason, data);
+            results.push({ reference: ref, outcome: "marked_failed", status: data.status });
+          }
+        } else {
+          // Indeterminate or queued in PayHero: NEVER mark failed based on timeout; keep pending for safety
+          results.push({ reference: ref, outcome: "still_pending_in_payhero", status: data.status || "PENDING", action: "kept_pending" });
         }
       } catch (err: any) {
-        results.push({ reference: ref, outcome: "error: " + err.message });
+        // Network/API exceptions NEVER mark a payment failed
+        results.push({ reference: ref, outcome: "error: " + err.message, action: "skipped_safely" });
       }
     }
 
     return NextResponse.json({
       success: true,
+      dry_run: isDryRun,
       reconciled_count: results.length,
       results,
     });
