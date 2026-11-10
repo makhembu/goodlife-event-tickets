@@ -306,8 +306,18 @@ export async function GET() {
       });
     }
     return NextResponse.json(
-      { mode: "curated", live: { title: "", stream_url: "", fallback_set: null }, sets: [] },
-      { status: 500 }
+      {
+        mode: "curated",
+        live: { title: "", stream_url: "", fallback_set: null },
+        sets: [],
+        error: true,
+      },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
+      }
     );
   }
 }
