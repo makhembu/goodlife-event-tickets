@@ -72,3 +72,6 @@ tests/*.png
 tests/*.py
 tests/monitor_proofs/
 tests/__pycache__/
+ 
+.workbuddy-ai/
+RADIO-*.md
