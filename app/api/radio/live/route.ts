@@ -13,6 +13,32 @@ interface LiveCachedState {
 
 let _cachedLiveState: LiveCachedState | null = null;
 
+// 30-second instance cache for settings and playlist playout structure
+interface RadioPlayoutDbCache {
+  settings: {
+    broadcast_mode?: string;
+    active_set_id?: string | number | null;
+    active_started_at?: string | null;
+  };
+  sets: any[];
+  activatedAt: string | null;
+  activePlaylistName: string | null;
+  activePlaylistId: number | null;
+  timestamp: number;
+}
+
+let _dbPlayoutCache: RadioPlayoutDbCache | null = null;
+const PLAYOUT_CACHE_TTL_MS = 30_000; // 30 seconds
+
+// 2.5-second instance cache for live-drop broadcast check (stays within 2-3s delivery window)
+interface LiveDropCache {
+  drop: any | null;
+  timestamp: number;
+}
+
+let _liveDropCache: LiveDropCache | null = null;
+const LIVE_DROP_CACHE_TTL_MS = 2_500; // 2.5 seconds
+
 async function queryRecentLiveDrop() {
   try {
     const dropRes = await neonQuery(
@@ -42,48 +68,83 @@ async function queryRecentLiveDrop() {
   return null;
 }
 
+async function getCachedRecentLiveDrop() {
+  const now = Date.now();
+  if (_liveDropCache && now - _liveDropCache.timestamp < LIVE_DROP_CACHE_TTL_MS) {
+    return _liveDropCache.drop;
+  }
+  const drop = await queryRecentLiveDrop();
+  _liveDropCache = { drop, timestamp: now };
+  return drop;
+}
+
+async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
+  const now = Date.now();
+  if (_dbPlayoutCache && now - _dbPlayoutCache.timestamp < PLAYOUT_CACHE_TTL_MS) {
+    return _dbPlayoutCache;
+  }
+
+  // Combined single query round: fetch settings and active playlist in parallel
+  const [playlistRes, settingsRes] = await Promise.all([
+    neonQuery(`
+      SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
+             s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
+      FROM radio_playlists p
+      JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+      JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
+      WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+      ORDER BY pt.position ASC, pt.id ASC
+    `).catch(() => ({ rows: [] })),
+    neonQuery(
+      "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
+    ).catch(() => ({ rows: [] })),
+  ]);
+
+  let sets: any[] = [];
+  let activatedAt: string | null = null;
+  let activePlaylistName: string | null = null;
+  let activePlaylistId: number | null = null;
+
+  if (playlistRes.rows.length > 0) {
+    sets = playlistRes.rows;
+    activatedAt = playlistRes.rows[0].activated_at;
+    activePlaylistName = playlistRes.rows[0].playlist_name;
+    activePlaylistId = playlistRes.rows[0].playlist_id;
+  } else {
+    // Full Catalog AutoDJ rotation across all library tracks (no playlist locked)
+    const setsRes = await neonQuery(`
+      SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+      FROM radio_sets
+      WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
+      ORDER BY display_order ASC, id ASC
+    `).catch(() => ({ rows: [] }));
+    sets = setsRes.rows || [];
+    activatedAt = null;
+    activePlaylistName = null;
+    activePlaylistId = null;
+  }
+
+  const settings = settingsRes.rows[0] || {};
+  _dbPlayoutCache = {
+    settings,
+    sets,
+    activatedAt,
+    activePlaylistName,
+    activePlaylistId,
+    timestamp: now,
+  };
+  return _dbPlayoutCache;
+}
+
 async function getTimelineFallback() {
   try {
-    const [playlistRes, settingsRes, liveDrop] = await Promise.all([
-      neonQuery(`
-        SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
-               s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
-        FROM radio_playlists p
-        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
-        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
-        ORDER BY pt.position ASC, pt.id ASC
-      `).catch(() => ({ rows: [] })),
-      neonQuery(
-        "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
-      ).catch(() => ({ rows: [] })),
-      queryRecentLiveDrop(),
+    const [cachedPlayout, liveDrop] = await Promise.all([
+      getCachedPlayoutData(),
+      getCachedRecentLiveDrop(),
     ]);
 
-    let sets: any[] = [];
-    let activatedAt: string | null = null;
-    let activePlaylistName: string | null = null;
-
-    if (playlistRes.rows.length > 0) {
-      sets = playlistRes.rows;
-      activatedAt = playlistRes.rows[0].activated_at;
-      activePlaylistName = playlistRes.rows[0].playlist_name;
-    } else {
-      // Full Catalog AutoDJ rotation across all library tracks (no playlist locked)
-      const setsRes = await neonQuery(`
-        SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
-        FROM radio_sets
-        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
-        ORDER BY display_order ASC, id ASC
-      `);
-      sets = setsRes.rows || [];
-      activatedAt = null;
-      activePlaylistName = null;
-    }
-
+    const { sets, activatedAt, activePlaylistName, activePlaylistId, settings } = cachedPlayout;
     if (sets.length === 0) return null;
-
-    const settings = settingsRes.rows[0] || {};
     const isMania = settings.broadcast_mode === "mania" && settings.active_set_id;
     const maniaIdx = isMania ? sets.findIndex((s: any) => s.id === Number(settings.active_set_id)) : -1;
 
@@ -179,7 +240,7 @@ async function getTimelineFallback() {
       offline: false,
       stale: false,
       mode: activeMode,
-      playlist_id: playlistRes.rows[0]?.playlist_id || null,
+      playlist_id: activePlaylistId,
       playlist_name: activePlaylistName,
       now_playing: {
         id: currentTrack.id,
@@ -228,16 +289,9 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
 export async function GET() {
   const upstreamBase = process.env.RADIO_UPSTREAM_URL?.trim();
 
-  // 1. Check current station broadcast mode from database (Cloudflare virtual schedule is primary)
-  let broadcastMode = "autodj";
-  try {
-    const settingsRes = await neonQuery(
-      "SELECT broadcast_mode FROM radio_settings WHERE id = 1"
-    );
-    if (settingsRes.rows[0]?.broadcast_mode) {
-      broadcastMode = settingsRes.rows[0].broadcast_mode;
-    }
-  } catch {}
+  // 1. Get playout data from instance cache (combines settings & playlist queries in a 30s cache)
+  const cachedPlayout = await getCachedPlayoutData();
+  const broadcastMode = cachedPlayout.settings.broadcast_mode || "autodj";
 
   // 2. If station is in autodj or mania mode, Cloudflare R2 virtual timeline is the primary playout
   if (broadcastMode !== "live" || !upstreamBase) {
@@ -246,7 +300,7 @@ export async function GET() {
       return NextResponse.json(fallback, {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
         },
       });
     }
@@ -263,7 +317,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
         },
       }
     );
@@ -321,7 +375,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
         },
       }
     );
@@ -342,7 +396,7 @@ export async function GET() {
         {
           status: 200,
           headers: {
-            "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+            "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
           },
         }
       );
@@ -354,7 +408,7 @@ export async function GET() {
       return NextResponse.json(fallback, {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
         },
       });
     }
@@ -372,7 +426,7 @@ export async function GET() {
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
         },
       }
     );

@@ -494,7 +494,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch(`/api/radio/live?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" });
+      const res = await fetch("/api/radio/live", { signal: controller.signal });
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -531,9 +531,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         const isPlaylistIdSwitch = Boolean(prevPlId && newPlId && prevPlId !== newPlId);
         currentBroadcastPlaylistIdRef.current = newPlId;
 
+        // Adjust for Edge CDN cache age using server_time so client elapsed stays exact
+        const edgeAgeSec = (data as any)?.server_time
+          ? Math.max(0, Math.floor(Date.now() / 1000) - Number((data as any).server_time))
+          : 0;
+        const baseElapsed = typeof data.now_playing.elapsed === "number" ? data.now_playing.elapsed : 0;
+        const adjustedElapsed = baseElapsed + edgeAgeSec;
+
         const track = {
           ...data.now_playing,
           title: formatTrackTitle(data.now_playing.title),
+          elapsed: adjustedElapsed,
         };
         setNowPlayingTrack(track);
 
@@ -659,11 +667,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // If phone display is off/locked but audio is playing, use a steady 5.5s cadence to conserve battery
-      // while guaranteeing stream transitions work seamlessly without needing screen unlock!
+      // Polling cadence: 5s active playing, 10s background/locked display playing, 30s when paused/viewing
       const cadenceMs = isPlaying && !isVisible
-        ? 5500
-        : (isOnRadioPage && isPlaying) ? 3500 : pollBackoffMsRef.current;
+        ? 10000
+        : (isOnRadioPage && isPlaying) ? 5000 : 30000;
       pollTimerRef.current = setTimeout(async () => {
         await fetchRadioLive();
         scheduleNextPoll();
@@ -1063,7 +1070,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       // If track is missing, or the song in memory finished while sitting on the page:
       if (isTrackStaleOrFinished) {
         try {
-          const res = await fetch(`/api/radio/live?t=${Date.now()}`, { cache: "no-store" });
+          const res = await fetch("/api/radio/live");
           if (res.ok) {
             const data = await res.json();
             if (data.now_playing?.audio_url) {

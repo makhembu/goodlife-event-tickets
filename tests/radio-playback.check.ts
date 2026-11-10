@@ -92,8 +92,8 @@ async function runTests() {
   // 7. BFF Route Contract (/api/radio/live)
   const bffCode = fs.readFileSync(path.join(process.cwd(), "app/api/radio/live/route.ts"), "utf8");
   check("[Source-Check] BFF enforces 3000ms upstream timeout", bffCode.includes("3000"));
-  check("[Source-Check] BFF specifies Cache-Control s-maxage=5", bffCode.includes("s-maxage=5"));
-  check("[Source-Check] BFF includes stale-while-revalidate", bffCode.includes("stale-while-revalidate=15"));
+  check("[Source-Check] BFF specifies Edge Cache-Control s-maxage=3 at most", bffCode.includes("s-maxage=3"));
+  check("[Source-Check] BFF specifies must-revalidate without stale-while-revalidate", bffCode.includes("must-revalidate") && !bffCode.includes("stale-while-revalidate"));
   check("[Source-Check] BFF sets stale: true flag on upstream failure", bffCode.includes("stale: true"));
   check("[Source-Check] BFF reads RADIO_UPSTREAM_URL from env without hardcoded private IP", bffCode.includes("process.env.RADIO_UPSTREAM_URL"));
 
