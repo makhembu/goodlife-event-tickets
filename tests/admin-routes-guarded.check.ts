@@ -62,7 +62,6 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   // Public buyer checkout & ticketing flows
   ["app/api/payhero/initialize/route.ts:POST", "Public buyer checkout (rate-limited STK push)"],
   ["app/api/payhero/verify/route.ts:GET", "Public buyer checkout verification polling"],
-  ["app/api/payhero/reconcile/route.ts:GET", "Public checkout manual reconcile poller"],
   ["app/api/paystack/initialize/route.ts:POST", "Public buyer Paystack checkout init"],
   ["app/api/paystack/verify/route.ts:GET", "Public buyer Paystack checkout verify"],
   ["app/api/payments/till-submit/route.ts:POST", "Public till receipt submission (requires manual admin approval)"],
@@ -85,11 +84,6 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/scanner/logout/route.ts:POST", "Gate scanner logout (clears session cookie)"],
   ["app/api/vendor/auth/route.ts:POST", "Vendor operator login (authenticates via Operator PIN)"],
   ["app/api/vendor/logout/route.ts:POST", "Vendor operator logout (clears session cookie)"],
-
-  // Legacy Daraja routes (dead code per AGENTS.md, not used by frontend)
-  ["app/api/mpesa/callback/route.ts:POST", "Legacy Daraja callback (dead code)"],
-  ["app/api/mpesa/status/route.ts:GET", "Legacy Daraja status check (dead code)"],
-  ["app/api/mpesa/stkpush/route.ts:POST", "Legacy Daraja STK push (dead code)"],
 ]);
 
 /**
@@ -294,9 +288,13 @@ function checkNonAdminRoutes(): { totalMethodsChecked: number; allowlistedCount:
         body.includes("tabOwnershipGuard") ||
         body.includes("getTabActor");
 
-      // 4. Webhook cryptographic verification
+      // 4. Webhook / Cron cryptographic verification
       const hasWebhookAuth =
-        (body.includes("timingSafeEqual") && (body.includes("X-Bridge-Signature") || body.includes("X-Webhook-Hmac") || body.includes("PAYHERO_CALLBACK_TOKEN"))) ||
+        (body.includes("timingSafeEqual") &&
+          (body.includes("X-Bridge-Signature") ||
+            body.includes("X-Webhook-Hmac") ||
+            body.includes("PAYHERO_CALLBACK_TOKEN") ||
+            body.includes("CRON_SECRET"))) ||
         body.includes("x-paystack-signature");
 
       // 5. Delegation to an in-file or imported guarded handler

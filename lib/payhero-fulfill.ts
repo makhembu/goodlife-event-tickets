@@ -68,6 +68,17 @@ export async function fulfillPayheroPayment(
     return { fulfilled: false, ticketIds: [], reason: "Could not resolve valid event ID for fulfillment" };
   }
   const amountPaid = Number(p.amountPaid) > 0 ? Number(p.amountPaid) : Number(pending.amount) || 0;
+  const expectedAmount = Number(pending.amount) || 0;
+  if (expectedAmount > 0 && p.amountPaid > 0 && p.amountPaid < expectedAmount) {
+    console.error(
+      `[payhero-fulfill] Underpayment detected for ${p.reference}: paid ${p.amountPaid}, expected ${expectedAmount}`
+    );
+    return {
+      fulfilled: false,
+      ticketIds: [],
+      reason: `underpayment: paid ${p.amountPaid} < expected ${expectedAmount}`,
+    };
+  }
   const receipt = p.providerReference || p.reference;
 
   await insertPaymentLog({

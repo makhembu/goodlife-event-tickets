@@ -5,7 +5,20 @@ import { checkRateLimit } from "@/lib/rate-limit";
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API = "https://api.paystack.co";
 
+function isPaystackEnabled(): boolean {
+  const flag = (process.env.ENABLE_PAYSTACK || process.env.NEXT_PUBLIC_ENABLE_PAYSTACK || "").toLowerCase().trim();
+  const secret = process.env.PAYSTACK_SECRET_KEY?.trim();
+  return Boolean(secret && (flag === "true" || flag === "1"));
+}
+
 export async function POST(request: NextRequest) {
+  if (!isPaystackEnabled()) {
+    return NextResponse.json(
+      { error: "Paystack payment gateway is not enabled on this server." },
+      { status: 503 }
+    );
+  }
+
   const rl = checkRateLimit(request, "paystack-init", { maxRequests: 6, windowMs: 60 * 1000 });
   if (!rl.allowed) return rl.response!;
 
@@ -16,13 +29,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Email, phone number, ticket type, and buyer name are required." },
         { status: 400 }
-      );
-    }
-
-    if (!PAYSTACK_SECRET_KEY) {
-      return NextResponse.json(
-        { error: "Paystack not configured — missing PAYSTACK_SECRET_KEY." },
-        { status: 500 }
       );
     }
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { neonQuery } from "@/lib/supabase-db";
 import {
   getPayheroTransactionStatus,
@@ -14,15 +15,21 @@ import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-f
  * Guarded by CRON_SECRET or ADMIN_PASSWORD.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET || process.env.ADMIN_PASSWORD;
+  const cronSecret = (process.env.CRON_SECRET || process.env.ADMIN_PASSWORD)?.replace(/^["']|["']$/g, "").trim();
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    const url = new URL(request.url);
-    const token = url.searchParams.get("secret");
-    if (token !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!cronSecret) {
+    console.error("[payhero/reconcile] Neither CRON_SECRET nor ADMIN_PASSWORD is set. Failing closed.");
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+
+  const authHeader = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+  const token = new URL(request.url).searchParams.get("secret") || "";
+  const incoming = authHeader || token;
+
+  const incBuf = Buffer.from(incoming);
+  const expBuf = Buffer.from(cronSecret);
+  if (incBuf.length !== expBuf.length || !timingSafeEqual(incBuf, expBuf)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {

@@ -103,10 +103,13 @@ function analyzeRouteFile(filePath: string): RouteHandlerInfo[] {
           auth = "HMAC Tab Self-Pay Token (?t= param) / Admin Cookie";
           unsetSecret = "Fallback to TAB_SELF_PAY_SECRET -> PAYHERO_CALLBACK_TOKEN -> DATABASE_URL";
         }
-        // 4. Webhook / Callback Signatures
+        // 4. Webhook / Callback / Cron Signatures
         else if (normalizedFilePath.endsWith("payhero/callback/route.ts")) {
           auth = "PAYHERO_CALLBACK_TOKEN (Bearer/Query) + PayHero Status API back-channel";
           unsetSecret = "Token check logs warning; active back-channel query to PayHero API required";
+        } else if (normalizedFilePath.endsWith("payhero/reconcile/route.ts")) {
+          auth = "CRON_SECRET or ADMIN_PASSWORD (Bearer/Query with timingSafeEqual)";
+          unsetSecret = "Fails closed (500 if neither CRON_SECRET nor ADMIN_PASSWORD is set)";
         } else if (normalizedFilePath.endsWith("paystack/callback/route.ts")) {
           auth = "Paystack HMAC-SHA512 (x-paystack-signature)";
           unsetSecret = "Fails closed (500 if PAYSTACK_SECRET_KEY unset)";

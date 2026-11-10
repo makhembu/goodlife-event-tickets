@@ -1758,17 +1758,7 @@ export async function restoreTicketTier(id: string): Promise<boolean> {
 // Create pending payment
 export async function createPendingPayment(payment: PendingPayment): Promise<PendingPayment> {
   if (typeof window !== "undefined") {
-    try {
-      const res = await fetch("/api/mpesa/stkpush", { // mapping context
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payment)
-      });
-      if (res.ok) return payment;
-    } catch (e) {
-      console.warn("API createPendingPayment failed.", e);
-    }
-    return payment;
+    throw new Error("createPendingPayment must be called from server routes only.");
   }
 
   // Server side - Neon SQL
