@@ -2,43 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchEventDetails, updateEventDetails } from "@/lib/supabase-db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { verifyAdminSession } from "@/lib/admin-session";
+import { PUBLIC_EVENT_DETAILS_FIELDS } from "@/lib/event-details-public";
 
 export const dynamic = "force-dynamic";
-
-export const PUBLIC_EVENT_DETAILS_FIELDS = [
-  "id",
-  "title",
-  "subtitle",
-  "tag",
-  "venue",
-  "till_number",
-  "flyer_url",
-  "regulations",
-  "ticker_text",
-  "logo_url",
-  "event_date",
-  "maps_url",
-  "footer_title",
-  "footer_legal",
-  "payment_contact",
-  "event_id",
-  "whatsapp_message",
-  "status",
-  "is_active",
-  "category",
-  "recurrence_pattern",
-  "recurrence_day",
-  "recurrence_time",
-  "custom_schedule_text",
-  "sales_open_date",
-  "sales_close_date",
-  "next_event_title",
-  "recap_video_url",
-  "video_url",
-  "story_media",
-  "max_tent_inventory",
-  "max_shared_beds",
-] as const;
 
 export async function GET(request: NextRequest) {
   try {

@@ -9,7 +9,7 @@ import { NextRequest } from "next/server";
 import { signAdminSession, verifyAdminSession } from "../lib/admin-session";
 import { requireAdmin } from "../lib/admin-auth";
 import { requireScannerOrAdmin, isValidScannerSession } from "../lib/scanner-auth";
-import { PUBLIC_EVENT_DETAILS_FIELDS } from "../app/api/event-details/route";
+import { PUBLIC_EVENT_DETAILS_FIELDS } from "../lib/event-details-public";
 
 function check(desc: string, condition: boolean) {
   if (condition) {
@@ -118,7 +118,8 @@ async function runTests() {
   // 6. Security check on gate_pin stripping and Cache-Control headers
   console.log("\n[6] event-details Secret Leak Prevention & Cache Policy");
   check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include gate_pin", !PUBLIC_EVENT_DETAILS_FIELDS.includes("gate_pin" as any));
-  check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include internal secrets", !PUBLIC_EVENT_DETAILS_FIELDS.includes("budget_total" as any));
+  check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include budget_total", !PUBLIC_EVENT_DETAILS_FIELDS.includes("budget_total" as any));
+  check("PUBLIC_EVENT_DETAILS_FIELDS does NOT include budget_allocated", !PUBLIC_EVENT_DETAILS_FIELDS.includes("budget_allocated" as any));
   check("PUBLIC_EVENT_DETAILS_FIELDS allows dynamic title and venue", PUBLIC_EVENT_DETAILS_FIELDS.includes("title") && PUBLIC_EVENT_DETAILS_FIELDS.includes("venue"));
 
   // Verify allowlist projection with arbitrary dynamic event data (e.g. GOODLIFE 7, GOODLIFE 8, etc.)

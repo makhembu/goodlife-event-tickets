@@ -56,10 +56,3 @@ export async function POST(
     );
   }
 }
-
-export async function DELETE(
-  request: NextRequest,
-  context: { params: Promise<{ saleId: string }> }
-) {
-  return POST(request, context);
-}
