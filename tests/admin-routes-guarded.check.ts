@@ -3,11 +3,14 @@ import path from "path";
 
 /**
  * Static route guard verification test.
- * Scans app/api/admin/** /route.ts plus events & event-details mutation routes.
+ * Scans the ENTIRE app/api/** tree (both admin and non-admin routes).
  *
- * RIGOROUS CHECK: Examines the AST / function body of EACH exported HTTP method handler
- * (GET, POST, PUT, DELETE, PATCH) individually. If any handler body lacks requireAdmin
- * or requireScannerOrAdmin (or delegation to a guarded handler), it fails.
+ * RIGOROUS CHECK:
+ * 1. Scans every exported HTTP method handler in app/api/admin/**.
+ *    Must call requireAdmin / requireScannerOrAdmin / verifyAdminSession (except allowlisted login/logout/me).
+ * 2. Scans every exported HTTP method handler across all non-admin routes in app/api/**.
+ *    Must have in-handler auth (requireAdmin, vendor session, scanner session, tab auth, webhook HMAC)
+ *    OR be present in NON_ADMIN_PUBLIC_ALLOWLIST with a documented security rationale.
  *
  * 100% offline, 0 DB imports/queries.
  */
@@ -28,10 +31,10 @@ function walkDir(dir: string): string[] {
   return results;
 }
 
-const ALLOWLIST = new Set([
-  "app/api/admin/login/route.ts",
-  "app/api/admin/logout/route.ts",
-  "app/api/admin/me/route.ts",
+const ADMIN_ALLOWLIST = new Set([
+  "app/api/admin/login/route.ts:POST",
+  "app/api/admin/logout/route.ts:POST",
+  "app/api/admin/me/route.ts:GET",
 ]);
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"];
@@ -43,9 +46,54 @@ interface MethodFailure {
 }
 
 /**
+ * Explicit allowlist of intentionally public / unauthenticated handlers outside app/api/admin.
+ * Every entry has a documented security reason why it does not require a session cookie.
+ */
+const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
+  // Public catalog and site metadata reads (cached, public, no PII)
+  ["app/api/event-details/route.ts:GET", "Public event details (sanitized allowlist, gate_pin stripped)"],
+  ["app/api/events/route.ts:GET", "Public active/scheduled events list"],
+  ["app/api/events/active/route.ts:GET", "Public active event query"],
+  ["app/api/events/[id]/route.ts:GET", "Public event detail by ID"],
+  ["app/api/ticket-tiers/route.ts:GET", "Public ticket tiers list (deleted tiers require admin)"],
+  ["app/api/hub/gallery/route.ts:GET", "Public event gallery photos"],
+  ["app/api/hub/radio/route.ts:GET", "Public radio sets list"],
+
+  // Public buyer checkout & ticketing flows
+  ["app/api/payhero/initialize/route.ts:POST", "Public buyer checkout (rate-limited STK push)"],
+  ["app/api/payhero/verify/route.ts:GET", "Public buyer checkout verification polling"],
+  ["app/api/payhero/reconcile/route.ts:GET", "Public checkout manual reconcile poller"],
+  ["app/api/paystack/initialize/route.ts:POST", "Public buyer Paystack checkout init"],
+  ["app/api/paystack/verify/route.ts:GET", "Public buyer Paystack checkout verify"],
+  ["app/api/payments/till-submit/route.ts:POST", "Public till receipt submission (requires manual admin approval)"],
+  ["app/api/tickets/lookup/route.ts:POST", "Public ticket lookup (requires reference + phone match)"],
+  ["app/api/tickets/rsvp-free/route.ts:POST", "Public free RSVP (enforces price=0, rate-limited)"],
+  ["app/api/tickets/[id]/route.ts:GET", "Public ticket view (non-sensitive metadata)"],
+  ["app/api/tickets/[id]/download/route.ts:GET", "Public ticket PDF download (static PDF rendering)"],
+  ["app/api/hub/waitlist/route.ts:POST", "Public waitlist registration"],
+
+  // Public radio listener streams & telemetry
+  ["app/api/radio/live/route.ts:GET", "Public Icecast live audio stream redirect"],
+  ["app/api/radio/play-event/route.ts:POST", "Public radio play telemetry (read/stats increment)"],
+  ["app/api/radio/playlists/route.ts:GET", "Public active radio playlists"],
+  ["app/api/radio/playlists/[id]/route.ts:GET", "Public radio playlist tracks"],
+  ["app/api/radio/recordings/route.ts:GET", "Public radio recordings"],
+  ["app/api/radio/state/route.ts:GET", "Public radio broadcast state"],
+
+  // Session login/logout endpoints (unauthenticated by definition)
+  ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],
+  ["app/api/scanner/logout/route.ts:POST", "Gate scanner logout (clears session cookie)"],
+  ["app/api/vendor/auth/route.ts:POST", "Vendor operator login (authenticates via Operator PIN)"],
+  ["app/api/vendor/logout/route.ts:POST", "Vendor operator logout (clears session cookie)"],
+
+  // Legacy Daraja routes (dead code per AGENTS.md, not used by frontend)
+  ["app/api/mpesa/callback/route.ts:POST", "Legacy Daraja callback (dead code)"],
+  ["app/api/mpesa/status/route.ts:GET", "Legacy Daraja status check (dead code)"],
+  ["app/api/mpesa/stkpush/route.ts:POST", "Legacy Daraja STK push (dead code)"],
+]);
+
+/**
  * Extracts the function body for an exported HTTP method.
- * Handles TypeScript parameter lists with object destructuring and types like:
- * `export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> { ... }`
  */
 function extractFunctionBody(code: string, method: string): string | null {
   const exportRegex = new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b`);
@@ -55,7 +103,6 @@ function extractFunctionBody(code: string, method: string): string | null {
   const startParen = code.indexOf("(", match.index);
   if (startParen === -1) return null;
 
-  // Track parentheses to safely skip the full parameter list
   let pDepth = 0;
   let inString: string | null = null;
   let isEscaped = false;
@@ -94,7 +141,6 @@ function extractFunctionBody(code: string, method: string): string | null {
 
   if (paramEndIndex === -1) return null;
 
-  // Now find the opening '{' for the function body (after param list and optional return type)
   const openBraceIndex = code.indexOf("{", paramEndIndex);
   if (openBraceIndex === -1) return null;
 
@@ -142,11 +188,6 @@ function checkAdminRoutes(): { totalMethodsChecked: number; failures: MethodFail
 
   for (const fullPath of adminRoutes) {
     const normalized = fullPath.replace(/\\/g, "/");
-
-    if (ALLOWLIST.has(normalized)) {
-      continue;
-    }
-
     const content = fs.readFileSync(fullPath, "utf-8");
 
     for (const method of HTTP_METHODS) {
@@ -156,24 +197,26 @@ function checkAdminRoutes(): { totalMethodsChecked: number; failures: MethodFail
       }
 
       totalMethodsChecked++;
-      const body = extractFunctionBody(content, method);
+      const routeKey = `${normalized}:${method}`;
+      if (ADMIN_ALLOWLIST.has(routeKey)) {
+        continue;
+      }
 
+      const body = extractFunctionBody(content, method);
       if (!body) {
         failures.push({
           file: normalized,
           method,
-          reason: `Could not parse function body for ${method}`
+          reason: `Could not parse function body for ${method}`,
         });
         continue;
       }
 
-      // Check for in-handler authorization guards
       const hasDirectGuard =
         body.includes("requireAdmin") ||
         body.includes("requireScannerOrAdmin") ||
         body.includes("verifyAdminSession");
 
-      // Check if it delegates to another handler that is guarded (e.g., return POST(request, context) or return handleVoidSale)
       const delegatesToGuarded =
         /return\s+(handle\w+|POST|GET|PUT|DELETE)\s*\(/.test(body) &&
         (content.includes("requireAdmin") || content.includes("requireScannerOrAdmin"));
@@ -182,7 +225,7 @@ function checkAdminRoutes(): { totalMethodsChecked: number; failures: MethodFail
         failures.push({
           file: normalized,
           method,
-          reason: `Exported handler ${method} body does not call requireAdmin or requireScannerOrAdmin`
+          reason: `Exported admin handler ${method} body does not call requireAdmin or requireScannerOrAdmin`,
         });
       }
     }
@@ -191,59 +234,17 @@ function checkAdminRoutes(): { totalMethodsChecked: number; failures: MethodFail
   return { totalMethodsChecked, failures };
 }
 
-function checkMutationRoutes(): { file: string; method: string; passed: boolean; reason?: string }[] {
-  const mutationRoutes = [
-    { file: "app/api/event-details/route.ts", method: "PUT" },
-    { file: "app/api/events/route.ts", method: "POST" },
-    { file: "app/api/events/[id]/route.ts", method: "PUT" },
-    { file: "app/api/events/[id]/archive/route.ts", method: "POST" }
-  ];
+function checkNonAdminRoutes(): { totalMethodsChecked: number; allowlistedCount: number; guardedCount: number; failures: MethodFailure[] } {
+  const allRoutes = walkDir("app/api").filter(
+    (p) => !p.replace(/\\/g, "/").includes("app/api/admin")
+  );
 
-  const results = [];
-
-  for (const item of mutationRoutes) {
-    const normalized = item.file.replace(/\\/g, "/");
-    if (!fs.existsSync(item.file)) {
-      results.push({ file: normalized, method: item.method, passed: false, reason: "File not found" });
-      continue;
-    }
-
-    const content = fs.readFileSync(item.file, "utf-8");
-    const body = extractFunctionBody(content, item.method);
-
-    if (!body) {
-      results.push({ file: normalized, method: item.method, passed: false, reason: `Does not export ${item.method}` });
-      continue;
-    }
-
-    const hasGuard = body.includes("requireAdmin");
-    if (!hasGuard) {
-      results.push({ file: normalized, method: item.method, passed: false, reason: `Missing requireAdmin inside ${item.method} body` });
-    } else {
-      results.push({ file: normalized, method: item.method, passed: true });
-    }
-  }
-
-  return results;
-}
-
-// Explicit allowlist of intentionally public handlers under app/api/radio/**
-const RADIO_PUBLIC_ALLOWLIST = new Set([
-  "app/api/radio/live/route.ts:GET",
-  "app/api/radio/play-event/route.ts:POST",
-  "app/api/radio/playlists/route.ts:GET",
-  "app/api/radio/playlists/[id]/route.ts:GET",
-  "app/api/radio/recordings/route.ts:GET",
-  "app/api/radio/state/route.ts:GET",
-]);
-
-function checkRadioRoutes(): { totalMethodsChecked: number; publicAllowed: number; failures: MethodFailure[] } {
-  const radioRoutes = walkDir("app/api/radio");
   const failures: MethodFailure[] = [];
   let totalMethodsChecked = 0;
-  let publicAllowed = 0;
+  let allowlistedCount = 0;
+  let guardedCount = 0;
 
-  for (const fullPath of radioRoutes) {
+  for (const fullPath of allRoutes) {
     const normalized = fullPath.replace(/\\/g, "/");
     const content = fs.readFileSync(fullPath, "utf-8");
 
@@ -256,8 +257,8 @@ function checkRadioRoutes(): { totalMethodsChecked: number; publicAllowed: numbe
       totalMethodsChecked++;
       const routeKey = `${normalized}:${method}`;
 
-      if (RADIO_PUBLIC_ALLOWLIST.has(routeKey)) {
-        publicAllowed++;
+      if (NON_ADMIN_PUBLIC_ALLOWLIST.has(routeKey)) {
+        allowlistedCount++;
         continue;
       }
 
@@ -266,74 +267,97 @@ function checkRadioRoutes(): { totalMethodsChecked: number; publicAllowed: numbe
         failures.push({
           file: normalized,
           method,
-          reason: `Could not parse function body for ${method}`
+          reason: `Could not parse function body for ${method}`,
         });
         continue;
       }
 
-      const hasDirectGuard = body.includes("requireAdmin");
-      if (!hasDirectGuard) {
+      // Check for valid in-handler authentication patterns:
+      // 1. Admin auth
+      const hasAdminGuard =
+        body.includes("requireAdmin") ||
+        body.includes("verifyAdminSession") ||
+        body.includes("requireScannerOrAdmin");
+
+      // 2. Vendor or scanner session
+      const hasVendorOrScannerGuard =
+        body.includes("goodlife_vendor_session") ||
+        body.includes("goodlife_scanner_session") ||
+        body.includes("getSession") ||
+        body.includes("getVendorSession") ||
+        body.includes("scannerSession");
+
+      // 3. Customer Tab Self-Pay Auth
+      const hasTabAuth =
+        body.includes("verifySelfPayToken") ||
+        body.includes("verifyTabToken") ||
+        body.includes("tabOwnershipGuard") ||
+        body.includes("getTabActor");
+
+      // 4. Webhook cryptographic verification
+      const hasWebhookAuth =
+        (body.includes("timingSafeEqual") && (body.includes("X-Bridge-Signature") || body.includes("X-Webhook-Hmac") || body.includes("PAYHERO_CALLBACK_TOKEN"))) ||
+        body.includes("x-paystack-signature");
+
+      // 5. Delegation to an in-file or imported guarded handler
+      const delegatesToGuarded =
+        /return\s+(handle\w+|POST|GET|PUT|DELETE)\s*\(/.test(body) &&
+        (content.includes("getSession") || content.includes("getVendorSession") || content.includes("handleVendorVoidSale") || content.includes("requireAdmin"));
+
+      if (hasAdminGuard || hasVendorOrScannerGuard || hasTabAuth || hasWebhookAuth || delegatesToGuarded) {
+        guardedCount++;
+      } else {
         failures.push({
           file: normalized,
           method,
-          reason: `Exported handler ${method} is not in RADIO_PUBLIC_ALLOWLIST and does not call requireAdmin`
+          reason: `Handler ${method} is not guarded by in-handler auth and is NOT in NON_ADMIN_PUBLIC_ALLOWLIST`,
         });
       }
     }
   }
 
-  return { totalMethodsChecked, publicAllowed, failures };
+  return { totalMethodsChecked, allowlistedCount, guardedCount, failures };
 }
 
 function run() {
-  console.log("=== Checking Admin & Mutation Route Guards (Per-Handler AST Body Inspection) ===");
+  console.log("=== Checking Route Guards Across ENTIRE Codebase (AST Body Inspection) ===");
 
-  const { totalMethodsChecked, failures } = checkAdminRoutes();
-  console.log(`Scanned ${totalMethodsChecked} exported HTTP handlers in app/api/admin. Failed: ${failures.length}`);
+  const { totalMethodsChecked: adminTotal, failures: adminFailures } = checkAdminRoutes();
+  console.log(`Scanned ${adminTotal} exported HTTP handlers in app/api/admin. Failed: ${adminFailures.length}`);
 
-  if (failures.length > 0) {
-    console.error("FAIL: The following individual handlers are missing in-handler auth guards:");
-    for (const f of failures) {
+  if (adminFailures.length > 0) {
+    console.error("FAIL: The following admin handlers are missing auth guards:");
+    for (const f of adminFailures) {
       console.error(`  - ${f.file} [${f.method}]: ${f.reason}`);
     }
   }
 
-  const mutationResults = checkMutationRoutes();
-  console.log(`Scanned ${mutationResults.length} non-admin mutation route handlers.`);
-  const mutationFailures = mutationResults.filter(r => !r.passed);
+  const {
+    totalMethodsChecked: nonAdminTotal,
+    allowlistedCount,
+    guardedCount,
+    failures: nonAdminFailures,
+  } = checkNonAdminRoutes();
 
-  if (mutationFailures.length > 0) {
-    console.error("FAIL: The following non-admin mutation route handlers failed guard checks:");
-    for (const f of mutationFailures) {
+  console.log(
+    `Scanned ${nonAdminTotal} exported HTTP handlers in non-admin routes (${guardedCount} in-handler guarded, ${allowlistedCount} explicit public allowlist). Failed: ${nonAdminFailures.length}`
+  );
+
+  if (nonAdminFailures.length > 0) {
+    console.error("FAIL: The following non-admin handlers are neither guarded nor in the explicit public allowlist:");
+    for (const f of nonAdminFailures) {
       console.error(`  - ${f.file} [${f.method}]: ${f.reason}`);
     }
   }
 
-  for (const m of mutationResults) {
-    if (m.passed) {
-      console.log(`  ✓ ${m.file} [${m.method}] body guarded by requireAdmin`);
-    }
-  }
-
-  const { totalMethodsChecked: radioChecked, publicAllowed, failures: radioFailures } = checkRadioRoutes();
-  console.log(`Scanned ${radioChecked} exported HTTP handlers in app/api/radio (${publicAllowed} allowlisted public, ${radioChecked - publicAllowed} guarded). Failed: ${radioFailures.length}`);
-
-  if (radioFailures.length > 0) {
-    console.error("FAIL: The following app/api/radio handlers are neither in the public allowlist nor guarded by requireAdmin:");
-    for (const f of radioFailures) {
-      console.error(`  - ${f.file} [${f.method}]: ${f.reason}`);
-    }
-  } else {
-    console.log(`  ✓ app/api/radio/drops/dynamic/route.ts [POST] body guarded by requireAdmin`);
-    console.log(`  ✓ app/api/radio/drops/live-inject/route.ts [POST] body guarded by requireAdmin`);
-  }
-
-  const totalFailures = failures.length + mutationFailures.length + radioFailures.length;
+  const totalFailures = adminFailures.length + nonAdminFailures.length;
   if (totalFailures === 0) {
-    console.log("\nPASS: All exported admin, mutation, and radio handlers are verified guarded or explicitly allowlisted.");
+    console.log(
+      `\nPASS: All ${adminTotal + nonAdminTotal} exported handlers across the codebase are verified guarded or explicitly allowlisted.`
+    );
     process.exit(0);
   } else {
-    console.error(`\nFAIL: Total failures: ${totalFailures}`);
+    console.error(`\nFAIL: Total failures across codebase: ${totalFailures}`);
     process.exit(1);
   }
 }

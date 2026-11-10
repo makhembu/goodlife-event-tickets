@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-fulfill";
 import { recordPayheroFailure } from "@/lib/rate-limit";
 import { getPayheroTransactionStatus, payheroStatusIsSuccess } from "@/lib/payhero";
@@ -19,17 +20,26 @@ import { getPayheroTransactionStatus, payheroStatusIsSuccess } from "@/lib/payhe
  *
  * Failure payload: { "success": false, "status": "failed", "message": "..." , ... }
  *
- * Auth: optional shared token via ?token= (PAYHERO_CALLBACK_TOKEN) or x-callback-token header.
+ * Auth: shared token via ?token= (PAYHERO_CALLBACK_TOKEN) or x-callback-token / Authorization header.
  * Per docs: respond 200 quickly; heavy work happens after acknowledgement.
  */
 export async function POST(request: NextRequest) {
   try {
-    const expectedToken = process.env.PAYHERO_CALLBACK_TOKEN;
-    if (expectedToken) {
+    const rawExpected = process.env.PAYHERO_CALLBACK_TOKEN?.replace(/^["']|["']$/g, "").trim();
+    if (!rawExpected) {
+      console.warn("[payhero/callback] WARNING: PAYHERO_CALLBACK_TOKEN is unset on the server. Skipping token verification.");
+    } else {
       const url = new URL(request.url);
-      const provided =
-        url.searchParams.get("token") || request.headers.get("x-callback-token") || "";
-      if (provided !== expectedToken) {
+      const queryToken = url.searchParams.get("token") || "";
+      const headerToken =
+        request.headers.get("x-callback-token") ||
+        request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+        "";
+      const provided = queryToken || headerToken;
+
+      const provBuf = Buffer.from(provided);
+      const expBuf = Buffer.from(rawExpected);
+      if (provBuf.length !== expBuf.length || !timingSafeEqual(provBuf, expBuf)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     }
