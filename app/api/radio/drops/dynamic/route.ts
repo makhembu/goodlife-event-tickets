@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-auth";
 import { generateDropEngineV2 } from "@/lib/radio/drop-engine";
 import { selectGenericReviewedDrop } from "@/lib/radio/drop-gate";
 import { neonQuery } from "@/lib/supabase-db";
@@ -6,6 +7,9 @@ import { neonQuery } from "@/lib/supabase-db";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireAdmin(req);
+  if (unauthorized) return unauthorized;
+
   try {
     const body = await req.json().catch(() => ({}));
     const {

@@ -4,13 +4,14 @@ import { neonQuery } from "@/lib/supabase-db";
 import { slotTrackAsPlaylistUpNext } from "@/lib/radio/playlist-slotter";
 
 const rawSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
-const BRIDGE_SECRET =
-  rawSecret && rawSecret.length > 0
-    ? rawSecret
-    : "7688c2f3c3243106ff2dc49df4c6b28722ce007ae6bc8d24389ca28f97e262b0";
 
 export async function POST(req: NextRequest) {
   try {
+    if (!rawSecret) {
+      console.error("[radio-ingest webhook] RADIO_BRIDGE_SECRET not configured on server. Failing closed.");
+      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+    }
+
     const timestamp = req.headers.get("X-Bridge-Timestamp");
     const signature = req.headers.get("X-Bridge-Signature");
 
@@ -26,11 +27,13 @@ export async function POST(req: NextRequest) {
 
     const rawBody = await req.text();
     const expectedSig = crypto
-      .createHmac("sha256", BRIDGE_SECRET)
+      .createHmac("sha256", rawSecret)
       .update(`${timestamp}:${rawBody}`)
       .digest("hex");
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expectedSig, "hex"))) {
+    const sigBuf = Buffer.from(signature, "hex");
+    const expBuf = Buffer.from(expectedSig, "hex");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
     }
 

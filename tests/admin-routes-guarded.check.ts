@@ -227,6 +227,64 @@ function checkMutationRoutes(): { file: string; method: string; passed: boolean;
   return results;
 }
 
+// Explicit allowlist of intentionally public handlers under app/api/radio/**
+const RADIO_PUBLIC_ALLOWLIST = new Set([
+  "app/api/radio/live/route.ts:GET",
+  "app/api/radio/play-event/route.ts:POST",
+  "app/api/radio/playlists/route.ts:GET",
+  "app/api/radio/playlists/[id]/route.ts:GET",
+  "app/api/radio/recordings/route.ts:GET",
+  "app/api/radio/state/route.ts:GET",
+]);
+
+function checkRadioRoutes(): { totalMethodsChecked: number; publicAllowed: number; failures: MethodFailure[] } {
+  const radioRoutes = walkDir("app/api/radio");
+  const failures: MethodFailure[] = [];
+  let totalMethodsChecked = 0;
+  let publicAllowed = 0;
+
+  for (const fullPath of radioRoutes) {
+    const normalized = fullPath.replace(/\\/g, "/");
+    const content = fs.readFileSync(fullPath, "utf-8");
+
+    for (const method of HTTP_METHODS) {
+      const exportRegex = new RegExp(`export\\s+(?:async\\s+)?function\\s+${method}\\b`);
+      if (!exportRegex.test(content)) {
+        continue;
+      }
+
+      totalMethodsChecked++;
+      const routeKey = `${normalized}:${method}`;
+
+      if (RADIO_PUBLIC_ALLOWLIST.has(routeKey)) {
+        publicAllowed++;
+        continue;
+      }
+
+      const body = extractFunctionBody(content, method);
+      if (!body) {
+        failures.push({
+          file: normalized,
+          method,
+          reason: `Could not parse function body for ${method}`
+        });
+        continue;
+      }
+
+      const hasDirectGuard = body.includes("requireAdmin");
+      if (!hasDirectGuard) {
+        failures.push({
+          file: normalized,
+          method,
+          reason: `Exported handler ${method} is not in RADIO_PUBLIC_ALLOWLIST and does not call requireAdmin`
+        });
+      }
+    }
+  }
+
+  return { totalMethodsChecked, publicAllowed, failures };
+}
+
 function run() {
   console.log("=== Checking Admin & Mutation Route Guards (Per-Handler AST Body Inspection) ===");
 
@@ -257,9 +315,22 @@ function run() {
     }
   }
 
-  const totalFailures = failures.length + mutationFailures.length;
+  const { totalMethodsChecked: radioChecked, publicAllowed, failures: radioFailures } = checkRadioRoutes();
+  console.log(`Scanned ${radioChecked} exported HTTP handlers in app/api/radio (${publicAllowed} allowlisted public, ${radioChecked - publicAllowed} guarded). Failed: ${radioFailures.length}`);
+
+  if (radioFailures.length > 0) {
+    console.error("FAIL: The following app/api/radio handlers are neither in the public allowlist nor guarded by requireAdmin:");
+    for (const f of radioFailures) {
+      console.error(`  - ${f.file} [${f.method}]: ${f.reason}`);
+    }
+  } else {
+    console.log(`  ✓ app/api/radio/drops/dynamic/route.ts [POST] body guarded by requireAdmin`);
+    console.log(`  ✓ app/api/radio/drops/live-inject/route.ts [POST] body guarded by requireAdmin`);
+  }
+
+  const totalFailures = failures.length + mutationFailures.length + radioFailures.length;
   if (totalFailures === 0) {
-    console.log("\nPASS: All exported admin and mutation handlers are verified guarded at the function body level.");
+    console.log("\nPASS: All exported admin, mutation, and radio handlers are verified guarded or explicitly allowlisted.");
     process.exit(0);
   } else {
     console.error(`\nFAIL: Total failures: ${totalFailures}`);

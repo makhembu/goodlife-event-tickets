@@ -744,8 +744,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         triggerOutroDropCrossoverRef.current();
       }
 
-      // JIT Drop Generation: Request a fresh AI drop ~60s before track ends so it's ready for outro/intro
+      // JIT Drop Generation disabled client-side: prevents anonymous client tabs from triggering AI spend
+      const CLIENT_JIT_ENABLED = false;
       if (
+        CLIENT_JIT_ENABLED &&
         remainingSec <= 60 &&
         remainingSec > 15 &&
         !hasFiredOutroDropRef.current &&

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
 /**
  * Inbound WhatsApp webhook (WAHA / n8n).
@@ -96,6 +96,33 @@ function summarize(value: unknown, depth = 0): unknown {
 }
 
 export async function POST(request: NextRequest) {
+  const rawSecret = (
+    process.env.WHATSAPP_WEBHOOK_SECRET ||
+    process.env.WHATSAPP_API_KEY ||
+    process.env.WAHA_API_KEY
+  )?.replace(/^["']|["']$/g, "").trim();
+
+  if (!rawSecret) {
+    console.error("[whatsapp/webhook] Webhook secret not configured on server. Failing closed.");
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+
+  const incomingKey =
+    request.headers.get("x-webhook-secret") ||
+    request.headers.get("x-api-key") ||
+    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    request.nextUrl.searchParams.get("secret");
+
+  if (!incomingKey) {
+    return NextResponse.json({ error: "Missing authentication" }, { status: 401 });
+  }
+
+  const incBuf = Buffer.from(incomingKey);
+  const expBuf = Buffer.from(rawSecret);
+  if (incBuf.length !== expBuf.length || !timingSafeEqual(incBuf, expBuf)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let payload: unknown;
 
   try {
