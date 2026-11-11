@@ -67,6 +67,8 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
   const [recurrenceDay, setRecurrenceDay] = useState("sunday");
   const [recurrenceTime, setRecurrenceTime] = useState("14:00");
   const [customScheduleText, setCustomScheduleText] = useState("");
+  const [lineupInput, setLineupInput] = useState("");
+  const [lineupConfirmed, setLineupConfirmed] = useState(false);
   const [regulations, setRegulations] = useState(
     "Camp gate opens strictly at noon. Carry your PDF ticket or phone download for scanning. No outside drinks at Marara. Entry is strictly 18+ with original ID verification."
   );
@@ -150,6 +152,11 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
         video_url: videoUrl.trim() || null,
         max_tent_inventory: Number(maxTentInventory),
         max_shared_beds: Number(maxSharedBeds),
+        lineup: lineupInput
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        lineup_confirmed: lineupConfirmed,
         // INTENT ONLY - "a flagship that should be live", not "make this the
         // homepage event". Whether the single `is_active` slot is actually free
         // is a data-integrity question, so it is enforced in `createEvent`
@@ -554,6 +561,29 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated }: Cr
               />
               <span className="text-[10px] text-brand-navy/60">Displayed on recap page when event is closed</span>
             </div>
+          </div>
+
+          {/* Artist / DJ Lineup */}
+          <div className="p-3 bg-white border-2 border-brand-navy space-y-2">
+            <label className="text-xs font-bold uppercase text-brand-navy block">
+              ARTIST & DJ LINEUP (OPTIONAL · COMMA-SEPARATED)
+            </label>
+            <input
+              type="text"
+              value={lineupInput}
+              onChange={(e) => setLineupInput(e.target.value)}
+              placeholder="e.g. DJ Fusion, DJ Shax, Live Acoustic Set"
+              className="w-full p-2 border-2 border-brand-navy bg-brand-off-white text-xs font-bold focus:outline-none"
+            />
+            <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold uppercase text-brand-navy">
+              <input
+                type="checkbox"
+                checked={lineupConfirmed}
+                onChange={(e) => setLineupConfirmed(e.target.checked)}
+                className="w-4 h-4 accent-brand-navy"
+              />
+              <span>Lineup Confirmed (Safe to announce in Radio 254 drops)</span>
+            </label>
           </div>
 
           {/* Regulations */}

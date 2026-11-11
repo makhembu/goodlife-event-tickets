@@ -106,13 +106,16 @@ export async function bridgeQueueIngest(payload: {
     artist: string;
     duration_sec: number;
     thumbnail_url: string;
+    url?: string;
   }>;
   genre?: string;
   event_id?: number | null;
+  playlist_id?: number | null;
+  playlist_title?: string;
 }) {
   return requestBridge<{ job_id: string; total_tracks: number; status: string }>(
     "/jobs/create",
-    { method: "POST", body: payload, timeoutMs: 10000 }
+    { method: "POST", body: payload, timeoutMs: 12000 }
   );
 }
 

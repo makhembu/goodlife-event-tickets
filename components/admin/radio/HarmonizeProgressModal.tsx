@@ -64,7 +64,7 @@ export default function HarmonizeProgressModal({
         const res = await fetch("/api/admin/radio/library/harmonize-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ limit: 4 }),
+          body: JSON.stringify({ limit: 8 }),
         });
 
         if (!res.ok) {

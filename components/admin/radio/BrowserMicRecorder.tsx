@@ -11,6 +11,8 @@ export interface BrowserMicRecorderProps {
   onTalkoverToggle?: (active: boolean) => void;
   onSendToCue?: (cueItem: any) => void;
   onAirLive?: (audioUrl: string, dropName: string, persona?: string, script?: string) => Promise<boolean>;
+  syncedTrack?: { title: string; dj_name?: string | null } | null;
+  syncedNextTrack?: { title: string; dj_name?: string | null } | null;
 }
 
 export default function BrowserMicRecorder({
@@ -18,8 +20,16 @@ export default function BrowserMicRecorder({
   onTalkoverToggle,
   onSendToCue,
   onAirLive,
+  syncedTrack,
+  syncedNextTrack,
 }: BrowserMicRecorderProps) {
   const { title: currentOnAirTitle, artist: currentOnAirArtist, upNext: currentOnAirUpNext } = useRadio();
+  const prompterTitle = syncedTrack?.title || currentOnAirTitle;
+  const prompterArtist = syncedTrack ? (syncedTrack.dj_name || null) : currentOnAirArtist;
+  const prompterNextTitle = syncedNextTrack?.title || currentOnAirUpNext?.[0]?.title || null;
+  const prompterNextArtist = syncedNextTrack
+    ? (syncedNextTrack.dj_name || null)
+    : (currentOnAirUpNext?.[0]?.artist || null);
   const { openAssignModal } = useSoundboard();
   const {
     isRecording,
@@ -375,20 +385,20 @@ export default function BrowserMicRecorder({
         <div className="text-xs text-white/80">
           <span className="text-white/50 text-[10px] block uppercase font-bold">Currently Playing:</span>
           <span className="font-black text-[#F5C842] text-sm break-words leading-tight block mt-0.5">
-            {currentOnAirTitle || "GOODLIFE 24/7 Master Rotation"}
+            {prompterTitle || "GOODLIFE 24/7 Master Rotation"}
           </span>
-          {currentOnAirArtist && (
+          {prompterArtist && (
             <span className="text-[#DFBB7D] font-bold text-xs mt-0.5 block">
-              by {currentOnAirArtist}
+              by {prompterArtist}
             </span>
           )}
         </div>
-        {currentOnAirUpNext && currentOnAirUpNext.length > 0 && (
+        {prompterNextTitle && (
           <div className="pt-1.5 border-t border-white/10 text-[11px] text-white/70 flex items-start gap-1">
             <span className="text-[#DFBB7D] font-black shrink-0">UP NEXT:</span>
             <span className="text-white font-bold break-words">
-              {currentOnAirUpNext[0].title}
-              {currentOnAirUpNext[0].artist ? ` · ${currentOnAirUpNext[0].artist}` : ""}
+              {prompterNextTitle}
+              {prompterNextArtist ? ` · ${prompterNextArtist}` : ""}
             </span>
           </div>
         )}

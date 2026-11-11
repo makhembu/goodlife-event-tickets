@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Play, Pause, Trash2, RefreshCw, Sparkles, Volume2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Play, Pause, Trash2, RefreshCw, Sparkles, Volume2, CheckCircle2, AlertCircle, Radio, Send } from "lucide-react";
+import { useRadio } from "@/context/RadioContext";
 
 interface RadioDropItem {
   id: number;
@@ -14,8 +15,20 @@ interface RadioDropItem {
   created_at: string;
 }
 
-export default function DropManagerPanel() {
+interface DropManagerPanelProps {
+  onSendToCue?: (cueItem: {
+    id: string;
+    title: string;
+    script: string;
+    audioUrl: string;
+    persona?: string;
+  }) => void;
+}
+
+export default function DropManagerPanel({ onSendToCue }: DropManagerPanelProps) {
+  const { airLiveDrop } = useRadio();
   const [drops, setDrops] = useState<RadioDropItem[]>([]);
+  const [firingId, setFiringId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [currentlyPlayingId, setCurrentlyPlayingId] = useState<number | null>(null);
@@ -187,19 +200,68 @@ export default function DropManagerPanel() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 self-end md:self-center shrink-0">
                     {drop.audio_url ? (
-                      <button
-                        onClick={() => handlePlayToggle(drop)}
-                        className={`px-3 py-1.5 text-xs font-bold uppercase flex items-center gap-1.5 transition-all border cursor-pointer ${
-                          isPlaying
-                            ? "bg-red-600 text-white border-red-500 font-bold"
-                            : "bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] border-[#16181D] shadow-[2px_2px_0px_#16181D]"
-                        }`}
-                      >
-                        {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                        {isPlaying ? "Playing" : "Listen"}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handlePlayToggle(drop)}
+                          className={`px-3 py-1.5 text-xs font-bold uppercase flex items-center gap-1.5 transition-all border cursor-pointer ${
+                            isPlaying
+                              ? "bg-red-600 text-white border-red-500 font-bold"
+                              : "bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D] border-[#16181D] shadow-[2px_2px_0px_#16181D]"
+                          }`}
+                        >
+                          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                          {isPlaying ? "Playing" : "Listen"}
+                        </button>
+                        {onSendToCue && (
+                          <button
+                            onClick={() => {
+                              onSendToCue({
+                                id: `drop_${drop.id}`,
+                                title: drop.title || `${drop.persona || "Station"} Drop`,
+                                script: drop.script,
+                                audioUrl: drop.audio_url,
+                                persona: drop.persona,
+                              });
+                              showFeedback(`Loaded "${drop.persona || "Drop"}" into Studio Cue Dock`, "success");
+                            }}
+                            className="px-2.5 py-1.5 text-xs font-bold uppercase flex items-center gap-1.5 bg-[#1A1D24] hover:bg-white/10 text-[#DFBB7D] border border-[#DFBB7D]/50 transition-all cursor-pointer"
+                            title="Send drop to Studio Deck A Cue Dock"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Send to Cue</span>
+                          </button>
+                        )}
+                        <button
+                          disabled={firingId === drop.id}
+                          onClick={async () => {
+                            if (firingId === drop.id) return;
+                            setFiringId(drop.id);
+                            try {
+                              const ok = await airLiveDrop({
+                                audioUrl: drop.audio_url,
+                                title: drop.title || "Station Drop",
+                                persona: drop.persona || "GOODLIFE Radio",
+                                script: drop.script,
+                              });
+                              showFeedback(
+                                ok
+                                  ? `🔴 "${drop.persona || "Drop"}" FIRED ON AIR live!`
+                                  : "Failed to broadcast drop live",
+                                ok ? "success" : "error"
+                              );
+                            } finally {
+                              setFiringId(null);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 text-xs font-bold uppercase flex items-center gap-1.5 bg-[#E84855] hover:bg-red-500 text-white border border-red-400/50 transition-all cursor-pointer disabled:opacity-50"
+                          title="Fire drop immediately across live stream"
+                        >
+                          <Radio className="w-3.5 h-3.5" />
+                          <span>{firingId === drop.id ? "Airing..." : "Fire On Air"}</span>
+                        </button>
+                      </>
                     ) : (
                       <span className="text-[10px] text-white/40 italic px-2">No audio</span>
                     )}

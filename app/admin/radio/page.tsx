@@ -89,6 +89,16 @@ export default function AdminRadioPage() {
   // Studio cue & ducking state
   const [cueItem, setCueItem] = useState<CueDropItem | null>(null);
   const [isDucking, setIsDucking] = useState(false);
+  const [syncedBroadcastTrack, setSyncedBroadcastTrack] = useState<{
+    id: number;
+    title: string;
+    dj_name?: string | null;
+  } | null>(null);
+  const [syncedBroadcastNext, setSyncedBroadcastNext] = useState<{
+    id: number;
+    title: string;
+    dj_name?: string | null;
+  } | null>(null);
 
   // Uploads blob audio if needed, broadcasts to live stream for all listeners, and plays locally
   const handleFireCueOnAir = async (item: CueDropItem) => {
@@ -615,9 +625,16 @@ export default function AdminRadioPage() {
             <div className={`space-y-6 lg:col-span-7 ${studioDeck === "playout" ? "hidden lg:block" : "block"}`}>
               {/* On-Air Rundown, Mic & Cue: Front and center for Live Talkover */}
               <div className={`space-y-6 ${studioDeck === "drops" ? "hidden lg:block" : "block"}`}>
-                <OnAirRundown />
+                <OnAirRundown
+                  onTrackStateSync={(active, next) => {
+                    setSyncedBroadcastTrack(active);
+                    setSyncedBroadcastNext(next);
+                  }}
+                />
 
                 <BrowserMicRecorder
+                  syncedTrack={syncedBroadcastTrack}
+                  syncedNextTrack={syncedBroadcastNext}
                   onTalkoverToggle={(active) => {
                     setIsDucking(active);
                     setManualDucking(active);
@@ -722,8 +739,17 @@ export default function AdminRadioPage() {
             onDropGenerated={(url, name) => {
               showMsg(`AI Drop "${name}" synthesized and ready to audition or assign!`, "success");
             }}
+            onSendToCue={(cue) => {
+              setCueItem(cue);
+              showMsg(`Loaded "${cue.title}" into Studio Cue Dock (Deck A)!`, "success");
+            }}
           />
-          <DropManagerPanel />
+          <DropManagerPanel
+            onSendToCue={(cue) => {
+              setCueItem(cue);
+              showMsg(`Loaded "${cue.title}" into Studio Cue Dock (Deck A)!`, "success");
+            }}
+          />
         </div>
       )}
 

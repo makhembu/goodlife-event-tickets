@@ -19,11 +19,29 @@ import {
   Sparkles,
   Undo2,
   Zap,
+  Link2,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
 import HarmonizeModal from "./HarmonizeModal";
 import HarmonizeProgressModal from "./HarmonizeProgressModal";
 import AutoPlaylistModal from "./AutoPlaylistModal";
+
+export interface PlaylistIngestJob {
+  job_id: string;
+  playlist_id: number;
+  playlist_name: string;
+  total_tracks: number;
+  completed_tracks: number;
+  status: "queued" | "running" | "completed" | "failed";
+  current_track?: string;
+  error?: string;
+  reconnecting?: boolean;
+  source_url?: string;
+}
+
+const INGEST_STORAGE_KEY = "goodlife_playlist_ingest_jobs_v1";
 
 export interface PlaylistSummary {
   id: number;
@@ -37,6 +55,8 @@ export interface PlaylistSummary {
   activated_at: string | null;
   track_count: number;
   total_duration_sec: number;
+  ingest_job_id?: string | null;
+  ingest_source_url?: string | null;
 }
 
 export interface PlaylistTrack {
@@ -80,7 +100,26 @@ export default function PlaylistManagerPanel({
   const [createDesc, setCreateDesc] = useState("");
   const [createGenre, setCreateGenre] = useState("Amapiano");
   const [createCoverUrl, setCreateCoverUrl] = useState("");
+  const [createSourceUrl, setCreateSourceUrl] = useState("");
+  const [previewingSource, setPreviewingSource] = useState(false);
+  const [previewedSource, setPreviewedSource] = useState<{
+    title: string;
+    source: string;
+    tracks: Array<{
+      video_id: string;
+      title: string;
+      artist: string;
+      duration_sec: number;
+      thumbnail_url: string;
+      url?: string;
+    }>;
+  } | null>(null);
+  const [createSourceError, setCreateSourceError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [ingestJobs, setIngestJobs] = useState<Record<string, PlaylistIngestJob>>({});
+  const ingestJobsRef = React.useRef<Record<string, PlaylistIngestJob>>({});
+  ingestJobsRef.current = ingestJobs;
+  const lastCompletedCountsRef = React.useRef<Record<string, number>>({});
   const [customGenres, setCustomGenres] = useState<string[]>([]);
   const [newGenreInput, setNewGenreInput] = useState("");
   const [showAddGenreInput, setShowAddGenreInput] = useState(false);
@@ -222,12 +261,164 @@ export default function PlaylistManagerPanel({
         if (selectedPlaylistId === null && data.playlists.length > 0) {
           setSelectedPlaylistId(data.playlists[0].id);
         }
+        // Recover any persistent ingest_job_id tracked in Neon DB across refreshes / devices
+        const dbTracked: Record<string, PlaylistIngestJob> = {};
+        for (const p of data.playlists as PlaylistSummary[]) {
+          if (p.ingest_job_id) {
+            dbTracked[p.ingest_job_id] = {
+              job_id: p.ingest_job_id,
+              playlist_id: p.id,
+              playlist_name: p.name,
+              total_tracks: p.track_count || 0,
+              completed_tracks: p.track_count || 0,
+              status: "queued",
+              source_url: p.ingest_source_url || undefined,
+            };
+          }
+        }
+        if (Object.keys(dbTracked).length > 0) {
+          setIngestJobs((prev) => {
+            const merged = { ...prev };
+            for (const [jid, j] of Object.entries(dbTracked)) {
+              if (!merged[jid]) {
+                merged[jid] = j;
+              }
+            }
+            return merged;
+          });
+        }
       }
     } catch (e) {
       console.error("Failed to fetch playlists:", e);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Hydrate persistent ingest jobs from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(INGEST_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") {
+          setIngestJobs(parsed);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Persist active ingest jobs cleanly to localStorage
+  useEffect(() => {
+    try {
+      if (Object.keys(ingestJobs).length === 0) {
+        localStorage.removeItem(INGEST_STORAGE_KEY);
+      } else {
+        localStorage.setItem(INGEST_STORAGE_KEY, JSON.stringify(ingestJobs));
+      }
+    } catch {}
+  }, [ingestJobs]);
+
+  // Resilient persistent background job polling (survives refreshes & temporary network loss)
+  const activeJobIdsKey = useMemo(
+    () =>
+      Object.values(ingestJobs)
+        .filter((j) => j.status === "queued" || j.status === "running")
+        .map((j) => j.job_id)
+        .sort()
+        .join(","),
+    [ingestJobs]
+  );
+
+  useEffect(() => {
+    if (!activeJobIdsKey) return;
+    const jobIds = activeJobIdsKey.split(",").filter(Boolean);
+
+    const pollOnce = async () => {
+      for (const jid of jobIds) {
+        try {
+          const res = await fetch(`/api/admin/radio/jobs/${encodeURIComponent(jid)}`, {
+            cache: "no-store",
+          });
+          if (res.status === 404) {
+            setIngestJobs((prev) => {
+              const cur = prev[jid];
+              if (!cur) return prev;
+              return {
+                ...prev,
+                [jid]: {
+                  ...cur,
+                  status: "completed",
+                  reconnecting: false,
+                },
+              };
+            });
+            continue;
+          }
+          if (!res.ok) {
+            setIngestJobs((prev) =>
+              prev[jid] ? { ...prev, [jid]: { ...prev[jid], reconnecting: true } } : prev
+            );
+            continue;
+          }
+          const job = await res.json();
+          const newCompleted = Number(job.completed_tracks || 0);
+          const prevCompleted = lastCompletedCountsRef.current[jid] ?? -1;
+
+          setIngestJobs((prev) => {
+            const cur = prev[jid];
+            if (!cur) return prev;
+            return {
+              ...prev,
+              [jid]: {
+                ...cur,
+                total_tracks: Number(job.total_tracks || cur.total_tracks || 0),
+                completed_tracks: newCompleted,
+                status: job.status || cur.status,
+                current_track: job.current_track || cur.current_track,
+                error: job.error || cur.error,
+                reconnecting: false,
+              },
+            };
+          });
+
+          if (newCompleted !== prevCompleted || job.status === "completed") {
+            lastCompletedCountsRef.current[jid] = newCompleted;
+            fetchPlaylists();
+            const matched = ingestJobsRef.current[jid];
+            if (matched && selectedPlaylistId === matched.playlist_id) {
+              fetchPlaylistDetails(selectedPlaylistId);
+            }
+            if (job.status === "completed" && onPlaylistsChanged) {
+              onPlaylistsChanged();
+            }
+          }
+        } catch {
+          setIngestJobs((prev) =>
+            prev[jid] ? { ...prev, [jid]: { ...prev[jid], reconnecting: true } } : prev
+          );
+        }
+      }
+    };
+
+    pollOnce();
+    const interval = setInterval(pollOnce, 2500);
+    return () => clearInterval(interval);
+  }, [activeJobIdsKey, selectedPlaylistId]);
+
+  const dismissIngestJob = async (job: PlaylistIngestJob) => {
+    setIngestJobs((prev) => {
+      const next = { ...prev };
+      delete next[job.job_id];
+      return next;
+    });
+    try {
+      await fetch("/api/admin/radio/playlists", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playlist_id: job.playlist_id, clear_ingest_job: true }),
+      });
+    } catch {}
   };
 
   const fetchPlaylistDetails = async (id: number) => {
@@ -290,21 +481,75 @@ export default function PlaylistManagerPanel({
     }
   };
 
-  // Create playlist
+  // Preview optional YouTube / Spotify playlist link in Create Modal
+  const handlePreviewCreateUrl = async () => {
+    const url = createSourceUrl.trim();
+    if (!url) return;
+    setPreviewingSource(true);
+    setCreateSourceError(null);
+    try {
+      const res = await fetch(`/api/admin/radio/playlist-preview?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data.tracks) || data.tracks.length === 0) {
+        setCreateSourceError(data.error || "Could not extract tracks from that playlist link.");
+        setPreviewedSource(null);
+        return;
+      }
+      setPreviewedSource({
+        title: data.title || "Imported Playlist",
+        source: data.source || "stream",
+        tracks: data.tracks,
+      });
+      if (!createName.trim() && data.title) {
+        setCreateName(data.title);
+      }
+      if (!createCoverUrl.trim() && data.tracks[0]?.thumbnail_url) {
+        setCreateCoverUrl(data.tracks[0].thumbnail_url);
+      }
+    } catch (err: any) {
+      setCreateSourceError(err?.message || "Failed to inspect streaming link.");
+    } finally {
+      setPreviewingSource(false);
+    }
+  };
+
+  // Create playlist (standard manual OR with optional persistent background link ingestion)
   const handleCreatePlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createName.trim()) return;
+    const trimmedUrl = createSourceUrl.trim();
+    if (!createName.trim() && !trimmedUrl) return;
 
     try {
       setCreating(true);
+      setCreateSourceError(null);
+
+      let resolvedData = previewedSource;
+      if (trimmedUrl && !resolvedData) {
+        const prevRes = await fetch(`/api/admin/radio/playlist-preview?url=${encodeURIComponent(trimmedUrl)}`);
+        const prevJson = await prevRes.json();
+        if (!prevRes.ok || !Array.isArray(prevJson.tracks) || prevJson.tracks.length === 0) {
+          setCreateSourceError(prevJson.error || "Could not extract tracks from streaming link.");
+          return;
+        }
+        resolvedData = {
+          title: prevJson.title || "Imported Playlist",
+          source: prevJson.source || "stream",
+          tracks: prevJson.tracks,
+        };
+        setPreviewedSource(resolvedData);
+      }
+
+      const finalName = createName.trim() || resolvedData?.title || "New Festival Playlist";
+      const finalCover = createCoverUrl.trim() || resolvedData?.tracks?.[0]?.thumbnail_url || null;
+
       const res = await fetch("/api/admin/radio/playlists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: createName,
+          name: finalName,
           description: createDesc,
           genre: createGenre,
-          cover_url: createCoverUrl || null,
+          cover_url: finalCover,
         }),
       });
       const data = await res.json();
@@ -313,16 +558,70 @@ export default function PlaylistManagerPanel({
         return;
       }
 
-      showBanner(`Playlist "${data.playlist.name}" created!`, "success");
+      const createdPl = data.playlist;
+      let queuedJob: PlaylistIngestJob | null = null;
+
+      // Optional persistent background streaming ingestion
+      if (trimmedUrl && resolvedData && resolvedData.tracks.length > 0 && createdPl?.id) {
+        const qRes = await fetch("/api/admin/radio/queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tracks: resolvedData.tracks,
+            genre: createGenre,
+            playlist_id: createdPl.id,
+            playlist_title: createdPl.name,
+            source_url: trimmedUrl,
+          }),
+        });
+        const qJson = await qRes.json();
+        if (qRes.ok && qJson.job_id) {
+          queuedJob = {
+            job_id: qJson.job_id,
+            playlist_id: createdPl.id,
+            playlist_name: createdPl.name,
+            total_tracks: qJson.total_tracks || resolvedData.tracks.length,
+            completed_tracks: 0,
+            status: qJson.status || "queued",
+            current_track: resolvedData.tracks[0]?.title,
+            source_url: trimmedUrl,
+          };
+          setIngestJobs((prev) => ({
+            ...prev,
+            [queuedJob!.job_id]: queuedJob!,
+          }));
+        } else {
+          showBanner(
+            `Playlist "${createdPl.name}" created, but background ingestion failed to enqueue: ${qJson.error || "Bridge unavailable"}`,
+            "error"
+          );
+        }
+      }
+
+      if (queuedJob) {
+        showBanner(
+          `Playlist "${createdPl.name}" created! Ingesting ${queuedJob.total_tracks} tracks in background — safe to refresh.`,
+          "success"
+        );
+      } else {
+        showBanner(`Playlist "${createdPl.name}" created!`, "success");
+      }
+
       setCreateName("");
       setCreateDesc("");
       setCreateCoverUrl("");
+      setCreateSourceUrl("");
+      setPreviewedSource(null);
+      setCreateSourceError(null);
       setShowCreateModal(false);
-      if (data.playlist) {
+
+      if (createdPl) {
         const createdSummary: PlaylistSummary = {
-          ...data.playlist,
+          ...createdPl,
           track_count: 0,
           total_duration_sec: 0,
+          ingest_job_id: queuedJob?.job_id || null,
+          ingest_source_url: trimmedUrl || null,
         };
         setPlaylists((prev) => {
           const exists = prev.some((p) => p.id === createdSummary.id);
@@ -501,6 +800,101 @@ export default function PlaylistManagerPanel({
         >
           <Sparkles className="w-5 h-5 shrink-0" />
           <span>{actionMessage.text}</span>
+        </div>
+      )}
+
+      {/* Persistent Background Playlist Ingestion Progress Tracker */}
+      {Object.values(ingestJobs).length > 0 && (
+        <div className="space-y-2.5">
+          {Object.values(ingestJobs).map((job) => {
+            const pct =
+              job.total_tracks > 0
+                ? Math.min(100, Math.round((job.completed_tracks / job.total_tracks) * 100))
+                : 0;
+            const isFinished = job.status === "completed" || job.status === "failed";
+            return (
+              <div
+                key={job.job_id}
+                className={`p-4 rounded-xl border-2 font-mono text-xs space-y-2 shadow-[4px_4px_0px_#000] ${
+                  job.status === "completed"
+                    ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-200"
+                    : job.status === "failed"
+                    ? "bg-red-950/60 border-red-500/60 text-red-200"
+                    : "bg-[#1A1D24] border-[#DFBB7D] text-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 font-bold">
+                    {isFinished ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Loader2 className="w-4 h-4 text-[#DFBB7D] animate-spin shrink-0" />
+                    )}
+                    <span className="uppercase tracking-wider">
+                      {job.status === "completed"
+                        ? `Import Finished: ${job.playlist_name}`
+                        : job.status === "failed"
+                        ? `Import Error: ${job.playlist_name}`
+                        : `Background Import: ${job.playlist_name}`}
+                    </span>
+                    {job.reconnecting && (
+                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px]">
+                        RECONNECTING…
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-[#DFBB7D]">
+                      {job.completed_tracks} / {job.total_tracks} tracks ({pct}%)
+                    </span>
+                    {job.playlist_id && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlaylistId(job.playlist_id)}
+                        className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold uppercase cursor-pointer"
+                      >
+                        Open
+                      </button>
+                    )}
+                    {isFinished && (
+                      <button
+                        type="button"
+                        onClick={() => dismissIngestJob(job)}
+                        className="p-1 text-white/60 hover:text-white cursor-pointer"
+                        title="Dismiss"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                  <div
+                    className={`h-full transition-all duration-500 ${
+                      job.status === "completed"
+                        ? "bg-emerald-400"
+                        : "bg-gradient-to-r from-[#DFBB7D] to-[#F5C842]"
+                    }`}
+                    style={{ width: `${Math.max(4, pct)}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-white/70">
+                  <span className="truncate">
+                    {job.status === "completed"
+                      ? "All resolved tracks mastered and attached directly to your playlist."
+                      : job.current_track
+                      ? `Mastering: ${job.current_track}`
+                      : "Queued on studio worker — continues even if you refresh or go offline."}
+                  </span>
+                  <span className="text-[10px] text-white/40 uppercase shrink-0 ml-2">
+                    {job.status}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1050,8 +1444,8 @@ export default function PlaylistManagerPanel({
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. Sunset Piano Chords"
+                  required={!createSourceUrl.trim()}
+                  placeholder="e.g. Sunset Piano Chords (or auto-fill from link)"
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                   className="w-full bg-[#121316] border-2 border-white/20 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
@@ -1160,6 +1554,60 @@ export default function PlaylistManagerPanel({
                 />
               </div>
 
+              {/* Optional Streaming Playlist Link Ingestion */}
+              <div className="p-3.5 rounded-xl bg-[#121316] border border-[#DFBB7D]/30 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-mono font-bold uppercase text-[#DFBB7D] flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>Spotify or YouTube Playlist Link (Optional)</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-white/40">Persists across refresh</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="url"
+                    placeholder="Paste YouTube or Spotify playlist URL (or leave empty)"
+                    value={createSourceUrl}
+                    onChange={(e) => {
+                      setCreateSourceUrl(e.target.value);
+                      setPreviewedSource(null);
+                      setCreateSourceError(null);
+                    }}
+                    className="flex-1 bg-[#1A1D24] border border-white/20 rounded-lg px-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+                  />
+                  {createSourceUrl.trim() && (
+                    <button
+                      type="button"
+                      onClick={handlePreviewCreateUrl}
+                      disabled={previewingSource}
+                      className="px-3 py-2 bg-white/10 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white font-mono text-[11px] font-bold uppercase rounded-lg shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {previewingSource ? "Scanning..." : "Preview"}
+                    </button>
+                  )}
+                </div>
+                {createSourceError && (
+                  <p className="text-[11px] font-mono text-red-400">{createSourceError}</p>
+                )}
+                {previewedSource && (
+                  <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-[11px] font-mono text-emerald-200 space-y-1">
+                    <div className="font-bold flex items-center justify-between">
+                      <span>✓ {previewedSource.tracks.length} tracks ready ({previewedSource.source})</span>
+                    </div>
+                    <div className="text-white/70 truncate">
+                      {previewedSource.tracks
+                        .slice(0, 3)
+                        .map((t) => t.title)
+                        .join(" · ")}
+                      {previewedSource.tracks.length > 3 ? ` +${previewedSource.tracks.length - 3} more` : ""}
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] font-mono text-white/45 leading-relaxed">
+                  Leave blank to create an empty manual playlist. Add a link to auto-download, loudnorm-master &amp; populate tracks reliably in the background.
+                </p>
+              </div>
+
               <div className="pt-2 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -1170,10 +1618,16 @@ export default function PlaylistManagerPanel({
                 </button>
                 <button
                   type="submit"
-                  disabled={creating || !createName.trim()}
+                  disabled={creating || (!createName.trim() && !createSourceUrl.trim())}
                   className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase rounded-xl transition-all disabled:opacity-50 shadow-[2px_2px_0px_#000]"
                 >
-                  {creating ? "Creating..." : "Create Playlist"}
+                  {creating
+                    ? createSourceUrl.trim()
+                      ? "Creating & Queueing..."
+                      : "Creating..."
+                    : createSourceUrl.trim()
+                    ? "Create & Start Ingestion"
+                    : "Create Playlist"}
                 </button>
               </div>
             </form>

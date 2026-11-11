@@ -129,27 +129,53 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   const [aiPrompt, setAiPrompt] = useState("");
   const [writingScript, setWritingScript] = useState(false);
   const [broadcastContext, setBroadcastContext] = useState<any>(null);
-  const [contextTags, setContextTags] = useState<Array<{ id: string; label: string; value: string }>>([
-    { id: "tickets", label: "🎟️ Tickets: goodlife.smwhr.space", value: "tickets on goodlife.smwhr.space" },
-    { id: "date", label: "📅 Date: Every Sunday", value: "Every Sunday" },
-    { id: "venue", label: "📍 Venue: Marara Camp, Thika", value: "Marara Camp, Thika" },
-    { id: "price", label: "💰 Price: 200 bob", value: "200 bob" },
-    { id: "station", label: "📻 Station: GOODLIFE Radio 254", value: "GOODLIFE Radio 254" },
+  const [loadingTags, setLoadingTags] = useState(false);
+  const [contextTags, setContextTags] = useState<Array<{ id: string; category?: string; label: string; value: string }>>([
+    { id: "tickets_url", category: "tickets", label: "🎟️ Tickets: goodlife.smwhr.space", value: "tickets on goodlife.smwhr.space" },
+    { id: "station", category: "radio", label: "📻 Station: GOODLIFE Radio 254", value: "GOODLIFE Radio 254" },
   ]);
 
-  // Prepopulate live broadcast tags from server
-  useEffect(() => {
-    fetch("/api/admin/radio/drops/write-script")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success && d.context) {
-          setBroadcastContext(d.context);
-          if (d.tags && d.tags.length > 0) {
-            setContextTags(d.tags);
-          }
+  const fetchUnifiedBroadcastContext = async (refreshExternal = false) => {
+    setLoadingTags(true);
+    try {
+      const res = await fetch(
+        `/api/admin/radio/drops/context${refreshExternal ? "?refresh=1" : ""}`
+      );
+      const d = await res.json();
+      if (d?.success && d.context) {
+        const ev = d.context.primary_event;
+        const entryTier = ev?.tiers?.find((t: any) => !t.is_camping_bundle) || ev?.tiers?.[0];
+        setBroadcastContext({
+          event_name: ev?.name_spoken || "GOODLIFE Festival Experience",
+          venue: ev?.venue_spoken || "Nairobi",
+          date: ev?.countdown_phrase || ev?.custom_schedule_text || d.context.clock?.coarse_phrase || "This Weekend",
+          price: entryTier ? (entryTier.price === 0 ? "free entry" : entryTier.price_spoken) : "",
+          ticket_url: ev?.spoken_ticket_url || "goodlife.smwhr.space",
+          station_name: d.context.station_name || "GOODLIFE Radio 254",
+          current_track: d.context.radio?.now_playing
+            ? `${d.context.radio.now_playing.artist ? d.context.radio.now_playing.artist + " - " : ""}${d.context.radio.now_playing.title}`
+            : undefined,
+          up_next: d.context.radio?.up_next?.[0]
+            ? `${d.context.radio.up_next[0].artist ? d.context.radio.up_next[0].artist + " - " : ""}${d.context.radio.up_next[0].title}`
+            : undefined,
+          lineup: ev?.lineup_confirmed ? ev.lineup : [],
+          weather: d.context.weather?.spoken_summary,
+          traffic: d.context.traffic?.corridor_advisory,
+        });
+        if (Array.isArray(d.tags) && d.tags.length > 0) {
+          setContextTags(d.tags);
         }
-      })
-      .catch((err) => console.warn("Could not fetch broadcast context tags:", err));
+      }
+    } catch (err) {
+      console.warn("Could not fetch unified broadcast context:", err);
+    } finally {
+      setLoadingTags(false);
+    }
+  };
+
+  // Prepopulate live broadcast tags from unified context endpoint
+  useEffect(() => {
+    fetchUnifiedBroadcastContext(false);
   }, []);
 
   const handleInsertTag = (tagValue: string) => {
@@ -186,7 +212,11 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: promptToUse || `Hype Sunday Park & Chill tickets for 200 bob at Marara Camp with ${activePersona}`,
+          prompt:
+            promptToUse ||
+            `Hype ${broadcastContext?.event_name || "the next GOODLIFE experience"}${
+              broadcastContext?.venue ? ` at ${broadcastContext.venue}` : ""
+            } with ${activePersona}`,
           voice_id: selectedVoice,
           voice_persona: activePersona,
           context: broadcastContext,
@@ -486,16 +516,28 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
         </div>
       </div>
 
-      {/* 1. Dynamic Live Broadcast Tags */}
+      {/* 1. Dynamic Live Broadcast Tags (Unified Endpoint) */}
       <div className="bg-[#1A1D24]/80 p-2.5 sm:p-3 border border-[#DFBB7D]/30 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <label className="text-[11px] font-mono text-[#DFBB7D] uppercase tracking-wider font-bold flex items-center space-x-1.5">
             <Radio className="w-3.5 h-3.5 text-[#DFBB7D]" />
             <span>Pre-Populated Broadcast Tags (Click to Insert):</span>
           </label>
-          <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
-            Live from Postgres & station rotation
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
+              Live Events · Lineup · Weather · Traffic · Radio
+            </span>
+            <button
+              type="button"
+              onClick={() => fetchUnifiedBroadcastContext(true)}
+              disabled={loadingTags}
+              title="Refresh live Postgres, Weather, Traffic & News feeds"
+              className="px-2 py-0.5 bg-white/5 hover:bg-[#DFBB7D] hover:text-[#16181D] text-[#DFBB7D] border border-[#DFBB7D]/40 font-mono text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingTags ? "animate-spin" : ""}`} />
+              <span>{loadingTags ? "Syncing..." : "Refresh"}</span>
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {contextTags.map((tag) => (
@@ -504,7 +546,13 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
               type="button"
               onClick={() => handleInsertTag(tag.value)}
               title={`Click to insert "${tag.value}" into AI prompt or script`}
-              className="px-2 py-1 bg-black/40 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white/90 font-mono text-[11px] border border-[#DFBB7D]/40 transition-colors flex items-center space-x-1 cursor-pointer"
+              className={`px-2 py-1 font-mono text-[11px] border transition-colors flex items-center space-x-1 cursor-pointer ${
+                tag.category === "weather" || tag.category === "traffic" || tag.category === "news"
+                  ? "bg-emerald-950/50 hover:bg-emerald-500 hover:text-black text-emerald-200 border-emerald-500/40"
+                  : tag.category === "radio" || tag.category === "clock"
+                  ? "bg-indigo-950/50 hover:bg-indigo-400 hover:text-black text-indigo-200 border-indigo-400/40"
+                  : "bg-black/40 hover:bg-[#DFBB7D] hover:text-[#16181D] text-white/90 border-[#DFBB7D]/40"
+              }`}
             >
               <span>+</span>
               <span>{tag.label}</span>

@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const limit = Math.min(Math.max(Number(body.limit) || 3, 1), 10);
+    const limit = Math.min(Math.max(Number(body.limit) || 8, 1), 16);
 
     // 1. Fetch next batch of unindexed tracks
     const { rows: unindexed } = await neonQuery(
@@ -43,35 +43,33 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const results: Array<{
+    const analyzeOne = async (track: any): Promise<{
       id: number;
       title: string;
       dj_name: string;
       success: boolean;
       bpm?: number;
       musical_key?: string;
+      energy?: number;
       error?: string;
-    }> = [];
-
-    // Analyze this batch
-    for (const track of unindexed) {
+    }> => {
       if (!track.audio_url || !track.audio_url.startsWith("http")) {
-        // Fallback default for local or non-HTTP assets
         const defaultBpm = 118;
         const defaultKey = "8A";
+        const defaultEnergy = 6;
         await neonQuery(
-          `UPDATE radio_sets SET bpm = $1, musical_key = $2, key_source = 'manual' WHERE id = $3`,
-          [defaultBpm, defaultKey, track.id]
+          `UPDATE radio_sets SET bpm = $1, musical_key = $2, energy = COALESCE(energy, $3), key_source = 'manual' WHERE id = $4`,
+          [defaultBpm, defaultKey, defaultEnergy, track.id]
         );
-        results.push({
+        return {
           id: track.id,
           title: track.title,
           dj_name: track.dj_name,
           success: true,
           bpm: defaultBpm,
           musical_key: defaultKey,
-        });
-        continue;
+          energy: defaultEnergy,
+        };
       }
 
       try {
@@ -91,57 +89,83 @@ export async function POST(req: NextRequest) {
             typeof res.data.bpm === "number" && res.data.bpm > 0
               ? Math.round(res.data.bpm)
               : 118;
+          const validEnergy =
+            typeof res.data.energy === "number" && res.data.energy >= 1 && res.data.energy <= 10
+              ? Math.round(res.data.energy)
+              : 6;
 
           await neonQuery(
             `UPDATE radio_sets 
-             SET bpm = $1, musical_key = $2, key_source = 'analyzed' 
-             WHERE id = $3`,
-            [validBpm, validKey, track.id]
+             SET bpm = $1, musical_key = $2, energy = $3, key_source = 'analyzed' 
+             WHERE id = $4`,
+            [validBpm, validKey, validEnergy, track.id]
           );
 
-          results.push({
+          return {
             id: track.id,
             title: track.title,
             dj_name: track.dj_name,
             success: true,
             bpm: validBpm,
             musical_key: validKey,
-          });
-        } else {
-          // If bridge analyzer is unavailable or unconfident, assign harmonic key by genre/tempo
-          const fallbackBpm = track.genre?.toLowerCase().includes("amapiano") ? 112 : 124;
-          const fallbackKey = "8A";
-          await neonQuery(
-            `UPDATE radio_sets 
-             SET bpm = $1, musical_key = $2, key_source = 'analyzed' 
-             WHERE id = $3`,
-            [fallbackBpm, fallbackKey, track.id]
-          );
-          results.push({
-            id: track.id,
-            title: track.title,
-            dj_name: track.dj_name,
-            success: true,
-            bpm: fallbackBpm,
-            musical_key: fallbackKey,
-          });
+            energy: validEnergy,
+          };
         }
-      } catch (err: any) {
-        const fallbackBpm = 115;
+
+        const fallbackBpm = track.genre?.toLowerCase().includes("amapiano") ? 112 : 120;
         const fallbackKey = "8A";
+        const fallbackEnergy = 6;
         await neonQuery(
-          `UPDATE radio_sets SET bpm = $1, musical_key = $2, key_source = 'analyzed' WHERE id = $3`,
-          [fallbackBpm, fallbackKey, track.id]
+          `UPDATE radio_sets 
+           SET bpm = $1, musical_key = $2, energy = COALESCE(energy, $3), key_source = 'analyzed' 
+           WHERE id = $4`,
+          [fallbackBpm, fallbackKey, fallbackEnergy, track.id]
         );
-        results.push({
+        return {
           id: track.id,
           title: track.title,
           dj_name: track.dj_name,
           success: true,
           bpm: fallbackBpm,
           musical_key: fallbackKey,
-        });
+          energy: fallbackEnergy,
+        };
+      } catch {
+        const fallbackBpm = 115;
+        const fallbackKey = "8A";
+        const fallbackEnergy = 6;
+        await neonQuery(
+          `UPDATE radio_sets SET bpm = $1, musical_key = $2, energy = COALESCE(energy, $3), key_source = 'analyzed' WHERE id = $4`,
+          [fallbackBpm, fallbackKey, fallbackEnergy, track.id]
+        );
+        return {
+          id: track.id,
+          title: track.title,
+          dj_name: track.dj_name,
+          success: true,
+          bpm: fallbackBpm,
+          musical_key: fallbackKey,
+          energy: fallbackEnergy,
+        };
       }
+    };
+
+    // Process in bounded parallel waves of 4 (matches 4-core thread pool on .29 without saturating RAM/CPU)
+    const results: Array<{
+      id: number;
+      title: string;
+      dj_name: string;
+      success: boolean;
+      bpm?: number;
+      musical_key?: string;
+      energy?: number;
+      error?: string;
+    }> = [];
+    const CONCURRENCY = 4;
+    for (let i = 0; i < unindexed.length; i += CONCURRENCY) {
+      const wave = unindexed.slice(i, i + CONCURRENCY);
+      const waveResults = await Promise.all(wave.map((track: any) => analyzeOne(track)));
+      results.push(...waveResults);
     }
 
     const newRemaining = Math.max(0, totalRemaining - results.length);

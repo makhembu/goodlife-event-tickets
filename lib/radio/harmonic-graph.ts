@@ -12,9 +12,64 @@ export interface TrackWithHarmony {
   genre?: string | null;
   bpm?: number | null;
   musical_key?: string | null;
+  energy?: number | null;
   duration_sec?: number | null;
   cover_url?: string | null;
   audio_url?: string | null;
+}
+
+const GENERIC_DJ_LABELS = new Set([
+  "goodlife resident",
+  "resident selector",
+  "resident dj",
+  "goodlife artist",
+  "youtube artist",
+  "spotify artist",
+  "various artists",
+  "unknown",
+  "",
+]);
+
+export function extractPrimaryArtist(title?: string | null, djName?: string | null): string {
+  const rawDj = (djName || "").trim();
+  if (rawDj && !GENERIC_DJ_LABELS.has(rawDj.toLowerCase())) {
+    return rawDj
+      .toLowerCase()
+      .split(/\s*(?:ft\.?|feat\.?|&|x|,|\||vs\.?)\s*/i)[0]
+      .replace(/[^a-z0-9\s]/g, "")
+      .trim();
+  }
+  const cleanTitle = (title || "").trim();
+  const dashSplit = cleanTitle.split(/\s+[-–—]\s+/);
+  if (dashSplit.length >= 2) {
+    return dashSplit[0]
+      .toLowerCase()
+      .split(/\s*(?:ft\.?|feat\.?|&|x|,)\s*/i)[0]
+      .replace(/[^a-z0-9\s]/g, "")
+      .trim();
+  }
+  return cleanTitle
+    .toLowerCase()
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ");
+}
+
+export function getGenreBridgeScore(genreA?: string | null, genreB?: string | null): number {
+  if (!genreA || !genreB) return 0;
+  const a = genreA.toLowerCase().trim();
+  const b = genreB.toLowerCase().trim();
+  if (a === b) return 1.2;
+
+  const afroCluster = ["amapiano", "afro house", "afrobeats", "afropop", "3-step", "afro-tech"];
+  const urbanCluster = ["hip-hop", "rap", "gengetone", "arbantone", "trap", "drill", "r&b", "pop"];
+  const chillCluster = ["chillout", "sundowner", "lounge", "reggae", "soul", "rhumba"];
+
+  const inSameCluster = [afroCluster, urbanCluster, chillCluster].some(
+    (c) => c.some((tok) => a.includes(tok)) && c.some((tok) => b.includes(tok))
+  );
+  if (inSameCluster) return 0.7;
+  return -0.8;
 }
 
 export interface CamelotParsed {
@@ -100,8 +155,11 @@ export function getTransitionScore(trackA: TrackWithHarmony, trackB: TrackWithHa
 }
 
 /**
- * Traverses candidate tracks using greedy Camelot-wheel graph traversal
- * to build the smoothest harmonic sequence.
+ * Traverses candidate tracks using Homeboyz Radio / NRG pro DJ graph traversal:
+ * - Relative Major/Minor & +1/+2 Camelot lifts scored warmly so mixes breathe organically
+ * - Sliding artist separation cooldown (real artist parsed from title/dj_name)
+ * - Same-key monotony damper (prevents 4+ identical-key tracks locking in a plateau)
+ * - Genre bridge affinity & smooth wave energy continuity
  */
 export function buildHarmonicSequence(
   tracks: TrackWithHarmony[],
@@ -122,7 +180,6 @@ export function buildHarmonicSequence(
     const sIdx = pool.findIndex((t) => t.id === options.seedTrackId);
     if (sIdx !== -1) currentIdx = sIdx;
   } else if (options?.energyCurve === "ascend") {
-    // Start with lowest BPM or key
     let lowestBpmIdx = 0;
     for (let i = 1; i < pool.length; i++) {
       if ((pool[i].bpm || 120) < (pool[lowestBpmIdx].bpm || 120)) {
@@ -136,22 +193,64 @@ export function buildHarmonicSequence(
   result.push(first);
 
   const maxLen = options?.targetLength ? Math.min(options.targetLength, tracks.length) : tracks.length;
+  let sameKeyStreak = 0;
 
-  // 2. Greedily find best next harmonic neighbor
+  // 2. Build dynamic DJ mix sequence
   while (pool.length > 0 && result.length < maxLen) {
     const lastTrack = result[result.length - 1];
-    let bestScore = -1;
+    const recentArtists = result
+      .slice(-4)
+      .map((r) => extractPrimaryArtist(r.title, r.dj_name))
+      .filter(Boolean);
+
+    let bestScore = -999;
     let bestIdx = 0;
 
     for (let i = 0; i < pool.length; i++) {
       const candidate = pool[i];
       let score = getTransitionScore(lastTrack, candidate);
 
-      // Energy curve adjustments
+      // Break exact-key monotony plateaus after 2 consecutive same-key tracks
+      const pLast = parseCamelotKey(lastTrack.musical_key);
+      const pCand = parseCamelotKey(candidate.musical_key);
+      if (pLast && pCand) {
+        const isExact = pLast.number === pCand.number && pLast.letter === pCand.letter;
+        const isRelativeOrNeighbor =
+          (pLast.number === pCand.number && pLast.letter !== pCand.letter) ||
+          (pLast.letter === pCand.letter &&
+            Math.min(Math.abs(pLast.number - pCand.number), 12 - Math.abs(pLast.number - pCand.number)) === 1);
+        if (isExact && sameKeyStreak >= 1) {
+          score -= sameKeyStreak * 1.1;
+        } else if (isRelativeOrNeighbor && sameKeyStreak >= 1) {
+          score += 0.9; // Reward lifting or modulating cleanly into next Camelot hour!
+        }
+      }
+
+      // Real artist separation across 4-track broadcast window
+      const candArtist = extractPrimaryArtist(candidate.title, candidate.dj_name);
+      if (candArtist) {
+        const backDist = recentArtists.slice().reverse().indexOf(candArtist);
+        if (backDist === 0) score -= 6.0;
+        else if (backDist === 1) score -= 3.0;
+        else if (backDist >= 2) score -= 1.2;
+      }
+
+      // Genre bridge affinity
+      score += getGenreBridgeScore(lastTrack.genre, candidate.genre);
+
+      // Energy wave / curve adjustments
       if (options?.energyCurve === "ascend") {
-        if ((candidate.bpm || 0) >= (lastTrack.bpm || 0)) score += 0.5;
+        if ((candidate.bpm || 0) >= (lastTrack.bpm || 0)) score += 0.6;
+        if (candidate.energy && lastTrack.energy && candidate.energy >= lastTrack.energy) score += 0.4;
       } else if (options?.energyCurve === "chill") {
-        if ((candidate.bpm || 0) <= (lastTrack.bpm || 0) + 2) score += 0.5;
+        if ((candidate.bpm || 0) <= (lastTrack.bpm || 0) + 2) score += 0.6;
+      } else {
+        // Gentle broadcast wave energy continuity
+        if (candidate.energy && lastTrack.energy) {
+          const eDiff = Math.abs(candidate.energy - lastTrack.energy);
+          if (eDiff <= 1) score += 0.6;
+          else if (eDiff >= 4) score -= 1.2;
+        }
       }
 
       if (score > bestScore) {
@@ -161,6 +260,13 @@ export function buildHarmonicSequence(
     }
 
     const [nextTrack] = pool.splice(bestIdx, 1);
+    const pLast = parseCamelotKey(lastTrack.musical_key);
+    const pNext = parseCamelotKey(nextTrack.musical_key);
+    if (pLast && pNext && pLast.number === pNext.number && pLast.letter === pNext.letter) {
+      sameKeyStreak += 1;
+    } else {
+      sameKeyStreak = 0;
+    }
     result.push(nextTrack);
   }
 

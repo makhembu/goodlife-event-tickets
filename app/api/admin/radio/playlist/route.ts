@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
                s.duration, s.duration_sec, s.genre, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND s.is_active = true
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] })),

@@ -1,11 +1,19 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Sparkles, Play, Pause, Download, Volume2, CheckCircle2, AlertCircle, RefreshCw, Wand2 } from "lucide-react";
+import { Sparkles, Play, Pause, Download, Volume2, CheckCircle2, AlertCircle, RefreshCw, Wand2, Radio, Send } from "lucide-react";
 import { useSoundboard } from "@/context/SoundboardContext";
+import { useRadio } from "@/context/RadioContext";
 
 interface AiDropGeneratorProps {
   onDropGenerated?: (audioUrl: string, dropName: string) => void;
+  onSendToCue?: (cueItem: {
+    id: string;
+    title: string;
+    script: string;
+    audioUrl: string;
+    persona?: string;
+  }) => void;
 }
 
 const PRESET_VIBES = [
@@ -16,8 +24,10 @@ const PRESET_VIBES = [
   { label: "Up Next Banger", prompt: "Hyping the very next track loading up on the decks" },
 ];
 
-export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProps) {
+export default function AiDropGenerator({ onDropGenerated, onSendToCue }: AiDropGeneratorProps) {
   const { openAssignModal } = useSoundboard();
+  const { airLiveDrop } = useRadio();
+  const [firingLive, setFiringLive] = useState<boolean>(false);
   const [selectedPreset, setSelectedPreset] = useState<string>(PRESET_VIBES[0].label);
   const [promptText, setPromptText] = useState<string>(PRESET_VIBES[0].prompt);
   const [customScript, setCustomScript] = useState<string>("");
@@ -173,12 +183,12 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
           </h2>
         </div>
         <span className="px-2 py-0.5 border border-brand-navy bg-brand-accent text-brand-navy text-[10px] font-black uppercase shadow-(--shadow-brut-xs)">
-          NVIDIA NIM + FISH AUDIO
+          GROQ AI + MASTERED VOICE
         </span>
       </div>
 
       <p className="text-xs text-brand-navy/70">
-        Generate instant broadcast-grade Nairobi Sheng drops. NVIDIA NIM writes the street script, Fish Audio synthesizes the authentic Kenyan DJ voice, and ffmpeg loudnorms the master to -14 LUFS.
+        Generate instant broadcast-grade Nairobi Sheng drops. Groq LLM writes the live-grounded script, our Kenyan neural voice engine renders it, and ffmpeg loudnorms the master to -14 LUFS.
       </p>
 
       {/* Preset Pills */}
@@ -211,7 +221,7 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
       <form onSubmit={handleGenerate} className="space-y-3">
         <div>
           <label className="block text-[11px] font-black uppercase tracking-wider text-brand-navy mb-1">
-            Vibe Prompt (NVIDIA NIM Llama 3.2):
+            Vibe Prompt (AI Broadcast Writer):
           </label>
           <input
             type="text"
@@ -315,16 +325,71 @@ export default function AiDropGenerator({ onDropGenerated }: AiDropGeneratorProp
             &ldquo;{generatedDrop.script}&rdquo;
           </blockquote>
 
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
+              type="button"
               onClick={togglePlay}
-              className="flex-1 py-2 px-3 border-2 border-brand-navy bg-white hover:bg-brand-accent text-brand-navy font-black text-xs uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
+              className="flex-1 min-w-[130px] py-2 px-3 border-2 border-brand-navy bg-white hover:bg-brand-accent text-brand-navy font-black text-xs uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               <span>{isPlaying ? "Pause Preview" : "Play Preview"}</span>
             </button>
 
             <button
+              type="button"
+              onClick={() => {
+                if (!generatedDrop?.audioUrl) return;
+                if (onSendToCue) {
+                  onSendToCue({
+                    id: `vault_${Date.now()}`,
+                    title: selectedPreset || "AI Vault Drop",
+                    script: generatedDrop.script,
+                    audioUrl: generatedDrop.audioUrl,
+                    persona: "AI Vault",
+                  });
+                  setStatusMsg({
+                    text: "Queued in Studio Cue Dock — ready on Deck A!",
+                    type: "success",
+                  });
+                }
+              }}
+              className="py-2 px-3 border-2 border-brand-navy bg-[#16181D] hover:bg-brand-navy text-[#DFBB7D] font-black text-xs uppercase flex items-center gap-1.5 transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Send to Cue</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={firingLive}
+              onClick={async () => {
+                if (!generatedDrop?.audioUrl || firingLive) return;
+                setFiringLive(true);
+                try {
+                  const ok = await airLiveDrop({
+                    audioUrl: generatedDrop.audioUrl,
+                    title: selectedPreset || "AI Vault Drop",
+                    persona: "GOODLIFE AI Drop",
+                    script: generatedDrop.script,
+                  });
+                  setStatusMsg({
+                    text: ok
+                      ? "🔴 FIRED ON AIR: Streaming live to all listeners!"
+                      : "Failed to broadcast drop live.",
+                    type: ok ? "success" : "error",
+                  });
+                } finally {
+                  setFiringLive(false);
+                }
+              }}
+              className="py-2 px-3 border-2 border-brand-navy bg-[#E84855] hover:bg-red-500 text-white font-black text-xs uppercase flex items-center gap-1.5 transition-colors cursor-pointer shadow-(--shadow-brut-xs) disabled:opacity-50"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>{firingLive ? "Airing..." : "Fire On Air"}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={assignToPad}
               className="py-2 px-3 border-2 border-brand-navy bg-amber-400 hover:bg-amber-300 text-amber-950 font-black text-xs uppercase transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
             >

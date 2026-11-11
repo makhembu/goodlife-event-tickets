@@ -886,6 +886,53 @@ export default function EventEditClient({
             </section>
 
             <section className="bg-white border-2 border-[var(--brand-navy)] p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-[var(--brand-navy)]/20 pb-2 gap-2 flex-wrap">
+                <h2 className="text-xs font-black uppercase">
+                  Artist & DJ Lineup (Event Page & Radio 254 Drops)
+                </h2>
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 border ${
+                    form.lineup_confirmed
+                      ? "bg-emerald-100 border-emerald-600 text-emerald-800"
+                      : "bg-amber-100 border-amber-600 text-amber-800"
+                  }`}
+                >
+                  {form.lineup_confirmed ? "Confirmed On-Air" : "Unconfirmed Draft"}
+                </span>
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className={LABEL_CLASS}>
+                    Performing Artists & Selectors (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={(form.lineup as string) || ""}
+                    onChange={(e) => set("lineup", e.target.value)}
+                    placeholder="e.g. DJ Shax, DJ Fusion, Acoustic Soul Band"
+                    className={FIELD_CLASS}
+                    disabled={saving !== null}
+                  />
+                  <p className="text-[10px] text-[var(--brand-navy-light)] font-mono">
+                    Radio 254 AI drops only mention artists here when confirmed below, preventing unannounced leaks on air.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none p-2 bg-stone-50 border border-[var(--brand-navy)]/20">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.lineup_confirmed)}
+                    onChange={(e) => set("lineup_confirmed", e.target.checked)}
+                    disabled={saving !== null}
+                    className="w-4 h-4 accent-[var(--brand-navy)]"
+                  />
+                  <span className="text-xs font-bold uppercase text-[var(--brand-navy)]">
+                    Confirm Official Lineup (Safe to announce in live radio drops)
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section className="bg-white border-2 border-[var(--brand-navy)] p-4 space-y-4">
               <h2 className="text-xs font-black uppercase border-b border-[var(--brand-navy)]/20 pb-2">
                 Regulations & Advisories
               </h2>

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { neonQuery } from "@/lib/supabase-db";
-import { getPromotableEvents } from "@/lib/radio/events";
-import { formatTrackTitle } from "@/lib/radio/media-helpers";
+import { buildUnifiedDropContext, formatContextPromptSummary, type BroadcastContextTag } from "@/lib/radio/drop-context";
 
 export const dynamic = "force-dynamic";
 
@@ -15,101 +13,58 @@ interface ScriptContext {
   station_name: string;
   up_next?: string;
   current_track?: string;
+  lineup?: string[];
+  weather?: string;
+  traffic?: string;
+  vendors?: string;
+  promos?: string[];
+  unified_briefing?: string;
 }
 
 /**
- * Fetch fresh broadcast and event metadata for dynamic drop tags
+ * Fetch fresh broadcast and event metadata via Unified Drop Context Aggregator
  */
-async function fetchBroadcastContext(): Promise<ScriptContext> {
-  const context: ScriptContext = {
-    event_name: "GOODLIFE Festival Experience",
-    venue: "Nairobi Frequencies",
-    date: "24/7 Live Stream",
-    price: "",
-    ticket_url: "goodlife.smwhr.space",
-    station_name: "GOODLIFE Radio 254",
-  };
-
+async function fetchBroadcastContext(): Promise<{ context: ScriptContext; tags: BroadcastContextTag[] }> {
   try {
-    const events = await getPromotableEvents(new Date()).catch(() => []);
-    if (events.length > 0) {
-      const ev = events[0];
-      if (ev.name_spoken) context.event_name = ev.name_spoken;
-      if (ev.venue_spoken) context.venue = ev.venue_spoken;
-      if (ev.is_recurring) {
-        context.date = "Weekly Sessions";
-      } else if (ev.countdown_phrase) {
-        context.date = ev.countdown_phrase;
-      }
-      if (ev.tiers && ev.tiers.length > 0 && ev.tiers[0].price) {
-        context.price = ev.tiers[0].price_spoken || `${ev.tiers[0].price} bob`;
-      }
-      if (ev.spoken_ticket_url) {
-        context.ticket_url = ev.spoken_ticket_url;
-      }
-    }
+    const unified = await buildUnifiedDropContext();
+    const ev = unified.primary_event;
+    const entryTier = ev?.tiers.find((t) => !t.is_camping_bundle) || ev?.tiers[0];
+    const cleanTicketUrl = ev?.spoken_ticket_url || "goodlife.smwhr.space";
+    const cur = unified.radio.now_playing;
+    const next = unified.radio.up_next[0];
 
-    // Fetch Up Next track from active playlist and settings
-    const [livePlRes, settingsRes] = await Promise.all([
-      neonQuery(`
-        SELECT p.id as playlist_id, p.activated_at,
-               s.id, s.title, s.dj_name, s.duration_sec, pt.position
-        FROM radio_playlists p
-        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
-        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
-        ORDER BY pt.position ASC, pt.id ASC
-      `).catch(() => ({ rows: [] })),
-      neonQuery("SELECT broadcast_mode, active_set_id FROM radio_settings WHERE id = 1").catch(() => ({ rows: [] })),
-    ]);
+    const context: ScriptContext = {
+      event_name: ev?.name_spoken || "GOODLIFE Festival Experience",
+      venue: ev?.venue_spoken || "Nairobi Frequencies",
+      date: ev?.countdown_phrase || ev?.custom_schedule_text || unified.clock.coarse_phrase,
+      price: entryTier ? (entryTier.price === 0 ? "free entry" : entryTier.price_spoken) : "",
+      ticket_url: cleanTicketUrl,
+      station_name: unified.station_name,
+      current_track: cur ? `${cur.artist ? cur.artist + " - " : ""}${cur.title}` : undefined,
+      up_next: next ? `${next.artist ? next.artist + " - " : ""}${next.title}` : undefined,
+      lineup: ev?.lineup_confirmed ? ev.lineup : [],
+      weather: unified.weather.spoken_summary,
+      traffic: `${unified.traffic.route_label} (~${unified.traffic.estimated_drive_min} min drive, ${unified.traffic.congestion_level} traffic)`,
+      vendors: ev?.vendors?.length ? ev.vendors.map((v) => v.name).join(", ") : undefined,
+      promos: unified.promos_highlights,
+      unified_briefing: formatContextPromptSummary(unified),
+    };
 
-    let sets = livePlRes.rows;
-    if (sets.length === 0) {
-      const catRes = await neonQuery(`
-        SELECT id, title, dj_name, duration_sec
-        FROM radio_sets
-        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
-        ORDER BY display_order ASC, id ASC
-        LIMIT 200
-      `).catch(() => ({ rows: [] }));
-      sets = catRes.rows || [];
-    }
-
-    if (sets.length > 0) {
-      const settings = settingsRes.rows[0] || {};
-      let activeIdx = -1;
-      if (settings.broadcast_mode === "mania" && settings.active_set_id) {
-        activeIdx = sets.findIndex((s: any) => s.id === Number(settings.active_set_id));
-      }
-      if (activeIdx === -1) {
-        const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
-        const nowSec = Math.floor(Date.now() / 1000);
-        const activatedAtSec = sets[0]?.activated_at
-          ? Math.floor(new Date(sets[0].activated_at).getTime() / 1000)
-          : 0;
-        const cycleSec = totalDurationSec > 0 ? (Math.max(0, nowSec - activatedAtSec) % totalDurationSec) : 0;
-
-        let cumulative = 0;
-        activeIdx = 0;
-        for (let i = 0; i < sets.length; i++) {
-          const dur = sets[i].duration_sec || 180;
-          if (cumulative + dur > cycleSec) {
-            activeIdx = i;
-            break;
-          }
-          cumulative += dur;
-        }
-      }
-      const cur = sets[activeIdx];
-      const next = sets[(activeIdx + 1) % sets.length];
-      if (cur) context.current_track = `${cur.dj_name ? cur.dj_name + " - " : ""}${formatTrackTitle(cur.title)}`;
-      if (next) context.up_next = `${next.dj_name ? next.dj_name + " - " : ""}${formatTrackTitle(next.title)}`;
-    }
+    return { context, tags: unified.tags };
   } catch (err: any) {
-    console.warn("[write-script] fetchBroadcastContext warning:", err?.message || err);
+    console.warn("[write-script] Unified context fallback:", err?.message || err);
+    return {
+      context: {
+        event_name: "GOODLIFE Festival Experience",
+        venue: "Nairobi",
+        date: "24/7 Live Stream",
+        price: "",
+        ticket_url: "goodlife.smwhr.space",
+        station_name: "GOODLIFE Radio 254",
+      },
+      tags: [],
+    };
   }
-
-  return context;
 }
 
 /**
@@ -270,11 +225,17 @@ GROUND TRUTH LIVE CONTEXT TO WEAVE IN DYNAMICALLY:
 - Event: ${ctx.event_name}
 - Venue: ${ctx.venue}
 - Date: ${ctx.date}
-- Price: ${ctx.price}
-- Tickets website: goodlife.smwhr.space
+- Price: ${ctx.price || "Check site"}
+- Tickets website: ${ctx.ticket_url || "goodlife.smwhr.space"}
 - Station: ${ctx.station_name}
 ${ctx.current_track ? `- Currently Playing On Air: ${ctx.current_track}` : ""}
 ${ctx.up_next ? `- Up Next Track (TEASE THIS!): ${ctx.up_next}` : ""}
+${ctx.lineup && ctx.lineup.length > 0 ? `- Confirmed Artist Lineup: ${ctx.lineup.join(", ")}` : "- Artist Lineup: Unconfirmed (NEVER invent any artist performing at the event!)"}
+${ctx.weather ? `- Nairobi Weather: ${ctx.weather}` : ""}
+${ctx.traffic ? `- Traffic & Drive ETA: ${ctx.traffic}` : ""}
+${ctx.vendors ? `- On-Ground Food & Drink Vendors: ${ctx.vendors}` : ""}
+${ctx.promos && ctx.promos.length > 0 ? `- Active Ticket Promos & Highlights: ${ctx.promos.join(" | ")}` : ""}
+${ctx.unified_briefing ? `\nFULL VERIFIED STATION BRIEFING:\n${ctx.unified_briefing}` : ""}
 
 Return ONLY the spoken script starting with the emotion tag. No quotes, no markdown, no conversational commentary.`;
 
@@ -388,31 +349,12 @@ export async function GET(req: NextRequest) {
   const unauthorized = await requireAdmin(req);
   if (unauthorized) return unauthorized;
 
-  const context = await fetchBroadcastContext();
-
-  let cleanTicketUrl = "goodlife.smwhr.space";
-  if (context.ticket_url) {
-    if (context.ticket_url.includes("somewhere") || context.ticket_url.includes("smwhr")) {
-      cleanTicketUrl = "goodlife.smwhr.space";
-    } else {
-      cleanTicketUrl = context.ticket_url.replace(/^tickets on (the )?/i, "").replace(/website,?\s*/i, "").trim() || "goodlife.smwhr.space";
-    }
-  }
+  const { context, tags } = await fetchBroadcastContext();
 
   return NextResponse.json({
     success: true,
-    context: {
-      ...context,
-      ticket_url: cleanTicketUrl,
-    },
-    tags: [
-      { id: "tickets", label: `🎟️ Tickets: ${cleanTicketUrl}`, value: `tickets on ${cleanTicketUrl}` },
-      { id: "date", label: `📅 Date: ${context.date}`, value: context.date },
-      { id: "venue", label: `📍 Venue: ${context.venue}`, value: context.venue },
-      { id: "price", label: `💰 Price: ${context.price}`, value: context.price },
-      { id: "station", label: `📻 Station: ${context.station_name}`, value: context.station_name },
-      ...(context.up_next ? [{ id: "up_next", label: `🎵 Up Next: ${context.up_next}`, value: `Up next: ${context.up_next}` }] : []),
-    ],
+    context,
+    tags,
   });
 }
 
@@ -424,10 +366,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { prompt, voice_persona, voice_id, context: clientContext } = body;
 
-    const baseContext = await fetchBroadcastContext();
+    const { context: baseContext } = await fetchBroadcastContext();
     const mergedContext: ScriptContext = {
       ...baseContext,
-      ...(clientContext || {}),
+      ...(clientContext && typeof clientContext === "object" && !clientContext.generated_at ? clientContext : {}),
     };
 
     const effectivePersona = voice_persona || "DJ Fusion";

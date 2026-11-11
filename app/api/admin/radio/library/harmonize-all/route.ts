@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
       error?: string;
     }> = [];
 
-    // 2. Concurrency limit = 3 to protect Cloudflare Tunnel & remote analyzer
-    const concurrency = 3;
+    // 2. Concurrency limit = 4 matching .29 bounded analysis thread pool
+    const concurrency = 4;
     for (let i = 0; i < unindexed.length; i += concurrency) {
       const chunk = unindexed.slice(i, i + concurrency);
       await Promise.all(
@@ -70,12 +70,17 @@ export async function POST(req: NextRequest) {
                   ? Math.round(res.data.bpm)
                   : null;
 
+              const validEnergy =
+                typeof res.data.energy === "number" && res.data.energy >= 1 && res.data.energy <= 10
+                  ? Math.round(res.data.energy)
+                  : 6;
+
               if (validKey && validBpm) {
                 await neonQuery(
                   `UPDATE radio_sets 
-                   SET bpm = $1, musical_key = $2, key_source = 'analyzed' 
-                   WHERE id = $3`,
-                  [validBpm, validKey, track.id]
+                   SET bpm = $1, musical_key = $2, energy = $3, key_source = 'analyzed' 
+                   WHERE id = $4`,
+                  [validBpm, validKey, validEnergy, track.id]
                 );
 
                 results.push({

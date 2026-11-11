@@ -45,6 +45,11 @@ export interface DropVerifiedFacts {
     valid_until: Date | number;
   };
   coarse_time_phrase?: string;
+  weather_summary?: string;
+  traffic_summary?: string;
+  vendors?: string[];
+  promos?: string[];
+  sales_24h?: number;
 }
 
 export interface DropValidationResult {

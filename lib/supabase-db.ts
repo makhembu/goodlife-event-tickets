@@ -270,9 +270,9 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         ticker_text, till_number, event_date, is_active, status, category,
         sales_open_date, sales_close_date, next_event_title, recap_video_url,
         max_tent_inventory, max_shared_beds, recurrence_pattern, recurrence_day,
-        recurrence_time, custom_schedule_text, maps_url, video_url
+        recurrence_time, custom_schedule_text, maps_url, video_url, lineup, lineup_confirmed
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
        RETURNING *`,
       [
         event.title,
@@ -303,7 +303,9 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
         event.recurrence_time || '14:00',
         event.custom_schedule_text || '',
         event.maps_url || '',
-        event.video_url || null
+        event.video_url || null,
+        Array.isArray(event.lineup) ? event.lineup : [],
+        Boolean(event.lineup_confirmed)
       ]
     );
     const newEvent = rows[0];

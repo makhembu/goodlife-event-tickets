@@ -9,6 +9,7 @@ import {
   RadioDaypart,
 } from "./drop-types";
 import { getPromotableEvents, RadioPromotableEvent } from "./events";
+import { buildUnifiedDropContext } from "./drop-context";
 import { selectGenericReviewedDrop, verifyDropBeforePlayout } from "./drop-gate";
 import { synthesizeVoiceAudio, masterDropAudio } from "./audio-mastering";
 import { uploadDropBufferToR2, deleteRadioAudioKeys } from "./r2-signer";
@@ -851,10 +852,16 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   const persona = selectDropPersona(daypart, req.preferredPersonaId);
   const introSeconds = req.introSeconds || 10;
 
-  // 1. Fetch promotable events from the live data layer
+  // 1. Fetch promotable events + optional unified live context (weather/traffic/vendors) in parallel
   let promotableEvents: RadioPromotableEvent[] = [];
+  let unifiedCtx: Awaited<ReturnType<typeof buildUnifiedDropContext>> | null = null;
   try {
-    promotableEvents = await getPromotableEvents(now);
+    const [promoRes, uniRes] = await Promise.all([
+      getPromotableEvents(now).catch(() => []),
+      buildUnifiedDropContext().catch(() => null),
+    ]);
+    promotableEvents = promoRes;
+    unifiedCtx = uniRes;
   } catch (err: any) {
     console.warn("[drop-engine] DB getPromotableEvents failed:", err.message);
   }
@@ -885,6 +892,10 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
 
   const includeEventTiers = resolvedDropType === "event_countdown" || resolvedDropType === "happening_now";
 
+  const matchedUnifiedEv = primaryEvent
+    ? unifiedCtx?.events.find((e) => e.id === primaryEvent.id) || unifiedCtx?.primary_event
+    : unifiedCtx?.primary_event;
+
   // Build verified facts block
   const facts: DropVerifiedFacts = {
     station_callout: station.station_name,
@@ -892,6 +903,18 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
     persona: persona.name,
     current_genre: req.currentGenre || req.nextTrack?.genre,
     next_track: req.nextTrack,
+    coarse_time_phrase: unifiedCtx?.clock?.coarse_phrase,
+    weather_summary: unifiedCtx?.weather
+      ? `${unifiedCtx.weather.condition} in Nairobi`
+      : undefined,
+    traffic_summary: unifiedCtx?.traffic
+      ? `${unifiedCtx.traffic.congestion_level} traffic ${unifiedCtx.traffic.route_label}`
+      : undefined,
+    vendors: matchedUnifiedEv?.vendors?.length
+      ? matchedUnifiedEv.vendors.slice(0, 5).map((v) => v.name)
+      : undefined,
+    promos: unifiedCtx?.promos_highlights?.slice(0, 3),
+    sales_24h: matchedUnifiedEv?.sales_24h || undefined,
     event: primaryEvent
       ? {
           id: primaryEvent.id,

@@ -609,12 +609,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
 
       const isOnRadioPage = pathname?.startsWith("/radio");
+      const isOnStudioPage = pathname?.startsWith("/admin/radio");
+      const isViewingRadio = Boolean(isOnRadioPage || isOnStudioPage);
       const isVisible = typeof document !== "undefined" && document.visibilityState === "visible";
 
       // Polling criteria:
       // 1. Audio is actively playing (MUST poll even if phone screen is locked/backgrounded so live broadcast track changes in pocket!)
-      // 2. OR user is viewing the radio page and tab is visible
-      const shouldPoll = radioEnabled && (isPlaying || (isOnRadioPage && isVisible));
+      // 2. OR user is viewing the radio page / broadcast studio and tab is visible
+      const shouldPoll = radioEnabled && (isPlaying || (isViewingRadio && isVisible));
 
       if (!shouldPoll) {
         // Pause polling until resumed (e.g. paused audio on non-radio page or hidden inactive tab)
@@ -622,9 +624,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Polling cadence: 5s active playing, 10s background/locked display playing, 30s when paused/viewing
-      const cadenceMs = isPlaying && !isVisible
+      const baseCadenceMs = isPlaying && !isVisible
         ? 10000
         : (isOnRadioPage && isPlaying) ? 5000 : 30000;
+      const cadenceMs = isOnStudioPage && isVisible ? Math.min(baseCadenceMs, 6000) : baseCadenceMs;
       pollTimerRef.current = setTimeout(async () => {
         await fetchRadioLive();
         scheduleNextPoll();
@@ -632,7 +635,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     const isOnRadioPage = pathname?.startsWith("/radio");
-    const shouldActivate = radioEnabled && (isOnRadioPage || isPlaying);
+    const isOnStudioPage = pathname?.startsWith("/admin/radio");
+    const shouldActivate = radioEnabled && (isOnRadioPage || isOnStudioPage || isPlaying);
 
     if (!shouldActivate) {
       // Strictly ZERO radio network requests on checkout or non-radio pages before user presses play

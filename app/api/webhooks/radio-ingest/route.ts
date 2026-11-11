@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       file_size,
       bitrate,
       event_id,
+      playlist_id,
     } = payload;
 
     if (!title || !audio_url) {
@@ -96,11 +97,31 @@ export async function POST(req: NextRequest) {
     const { rows } = await neonQuery(query, params);
     if (rows && rows.length > 0) {
       const trackId = rows[0].id;
-      // Automatically slot newly mastered track into the active playlist as UP NEXT
-      try {
-        await slotTrackAsPlaylistUpNext(trackId);
-      } catch (slotErr) {
-        console.warn("[radio-ingest webhook] Auto-slot playlist warning:", slotErr);
+      const targetPlaylistId = playlist_id ? Number(playlist_id) : null;
+      if (targetPlaylistId && Number.isFinite(targetPlaylistId) && targetPlaylistId > 0) {
+        try {
+          await neonQuery(
+            `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position)
+             SELECT $1, $2, COALESCE((SELECT MAX(position) + 1 FROM radio_playlist_tracks WHERE playlist_id = $1), 0)
+             WHERE NOT EXISTS (
+               SELECT 1 FROM radio_playlist_tracks WHERE playlist_id = $1 AND track_id = $2
+             )`,
+            [targetPlaylistId, trackId]
+          );
+          await neonQuery(
+            `UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1`,
+            [targetPlaylistId]
+          );
+        } catch (plErr) {
+          console.warn("[radio-ingest webhook] Explicit playlist link warning:", plErr);
+        }
+      } else {
+        // Automatically slot newly mastered track into the active playlist as UP NEXT
+        try {
+          await slotTrackAsPlaylistUpNext(trackId);
+        } catch (slotErr) {
+          console.warn("[radio-ingest webhook] Auto-slot playlist warning:", slotErr);
+        }
       }
     }
     return NextResponse.json({ success: true, item: rows[0] });
