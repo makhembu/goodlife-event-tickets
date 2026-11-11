@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
 import HarmonizeModal from "./HarmonizeModal";
+import HarmonizeProgressModal from "./HarmonizeProgressModal";
 import AutoPlaylistModal from "./AutoPlaylistModal";
 
 export interface PlaylistSummary {
@@ -78,10 +79,57 @@ export default function PlaylistManagerPanel({
   const [createGenre, setCreateGenre] = useState("Amapiano");
   const [createCoverUrl, setCreateCoverUrl] = useState("");
   const [creating, setCreating] = useState(false);
+  const [customGenres, setCustomGenres] = useState<string[]>([]);
+  const [newGenreInput, setNewGenreInput] = useState("");
+  const [showAddGenreInput, setShowAddGenreInput] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("goodlife_custom_genres");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setCustomGenres(parsed);
+      }
+    } catch {}
+  }, []);
+
+  const allAvailableGenres = useMemo(() => {
+    const defaults = ["Amapiano", "Afro House", "3-Step", "Festival Anthems", "Lounge"];
+    const fromPlaylists = playlists.map((p) => p.genre).filter(Boolean);
+    return Array.from(new Set([...defaults, ...customGenres, ...fromPlaylists]));
+  }, [playlists, customGenres]);
+
+  const handleAddCustomGenre = (e: React.FormEvent) => {
+    e.preventDefault();
+    const g = newGenreInput.trim();
+    if (!g) return;
+    if (!allAvailableGenres.includes(g)) {
+      const updated = [...customGenres, g];
+      setCustomGenres(updated);
+      try {
+        localStorage.setItem("goodlife_custom_genres", JSON.stringify(updated));
+      } catch {}
+    }
+    setCreateGenre(g);
+    setNewGenreInput("");
+    setShowAddGenreInput(false);
+  };
+
+  const handleDeleteCustomGenre = (genreToDelete: string) => {
+    const updated = customGenres.filter((g) => g !== genreToDelete);
+    setCustomGenres(updated);
+    try {
+      localStorage.setItem("goodlife_custom_genres", JSON.stringify(updated));
+    } catch {}
+    if (createGenre === genreToDelete) {
+      setCreateGenre("Amapiano");
+    }
+  };
 
   // Add tracks selector state
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [showHarmonizeModal, setShowHarmonizeModal] = useState(false);
+  const [showHarmonizeProgressModal, setShowHarmonizeProgressModal] = useState(false);
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [selectedBulkTrackIds, setSelectedBulkTrackIds] = useState<Set<number>>(new Set());
   const [bulkAdding, setBulkAdding] = useState(false);
@@ -493,8 +541,7 @@ export default function PlaylistManagerPanel({
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={handleHarmonizeAll}
-            disabled={harmonizingAll}
+            onClick={() => setShowHarmonizeProgressModal(true)}
             className={`px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider rounded-xl transition-all border flex items-center gap-2 ${
               unindexedCount > 0
                 ? "bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/20 text-[#DFBB7D] border-[#DFBB7D]/40 shadow-[2px_2px_0px_#DFBB7D]"
@@ -502,10 +549,8 @@ export default function PlaylistManagerPanel({
             }`}
             title="Harmonize unindexed catalog tracks via audio intelligence"
           >
-            <Zap className={`w-3.5 h-3.5 ${harmonizingAll ? "animate-spin text-[#DFBB7D]" : unindexedCount > 0 ? "text-[#DFBB7D]" : "text-white/40"}`} />
-            {harmonizingAll
-              ? "Indexing Tracks..."
-              : unindexedCount > 0
+            <Zap className={`w-3.5 h-3.5 ${unindexedCount > 0 ? "text-[#DFBB7D]" : "text-white/40"}`} />
+            {unindexedCount > 0
               ? `Harmonize Unindexed (${unindexedCount})`
               : `All Harmonized (${library.length})`}
           </button>
@@ -1013,24 +1058,78 @@ export default function PlaylistManagerPanel({
               </div>
 
               <div>
-                <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1.5">
-                  Primary Genre
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {["Amapiano", "Afro House", "3-Step", "Festival Anthems", "Lounge"].map((g) => (
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-mono font-bold uppercase text-white/80">
+                    Primary Genre
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddGenreInput(!showAddGenreInput)}
+                    className="text-[11px] text-[#DFBB7D] hover:underline flex items-center gap-1 font-bold"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Custom Category
+                  </button>
+                </div>
+
+                {showAddGenreInput && (
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <input
+                      type="text"
+                      value={newGenreInput}
+                      onChange={(e) => setNewGenreInput(e.target.value)}
+                      placeholder="e.g. Gengetone, Arbantone, Deep Tech..."
+                      className="flex-1 bg-[#121316] border border-[#DFBB7D]/50 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+                    />
                     <button
-                      key={g}
                       type="button"
-                      onClick={() => setCreateGenre(g)}
-                      className={`px-3 py-1 text-xs font-mono font-bold rounded-lg border transition-all ${
-                        createGenre === g
-                          ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D]"
-                          : "bg-[#121316] text-white/80 border-white/20 hover:border-white/50"
-                      }`}
+                      onClick={handleAddCustomGenre}
+                      className="px-3 py-1.5 bg-[#DFBB7D] text-[#16181D] font-bold text-xs rounded-lg uppercase"
                     >
-                      {g}
+                      Save Genre
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setShowAddGenreInput(false)}
+                      className="p-1.5 text-white/50 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  {allAvailableGenres.map((g) => {
+                    const isSelected = createGenre === g;
+                    const isCustom = customGenres.includes(g);
+                    return (
+                      <div key={g} className="relative group">
+                        <button
+                          type="button"
+                          onClick={() => setCreateGenre(g)}
+                          className={`px-3 py-1 text-xs font-mono font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D]"
+                              : "bg-[#121316] text-white/80 border-white/20 hover:border-white/50"
+                          }`}
+                        >
+                          <span>{g}</span>
+                          {isCustom && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCustomGenre(g);
+                              }}
+                              className="text-white/40 hover:text-red-400 p-0.5"
+                              title="Delete custom category"
+                            >
+                              <X className="w-3 h-3" />
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1084,6 +1183,17 @@ export default function PlaylistManagerPanel({
           }}
         />
       )}
+
+      {/* Harmonize Unindexed Progress Modal */}
+      <HarmonizeProgressModal
+        isOpen={showHarmonizeProgressModal}
+        onClose={() => setShowHarmonizeProgressModal(false)}
+        initialUnindexedCount={unindexedCount}
+        onComplete={() => {
+          fetchPlaylists();
+          if (onRefreshLive) onRefreshLive();
+        }}
+      />
 
       {/* Auto-Playlist Vibe Creator Modal */}
       <AutoPlaylistModal

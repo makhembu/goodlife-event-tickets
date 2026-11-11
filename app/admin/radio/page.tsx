@@ -54,7 +54,30 @@ import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export default function AdminRadioPage() {
   const { airLiveDrop, setManualDucking, fetchRadioLive } = useRadio();
-  const [activeTab, setActiveTab] = useState<ConsoleTab>("studio");
+  const [activeTab, setActiveTabState] = useState<ConsoleTab>("studio");
+
+  useEffect(() => {
+    try {
+      const hash = window.location.hash.replace("#", "") as ConsoleTab;
+      const validTabs: ConsoleTab[] = ["studio", "drops", "library", "playlists", "live", "telemetry", "overrides"];
+      if (validTabs.includes(hash)) {
+        setActiveTabState(hash);
+      } else {
+        const saved = localStorage.getItem("goodlife_admin_radio_tab") as ConsoleTab;
+        if (validTabs.includes(saved)) {
+          setActiveTabState(saved);
+        }
+      }
+    } catch {}
+  }, []);
+
+  const setActiveTab = (tab: ConsoleTab) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem("goodlife_admin_radio_tab", tab);
+      window.location.hash = tab;
+    } catch {}
+  };
   const [studioDeck, setStudioDeck] = useState<"perform" | "playout" | "drops">("perform");
   const [library, setLibrary] = useState<RadioSet[]>([]);
   const [loadingLib, setLoadingLib] = useState(true);

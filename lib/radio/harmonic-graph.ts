@@ -167,7 +167,7 @@ export function buildHarmonicSequence(
   return result;
 }
 
-export type AutoPlaylistVibe = "late_night" | "club_peak" | "sundowner" | "amapiano_groove" | "afro_energy";
+export type AutoPlaylistVibe = "late_night" | "club_peak" | "sundowner" | "morning_rise" | "amapiano_groove" | "afro_energy";
 
 export interface VibeDefinition {
   id: AutoPlaylistVibe;
@@ -186,9 +186,19 @@ export const VIBE_DEFINITIONS: Record<AutoPlaylistVibe, VibeDefinition> = {
     name: "Late Night Drive 254",
     description: "Deep, smooth, low-fatigue festival frequencies for after-hours cruising across Nairobi.",
     suggestedCover: "/flyer.png",
-    genres: ["Amapiano", "Pop", "Rock"],
+    genres: ["Amapiano", "Afro House", "Lounge"],
     minBpm: 90,
     maxBpm: 118,
+    energyCurve: "chill",
+  },
+  morning_rise: {
+    id: "morning_rise",
+    name: "Nairobi Morning Rise & Chill",
+    description: "Gentle sunrise warmth, soulful keys, and relaxed midtempo rhythms for morning airwaves.",
+    suggestedCover: "/flyer.png",
+    genres: ["Amapiano", "Lounge", "R&B / Soul"],
+    minBpm: 95,
+    maxBpm: 114,
     energyCurve: "chill",
   },
   club_peak: {
@@ -196,7 +206,7 @@ export const VIBE_DEFINITIONS: Record<AutoPlaylistVibe, VibeDefinition> = {
     name: "Club Peak Time · High Voltage",
     description: "High-octane festival anthems with ascending Camelot key progressions for peak-hour euphoria.",
     suggestedCover: "/flyer-park-chill.png",
-    genres: ["Afro-House", "Hip-Hop", "Amapiano"],
+    genres: ["Afro House", "3-Step", "Festival Anthems"],
     minBpm: 118,
     maxBpm: 135,
     energyCurve: "ascend",
@@ -206,7 +216,7 @@ export const VIBE_DEFINITIONS: Record<AutoPlaylistVibe, VibeDefinition> = {
     name: "Nairobi Sundowner & Chill",
     description: "Golden hour sunset vibes. Warm harmonic transitions, rich baselines, and relaxed grooves.",
     suggestedCover: "/flyer-park-chill.png",
-    genres: ["Amapiano", "Reggae", "Afro-House"],
+    genres: ["Amapiano", "Afro House", "Lounge"],
     minBpm: 100,
     maxBpm: 116,
     energyCurve: "smooth",
@@ -226,7 +236,7 @@ export const VIBE_DEFINITIONS: Record<AutoPlaylistVibe, VibeDefinition> = {
     name: "Afro Beats & High Vibrations",
     description: "Electrifying rhythm from Nairobi to Lagos with seamless key-locked blends.",
     suggestedCover: "/flyer.png",
-    genres: ["Afro-House", "Hip-Hop"],
+    genres: ["Afro House", "3-Step", "Festival Anthems"],
     minBpm: 100,
     maxBpm: 128,
     energyCurve: "ascend",

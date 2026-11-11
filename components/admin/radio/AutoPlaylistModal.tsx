@@ -84,6 +84,8 @@ export default function AutoPlaylistModal({
     switch (vibe) {
       case "late_night":
         return <Moon className="w-5 h-5 text-indigo-400" />;
+      case "morning_rise":
+        return <Sun className="w-5 h-5 text-amber-300" />;
       case "club_peak":
         return <Flame className="w-5 h-5 text-amber-400" />;
       case "sundowner":
