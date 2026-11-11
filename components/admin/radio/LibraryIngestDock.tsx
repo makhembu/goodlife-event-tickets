@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Sparkles,
   Search,
@@ -14,6 +14,12 @@ import {
   Layers,
   ArrowRight,
   X,
+  ListPlus,
+  CheckSquare,
+  Square,
+  FolderPlus,
+  Loader2,
+  Filter,
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -32,6 +38,34 @@ interface PlaylistOption {
   id: number;
   name: string;
 }
+
+interface PlaylistTrackItem {
+  video_id: string;
+  title: string;
+  artist: string;
+  duration_sec: number;
+  thumbnail_url: string;
+  url?: string;
+}
+
+interface PlaylistPreviewData {
+  title: string;
+  author?: string;
+  source: "youtube" | "spotify";
+  track_count: number;
+  tracks: PlaylistTrackItem[];
+}
+
+const GENRE_OPTIONS = [
+  "Amapiano",
+  "Afro House",
+  "Arbantone",
+  "Gengetone",
+  "Hip Hop",
+  "R&B / Soul",
+  "Dancehall",
+  "Electronic",
+];
 
 function formatDuration(sec: number): string {
   if (!sec || isNaN(sec)) return "--:--";
@@ -59,13 +93,23 @@ export default function LibraryIngestDock({
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<SearchResultItem | null>(null);
 
+  // Playlist Batch Import State
+  const [loadingPlaylist, setLoadingPlaylist] = useState(false);
+  const [playlistPreview, setPlaylistPreview] = useState<PlaylistPreviewData | null>(null);
+  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
+  const [playlistSearchFilter, setPlaylistSearchFilter] = useState("");
+  const [playlistDestMode, setPlaylistDestMode] = useState<"new" | "existing" | "none">("new");
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [newPlaylistGenre, setNewPlaylistGenre] = useState("Amapiano");
+  const [batchIngesting, setBatchIngesting] = useState(false);
+
   // Ingest state
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  useEffect(() => {
+  const fetchPlaylists = () => {
     fetch("/api/admin/radio/playlists")
       .then((res) => res.json())
       .then((data) => {
@@ -74,13 +118,62 @@ export default function LibraryIngestDock({
         }
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchPlaylists();
   }, []);
 
   const isDirectUrl = (str: string) => /^https?:\/\//i.test(str.trim());
 
+  const isPlaylistUrl = (str: string) => {
+    const s = str.trim();
+    return /[?&]list=[a-zA-Z0-9_-]+/i.test(s) || /spotify\.com\/playlist\/[a-zA-Z0-9]+/i.test(s);
+  };
+
+  const handleLoadPlaylist = async (urlToLoad?: string) => {
+    const targetUrl = (urlToLoad ?? inputValue).trim();
+    if (!targetUrl) return;
+
+    setLoadingPlaylist(true);
+    setErrorMessage(null);
+    setStatusMessage("⚡ Loading playlist & resolving tracklist from YouTube / Spotify...");
+    setIsSuccess(false);
+
+    try {
+      const res = await fetch(`/api/admin/radio/playlist-preview?url=${encodeURIComponent(targetUrl)}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Failed to fetch playlist (${res.status})`);
+      }
+
+      const data: PlaylistPreviewData = await res.json();
+      if (!data || !Array.isArray(data.tracks) || data.tracks.length === 0) {
+        throw new Error("No tracks found in the supplied playlist link.");
+      }
+
+      setPlaylistPreview(data);
+      setSelectedTrackIds(new Set(data.tracks.map((t) => t.video_id)));
+      setNewPlaylistName(data.title || "Imported Playlist");
+      setPlaylistDestMode("new");
+      setStatusMessage(`Found ${data.tracks.length} tracks in "${data.title}"`);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to parse playlist.");
+      setPlaylistPreview(null);
+    } finally {
+      setLoadingPlaylist(false);
+    }
+  };
+
   const handleSearch = async (queryToSearch?: string) => {
     const q = (queryToSearch ?? inputValue).trim();
     if (!q) return;
+
+    // If it's a playlist link, automatically route to the playlist preview resolver!
+    if (isPlaylistUrl(q)) {
+      handleLoadPlaylist(q);
+      return;
+    }
 
     if (isDirectUrl(q)) {
       setSelectedTrack({
@@ -127,13 +220,15 @@ export default function LibraryIngestDock({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (!isDirectUrl(inputValue)) {
+      if (isPlaylistUrl(inputValue)) {
+        handleLoadPlaylist();
+      } else if (!isDirectUrl(inputValue)) {
         handleSearch();
       }
     }
   };
 
-  const handleIngest = async () => {
+  const handleIngestSingle = async () => {
     const track = selectedTrack;
     const urlToUse = track?.url || (isDirectUrl(inputValue) ? inputValue.trim() : "");
 
@@ -220,6 +315,93 @@ export default function LibraryIngestDock({
     }
   };
 
+  const handleBatchIngest = async () => {
+    if (!playlistPreview) return;
+    const chosenTracks = playlistPreview.tracks.filter((t) => selectedTrackIds.has(t.video_id));
+
+    if (chosenTracks.length === 0) {
+      setErrorMessage("Please select at least one track to import.");
+      return;
+    }
+
+    setBatchIngesting(true);
+    setErrorMessage(null);
+    setStatusMessage(`⚡ Batch importing ${chosenTracks.length} tracks to library...`);
+    setIsSuccess(false);
+
+    try {
+      const res = await fetch("/api/admin/radio/batch-ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tracks: chosenTracks,
+          genre: newPlaylistGenre,
+          playlist_id:
+            playlistDestMode === "existing" && typeof targetPlaylistId === "number"
+              ? targetPlaylistId
+              : undefined,
+          new_playlist_name:
+            playlistDestMode === "new"
+              ? newPlaylistName.trim() || playlistPreview.title || "Imported Playlist"
+              : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `Batch import failed (${res.status})`);
+      }
+
+      setIsSuccess(true);
+      const importedCount = data.total_imported || chosenTracks.length;
+      const plMsg = data.playlist ? ` Attached to playlist "${data.playlist.name}".` : "";
+      setStatusMessage(`✓ Successfully added ${importedCount} tracks to station library!${plMsg}`);
+      if (showBanner) showBanner(`Imported ${importedCount} tracks to radio library!`, "success");
+
+      setPlaylistPreview(null);
+      setInputValue("");
+      setSelectedTrack(null);
+      fetchPlaylists();
+      if (onTrackAdded) onTrackAdded();
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to batch import playlist.");
+    } finally {
+      setBatchIngesting(false);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (!playlistPreview) return;
+    if (selectedTrackIds.size === playlistPreview.tracks.length) {
+      setSelectedTrackIds(new Set());
+    } else {
+      setSelectedTrackIds(new Set(playlistPreview.tracks.map((t) => t.video_id)));
+    }
+  };
+
+  const toggleTrackSelection = (videoId: string) => {
+    setSelectedTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(videoId)) {
+        next.delete(videoId);
+      } else {
+        next.add(videoId);
+      }
+      return next;
+    });
+  };
+
+  const filteredPlaylistTracks = useMemo(() => {
+    if (!playlistPreview) return [];
+    if (!playlistSearchFilter.trim()) return playlistPreview.tracks;
+    const q = playlistSearchFilter.toLowerCase();
+    return playlistPreview.tracks.filter(
+      (t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q)
+    );
+  }, [playlistPreview, playlistSearchFilter]);
+
+  const playlistUrlDetected = isPlaylistUrl(inputValue);
+
   return (
     <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-5 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
       {/* Header */}
@@ -236,7 +418,7 @@ export default function LibraryIngestDock({
               </span>
             </h3>
             <p className="text-[11px] text-white/50 font-mono">
-              Search track name or paste link · Auto-master Sheng intro · Add to Library & Playlist
+              Search track name or paste YouTube / Spotify playlist · Auto-master Sheng intro · Add to Library & Playlist
             </p>
           </div>
         </div>
@@ -250,7 +432,7 @@ export default function LibraryIngestDock({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search Track / Artist Name OR Paste Media URL..."
+            placeholder="Search Track OR Paste YouTube / Spotify Playlist Link..."
             className="w-full bg-[#1A1D24] border border-white/20 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D] transition-colors pr-8"
           />
           {inputValue && (
@@ -260,6 +442,7 @@ export default function LibraryIngestDock({
                 setSelectedTrack(null);
                 setSearchResults([]);
                 setHasSearched(false);
+                setPlaylistPreview(null);
               }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
             >
@@ -268,18 +451,310 @@ export default function LibraryIngestDock({
           )}
         </div>
 
-        <button
-          onClick={() => handleSearch()}
-          disabled={searching || !inputValue.trim()}
-          className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-mono font-bold uppercase rounded-xl transition-all border border-white/20 flex items-center justify-center gap-1.5 disabled:opacity-50"
-        >
-          <Search className="w-3.5 h-3.5" />
-          {searching ? "Searching..." : "Search"}
-        </button>
+        {playlistUrlDetected ? (
+          <button
+            onClick={() => handleLoadPlaylist()}
+            disabled={loadingPlaylist}
+            className="px-4 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-mono font-bold uppercase rounded-xl transition-all border border-[#DFBB7D] flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_#000] disabled:opacity-50"
+          >
+            {loadingPlaylist ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ListPlus className="w-3.5 h-3.5" />
+            )}
+            {loadingPlaylist ? "Loading Playlist..." : "Load Playlist"}
+          </button>
+        ) : (
+          <button
+            onClick={() => handleSearch()}
+            disabled={searching || !inputValue.trim()}
+            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-mono font-bold uppercase rounded-xl transition-all border border-white/20 flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {searching ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Search className="w-3.5 h-3.5" />
+            )}
+            {searching ? "Searching..." : "Search"}
+          </button>
+        )}
       </div>
 
-      {/* Search Results Dropdown List */}
-      {hasSearched && searchResults.length > 0 && (
+      {/* Playlist URL Detection Pill */}
+      {playlistUrlDetected && !playlistPreview && !loadingPlaylist && (
+        <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#DFBB7D]/10 border border-[#DFBB7D]/30 text-xs font-mono text-[#DFBB7D]">
+          <div className="flex items-center gap-2">
+            <ListPlus className="w-4 h-4 shrink-0" />
+            <span>YouTube / Spotify Playlist link detected! Click to parse all songs.</span>
+          </div>
+          <button
+            onClick={() => handleLoadPlaylist()}
+            className="px-2.5 py-1 bg-[#DFBB7D] text-[#16181D] font-bold rounded-lg uppercase text-[10px] hover:bg-[#F2CE8A]"
+          >
+            Preview Playlist
+          </button>
+        </div>
+      )}
+
+      {/* PLAYLIST BATCH IMPORT PANEL */}
+      {playlistPreview && (
+        <div className="p-4 bg-[#1A1D24] border-2 border-[#DFBB7D] rounded-xl space-y-4 font-mono text-xs">
+          {/* Playlist Summary Banner */}
+          <div className="flex flex-wrap items-center justify-between pb-3 border-b border-white/10 gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-lg bg-black/60 border border-white/20 flex items-center justify-center overflow-hidden shrink-0">
+                {playlistPreview.tracks[0]?.thumbnail_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={playlistPreview.tracks[0].thumbnail_url}
+                    alt={playlistPreview.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Music2 className="w-6 h-6 text-white/40" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-[#DFBB7D]/20 text-[#DFBB7D] font-bold uppercase">
+                    {playlistPreview.source}
+                  </span>
+                  <span className="text-[11px] text-white/50">
+                    {playlistPreview.track_count} tracks found
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold text-white mt-0.5">{playlistPreview.title}</h4>
+                {playlistPreview.author && (
+                  <p className="text-[11px] text-white/60">by {playlistPreview.author}</p>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPlaylistPreview(null)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Playlist Destination Options */}
+          <div className="p-3 bg-black/30 rounded-xl border border-white/10 space-y-3">
+            <div className="text-[11px] uppercase font-bold text-[#DFBB7D] tracking-wider flex items-center gap-1.5">
+              <FolderPlus className="w-3.5 h-3.5" />
+              Playlist Destination
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setPlaylistDestMode("new")}
+                className={`p-2.5 rounded-lg border text-left flex items-center gap-2 transition-all ${
+                  playlistDestMode === "new"
+                    ? "bg-[#DFBB7D]/20 border-[#DFBB7D] text-[#DFBB7D]"
+                    : "bg-[#16181D] border-white/10 text-white/70 hover:border-white/30"
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px]">Create New Playlist</div>
+                  <div className="text-[9px] text-white/40">Add tracks to new station playlist</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPlaylistDestMode("existing")}
+                className={`p-2.5 rounded-lg border text-left flex items-center gap-2 transition-all ${
+                  playlistDestMode === "existing"
+                    ? "bg-[#DFBB7D]/20 border-[#DFBB7D] text-[#DFBB7D]"
+                    : "bg-[#16181D] border-white/10 text-white/70 hover:border-white/30"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px]">Add to Existing</div>
+                  <div className="text-[9px] text-white/40">Append to an active rotation</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPlaylistDestMode("none")}
+                className={`p-2.5 rounded-lg border text-left flex items-center gap-2 transition-all ${
+                  playlistDestMode === "none"
+                    ? "bg-[#DFBB7D]/20 border-[#DFBB7D] text-[#DFBB7D]"
+                    : "bg-[#16181D] border-white/10 text-white/70 hover:border-white/30"
+                }`}
+              >
+                <Music2 className="w-3.5 h-3.5 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px]">Library Only</div>
+                  <div className="text-[9px] text-white/40">Index without playlist tag</div>
+                </div>
+              </button>
+            </div>
+
+            {playlistDestMode === "new" && (
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <input
+                  type="text"
+                  value={newPlaylistName}
+                  onChange={(e) => setNewPlaylistName(e.target.value)}
+                  placeholder="New Playlist Name..."
+                  className="flex-1 bg-[#16181D] border border-white/20 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#DFBB7D]"
+                />
+                <select
+                  value={newPlaylistGenre}
+                  onChange={(e) => setNewPlaylistGenre(e.target.value)}
+                  className="bg-[#16181D] border border-white/20 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#DFBB7D]"
+                >
+                  {GENRE_OPTIONS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {playlistDestMode === "existing" && (
+              <div className="pt-1">
+                <select
+                  value={targetPlaylistId}
+                  onChange={(e) => setTargetPlaylistId(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full bg-[#16181D] border border-white/20 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#DFBB7D]"
+                >
+                  <option value="">-- Choose Existing Station Playlist --</option>
+                  {playlists.map((pl) => (
+                    <option key={pl.id} value={pl.id}>
+                      {pl.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Track Selection Controls & Filter */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center gap-1.5 text-[11px] font-bold"
+              >
+                {selectedTrackIds.size === playlistPreview.tracks.length ? (
+                  <>
+                    <Square className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                    Deselect All
+                  </>
+                ) : (
+                  <>
+                    <CheckSquare className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                    Select All ({playlistPreview.tracks.length})
+                  </>
+                )}
+              </button>
+              <span className="text-[11px] text-white/50">
+                {selectedTrackIds.size} of {playlistPreview.tracks.length} selected
+              </span>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Filter className="w-3.5 h-3.5 text-white/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={playlistSearchFilter}
+                onChange={(e) => setPlaylistSearchFilter(e.target.value)}
+                placeholder="Filter tracks in playlist..."
+                className="w-full bg-[#16181D] border border-white/20 rounded-lg pl-8 pr-3 py-1.5 text-[11px] text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+              />
+            </div>
+          </div>
+
+          {/* Tracks List Box */}
+          <div className="bg-[#16181D] border border-white/15 rounded-xl max-h-64 overflow-y-auto divide-y divide-white/5">
+            {filteredPlaylistTracks.map((item, idx) => {
+              const isSelected = selectedTrackIds.has(item.video_id);
+              return (
+                <div
+                  key={item.video_id || idx}
+                  onClick={() => toggleTrackSelection(item.video_id)}
+                  className={`p-2.5 cursor-pointer flex items-center justify-between text-xs transition-colors ${
+                    isSelected ? "bg-[#DFBB7D]/10 hover:bg-[#DFBB7D]/15" : "hover:bg-white/5 opacity-60"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 truncate flex-1 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {}} // handled by row click
+                      className="accent-[#DFBB7D] rounded shrink-0 cursor-pointer"
+                    />
+                    <div className="w-7 h-7 rounded bg-black/40 overflow-hidden shrink-0">
+                      {item.thumbnail_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.thumbnail_url}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Music2 className="w-3.5 h-3.5 text-white/40 m-auto mt-2" />
+                      )}
+                    </div>
+                    <div className="truncate">
+                      <span className="font-bold text-white">{formatTrackTitle(item.title)}</span>
+                      <span className="text-white/40 ml-2">by {item.artist}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-white/50 shrink-0">
+                    {formatDuration(item.duration_sec)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Batch Ingest Execution Button */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div className="text-[11px] text-white/60">
+              Ready to ingest{" "}
+              <span className="font-bold text-[#DFBB7D]">{selectedTrackIds.size}</span> tracks into radio library.
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPlaylistPreview(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchIngest}
+                disabled={batchIngesting || selectedTrackIds.size === 0}
+                className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black uppercase text-xs rounded-xl flex items-center gap-2 shadow-[2px_2px_0px_#000] disabled:opacity-50"
+              >
+                {batchIngesting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ListPlus className="w-4 h-4" />
+                )}
+                {batchIngesting
+                  ? "Importing Tracks..."
+                  : `Import ${selectedTrackIds.size} Tracks & Save`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search Results Dropdown List (Single search) */}
+      {hasSearched && searchResults.length > 0 && !playlistPreview && (
         <div className="p-2 bg-[#1A1D24] border border-white/15 rounded-xl max-h-48 overflow-y-auto space-y-1">
           <div className="text-[10px] font-mono text-white/40 px-2 py-0.5 uppercase tracking-wider">
             Search Matches ({searchResults.length})
@@ -315,8 +790,8 @@ export default function LibraryIngestDock({
         </div>
       )}
 
-      {/* Selected Track Details & Settings Bar */}
-      {selectedTrack && (
+      {/* Selected Track Details & Settings Bar (Single search) */}
+      {selectedTrack && !playlistPreview && (
         <div className="p-3 bg-[#1A1D24] border border-[#DFBB7D]/30 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-black/40 overflow-hidden shrink-0 flex items-center justify-center">
@@ -384,7 +859,7 @@ export default function LibraryIngestDock({
 
             {/* Ingest Action Button */}
             <button
-              onClick={handleIngest}
+              onClick={handleIngestSingle}
               disabled={loading}
               className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black uppercase text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_#000] disabled:opacity-50"
             >
