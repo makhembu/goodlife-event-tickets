@@ -78,6 +78,7 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/playlists/[id]/route.ts:GET", "Public radio playlist tracks"],
   ["app/api/radio/recordings/route.ts:GET", "Public radio recordings"],
   ["app/api/radio/state/route.ts:GET", "Public radio broadcast state"],
+  ["app/api/radio/diagnostics/route.ts:GET", "Public radio playout diagnostics and drop telemetry"],
 
   // Session login/logout endpoints (unauthenticated by definition)
   ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],

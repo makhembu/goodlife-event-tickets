@@ -3,6 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { fulfillPayheroPayment, markPayheroPaymentFailed } from "@/lib/payhero-fulfill";
 import { recordPayheroFailure } from "@/lib/rate-limit";
 import { getPayheroTransactionStatus, payheroStatusIsSuccess } from "@/lib/payhero";
+import { persistWebhookToOutbox } from "@/lib/webhook-outbox";
 
 /**
  * PayHero payment webhook.
@@ -60,6 +61,12 @@ export async function POST(request: NextRequest) {
       console.warn("PayHero callback without reference:", rawBody.slice(0, 300));
       return NextResponse.json({ message: "No reference — ignored" });
     }
+
+    // Persist raw inbound payload to durable Postgres outbox table and Cloudflare R2
+    // before performing transaction verification or fulfillment
+    persistWebhookToOutbox(payload?.reference || "", ourReference, status, rawBody).catch((err) => {
+      console.error("[PayHero Callback] Outbox persistence error:", err);
+    });
 
     if (status === "success") {
       // Security re-verification: always query PayHero transaction-status endpoint

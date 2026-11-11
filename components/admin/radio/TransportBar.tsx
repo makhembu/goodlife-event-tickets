@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useRadio } from "@/context/RadioContext";
 import {
   Play,
@@ -14,6 +15,7 @@ import {
   RadioTower,
   Wifi,
   Sparkles,
+  ArrowLeft,
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -289,8 +291,17 @@ export default function TransportBar({
 
   return (
     <header className="fixed top-0 left-0 right-0 h-14 bg-[#16181D] border-b-2 border-[#DFBB7D] z-50 text-[#FBF9F6] flex items-center justify-between px-2 sm:px-3 select-none">
-      {/* 1. Left: Station Status & ON AIR Pill */}
+      {/* 1. Left: Navigation Back to Dashboard & Station Status */}
       <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+        <Link
+          href="/admin/dashboard"
+          className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#20242D] hover:bg-[#2A303C] text-white/90 hover:text-white border border-[#DFBB7D]/40 font-mono text-[10px] sm:text-xs font-bold transition-all shadow-[1px_1px_0px_#000] active:translate-x-0.5 active:translate-y-0.5"
+          title="Return to Admin Dashboard"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 text-[#DFBB7D]" />
+          <span className="hidden sm:inline">DASHBOARD</span>
+        </Link>
+
         {isDucking ? (
           <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-2.5 py-1 bg-[#F5C842] text-[#16181D] font-mono text-[10px] sm:text-xs font-bold border border-[#16181D] animate-pulse">
             <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />

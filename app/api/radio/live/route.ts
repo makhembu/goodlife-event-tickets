@@ -28,7 +28,7 @@ interface RadioPlayoutDbCache {
 }
 
 let _dbPlayoutCache: RadioPlayoutDbCache | null = null;
-const PLAYOUT_CACHE_TTL_MS = 30_000; // 30 seconds
+const PLAYOUT_CACHE_TTL_MS = 5_000; // 5 seconds (fast response for track skips and mode changes)
 
 // 2.5-second instance cache for live-drop broadcast check (stays within 2-3s delivery window)
 interface LiveDropCache {

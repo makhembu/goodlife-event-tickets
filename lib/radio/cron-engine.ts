@@ -94,7 +94,11 @@ export async function executeCronRadioDrops(
       broadcastMode = settingsRes.rows[0].broadcast_mode || "autodj";
     }
   } catch (err: any) {
-    console.warn("[cron-engine] Failed to check broadcast_mode:", err?.message);
+    console.error("[cron-engine] Failed to check broadcast_mode:", err?.message);
+    return {
+      statusCode: 503,
+      body: { error: "Database unavailable for broadcast_mode check" },
+    };
   }
 
   if (broadcastMode === "live") {
@@ -123,7 +127,11 @@ export async function executeCronRadioDrops(
     );
     todayCount = parseInt(todayRes.rows?.[0]?.count || "0", 10);
   } catch (err: any) {
-    console.warn("[cron-engine] Failed to count today's drops:", err?.message);
+    console.error("[cron-engine] Failed to count today's drops:", err?.message);
+    return {
+      statusCode: 503,
+      body: { error: "Database unavailable for daily cap check" },
+    };
   }
 
   if (todayCount >= dailyCap) {
@@ -156,10 +164,15 @@ export async function executeCronRadioDrops(
       FROM radio_drops
       WHERE (created_at > NOW() - INTERVAL '7 days' OR timing_type IN ('generic', 'station_id'))
         AND audio_url IS NOT NULL
+        AND (played_at IS NULL OR played_at < NOW() - INTERVAL '24 hours')
     `);
     poolCount = parseInt(poolRes.rows?.[0]?.count || "0", 10);
   } catch (err: any) {
-    console.warn("[cron-engine] Failed to count valid drop pool:", err?.message);
+    console.error("[cron-engine] Failed to count valid drop pool:", err?.message);
+    return {
+      statusCode: 503,
+      body: { error: "Database unavailable for drop pool check" },
+    };
   }
 
   if (poolCount >= targetPool) {
@@ -219,23 +232,26 @@ export async function executeCronRadioDrops(
   let scriptToUse = drop.script;
   let tagToUse = drop.tag;
   let isFallback = drop.is_generic_fallback;
+  let audioUrlToUse = drop.audio_url;
 
   if (FORBIDDEN_DROP_REGEXES.some((rx) => rx.test(scriptToUse))) {
-    console.warn("[cron-engine] Prohibited specific promo/pricing detected in script. Falling back to reviewed evergreen library drop.");
+    console.warn("[cron-engine] Prohibited specific promo/pricing detected in script. Discarding synthesized audio and falling back to reviewed evergreen library drop.");
     if (deps.selectFallbackDrop) {
       const reviewed = deps.selectFallbackDrop(selectedPersona);
       scriptToUse = reviewed.script;
       tagToUse = reviewed.tag;
+      audioUrlToUse = (reviewed as any).audio_url || `/drops/samples/${selectedPersona}_context_drop.mp3`;
     } else {
       scriptToUse = "Niaje Kanairo! You are tuned into GOODLIFE Radio 254, keeping the city connected.";
       tagToUse = "[excited]";
+      audioUrlToUse = `/drops/samples/${selectedPersona}_context_drop.mp3`;
     }
     isFallback = true;
   }
 
   // 6. Persist to radio_drops
   let insertedId: number | null = null;
-  if (drop.audio_url) {
+  if (audioUrlToUse) {
     try {
       const insertRes = await deps.queryDb(
         `INSERT INTO radio_drops (persona, mood, title, script, audio_url, timing_type, created_at)
@@ -246,7 +262,7 @@ export async function executeCronRadioDrops(
           tagToUse,
           `${drop.persona_name} · Station ID`,
           scriptToUse,
-          drop.audio_url,
+          audioUrlToUse,
           "station_id",
         ]
       );
@@ -280,7 +296,7 @@ export async function executeCronRadioDrops(
     db_id: insertedId,
     persona: drop.persona_name,
     script: scriptToUse,
-    audio_url: drop.audio_url,
+    audio_url: audioUrlToUse,
     is_fallback: isFallback,
     pool_count: poolCount + 1,
     target_pool: targetPool,
@@ -299,7 +315,7 @@ export async function executeCronRadioDrops(
         persona: drop.persona_name,
         mood: tagToUse,
         script: scriptToUse,
-        audio_url: drop.audio_url,
+        audio_url: audioUrlToUse,
         timing_type: "station_id",
         is_fallback: isFallback,
       },

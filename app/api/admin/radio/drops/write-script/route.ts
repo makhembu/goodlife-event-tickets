@@ -22,10 +22,10 @@ interface ScriptContext {
  */
 async function fetchBroadcastContext(): Promise<ScriptContext> {
   const context: ScriptContext = {
-    event_name: "Park & Chill",
-    venue: "Marara Camp, Thika",
-    date: "Every Sunday",
-    price: "200 bob",
+    event_name: "GOODLIFE Festival Experience",
+    venue: "Nairobi Frequencies",
+    date: "24/7 Live Stream",
+    price: "",
     ticket_url: "goodlife.smwhr.space",
     station_name: "GOODLIFE Radio 254",
   };
@@ -34,14 +34,14 @@ async function fetchBroadcastContext(): Promise<ScriptContext> {
     const events = await getPromotableEvents(new Date()).catch(() => []);
     if (events.length > 0) {
       const ev = events[0];
-      context.event_name = ev.name_spoken || context.event_name;
-      context.venue = ev.venue_spoken || context.venue;
+      if (ev.name_spoken) context.event_name = ev.name_spoken;
+      if (ev.venue_spoken) context.venue = ev.venue_spoken;
       if (ev.is_recurring) {
-        context.date = "Every Sunday";
+        context.date = "Weekly Sessions";
       } else if (ev.countdown_phrase) {
         context.date = ev.countdown_phrase;
       }
-      if (ev.tiers && ev.tiers.length > 0) {
+      if (ev.tiers && ev.tiers.length > 0 && ev.tiers[0].price) {
         context.price = ev.tiers[0].price_spoken || `${ev.tiers[0].price} bob`;
       }
       if (ev.spoken_ticket_url) {
