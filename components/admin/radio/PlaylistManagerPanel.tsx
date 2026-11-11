@@ -60,11 +60,13 @@ export interface PlaylistTrack {
 interface PlaylistManagerPanelProps {
   library: RadioSet[];
   onRefreshLive?: () => void;
+  onPlaylistsChanged?: () => void;
 }
 
 export default function PlaylistManagerPanel({
   library,
   onRefreshLive,
+  onPlaylistsChanged,
 }: PlaylistManagerPanelProps) {
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,7 +215,7 @@ export default function PlaylistManagerPanel({
   const fetchPlaylists = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/admin/radio/playlists");
+      const res = await fetch(`/api/admin/radio/playlists?_t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       if (data.success && Array.isArray(data.playlists)) {
         setPlaylists(data.playlists);
@@ -231,7 +233,7 @@ export default function PlaylistManagerPanel({
   const fetchPlaylistDetails = async (id: number) => {
     try {
       setLoadingTracks(true);
-      const res = await fetch(`/api/admin/radio/playlists/${id}`);
+      const res = await fetch(`/api/admin/radio/playlists/${id}?_t=${Date.now()}`, { cache: "no-store" });
       const data = await res.json();
       if (data.success && Array.isArray(data.tracks)) {
         setSelectedPlaylistTracks(data.tracks);
@@ -316,8 +318,20 @@ export default function PlaylistManagerPanel({
       setCreateDesc("");
       setCreateCoverUrl("");
       setShowCreateModal(false);
+      if (data.playlist) {
+        const createdSummary: PlaylistSummary = {
+          ...data.playlist,
+          track_count: 0,
+          total_duration_sec: 0,
+        };
+        setPlaylists((prev) => {
+          const exists = prev.some((p) => p.id === createdSummary.id);
+          return exists ? prev : [createdSummary, ...prev];
+        });
+        setSelectedPlaylistId(createdSummary.id);
+      }
       await fetchPlaylists();
-      setSelectedPlaylistId(data.playlist.id);
+      if (onPlaylistsChanged) onPlaylistsChanged();
     } catch (err: any) {
       showBanner(err.message || "Failed to create playlist", "error");
     } finally {

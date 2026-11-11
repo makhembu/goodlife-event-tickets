@@ -73,6 +73,9 @@ export default function AdminRadioPage() {
 
   const setActiveTab = (tab: ConsoleTab) => {
     setActiveTabState(tab);
+    if (tab === "library" || tab === "playlists") {
+      fetchAvailablePlaylists();
+    }
     try {
       localStorage.setItem("goodlife_admin_radio_tab", tab);
       window.location.hash = tab;
@@ -581,7 +584,7 @@ export default function AdminRadioPage() {
                   : "text-white/60 hover:text-white"
               }`}
             >
-              <span>⚡ PERFORM</span>
+              <span>📻 RUNDOWN & MIC</span>
             </button>
             <button
               type="button"
@@ -592,7 +595,7 @@ export default function AdminRadioPage() {
                   : "text-white/60 hover:text-white"
               }`}
             >
-              <span>📻 PLAYOUT</span>
+              <span>🎛️ SOUNDBOARD</span>
             </button>
             <button
               type="button"
@@ -608,28 +611,21 @@ export default function AdminRadioPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* DECK A: Performance & Drops (7 cols / ~60%) */}
+            {/* DECK A: On-Air Rundown, Live Mic & Cue (7 cols / ~60%) */}
             <div className={`space-y-6 lg:col-span-7 ${studioDeck === "playout" ? "hidden lg:block" : "block"}`}>
-              {/* Soundboard, Cue & Mic: Visible on desktop or when 'perform' is selected on mobile */}
+              {/* On-Air Rundown, Mic & Cue: Front and center for Live Talkover */}
               <div className={`space-y-6 ${studioDeck === "drops" ? "hidden lg:block" : "block"}`}>
-                <PerformanceSoundboard
-                  onFireOnAir={async (name, url) => {
-                    setIsDucking(true);
-                    if (url) {
-                      await airLiveDrop({ audioUrl: url, title: name, persona: name });
-                    }
-                    setTimeout(() => setIsDucking(false), 4500);
+                <OnAirRundown />
+
+                <BrowserMicRecorder
+                  onTalkoverToggle={(active) => {
+                    setIsDucking(active);
+                    setManualDucking(active);
                   }}
-                  onSendToCue={(pad) => {
-                    setCueItem({
-                      id: `pad_${pad.id}`,
-                      title: pad.name,
-                      script: `Station Drop: ${pad.name}`,
-                      audioUrl: pad.audioUrl || "",
-                      persona: pad.name,
-                    });
+                  onSendToCue={(cue) => setCueItem(cue)}
+                  onAirLive={async (audioUrl, title, persona, script) => {
+                    return await airLiveDrop({ audioUrl, title, persona, script });
                   }}
-                  onChoke={() => setIsDucking(false)}
                 />
 
                 <CueDock
@@ -651,17 +647,6 @@ export default function AdminRadioPage() {
                         audioUrl: data.drop_url,
                       });
                     }
-                  }}
-                />
-
-                <BrowserMicRecorder
-                  onTalkoverToggle={(active) => {
-                    setIsDucking(active);
-                    setManualDucking(active);
-                  }}
-                  onSendToCue={(cue) => setCueItem(cue)}
-                  onAirLive={async (audioUrl, title, persona, script) => {
-                    return await airLiveDrop({ audioUrl, title, persona, script });
                   }}
                 />
               </div>
@@ -702,9 +687,27 @@ export default function AdminRadioPage() {
               </div>
             </div>
 
-            {/* DECK B: Playout & Queue (5 cols / ~40%) */}
+            {/* DECK B: Performance Soundboard & Queue (5 cols / ~40%) */}
             <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
-              <OnAirRundown />
+              <PerformanceSoundboard
+                onFireOnAir={async (name, url) => {
+                  setIsDucking(true);
+                  if (url) {
+                    await airLiveDrop({ audioUrl: url, title: name, persona: name });
+                  }
+                  setTimeout(() => setIsDucking(false), 4500);
+                }}
+                onSendToCue={(pad) => {
+                  setCueItem({
+                    id: `pad_${pad.id}`,
+                    title: pad.name,
+                    script: `Station Drop: ${pad.name}`,
+                    audioUrl: pad.audioUrl || "",
+                    persona: pad.name,
+                  });
+                }}
+                onChoke={() => setIsDucking(false)}
+              />
               <QueueNextTrack />
               <DecksConnectCard />
             </div>
@@ -1221,7 +1224,11 @@ export default function AdminRadioPage() {
       {/* VIEW: PLAYLISTS & PROGRAMMING */}
       {activeTab === "playlists" && (
         <div className="space-y-6">
-          <PlaylistManagerPanel library={library} onRefreshLive={fetchBroadcastSettings} />
+          <PlaylistManagerPanel
+            library={library}
+            onRefreshLive={fetchBroadcastSettings}
+            onPlaylistsChanged={fetchAvailablePlaylists}
+          />
         </div>
       )}
 

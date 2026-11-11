@@ -85,7 +85,7 @@ export default function RadioTelemetryLogs({ library }: { library: RadioSet[] })
   const fetchLogs = async () => {
     try {
       setRefreshing(true);
-      const res = await fetch("/api/admin/radio/logs");
+      const res = await fetch(`/api/admin/radio/logs?_t=${Date.now()}`, { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         setData(json);

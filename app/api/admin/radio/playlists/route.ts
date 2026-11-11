@@ -34,7 +34,10 @@ export async function GET() {
     `;
 
     const res = await neonQuery(query);
-    return NextResponse.json({ success: true, playlists: res.rows || [] });
+    return NextResponse.json(
+      { success: true, playlists: res.rows || [] },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate" } }
+    );
   } catch (err: any) {
     console.error("[api/admin/radio/playlists] GET error:", err);
     return NextResponse.json({ error: err.message || "Failed to fetch playlists" }, { status: 500 });

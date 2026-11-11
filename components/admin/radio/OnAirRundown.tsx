@@ -18,6 +18,7 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
+import { useRadio } from "@/context/RadioContext";
 
 interface PlaylistTrack {
   id: number;
@@ -32,6 +33,7 @@ interface PlaylistTrack {
 }
 
 export default function OnAirRundown() {
+  const { fetchRadioLive, playImmediateBroadcastTrack } = useRadio();
   const [sets, setSets] = useState<PlaylistTrack[]>([]);
   const [playlistName, setPlaylistName] = useState<string | null>(null);
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
@@ -158,9 +160,15 @@ export default function OnAirRundown() {
         body: JSON.stringify({ action: "play_now", setId }),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         setActiveSetId(setId);
         setBroadcastMode("mania");
         notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
+        if (data?.active_track?.audio_url) {
+          playImmediateBroadcastTrack(data.active_track);
+        } else {
+          await fetchRadioLive().catch(() => {});
+        }
         fetchPlaylist();
       } else {
         alert("Failed to cue track.");
@@ -224,6 +232,19 @@ export default function OnAirRundown() {
     );
   }, [sets, searchQuery]);
 
+  const activeTrack = useMemo(() => {
+    return sets.find((s) => s.id === activeSetId) || null;
+  }, [sets, activeSetId]);
+
+  const activeTrackIdx = useMemo(() => {
+    return activeTrack ? sets.findIndex((s) => s.id === activeTrack.id) : -1;
+  }, [sets, activeTrack]);
+
+  const nextTrack = useMemo(() => {
+    if (activeTrackIdx === -1 || sets.length === 0) return null;
+    return sets[(activeTrackIdx + 1) % sets.length] || null;
+  }, [sets, activeTrackIdx]);
+
   return (
     <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4 flex flex-col h-full">
       {/* Header */}
@@ -274,6 +295,43 @@ export default function OnAirRundown() {
         <div className="p-2 bg-[#10B981]/20 border border-[#10B981] text-emerald-200 font-mono text-xs flex items-center space-x-1.5">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span className="truncate">{notification}</span>
+        </div>
+      )}
+
+      {/* LIVE ON-AIR BOOTH PROMPTER (Full, un-truncated song titles for mic talkover) */}
+      {activeTrack && (
+        <div className="p-3 bg-gradient-to-r from-[#DFBB7D]/20 via-[#1A1D24] to-[#16181D] border-2 border-[#DFBB7D] rounded-lg shadow-[0_0_15px_rgba(223,187,125,0.15)] space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#E84855] text-white font-black tracking-wider uppercase rounded animate-pulse">
+              <Radio className="w-3.5 h-3.5" />
+              <span>LIVE ON-AIR PROMPTER</span>
+            </div>
+            <span className="text-[#DFBB7D] font-bold">
+              Track {activeTrackIdx + 1} of {sets.length}
+            </span>
+          </div>
+          <div>
+            <div className="text-[10px] text-[#DFBB7D] font-mono font-bold uppercase tracking-wider">
+              CURRENTLY PLAYING (READ FULL TITLE):
+            </div>
+            <div className="text-base sm:text-lg font-black text-[#F5C842] leading-tight break-words mt-0.5">
+              {formatTrackTitle(activeTrack.title)}
+            </div>
+            <div className="text-xs font-mono text-[#DFBB7D] mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-bold text-white">{activeTrack.dj_name || "GOODLIFE Resident"}</span>
+              {activeTrack.genre && <span className="text-white/50">· {activeTrack.genre}</span>}
+              <span className="text-white/50">· {formatSecs(activeTrack.duration_sec)}</span>
+            </div>
+          </div>
+          {nextTrack && (
+            <div className="pt-2 border-t border-white/10 flex items-start gap-1.5 text-xs font-mono">
+              <span className="text-[#DFBB7D] font-black shrink-0">⏭️ UP NEXT:</span>
+              <span className="text-white font-bold break-words">
+                {formatTrackTitle(nextTrack.title)}
+                {nextTrack.dj_name ? ` · ${nextTrack.dj_name}` : ""}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -348,7 +406,7 @@ export default function OnAirRundown() {
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <div className="font-mono text-xs sm:text-sm font-bold text-white line-clamp-2 leading-snug">
+                    <div className="font-mono text-xs sm:text-sm font-bold text-white break-words leading-snug">
                       {formatTrackTitle(track.title)}
                     </div>
                     <div className="text-[11px] font-mono text-[#DFBB7D] truncate mt-0.5 flex items-center gap-1.5">

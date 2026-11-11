@@ -485,12 +485,16 @@ export async function getPromotableEvents(now: Date = new Date()): Promise<Radio
 
       const eventIds = rawEvents.map((e) => e.id);
 
-      // 2. Fetch ticket tiers using allowlist
+      // 2. Fetch ticket tiers cleanly (SELECT t.* avoids missing optional columns like max_quantity)
       const tiersRes = await executeEventQuery(
-        `SELECT t.id, t.event_id, t.name, t.price, t.sold_count, t.max_quantity,
-                t.available_from, t.available_until, t.hidden, t.deleted_at,
-                t.show_only_on_event_day, t.hide_on_event_day,
-                t.admits_quantity, t.tier_category
+        `SELECT t.*,
+                COALESCE((
+                  SELECT COUNT(*)::int
+                  FROM tickets tk
+                  WHERE tk.event_id = t.event_id
+                    AND (tk.ticket_type = t.id OR LOWER(TRIM(tk.ticket_type)) = LOWER(TRIM(t.name)))
+                    AND tk.deleted_at IS NULL
+                ), 0) AS sold_count
          FROM ticket_tiers t
          WHERE t.event_id = ANY($1)
          ORDER BY t.price ASC`,

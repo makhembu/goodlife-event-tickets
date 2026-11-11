@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Mic, Square, Sparkles, Play, Pause, CheckCircle2, AlertCircle, RefreshCw, Radio, Headphones, ArrowRight, Volume2 } from "lucide-react";
 import { useAudioRecorder, MAX_RECORDING_SECONDS } from "@/hooks/use-audio-recorder";
 import { useSoundboard } from "@/context/SoundboardContext";
+import { useRadio } from "@/context/RadioContext";
 
 export interface BrowserMicRecorderProps {
   onDropMastered?: (audioUrl: string, dropName: string) => void;
@@ -18,6 +19,7 @@ export default function BrowserMicRecorder({
   onSendToCue,
   onAirLive,
 }: BrowserMicRecorderProps) {
+  const { title: currentOnAirTitle, artist: currentOnAirArtist, upNext: currentOnAirUpNext } = useRadio();
   const { openAssignModal } = useSoundboard();
   const {
     isRecording,
@@ -357,6 +359,37 @@ export default function BrowserMicRecorder({
           <div className="px-2 py-0.5 bg-[#E84855] text-white font-mono text-xs font-bold animate-pulse flex items-center space-x-1.5">
             <Radio className="w-3.5 h-3.5" />
             <span>MIC LIVE ON AIR (-12dB DUCK)</span>
+          </div>
+        )}
+      </div>
+
+      {/* LIVE HOST BOOTH PROMPTER (Full, readable song title while talking on mic) */}
+      <div className="p-2.5 bg-black/40 border border-[#DFBB7D]/40 rounded font-mono space-y-1.5">
+        <div className="flex items-center justify-between text-[10px] text-[#DFBB7D] font-bold uppercase tracking-wider">
+          <span className="flex items-center gap-1.5">
+            <Radio className="w-3 h-3 text-[#DFBB7D] animate-pulse" />
+            LIVE MIC PROMPTER · READ ON-AIR
+          </span>
+          <span className="text-white/40">GOODLIFE 254</span>
+        </div>
+        <div className="text-xs text-white/80">
+          <span className="text-white/50 text-[10px] block uppercase font-bold">Currently Playing:</span>
+          <span className="font-black text-[#F5C842] text-sm break-words leading-tight block mt-0.5">
+            {currentOnAirTitle || "GOODLIFE 24/7 Master Rotation"}
+          </span>
+          {currentOnAirArtist && (
+            <span className="text-[#DFBB7D] font-bold text-xs mt-0.5 block">
+              by {currentOnAirArtist}
+            </span>
+          )}
+        </div>
+        {currentOnAirUpNext && currentOnAirUpNext.length > 0 && (
+          <div className="pt-1.5 border-t border-white/10 text-[11px] text-white/70 flex items-start gap-1">
+            <span className="text-[#DFBB7D] font-black shrink-0">UP NEXT:</span>
+            <span className="text-white font-bold break-words">
+              {currentOnAirUpNext[0].title}
+              {currentOnAirUpNext[0].artist ? ` · ${currentOnAirUpNext[0].artist}` : ""}
+            </span>
           </div>
         )}
       </div>

@@ -254,7 +254,8 @@ export async function GET() {
         const dropsRes = await neonQuery(
           `SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title
            FROM radio_drops
-           WHERE (created_at > NOW() - INTERVAL '7 days' OR timing_type IN ('generic', 'station_id'))
+           WHERE (created_at > NOW() - INTERVAL '7 days' OR timing_type IN ('generic', 'station_id', 'intro', 'outro'))
+             AND (timing_type IS NULL OR timing_type NOT IN ('live_inject', 'live_drop'))
              AND audio_url IS NOT NULL
            ORDER BY created_at DESC
            LIMIT 50`

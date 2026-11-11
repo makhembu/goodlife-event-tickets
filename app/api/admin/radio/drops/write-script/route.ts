@@ -49,33 +49,56 @@ async function fetchBroadcastContext(): Promise<ScriptContext> {
       }
     }
 
-    // Fetch Up Next track from active playlist
-    const livePlRes = await neonQuery(`
-      SELECT p.id as playlist_id, p.activated_at,
-             s.id, s.title, s.dj_name, s.duration_sec, pt.position
-      FROM radio_playlists p
-      JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
-      JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
-      WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
-      ORDER BY pt.position ASC, pt.id ASC
-    `).catch(() => ({ rows: [] }));
+    // Fetch Up Next track from active playlist and settings
+    const [livePlRes, settingsRes] = await Promise.all([
+      neonQuery(`
+        SELECT p.id as playlist_id, p.activated_at,
+               s.id, s.title, s.dj_name, s.duration_sec, pt.position
+        FROM radio_playlists p
+        JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
+        JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        ORDER BY pt.position ASC, pt.id ASC
+      `).catch(() => ({ rows: [] })),
+      neonQuery("SELECT broadcast_mode, active_set_id FROM radio_settings WHERE id = 1").catch(() => ({ rows: [] })),
+    ]);
 
-    if (livePlRes.rows.length > 0) {
-      const sets = livePlRes.rows;
-      const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
-      const nowSec = Math.floor(Date.now() / 1000);
-      const activatedAtSec = Math.floor(new Date(sets[0].activated_at || Date.now()).getTime() / 1000);
-      const cycleSec = totalDurationSec > 0 ? ((nowSec - activatedAtSec) % totalDurationSec) : 0;
+    let sets = livePlRes.rows;
+    if (sets.length === 0) {
+      const catRes = await neonQuery(`
+        SELECT id, title, dj_name, duration_sec
+        FROM radio_sets
+        WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
+        ORDER BY display_order ASC, id ASC
+        LIMIT 200
+      `).catch(() => ({ rows: [] }));
+      sets = catRes.rows || [];
+    }
 
-      let cumulative = 0;
-      let activeIdx = 0;
-      for (let i = 0; i < sets.length; i++) {
-        const dur = sets[i].duration_sec || 180;
-        if (cumulative + dur > cycleSec) {
-          activeIdx = i;
-          break;
+    if (sets.length > 0) {
+      const settings = settingsRes.rows[0] || {};
+      let activeIdx = -1;
+      if (settings.broadcast_mode === "mania" && settings.active_set_id) {
+        activeIdx = sets.findIndex((s: any) => s.id === Number(settings.active_set_id));
+      }
+      if (activeIdx === -1) {
+        const totalDurationSec = sets.reduce((acc: number, s: any) => acc + (s.duration_sec || 180), 0);
+        const nowSec = Math.floor(Date.now() / 1000);
+        const activatedAtSec = sets[0]?.activated_at
+          ? Math.floor(new Date(sets[0].activated_at).getTime() / 1000)
+          : 0;
+        const cycleSec = totalDurationSec > 0 ? (Math.max(0, nowSec - activatedAtSec) % totalDurationSec) : 0;
+
+        let cumulative = 0;
+        activeIdx = 0;
+        for (let i = 0; i < sets.length; i++) {
+          const dur = sets[i].duration_sec || 180;
+          if (cumulative + dur > cycleSec) {
+            activeIdx = i;
+            break;
+          }
+          cumulative += dur;
         }
-        cumulative += dur;
       }
       const cur = sets[activeIdx];
       const next = sets[(activeIdx + 1) % sets.length];
@@ -90,12 +113,13 @@ async function fetchBroadcastContext(): Promise<ScriptContext> {
 }
 
 /**
- * Validates that an LLM output contains real spoken dialogue beyond just an emotion tag.
- * E.g. "[energetic]" alone is rejected because it has 0 words after the tag.
+ * Validates that an LLM output contains real spoken dialogue beyond just an emotion tag,
+ * and rejects forbidden repetitive openings like "Yo".
  */
 function isValidScript(s?: string | null): boolean {
   if (!s || typeof s !== "string") return false;
   const stripped = s.replace(/\[[a-zA-Z\s]+\]/g, "").replace(/["“”']/g, "").trim();
+  if (/^\s*y+o+[,\s!?.]/i.test(stripped)) return false; // Strict ban on "Yo" openings
   const words = stripped.split(/\s+/).filter(Boolean);
   return stripped.length >= 25 && words.length >= 6;
 }
@@ -106,7 +130,7 @@ function pickRandom<T>(items: T[]): T {
 
 /**
  * Deterministic localized Sheng / Swahili / English DJ drop generator fallback
- * Provides dynamic randomized variations so clicking never repeats the exact same script
+ * Provides dynamic randomized variations without weak "Yo" clichés
  */
 function generateDeterministicScript(
   prompt: string,
@@ -147,7 +171,7 @@ function generateDeterministicScript(
     }
     if (p.includes("cheche") || p.includes("sheng")) {
       return pickRandom([
-        `[hype] Yoo wasee wa Nairobi na Thika! MC Cheche pande hii. ${ctx.date} tunaruka ${ctx.venue} kwa ${ctx.event_name}! Form ni ${ctx.price} pekee. Wahi tiketi yako sasa hivi kwa ${ticketUrlSpoken}!`,
+        `[hype] Wasee wa Nairobi na Thika, mko ready?! MC Cheche pande hii. ${ctx.date} tunaruka ${ctx.venue} kwa ${ctx.event_name}! Form ni ${ctx.price} pekee. Wahi tiketi yako sasa hivi kwa ${ticketUrlSpoken}!`,
         `[energetic] Wanavybe maze! MC Cheche on the mic. ${ctx.date} form ndio hiyo pale ${ctx.venue}. Pass yako ni ${ctx.price} tu kwenye ${ticketUrlSpoken}. We outside kabisa!`,
         `[hype] Big shouts kwa wanajeshi wote! ${ctx.date} tukutane ${ctx.venue} tuchill river-side. Entry ni ${ctx.price} pekee via ${ticketUrlSpoken}. Piga luku ucome!`,
       ]);
@@ -166,16 +190,16 @@ function generateDeterministicScript(
     }
     // Default / DJ Fusion variations
     return pickRandom([
-      `[hype] Yo, what's good Thika! DJ Fusion in the mix. ${ctx.date}, we park and chill at ${ctx.venue}! Entry ni ${ctx.price} pekee. Grab your advance passes at ${ticketUrlSpoken}. We outside!`,
-      `[energetic] Squad, it's your boy DJ Fusion! Form ya ${ctx.date} ni Park & Chill kule ${ctx.venue}. Vibe safi, good music, na pass ni ${ctx.price} pekee kwa ${ticketUrlSpoken}. Kaa chonjo!`,
+      `[hype] Thika na Nairobi, turn up your speakers! DJ Fusion in the mix. ${ctx.date}, we park and chill at ${ctx.venue}! Entry ni ${ctx.price} pekee. Grab your advance passes at ${ticketUrlSpoken}. We outside!`,
+      `[energetic] Squad, lock in right now! Form ya ${ctx.date} ni Park & Chill kule ${ctx.venue}. Vibe safi, pure anthems, na pass ni ${ctx.price} pekee kwa ${ticketUrlSpoken}. Kaa chonjo!`,
       `[hype] Maze wasee, DJ Fusion ndani ya 254! ${ctx.date} tukutane ${ctx.venue} kwa vibe ya ${ctx.event_name}. Tiketi ni ${ctx.price} tu via ${ticketUrlSpoken}. Come through tufurahi!`,
-      `[confident] Yo Thika massive! DJ Fusion on the decks. Don't sleep on ${ctx.date} at ${ctx.venue}. Advance passes ziko live for ${ctx.price} on ${ticketUrlSpoken}. Twendeni wote!`,
+      `[confident] Massive across the 254, DJ Fusion on the decks! Don't sleep on ${ctx.date} at ${ctx.venue}. Advance passes ziko live for ${ctx.price} on ${ticketUrlSpoken}. Twendeni wote!`,
       `[hype] Big energy kutoka kwa DJ Fusion! ${ctx.event_name} ndio kusema ${ctx.date} pale ${ctx.venue}. Shika yako sasa hivi kwa ${ticketUrlSpoken} kwa ${ctx.price} pekee!`,
     ]);
   }
 
   // If prompt is about up next track
-  if (pr.includes("next") || pr.includes("song") || pr.includes("track") || pr.includes("coming up")) {
+  if (pr.includes("next") || pr.includes("song") || pr.includes("track") || pr.includes("coming up") || ctx.up_next) {
     const nextSong = ctx.up_next || "pure festival fire";
     if (p.includes("sudi")) {
       return pickRandom([
@@ -190,8 +214,8 @@ function generateDeterministicScript(
       ]);
     }
     return pickRandom([
-      `[hype] You are locked into ${ctx.station_name}! Up next, brand new heat: ${nextSong}. Crank up that volume!`,
-      `[energetic] DJ Fusion loading up the decks. Up next is ${nextSong}. Let's get it!`,
+      `[hype] You are locked into ${ctx.station_name}! Up next, loading pure fire on the decks: ${nextSong}. Crank that volume all the way up!`,
+      `[energetic] Turn up the energy in the building! Dropping ${nextSong} right after this on ${ctx.station_name}. Don't touch that dial!`,
     ]);
   }
 
@@ -209,7 +233,7 @@ function generateDeterministicScript(
     return `[relaxed] Frequencies za ukweli, bila haraka. Bwana Mkubwa on the airwaves, GOODLIFE Radio 254.`;
   }
   return pickRandom([
-    `[hype] Yo Nairobi! DJ Fusion on the decks. Non-stop festival anthems 24/7 on ${ctx.station_name}. We outside!`,
+    `[hype] Lock in across Nairobi! DJ Fusion on the decks. Non-stop festival anthems 24/7 on ${ctx.station_name}. We outside!`,
     `[confident] Straight bangers only on ${ctx.station_name}. DJ Fusion keeping your playlist lively all day, all night!`,
   ]);
 }
@@ -222,36 +246,75 @@ async function callLlmScriptGenerator(
   persona: string,
   ctx: ScriptContext
 ): Promise<string | null> {
-  const systemPrompt = `You are a veteran Kenyan FM Radio creative producer and DJ scriptwriter (producing for stations like Homeboyz Radio, NRG Radio, Ghetto Radio 89.5, and Capital FM Nairobi).
-Your job is to write a COMPLETE, punchy, authentic on-air radio DJ drop / talkover script.
+  const systemPrompt = `You are a veteran Kenyan FM Radio creative producer and high-energy DJ imaging scriptwriter (producing for NRG Radio, Homeboyz Radio, Ghetto Radio 89.5, and Capital FM Nairobi).
+Your job is to write an EXPLOSIVE, electrifying, punchy, authentic on-air radio DJ drop / talkover script.
 
-CRITICAL LENGTH & FORMAT REQUIREMENT:
-- You MUST write 2 to 3 complete spoken sentences (between 20 and 40 spoken words).
-- You MUST start with an emotion tag: [hype], [confident], [energetic], [relaxed], [warm tone], or [chuckle].
-- NEVER, UNDER ANY CIRCUMSTANCES, output only the emotion tag alone (e.g. "[energetic]"). That is an immediate failure. You must include the full spoken script following the tag.
+CRITICAL STYLE & ANTI-CLICHÉ RULES:
+- STRICTLY BANNED: NEVER EVER start with "Yo", "Yo,", "Yoo", "Yo what's good", or generic low-energy greetings. Starting with "Yo" is an IMMEDIATE FAILURE.
+- Launch directly with high-octane broadcast hooks: e.g., "Turn up your speakers across the 254!", "Straight from the main stage!", "Nairobi na Thika, mko ready?!", "Lock in right now!", "Wazi wazi wanavybe!", "Drop everything and listen!".
+- Write 2 to 3 complete, high-pace, punchy spoken sentences (between 20 and 38 spoken words).
+- Start strictly with ONE emotion tag: [hype], [confident], [energetic], [relaxed], [warm tone], or [chuckle].
+- Code-switch naturally between urban Kenyan English and crisp Nairobi Sheng!
 
-PERSONA EXAMPLES:
-- If DJ Fusion:
-  "[hype] Yo, what's good Thika! DJ Fusion in the building. This Saturday we park and chill at Marara Camp! Cold drinks, river views, and advance tickets are only 500 bob on goodlife.smwhr.space. We outside!"
-- If MC Cheche:
-  "[energetic] Wazi wazi wasee wa Nairobi na Thika! MC Cheche on the mic. This Saturday form ni Marara Camp. Entry ni soo tano tu! Wahi tiketi yako sasa hivi kwa goodlife.smwhr.space!"
-- If DJ Sudi:
-  "[confident] Mambo vipi watu wangu! Ni DJ Sudi hapa. Jumamosi hii tuko Marara Camp kwa muziki safi. Tiketi ni mia tano pekee kupitia goodlife.smwhr.space. Usipitwe!"
-- If Bwana Mkubwa:
+PERSONA EXAMPLES (notice ZERO "Yo" clichés and explosive pace):
+- DJ Fusion:
+  "[hype] Turn your speakers all the way up across the 254! DJ Fusion locking down the decks on GOODLIFE Radio. This Saturday we take over Marara Camp — grab advance tickets at goodlife.smwhr.space!"
+- MC Cheche:
+  "[energetic] Wazi wazi wanavybe wa Nairobi na Thika! MC Cheche on the mic, moto hauzimi! Saturday form ni Marara Camp, pass ni 500 bob tu on goodlife.smwhr.space!"
+- DJ Sudi:
+  "[confident] Mambo vipi watu wangu! Ni DJ Sudi hewani sasa hivi. Jumamosi tunakutana Marara Camp kwa muziki safi. Tiketi ni mia tano pekee kupitia goodlife.smwhr.space!"
+- Bwana Mkubwa:
   "[relaxed] Nairobi usiku sana. Hewani ni GOODLIFE Radio 254. Safe frequencies, no rush, vibe safi hadi che. Tiketi ni mia tano pekee kwa goodlife.smwhr.space."
 
-GROUND TRUTH CONTEXT TO USE:
+GROUND TRUTH LIVE CONTEXT TO WEAVE IN DYNAMICALLY:
 - Event: ${ctx.event_name}
 - Venue: ${ctx.venue}
 - Date: ${ctx.date}
 - Price: ${ctx.price}
 - Tickets website: goodlife.smwhr.space
 - Station: ${ctx.station_name}
-${ctx.up_next ? `- Up Next Track: ${ctx.up_next}` : ""}
+${ctx.current_track ? `- Currently Playing On Air: ${ctx.current_track}` : ""}
+${ctx.up_next ? `- Up Next Track (TEASE THIS!): ${ctx.up_next}` : ""}
 
 Return ONLY the spoken script starting with the emotion tag. No quotes, no markdown, no conversational commentary.`;
 
-  // 1. Primary: OpenRouter (meta-llama/llama-3.3-70b-instruct)
+  // 1. Primary: Groq (openai/gpt-oss-120b, openai/gpt-oss-20b) — ultra-fast creative inference
+  const groqKey = process.env.GROQ_API_KEY?.trim() || process.env.GROQ_API_KEY_FALLBACK?.trim();
+  if (groqKey) {
+    for (const model of ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]) {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: `Write an explosive, high-pace 25-to-35 word radio drop for persona "${persona}" based on: ${userPrompt}` },
+            ],
+            max_tokens: 700,
+            reasoning_effort: "low",
+            temperature: 0.9,
+          }),
+          signal: AbortSignal.timeout(4500),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          const text = j.choices?.[0]?.message?.content?.trim();
+          if (isValidScript(text)) {
+            return text!.replace(/^["“”']|["“”']$/g, "").trim();
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[write-script] Groq (${model}) failed:`, err?.message);
+      }
+    }
+  }
+
+  // 2. Secondary: OpenRouter (meta-llama/llama-3.3-70b-instruct)
   const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
   if (openrouterKey) {
     try {
@@ -265,12 +328,12 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
           model: "meta-llama/llama-3.3-70b-instruct",
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: `Write a 25-to-35 word radio drop for persona "${persona}" based on: ${userPrompt}` },
+            { role: "user", content: `Write an explosive 25-to-35 word radio drop for persona "${persona}" based on: ${userPrompt}` },
           ],
-          temperature: 0.85,
-          max_tokens: 160,
+          temperature: 0.9,
+          max_tokens: 180,
         }),
-        signal: AbortSignal.timeout(4500),
+        signal: AbortSignal.timeout(5000),
       });
 
       if (res.ok) {
@@ -285,7 +348,7 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
     }
   }
 
-  // 2. Secondary: Gemini (gemini-2.0-flash, gemini-1.5-flash)
+  // 3. Tertiary: Gemini (gemini-2.0-flash, gemini-1.5-flash)
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   if (geminiKey) {
     for (const model of ["gemini-2.0-flash", "gemini-1.5-flash"]) {
@@ -298,11 +361,11 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
             body: JSON.stringify({
               contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\nUser Request: ${userPrompt}\nPersona: ${persona}` }] }],
               generationConfig: {
-                temperature: 0.85,
-                maxOutputTokens: 160,
+                temperature: 0.9,
+                maxOutputTokens: 180,
               },
             }),
-            signal: AbortSignal.timeout(4000),
+            signal: AbortSignal.timeout(4500),
           }
         );
         if (res.ok) {
@@ -310,47 +373,10 @@ Return ONLY the spoken script starting with the emotion tag. No quotes, no markd
           const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (isValidScript(text)) {
             return text!.replace(/^["“”']|["“”']$/g, "").trim();
-          } else {
-            console.warn(`[write-script] Gemini returned incomplete script: "${text}"`);
           }
         }
       } catch (err: any) {
         console.warn(`[write-script] Gemini (${model}) failed:`, err?.message);
-      }
-    }
-  }
-
-  // 3. Tertiary: Groq
-  const groqKey = process.env.GROQ_API_KEY?.trim() || process.env.GROQ_API_KEY_FALLBACK?.trim();
-  if (groqKey) {
-    for (const model of ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]) {
-      try {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${groqKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: `Write a 25-word radio drop for persona "${persona}" based on: ${userPrompt}` },
-            ],
-            max_tokens: 160,
-            temperature: 0.85,
-          }),
-          signal: AbortSignal.timeout(4000),
-        });
-        if (res.ok) {
-          const j = await res.json();
-          const text = j.choices?.[0]?.message?.content?.trim();
-          if (isValidScript(text)) {
-            return text!.replace(/^["“”']|["“”']$/g, "").trim();
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[write-script] Groq (${model}) failed:`, err?.message);
       }
     }
   }

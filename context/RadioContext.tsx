@@ -114,6 +114,7 @@ export interface RadioContextType {
   setManualDucking: (ducked: boolean) => void;
   fetchRadioState: () => Promise<void>;
   fetchRadioLive: () => Promise<void>;
+  playImmediateBroadcastTrack: (track: { id: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string }) => void;
 }
 
 // Safe inert default state returned when radio is disabled, unconfigured, or outside provider.
@@ -176,6 +177,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   setManualDucking: () => {},
   fetchRadioState: async () => {},
   fetchRadioLive: async () => {},
+  playImmediateBroadcastTrack: () => {},
 };
 
 const RadioContext = createContext<RadioContextType | null>(null);
@@ -298,6 +300,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const lastDropPlayedTimestampRef = useRef<number>(0);
   const isTransitioningRef = useRef<boolean>(false);
   const isGeneratingDropRef = useRef<boolean>(false);
+  const lastManualSwitchAtRef = useRef<number>(0);
 
   // Dual-Cadence & Multi-Drop Stacking Tracking (every 2 tracks + every 15 minutes)
   const tracksSinceLastDropRef = useRef<number>(0);
@@ -481,10 +484,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           title: formatTrackTitle(data.now_playing.title),
           elapsed: adjustedElapsed,
         };
+        const newTrackId = track.video_id || `${track.title}-${track.artist || ""}`;
+        const withinManualGraceWindow = Date.now() - lastManualSwitchAtRef.current < 7000;
+        if (withinManualGraceWindow && newTrackId !== currentTrackIdRef.current) {
+          // Ignore stale cached server poll response right after an explicit studio cue/skip
+          return;
+        }
         setNowPlayingTrack(track);
 
         // Track change detection: reset beacon and listened seconds
-        const newTrackId = track.video_id || `${track.title}-${track.artist || ""}`;
         if (newTrackId && newTrackId !== currentTrackIdRef.current) {
           sendPlayBeaconOnce(false);
           currentTrackIdRef.current = newTrackId;
@@ -668,7 +676,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
   }, [radioEnabled, isPlaying, pathname, fetchRadioState, fetchRadioLive]);
 
-  // 5. Smooth Local Progress Interpolation (Between 10s polls)
+  // 5. Smooth Local Progress Interpolation (Between polls, using real audio duration)
   useEffect(() => {
     if (!isPlaying) {
       return;
@@ -677,11 +685,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(() => {
       if (!lastPollTimestampRef.current) return;
       const secondsSincePoll = (Date.now() - lastPollTimestampRef.current) / 1000;
-      const current = lastPollElapsedRef.current + secondsSincePoll;
-      const trackDuration =
-        nowPlayingTrack?.duration && nowPlayingTrack.duration > 0
-          ? nowPlayingTrack.duration
-          : Math.round(audioRef.current?.duration || 180);
+      const audioEl = audioRef.current;
+      const hasRealAudioMeta = Boolean(
+        audioEl &&
+        audioEl.duration &&
+        !isNaN(audioEl.duration) &&
+        isFinite(audioEl.duration) &&
+        audioEl.duration > 0
+      );
+      const trackDuration = hasRealAudioMeta
+        ? Math.floor(audioEl!.duration)
+        : (nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : 180);
+      const current = hasRealAudioMeta && !audioEl!.paused
+        ? audioEl!.currentTime
+        : (lastPollElapsedRef.current + secondsSincePoll);
       const clamped = Math.min(current, trackDuration);
       setInterpolatedElapsed(clamped);
 
@@ -697,8 +714,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         triggerOutroDropCrossoverRef.current();
       }
 
-      // JIT Drop Generation disabled client-side: prevents anonymous client tabs from triggering AI spend
-      const CLIENT_JIT_ENABLED = false;
+      // JIT Dynamic Drop Generation: enabled exclusively in authenticated /admin/radio Studio cockpit
+      const CLIENT_JIT_ENABLED = Boolean(pathname?.startsWith("/admin/radio"));
       if (
         CLIENT_JIT_ENABLED &&
         remainingSec <= 60 &&
@@ -798,7 +815,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPlaying, nowPlayingTrack?.duration]);
+  }, [isPlaying, nowPlayingTrack?.duration, pathname, upNextQueue]);
 
   // 6. BroadcastChannel Multi-Tab Conflict Resolution
   useEffect(() => {
@@ -1347,13 +1364,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const setManualDucking = useCallback(
     (ducked: boolean) => {
+      const isMobileDevice = typeof window !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
       if (ducked) {
         if (swellIntervalRef.current) {
           clearInterval(swellIntervalRef.current);
           swellIntervalRef.current = null;
         }
         const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
-        const duckedVol = masterVol > 0 ? Math.max(0.10, Math.min(0.22, masterVol * 0.20)) : 0;
+        // On mobile devices, mute local speaker to 0 to eliminate mic feedback/bleed into the phone microphone
+        const duckedVol = isMobileDevice ? 0 : (masterVol > 0 ? Math.max(0.08, Math.min(0.20, masterVol * 0.18)) : 0);
         if (audioRef.current) {
           audioRef.current.volume = duckedVol;
         }
@@ -1362,6 +1381,53 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [swellMusicToFullVolume]
+  );
+
+  // Instant Studio Track Switcher: stops previous track immediately and begins target track cleanly from 0:00
+  const playImmediateBroadcastTrack = useCallback(
+    (track: { id: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string }) => {
+      if (!track || !track.audio_url) return;
+      const formattedTitle = formatTrackTitle(track.title);
+      const trackVideoId = `set-${track.id}`;
+      lastManualSwitchAtRef.current = Date.now();
+      setBroadcastMode("mania");
+      currentTrackIdRef.current = trackVideoId;
+      hasFiredOutroDropRef.current = false;
+      hasSentBeaconRef.current = false;
+      secondsListenedRef.current = 0;
+      lastPollElapsedRef.current = 0;
+      lastPollTimestampRef.current = Date.now();
+      setInterpolatedElapsed(0);
+
+      setNowPlayingTrack({
+        title: formattedTitle,
+        artist: track.dj_name || "GOODLIFE Resident",
+        thumbnail: track.cover_url || "/flyer.png",
+        elapsed: 0,
+        duration: track.duration_sec || 180,
+        audio_url: track.audio_url,
+        video_id: trackVideoId,
+      });
+
+      if (audioRef.current) {
+        const audio = audioRef.current;
+        isTransitioningRef.current = true;
+        audio.pause();
+        audio.src = track.audio_url;
+        audio.currentTime = 0;
+        const masterVol = isMutedRef.current ? 0 : volumeRef.current;
+        audio.volume = masterVol;
+        audio.play().then(() => {
+          isTransitioningRef.current = false;
+          setIsPlaying(true);
+          setEngineState("live");
+        }).catch((err) => {
+          console.warn("[RadioContext] playImmediateBroadcastTrack error:", err);
+          isTransitioningRef.current = false;
+        });
+      }
+    },
+    []
   );
 
   // 12A. Outro Drop Crossover Trigger (Starts at 15s before track ends, bridges into next song)
@@ -1377,12 +1443,6 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Dual-cadence check: Trigger outro drop if at least 2 tracks have elapsed or 15 mins passed
-    const isTrackCadenceDue = tracksSinceLastDropRef.current >= 2;
-    const isClockDue = (Date.now() - lastClockDropTimestampRef.current) >= 15 * 60 * 1000;
-    if (!isTrackCadenceDue && !isClockDue) {
-      return;
-    }
     // Prevent rapid re-triggering within 20s
     if (Date.now() - lastDropPlayedTimestampRef.current < 20000) {
       return;
@@ -1396,7 +1456,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     let nextTrack: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
     if (!nextTrack && sets.length > 0) {
       const rawId = currentTrackIdRef.current || "";
-      const cleanId = rawId.replace(/^set-/, "");
+      const cleanId = rawId.replace(/^(set-|vault-|pl-\d+-)/, "");
       let cIdx = sets.findIndex(
         (s) => String(s.id) === cleanId || (audio && s.audio_url === audio.src)
       );
@@ -1414,6 +1474,22 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
 
     let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.id.startsWith("db-drop-") || d.audio_url);
+
+    // Check if there is a targeted dynamic drop specifically prepared for this upcoming track!
+    const hasTargetedDrop = drops.some((d) => {
+      if (firedDropIdsRef.current.has(d.id)) return false;
+      const idMatch = d.target_track_id && String(d.target_track_id) === targetId;
+      const titleMatch = d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim());
+      return idMatch || titleMatch;
+    });
+
+    // Dual-cadence check: Trigger outro drop if a targeted dynamic drop is queued OR at least 2 tracks elapsed OR 15 mins passed
+    const isTrackCadenceDue = tracksSinceLastDropRef.current >= 2;
+    const isClockDue = (Date.now() - lastClockDropTimestampRef.current) >= 15 * 60 * 1000;
+    if (!hasTargetedDrop && !isTrackCadenceDue && !isClockDue) {
+      return;
+    }
+
     if (drops.length === 0) return;
 
     // 2. Prioritize drop explicitly targeted to upcoming track; fallback to evergreen station ID/DJ drop
@@ -1467,6 +1543,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         dropAudio.removeEventListener("error", onDropError);
       }
       swellMusicToFullVolume();
+      if (audio && audio.paused && !audio.ended && isPlayingRef.current) {
+        audio.play().catch(() => {});
+      }
       isDropPlayingRef.current = false;
       setIsDropPlaying(false);
       setActiveDropTitle(null);
@@ -1499,7 +1578,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     } catch {
       cleanupOutroDrop();
     }
-  }, [swellMusicToFullVolume]);
+  }, [swellMusicToFullVolume, upNextQueue]);
 
   useEffect(() => {
     triggerOutroDropCrossoverRef.current = triggerOutroDropCrossover;
@@ -2271,6 +2350,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setManualDucking,
         fetchRadioState,
         fetchRadioLive,
+        playImmediateBroadcastTrack,
       }}
     >
       {children}
@@ -2279,7 +2359,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          if (audioRef.current) audioRef.current.preload = "auto";
+        }}
         onPause={() => {
           if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current) return;
           setIsPlaying(false);
@@ -2291,6 +2374,24 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         onEnded={() => {
           sendPlayBeaconOnce(true);
           if (isLiveRef.current) {
+            // Gapless live auto-advance: if upcoming track is known in upNextQueue, start playing IMMEDIATELY without silence!
+            const nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+            if (nextTrackCandidate && nextTrackCandidate.audio_url && audioRef.current) {
+              const audio = audioRef.current;
+              audio.src = nextTrackCandidate.audio_url;
+              audio.currentTime = 0;
+              audio.play().catch((e) => console.warn("[RadioContext] gapless advance play error:", e));
+              setNowPlayingTrack({
+                ...nextTrackCandidate,
+                title: formatTrackTitle(nextTrackCandidate.title),
+                elapsed: 0,
+                duration: nextTrackCandidate.duration_sec || 180,
+              });
+              currentTrackIdRef.current = nextTrackCandidate.video_id || `set-${nextTrackCandidate.id}`;
+              setInterpolatedElapsed(0);
+              lastPollElapsedRef.current = 0;
+              lastPollTimestampRef.current = Date.now();
+            }
             fetchRadioLive();
           } else {
             playDropAndAdvance();

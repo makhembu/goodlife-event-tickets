@@ -161,6 +161,35 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Track not found" }, { status: 404 });
       }
 
+      // Check if track is part of the active broadcast playlist
+      const plTrackRes = await neonQuery(`
+        SELECT pt.playlist_id, pt.position
+        FROM radio_playlist_tracks pt
+        JOIN radio_playlists p ON p.id = pt.playlist_id AND p.is_broadcast_active = true
+        WHERE pt.track_id = $1
+        LIMIT 1
+      `, [setId]);
+
+      if (plTrackRes.rows.length > 0) {
+        const { playlist_id, position } = plTrackRes.rows[0];
+        // Calculate cumulative seconds up to this track in the active playlist
+        const cumRes = await neonQuery(`
+          SELECT COALESCE(SUM(s.duration_sec), 0)::int as cum_sec
+          FROM radio_playlist_tracks pt
+          JOIN radio_sets s ON s.id = pt.track_id
+          WHERE pt.playlist_id = $1 AND pt.position < $2
+        `, [playlist_id, position]);
+        const cumSec = cumRes.rows[0]?.cum_sec || 0;
+        // Anchor activated_at = NOW() - cumSec so AutoDJ sequence naturally starts at track position and flows forward!
+        await neonQuery(
+          `UPDATE radio_playlists
+           SET activated_at = NOW() - INTERVAL '1 second' * $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [cumSec, playlist_id]
+        );
+      }
+
       // Immediately switch into MANIA mode and lock this track on air!
       await neonQuery(
         `UPDATE radio_settings

@@ -360,19 +360,18 @@ export function buildDropPrompt(
 
   const chosenArchetype: DropArchetype =
     archetype ||
-    (facts.next_track && Math.random() < 0.4
+    (facts.next_track && Math.random() < 0.8
       ? "track_stager"
       : DROP_ARCHETYPES[Math.floor(Math.random() * DROP_ARCHETYPES.length)]);
 
   let archetypeDirectives = "";
   switch (chosenArchetype) {
     case "track_stager":
-      archetypeDirectives = `DROP ARCHETYPE: TRACK STAGER (80% MUSIC ANTICIPATION)
+      archetypeDirectives = `DROP ARCHETYPE: TRACK STAGER${facts.event ? " + EVENT SPOTLIGHT" : ""}
 - Focus heavily on hyping the incoming track ("${facts.next_track?.title || "upcoming banger"}" by "${facts.next_track?.artist || "the artist"}") and the DJ transition.
-- Structure: [incoming artist/track name in natural Swahili/English code-switch] -> [energy/bassline descriptor] -> [station tag or city callout].
+- Structure: [incoming artist/track name in natural Swahili/English code-switch] -> [energy/bassline descriptor]${facts.event ? ` -> [quick plug for "${facts.event.name_spoken}" (${facts.event.countdown_phrase}) at ${facts.event.venue_spoken || "the venue"} or "${facts.event.spoken_ticket_url}"]` : " -> [station tag or city callout]"}.
 - The artist name and track title MUST appear.
-- Emphasize bassline, rhythm, and dancefloor energy.
-- Do NOT spend time advertising tickets or dates; keep the musical hype front and center.`;
+- Emphasize bassline, rhythm, and energetic studio pace.${facts.event ? `\n- Naturally weave in "${facts.event.name_spoken}" if it fits smoothly within the word limit!` : ""}`;
       break;
     case "station_callout":
       archetypeDirectives = `DROP ARCHETYPE: STATION CALLOUT & URBAN FREQUENCY
@@ -443,10 +442,12 @@ ${personaVoiceGuide}
    - When mentioning where to buy tickets, 80% of the time say "the Goodlife website" (e.g. "tickets on the Goodlife website").
    - 20% of the time say "s m w h r" or "goodlife dot somewhere dot space".
    - NEVER EVER say ".co.ke" under any circumstances.
-3. ANTI-REPETITION (STRICT 50-DROP DIVERSITY):
+3. ANTI-REPETITION & HIGH-PACE RULES (STRICT 50-DROP DIVERSITY):
+   - STRICTLY BANNED: NEVER start with "Yo", "Yoo", "Yo what's good", or weak generic intros. Starting with "Yo" is an immediate failure.
+   - Start with explosive, dynamic hooks: e.g., "Turn it up across the 254!", "Wazi wazi wanavybe!", "Nairobi locks in right now!", "Straight fire on the decks!".
    - Do NOT repeat the same catchphrase (like "Chapaa sasa, msee!" or "vibe ya leo") over and over.
    - Never reuse opening structures from recent drops.
-   - Vary sentence lengths and emotional beats. Keep every drop fresh, spontaneous, and conversational.
+   - Vary sentence lengths and punchy rhythms. If facts.next_track is provided, ALWAYS hype up the upcoming song title and artist dynamically!
 4. ZERO FACT INVENTING: Only state facts explicitly given in the VERIFIED FACTS block below.
 5. PRECOMPUTED PHRASES: Never calculate dates, countdowns or ticket prices. Use the exact precomputed phrases provided.
 6. UNCONFIRMED ITEMS: If lineup is empty, do NOT name any artist. If weather/traffic is not in facts, DO NOT mention it.
@@ -514,7 +515,10 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
     errors.push(`Word count (${words.length}) exceeds intro cap (${maxWords})`);
   }
 
-  // 3. Hardcoded forbidden strings
+  // 3. Hardcoded forbidden strings & repetitive "Yo" openings
+  if (/^\s*y+o+[,\s!?.]/i.test(text)) {
+    errors.push(`Forbidden cliché opening detected ("Yo")`);
+  }
   const forbidden = ["goodlife.co.ke", "98.4", "SELLING FAST", "hurry up", "tickets running out"];
   for (const f of forbidden) {
     if (text.toLowerCase().includes(f.toLowerCase())) {
@@ -604,7 +608,7 @@ export function validateDropScript(output: string, facts: DropVerifiedFacts, int
 async function callCascadingLlm(
   system: string,
   user: string
-): Promise<{ text: string; provider: "groq" | "nvidia" | "pollinations" | "gemini"; model_id: string; latency_ms: number } | null> {
+): Promise<{ text: string; provider: "groq" | "openrouter" | "nvidia" | "pollinations" | "gemini"; model_id: string; latency_ms: number } | null> {
   // Tier 0: Gemini 3.8 / 2.5 Flash Broadcast Script Generator
   const geminiKey = getEnv("GEMINI_API_KEY");
   if (geminiKey) {
@@ -642,72 +646,111 @@ async function callCascadingLlm(
 
   const groqKey = getEnv("GROQ_API_KEY");
   const groqKeyFallback = getEnv("GROQ_API_KEY_FALLBACK");
+  const openrouterKey = getEnv("OPENROUTER_API_KEY");
   const nvidiaKey = getEnv("NVIDIA_API_KEY");
   const pollinationsKey = getEnv("POLLINATIONS_API_KEY");
 
-  // Tier 1: Groq
+  // Tier 1: Groq (openai/gpt-oss-120b -> openai/gpt-oss-20b)
   if (groqKey) {
     const t0 = Date.now();
+    for (const model of ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]) {
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 700,
+            reasoning_effort: "low",
+            temperature: 0.85,
+          }),
+          signal: AbortSignal.timeout(4500),
+        });
+
+        if (res.ok) {
+          const j = await res.json();
+          const content = j.choices?.[0]?.message?.content || "";
+          if (content) {
+            return { text: content, provider: "groq", model_id: model, latency_ms: Date.now() - t0 };
+          }
+        } else if (res.status === 429 && groqKeyFallback) {
+          const retryRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${groqKeyFallback}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: user },
+              ],
+              response_format: { type: "json_object" },
+              max_tokens: 700,
+              reasoning_effort: "low",
+              temperature: 0.85,
+            }),
+            signal: AbortSignal.timeout(4500),
+          });
+          if (retryRes.ok) {
+            const rj = await retryRes.json();
+            const rContent = rj.choices?.[0]?.message?.content || "";
+            if (rContent) {
+              return { text: rContent, provider: "groq", model_id: model, latency_ms: Date.now() - t0 };
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[drop-engine] Groq (${model}) attempt failed:`, e.message);
+      }
+    }
+  }
+
+  // Tier 2: OpenRouter (meta-llama/llama-3.3-70b-instruct)
+  if (openrouterKey) {
+    const t0 = Date.now();
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${groqKey}`,
+          Authorization: `Bearer ${openrouterKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "qwen/qwen3.8-27b",
+          model: "meta-llama/llama-3.3-70b-instruct",
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 150,
-          temperature: 0.7,
+          max_tokens: 180,
+          temperature: 0.85,
         }),
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(5000),
       });
 
       if (res.ok) {
         const j = await res.json();
         const content = j.choices?.[0]?.message?.content || "";
         if (content) {
-          return { text: content, provider: "groq", model_id: "qwen/qwen3.8-27b", latency_ms: Date.now() - t0 };
-        }
-      } else if (res.status === 429 && groqKeyFallback) {
-        // Fallback to second Groq key
-        const retryRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${groqKeyFallback}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "qwen/qwen3.8-27b",
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-            response_format: { type: "json_object" },
-            max_tokens: 150,
-            temperature: 0.7,
-          }),
-          signal: AbortSignal.timeout(4000),
-        });
-        if (retryRes.ok) {
-          const rj = await retryRes.json();
-          const rContent = rj.choices?.[0]?.message?.content || "";
-          if (rContent) {
-            return { text: rContent, provider: "groq", model_id: "qwen/qwen3.8-27b", latency_ms: Date.now() - t0 };
-          }
+          return { text: content, provider: "openrouter", model_id: "meta-llama/llama-3.3-70b-instruct", latency_ms: Date.now() - t0 };
         }
       }
     } catch (e: any) {
-      console.warn("[drop-engine] Groq attempt failed, cascading to NVIDIA:", e.message);
+      console.warn("[drop-engine] OpenRouter attempt failed:", e.message);
     }
   }
 
-  // Tier 2: NVIDIA NIM
+  // Tier 3: NVIDIA NIM
   if (nvidiaKey) {
     const t0 = Date.now();
     try {
@@ -878,7 +921,7 @@ export async function generateDropEngineV2(req: GenerateDropRequest = {}): Promi
   // 3. Inference with cascade
   let chosenScript = "";
   let chosenTag = persona.tags?.[0] || "[excited]";
-  let providerUsed: "groq" | "nvidia" | "pollinations" | "gemini" | "generic_library" = "generic_library";
+  let providerUsed: "groq" | "openrouter" | "nvidia" | "pollinations" | "gemini" | "generic_library" = "generic_library";
   let modelIdUsed = "fallback";
   let latencyMs = 0;
   let isFallback = false;
