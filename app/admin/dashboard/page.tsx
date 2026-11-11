@@ -1501,7 +1501,28 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
     return out;
   }, [metrics, now]);
 
-  if ((loading || !eventResolved) && !metrics) {
+  if (!metrics) {
+    if (metricsError) {
+      return (
+        <div className="min-h-screen bg-[var(--brand-off-white)] flex flex-col items-center justify-center p-6 text-[var(--brand-navy)] text-center">
+          <div className="max-w-md bg-white border-2 border-black p-6 shadow-[4px_4px_0px_#000]">
+            <p className="font-mono text-xs uppercase font-bold text-red-600 mb-2">Failed to load metrics</p>
+            <p className="text-sm font-mono mb-4 text-neutral-700">{metricsError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setMetricsError(null);
+                loadDashboardMetrics(selectedEventId);
+              }}
+              className="px-4 py-2 bg-black text-white font-mono text-xs uppercase font-black tracking-wider hover:bg-neutral-800 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[var(--brand-off-white)] flex flex-col items-center justify-center text-[var(--brand-navy)]">
         <RefreshCw className="w-8 h-8 animate-spin" />
@@ -1510,7 +1531,7 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
     );
   }
 
-  const data = metrics!;
+  const data = metrics;
   // The heading used to read event_details.title, which is the site-wide
   // singleton - so it said "GOODLIFE XP ADMIN" while viewing another event's
   // data. Derive it from the actually-selected event instead.

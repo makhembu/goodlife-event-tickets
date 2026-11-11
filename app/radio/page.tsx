@@ -63,6 +63,8 @@ export default function RadioPage() {
     isDropPlaying,
     activeDropTitle,
     activePersona,
+    isDropUnlocked,
+    unlockStationVoice,
     volume = 1,
     isMuted,
     togglePlay,
@@ -647,6 +649,16 @@ export default function RadioPage() {
 
                     {/* Metadata & Mobile Play Button Row */}
                     <div className="min-w-0 flex-1">
+                      {isPlaying && isDropUnlocked === false && unlockStationVoice && (
+                        <button
+                          type="button"
+                          onClick={() => unlockStationVoice()}
+                          className="bg-amber-400 text-black font-mono text-[10px] font-black uppercase px-2 py-1 rounded flex items-center gap-1 border border-black shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer mb-1 animate-bounce"
+                        >
+                          <Volume2 className="w-3 h-3 shrink-0" />
+                          <span>TAP TO ENABLE STATION VOICE</span>
+                        </button>
+                      )}
                       {isDropPlaying && (
                         <div className="bg-brand-accent text-brand-navy font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 border border-brand-navy w-fit mb-1 animate-pulse">
                           <Sparkles className="w-3 h-3 fill-brand-navy shrink-0" />
@@ -684,6 +696,16 @@ export default function RadioPage() {
                   {/* DESKTOP METADATA VIEW (>=768px)                                  */}
                   {/* ================================================================= */}
                   <div className="hidden md:block space-y-2">
+                    {isPlaying && isDropUnlocked === false && unlockStationVoice && (
+                      <button
+                        type="button"
+                        onClick={() => unlockStationVoice()}
+                        className="bg-amber-400 text-black font-mono text-xs font-black uppercase px-3 py-1.5 rounded-lg flex items-center gap-2 border-2 border-black shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer animate-bounce w-fit"
+                      >
+                        <Volume2 className="w-4 h-4 shrink-0" />
+                        <span>TAP TO ENABLE STATION VOICE (BROWSER MUTED VOICEOVER)</span>
+                      </button>
+                    )}
 
                     {isDropPlaying && (
                       <div className="bg-brand-accent text-brand-navy font-mono text-xs sm:text-sm font-black uppercase px-3 py-1.5 rounded-lg flex items-center gap-2 border-2 border-brand-navy shadow-(--shadow-brut-xs) animate-pulse w-fit">

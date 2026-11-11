@@ -142,3 +142,30 @@ export async function getRadioTelemetry(targetAirTimeMs?: number): Promise<Radio
     frequency: "Digital Airwave",
   };
 }
+
+export interface LastDropGeneration {
+  timestamp: string;
+  status: "skipped" | "generated" | "failed";
+  reason?: string;
+  today_count?: number;
+  daily_cap?: number;
+  pool_count?: number;
+  target_pool?: number;
+  error?: string;
+  drop_id?: string | number;
+  db_id?: number | null;
+  persona?: string;
+  script?: string;
+  audio_url?: string | null;
+  is_fallback?: boolean;
+}
+
+let lastDropGenCache: LastDropGeneration | null = null;
+
+export function recordLastDropGeneration(record: LastDropGeneration): void {
+  lastDropGenCache = record;
+}
+
+export function getLastDropGeneration(): LastDropGeneration | null {
+  return lastDropGenCache;
+}

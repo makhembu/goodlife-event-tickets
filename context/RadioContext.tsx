@@ -89,12 +89,14 @@ export interface RadioContextType {
   activePersona: string | null;
   activeMood: string | null;
   isDropPlaying: boolean;
+  isDropUnlocked?: boolean;
 
   // Curated Playlist support
   activePlaylist: ActivePlaylist | null;
 
   // User Actions
   togglePlay: () => void;
+  unlockStationVoice?: () => Promise<void>;
   retry: () => void;
   toggleMute: () => void;
   setVolume: (v: number) => void;
@@ -153,8 +155,10 @@ export const INERT_RADIO_STATE: RadioContextType = {
   activePersona: null,
   activeMood: null,
   isDropPlaying: false,
+  isDropUnlocked: true,
   activePlaylist: null,
   togglePlay: () => {},
+  unlockStationVoice: async () => {},
   retry: () => {},
   toggleMute: () => {},
   setVolume: () => {},
@@ -179,80 +183,11 @@ const RadioContext = createContext<RadioContextType | null>(null);
 const STORAGE_KEY = "gl_radio_state";
 const QUALITY_KEY = "gl_audio_quality";
 const CACHED_SETS_KEY = "gl_radio_cached_sets";
-const DEFAULT_STATION_DROPS: RadioDrop[] = [
-  {
-    id: "drop-bwana-afterhours",
-    title: "Bwana Mkubwa · After Hours Frequencies",
-    persona: "Bwana Mkubwa",
-    mood: "LATE NIGHT",
-    audio_url: "/drops/samples/sample_drop_3_bwana_afterhours.mp3",
-    script: "Nairobi usiku sana. Hewani ni GOODLIFE Radio 254, safe frequencies, no rush, vibe safi hadi che.",
-  },
-  {
-    id: "drop-bwana-station-id",
-    title: "Bwana Mkubwa · Nairobi Station ID",
-    persona: "Bwana Mkubwa",
-    mood: "CHILL",
-    audio_url: "/drops/samples/bwana-mkubwa_context_drop.mp3",
-    script: "GOODLIFE Radio 254. Kutoka katikati ya jiji la Nairobi hadi pembe zote za nchi. Muziki safi bila kelele.",
-  },
-  {
-    id: "drop-cheche-hype",
-    title: "MC Cheche · Energy Flow",
-    persona: "MC Cheche",
-    mood: "HYPE",
-    audio_url: "/drops/samples/sample_drop_1_cheche_hype.mp3",
-    script: "Yo yo yo! Massive na wanavybe! GOODLIFE Radio 254 tuko locked in, shika vibe!",
-  },
-  {
-    id: "drop-sudi-pulse",
-    title: "DJ Sudi · Nairobi Evening Pulse",
-    persona: "DJ Sudi",
-    mood: "HYPE",
-    audio_url: "/drops/samples/sample_drop_2_sudi_station_id.mp3",
-    script: "Goodlife Radio 254, your evening pulse! Vibe ya jioni ni safe, matatus full, mbele ya 254. Tune in, piga luku safi.",
-  },
-  {
-    id: "drop-sney-freq",
-    title: "DJ Sney · Kenya Frequency",
-    persona: "DJ Sney",
-    mood: "HYPE",
-    audio_url: "/drops/samples/dj-sney_context_drop.mp3",
-    script: "Kila banger unapenda, kila rhythm unataka. Hii ndio frequency ya Kenya, hii ndio GOODLIFE Radio 254!",
-  },
-  {
-    id: "drop-cheche-flow",
-    title: "MC Cheche · Hustle Flow",
-    persona: "MC Cheche",
-    mood: "HYPE",
-    audio_url: "/drops/samples/mc-cheche_context_drop.mp3",
-    script: "Hustle ya mchana inahitaji ngoma nzito kama hizi. Cheza kama wewe, shika flow kwenye GOODLIFE Radio 254!",
-  },
-  {
-    id: "drop-fusion-marara",
-    title: "DJ Fusion · Marara Vibes",
-    persona: "DJ Fusion",
-    mood: "HYPE",
-    audio_url: "/drops/samples/dj_fusion_marara_drop.mp3",
-    script: "DJ Fusion inside the building on GOODLIFE Radio 254!",
-  },
-  {
-    id: "drop-vibes-1",
-    title: "Station ID · 254 Heat",
-    persona: "GOODLIFE 254",
-    mood: "HYPE",
-    audio_url: "/drops/samples/kenyan_vibes_1.mp3",
-    script: "GOODLIFE Radio 254 Station Sweeper",
-  },
-  {
-    id: "drop-vibes-2",
-    title: "Station ID · Nairobi Bounce",
-    persona: "GOODLIFE 254",
-    mood: "HYPE",
-    audio_url: "/drops/samples/kenyan_vibes_2.mp3",
-    script: "GOODLIFE Radio 254 Station Sweeper",
-  },
-];
+// All drops are dynamic, loaded from Neon DB or stream live-injected events
+const DEFAULT_STATION_DROPS: RadioDrop[] = [];
+
+const SILENT_WAV_DATA_URI =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
 
 import { computeLiveTimeline as computeLiveTimelineCore } from "@/lib/radio/timeline";
@@ -345,7 +280,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [activeDropTitle, setActiveDropTitle] = useState<string | null>(null);
   const [activePersona, setActivePersona] = useState<string | null>(null);
   const [activeMood, setActiveMood] = useState<string | null>(null);
-  const availableDropsRef = useRef<RadioDrop[]>(DEFAULT_STATION_DROPS);
+  const availableDropsRef = useRef<RadioDrop[]>([]);
+  const dropUnlockedRef = useRef<boolean>(false);
+  const [isDropUnlocked, setIsDropUnlocked] = useState<boolean>(true);
+  const firedDropIdsRef = useRef<Set<string | number>>(new Set());
   const currentDropIndexRef = useRef<number>(0);
   const isDropPlayingRef = useRef(false);
   useEffect(() => {
@@ -552,6 +490,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           currentTrackIdRef.current = newTrackId;
           secondsListenedRef.current = 0;
           hasSentBeaconRef.current = false;
+          hasFiredOutroDropRef.current = false;
+          tracksSinceLastDropRef.current += 1;
 
           // If playing and track advances, update audio src safely without truncating playing song
           if (audioRef.current && isPlayingRef.current && !isDropPlayingRef.current && track.audio_url) {
@@ -619,8 +559,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Live injected drop broadcast listener: trigger live drop mid-song for all listeners
-      if (data.live_drop && data.live_drop.id && data.live_drop.id !== lastLiveDropIdRef.current) {
+      if (
+        data.live_drop &&
+        data.live_drop.id &&
+        data.live_drop.id !== lastLiveDropIdRef.current &&
+        !firedDropIdsRef.current.has(data.live_drop.id)
+      ) {
         lastLiveDropIdRef.current = data.live_drop.id;
+        firedDropIdsRef.current.add(data.live_drop.id);
         const dropFiredTime = data.live_drop.fired_at ? new Date(data.live_drop.fired_at).getTime() : Date.now();
         const ageSec = typeof data.live_drop.age_seconds === "number"
           ? data.live_drop.age_seconds
@@ -937,8 +883,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (dropAudioRef.current) {
       try {
         dropAudioRef.current.pause();
-        dropAudioRef.current.removeAttribute("src");
-        dropAudioRef.current.load();
+        // Do NOT call removeAttribute("src") or load() — preserves mobile user gesture unlock
       } catch {}
     }
     setIsDropPlaying(false);
@@ -1360,8 +1305,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       dropAudio.src = liveDrop.audio_url;
       dropAudio.volume = masterVol;
       dropAudio.currentTime = 0;
-      dropAudio.play().catch((playErr) => {
+      dropAudio.play().catch((playErr: any) => {
         console.warn("[RadioContext] Live drop play error:", playErr);
+        if (playErr?.name === "NotAllowedError") {
+          setIsDropUnlocked(false);
+        }
         onDropDone();
       });
     },
@@ -1462,15 +1410,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const targetTitle = (nextTrack.title || "").toLowerCase().trim();
 
     if (availableDropsRef.current.length <= 1) {
-      const pendingDyn = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-"));
-      availableDropsRef.current = [...pendingDyn, ...DEFAULT_STATION_DROPS];
+      void fetchRadioState();
     }
 
-    let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+    let drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.id.startsWith("db-drop-") || d.audio_url);
     if (drops.length === 0) return;
 
     // 2. Prioritize drop explicitly targeted to upcoming track; fallback to evergreen station ID/DJ drop
     let drop = drops.find((d) => {
+      if (firedDropIdsRef.current.has(d.id)) return false;
       const idMatch = d.target_track_id && String(d.target_track_id) === targetId;
       const titleMatch = d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim());
       return idMatch || titleMatch;
@@ -1478,6 +1426,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     if (!drop) {
       // Pick an evergreen station drop that doesn't target another song
+      drop = drops.find((d) => !firedDropIdsRef.current.has(d.id) && !d.target_track_title && !d.target_track_id && d.audio_url);
+    }
+
+    if (!drop && drops.length > 0) {
+      // If all drops were played in this session, reset the fired set so they cycle through
+      firedDropIdsRef.current.clear();
       drop = drops.find((d) => !d.target_track_title && !d.target_track_id && d.audio_url);
     }
 
@@ -1486,6 +1440,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    firedDropIdsRef.current.add(drop.id);
     availableDropsRef.current = availableDropsRef.current.filter((d) => d.id !== drop.id);
 
     lastDropPlayedTimestampRef.current = Date.now();
@@ -1533,8 +1488,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       dropAudio.volume = masterVol;
       dropAudio.addEventListener("ended", onDropEnded);
       dropAudio.addEventListener("error", onDropError);
-      dropAudio.play().catch((err) => {
+      dropAudio.play().catch((err: any) => {
         console.warn("[RadioContext] Outro drop play rejected:", err);
+        if (err?.name === "NotAllowedError") {
+          setIsDropUnlocked(false);
+        }
         cleanupOutroDrop();
       });
       console.log(`[RadioContext] 🎙️ Outro crossover drop started at 15s mark: "${drop.title}"`);
@@ -1651,10 +1609,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // Replenish drop pool if low
     if (availableDropsRef.current.length <= 1) {
-      const pendingDyn = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-"));
-      availableDropsRef.current = [...pendingDyn, ...DEFAULT_STATION_DROPS];
+      void fetchRadioState();
     }
-    const currentDrops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
+    const currentDrops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.id.startsWith("db-drop-") || d.audio_url);
 
     let drop: RadioDrop | undefined;
     dropAudioQueueRef.current = [];
@@ -1800,8 +1757,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         dropAudio.addEventListener("ended", onDropEnded);
         dropAudio.addEventListener("error", onDropError);
         await dropAudio.play();
-      } catch (err) {
+      } catch (err: any) {
         console.warn("[RadioContext] Drop play rejected, swelling music:", err);
+        if (err?.name === "NotAllowedError") {
+          setIsDropUnlocked(false);
+        }
         cleanupDropPlayout();
       }
     } else {
@@ -1819,6 +1779,45 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [attachAndPlayLiveStream]);
 
+  // User gesture drop audio unlocking for mobile Safari/Chrome autoplay policy
+  const primeAudioPipeline = useCallback(() => {
+    if (dropAudioRef.current && !dropUnlockedRef.current) {
+      dropAudioRef.current.src = SILENT_WAV_DATA_URI;
+      dropAudioRef.current.volume = 0.001;
+      const playPromise = dropAudioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            if (dropAudioRef.current && dropAudioRef.current.src.startsWith("data:")) {
+              dropAudioRef.current.pause();
+              dropAudioRef.current.currentTime = 0;
+            }
+            dropUnlockedRef.current = true;
+            setIsDropUnlocked(true);
+          })
+          .catch((err) => {
+            console.warn("[RadioContext] Station voice audio prime failed:", err);
+          });
+      }
+    }
+  }, []);
+
+  const unlockStationVoice = useCallback(async () => {
+    if (dropAudioRef.current) {
+      try {
+        dropAudioRef.current.src = SILENT_WAV_DATA_URI;
+        dropAudioRef.current.volume = 0.001;
+        await dropAudioRef.current.play();
+        dropAudioRef.current.pause();
+        dropAudioRef.current.currentTime = 0;
+        dropUnlockedRef.current = true;
+        setIsDropUnlocked(true);
+      } catch (err) {
+        console.warn("[RadioContext] Manual unlockStationVoice failed:", err);
+      }
+    }
+  }, []);
+
   // 13. Public Control Actions
   const togglePlay = useCallback(async () => {
     if (isPlaying) {
@@ -1826,6 +1825,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(false);
       setEngineState("paused");
     } else {
+      primeAudioPipeline();
       setIsMinimized(false);
       // Ensure state and live track are fresh before playing
       if (backupSetsRef.current.length === 0 || !nowPlayingTrackRef.current) {
@@ -1836,7 +1836,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
       attachAndPlayLiveStream();
     }
-  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive]);
+  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive, primeAudioPipeline]);
 
   const retry = useCallback(() => {
     attachAndPlayLiveStream();
@@ -1901,6 +1901,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Vault set on-demand playback
   const playSet = useCallback(
     (set: RadioSet) => {
+      primeAudioPipeline();
       teardownPlayback();
       setActivePlaylist(null);
       activePlaylistRef.current = null;
@@ -1927,12 +1928,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.play().catch(() => setEngineState("error"));
       }
     },
-    [teardownPlayback]
+    [teardownPlayback, primeAudioPipeline]
   );
 
   // Curated Playlist on-demand playback
   const playPlaylist = useCallback(
     async (playlistId: number, startTrackIndex = 0) => {
+      primeAudioPipeline();
       try {
         teardownPlayback();
         const res = await fetch(`/api/radio/playlists/${playlistId}`);
@@ -2024,7 +2026,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setEngineState("error");
       }
     },
-    [teardownPlayback]
+    [teardownPlayback, primeAudioPipeline]
   );
 
   const snapToBroadcast = useCallback(() => {
@@ -2248,6 +2250,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         activePersona,
         activeMood,
         isDropPlaying,
+        isDropUnlocked,
+        unlockStationVoice,
         activePlaylist,
         togglePlay,
         retry,
