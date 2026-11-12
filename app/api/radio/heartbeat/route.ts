@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordListenerHeartbeat, removeListenerSession, getActiveListenersCount } from "@/lib/radio/listener-tracker";
-import { resolveKenyaLocation } from "@/lib/radio/kenya-geo";
+import { resolveKenyaLocation, TOWN_TO_COUNTY_CODE, KENYA_COUNTIES } from "@/lib/radio/kenya-geo";
 
 export const dynamic = "force-dynamic";
 
@@ -90,24 +90,37 @@ export async function POST(req: NextRequest) {
     if (isNaN(rawLng)) rawLng = null;
 
     // 3. Cloudflare Proxy Egress Fix:
-    // If the domain is proxied through Cloudflare, Vercel sees the Cloudflare egress server (e.g. Zagreb, Frankfurt, London).
-    // If the city is a known CDN hub or if rawCountry doesn't match clientIp resolution, resolve client IP directly.
-    const isCdnHubCity = rawCity && ["zagreb", "frankfurt", "london", "amsterdam", "dublin"].includes(rawCity.toLowerCase());
-    
-    if (clientIp && (isCdnHubCity || !rawCity || !rawCountry)) {
+    // When traffic passes through Cloudflare, Vercel sees Cloudflare's egress server (e.g. Zagreb, Budapest, Frankfurt).
+    // Check if rawCity is a genuine Kenyan town or county
+    const cleanCity = rawCity ? rawCity.trim().toLowerCase() : null;
+    const isKnownKenyaTown = Boolean(
+      cleanCity && (
+        TOWN_TO_COUNTY_CODE[cleanCity] || 
+        Object.values(KENYA_COUNTIES).some(c => c.name.toLowerCase() === cleanCity)
+      )
+    );
+
+    // If client is in Kenya (or CF country is KE or timezone is Africa/Nairobi) but rawCity is NOT a genuine Kenyan town,
+    // resolve the real client IP directly to bypass the CDN proxy location.
+    const isKenyanClient = rawCountry === "KE" || cfCountry === "KE" || body?.tz === "Africa/Nairobi";
+    const needsIpResolution = clientIp && (!rawCountry || !rawCity || (isKenyanClient && !isKnownKenyaTown));
+
+    if (needsIpResolution) {
       const ipGeo = await resolveClientIpGeo(clientIp);
-      if (ipGeo) {
-        rawCountry = ipGeo.country || rawCountry;
-        rawCity = ipGeo.city || rawCity;
-        rawLat = ipGeo.lat ?? rawLat;
-        rawLng = ipGeo.lng ?? rawLng;
+      if (ipGeo && ipGeo.country) {
+        rawCountry = ipGeo.country;
+        rawCity = ipGeo.city;
+        rawLat = ipGeo.lat;
+        rawLng = ipGeo.lng;
       }
     }
 
-    // If client timezone is Africa/Nairobi and city/country still unlocated, default country to KE
-    if (body?.tz === "Africa/Nairobi" && !rawCountry) {
+    // Client timezone / Kenya fallback: If confirmed in Kenya but specific town is still unlocated, assign to Nairobi
+    if ((body?.tz === "Africa/Nairobi" || cfCountry === "KE") && (!rawCity || !isKnownKenyaTown)) {
       rawCountry = "KE";
-      if (!rawCity) rawCity = "Nairobi";
+      if (!rawCity || !isKnownKenyaTown) {
+        rawCity = "Nairobi";
+      }
     }
 
     const resolvedGeo = resolveKenyaLocation(

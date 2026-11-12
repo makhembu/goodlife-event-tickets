@@ -63,7 +63,7 @@ export const KENYA_COUNTIES: Record<string, { code: string; name: string; defaul
   "047": { code: "047", name: "NAIROBI", defaultCentroid: [-1.2921, 36.8219] },
 };
 
-const TOWN_TO_COUNTY_CODE: Record<string, string> = {
+export const TOWN_TO_COUNTY_CODE: Record<string, string> = {
   // Kiambu
   "thika": "022", "ruiru": "022", "kikuyu": "022", "limuru": "022", "juja": "022",
   "githunguri": "022", "karuri": "022", "kiambu": "022", "kabete": "022", "lari": "022",
