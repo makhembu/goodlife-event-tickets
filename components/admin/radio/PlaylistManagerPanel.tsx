@@ -22,6 +22,9 @@ import {
   Link2,
   Loader2,
   RefreshCw,
+  Sliders,
+  ListPlus,
+  Globe,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
 import HarmonizeModal from "./HarmonizeModal";
@@ -79,12 +82,16 @@ export interface PlaylistTrack {
 
 interface PlaylistManagerPanelProps {
   library: RadioSet[];
+  onEditTrack?: (track: RadioSet) => void;
+  refreshTrigger?: number;
   onRefreshLive?: () => void;
   onPlaylistsChanged?: () => void;
 }
 
 export default function PlaylistManagerPanel({
   library,
+  onEditTrack,
+  refreshTrigger,
   onRefreshLive,
   onPlaylistsChanged,
 }: PlaylistManagerPanelProps) {
@@ -120,6 +127,15 @@ export default function PlaylistManagerPanel({
   const ingestJobsRef = React.useRef<Record<string, PlaylistIngestJob>>({});
   ingestJobsRef.current = ingestJobs;
   const lastCompletedCountsRef = React.useRef<Record<string, number>>({});
+  const [activeOnAirSetId, setActiveOnAirSetId] = useState<number | null>(null);
+  const [activeOnAirPlaylistId, setActiveOnAirPlaylistId] = useState<number | null>(null);
+  const playingTrackRowRef = React.useRef<HTMLDivElement | null>(null);
+  const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: number; name: string } | null>(null);
+  const [deletingPlaylist, setDeletingPlaylist] = useState(false);
+  const [showUndoModal, setShowUndoModal] = useState(false);
+  const [undoReanchor, setUndoReanchor] = useState(false);
+  const [undoingReorder, setUndoingReorder] = useState(false);
+  const [showHarmonizeAllModal, setShowHarmonizeAllModal] = useState(false);
   const [customGenres, setCustomGenres] = useState<string[]>([]);
   const [newGenreInput, setNewGenreInput] = useState("");
   const [showAddGenreInput, setShowAddGenreInput] = useState(false);
@@ -169,6 +185,39 @@ export default function PlaylistManagerPanel({
 
   // Add tracks selector state
   const [showAddTracks, setShowAddTracks] = useState(false);
+  const [addDrawerMode, setAddDrawerMode] = useState<"library" | "quick_song" | "import_playlist">("library");
+  const [quickSongQuery, setQuickSongQuery] = useState("");
+  const [quickSongSearching, setQuickSongSearching] = useState(false);
+  const [quickSongResults, setQuickSongResults] = useState<
+    Array<{
+      id?: number;
+      video_id: string;
+      title: string;
+      artist: string;
+      duration_sec: number;
+      thumbnail_url: string;
+      source: string;
+      url?: string;
+    }>
+  >([]);
+  const [quickAddingSongId, setQuickAddingSongId] = useState<string | null>(null);
+  const [importPlaylistUrl, setImportPlaylistUrl] = useState("");
+  const [importPlaylistPreviewing, setImportPlaylistPreviewing] = useState(false);
+  const [importPlaylistPreview, setImportPlaylistPreview] = useState<{
+    title: string;
+    source: string;
+    tracks: Array<{
+      video_id: string;
+      title: string;
+      artist: string;
+      duration_sec: number;
+      thumbnail_url: string;
+      url?: string;
+    }>;
+  } | null>(null);
+  const [importingPlaylist, setImportingPlaylist] = useState(false);
+  const [mergeSourcePlaylistId, setMergeSourcePlaylistId] = useState<string>("");
+  const [mergingPlaylist, setMergingPlaylist] = useState(false);
   const [showHarmonizeModal, setShowHarmonizeModal] = useState(false);
   const [showHarmonizeProgressModal, setShowHarmonizeProgressModal] = useState(false);
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
@@ -190,10 +239,11 @@ export default function PlaylistManagerPanel({
       showBanner("All tracks in your library are already harmonically indexed with Camelot keys and BPM!", "success");
       return;
     }
-    if (!confirm(`Harmonize all ${unindexedCount} unindexed festival tracks via Cloudflare Tunnel?\n\nThis analyzes audio tempo (BPM) and Camelot musical keys using audio intelligence.`)) {
-      return;
-    }
+    setShowHarmonizeAllModal(true);
+  };
 
+  const executeHarmonizeAll = async () => {
+    setShowHarmonizeAllModal(false);
     setHarmonizingAll(true);
     try {
       const res = await fetch("/api/admin/radio/library/harmonize-all", {
@@ -216,25 +266,24 @@ export default function PlaylistManagerPanel({
     }
   };
 
-  const handleUndoReorder = async () => {
+  const handleUndoReorder = () => {
     if (!selectedPlaylistId) return;
-    if (!confirm("Restore previous track order?\n\nThis will revert to the last saved snapshot and consume it (Undo is one-way). Continue?")) {
-      return;
-    }
-    let reanchor = false;
-    if (selectedPlaylist?.is_broadcast_active) {
-      reanchor = confirm(
-        "This playlist is currently LIVE ON AIR.\n\nDo you want to re-anchor the broadcast timeline to Track #1 upon restoring?\n\nClick OK to re-anchor to Track #1, or Cancel to keep current timeline offset."
-      );
-    }
+    setUndoReanchor(false);
+    setShowUndoModal(true);
+  };
+
+  const executeUndoReorder = async () => {
+    if (!selectedPlaylistId || undoingReorder) return;
+    setUndoingReorder(true);
     try {
       const res = await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/harmonize/undo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reanchorBroadcast: reanchor }),
+        body: JSON.stringify({ reanchorBroadcast: Boolean(selectedPlaylist?.is_broadcast_active && undoReanchor) }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        setShowUndoModal(false);
         showBanner(
           `Restored previous track order (${data.restoredTrackCount} tracks)${data.reanchored ? " · Broadcast re-anchored to #1" : ""}`,
           "success"
@@ -248,6 +297,8 @@ export default function PlaylistManagerPanel({
       }
     } catch {
       showBanner("Network error restoring previous order", "error");
+    } finally {
+      setUndoingReorder(false);
     }
   };
 
@@ -438,6 +489,44 @@ export default function PlaylistManagerPanel({
 
   useEffect(() => {
     fetchPlaylists();
+  }, []);
+
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0 && selectedPlaylistId) {
+      fetchPlaylistDetails(selectedPlaylistId);
+    }
+  }, [refreshTrigger, selectedPlaylistId]);
+
+  // Poll active broadcast playout track so the live playing song is highlighted accurately
+  useEffect(() => {
+    let active = true;
+    const syncActivePlayout = async () => {
+      try {
+        const res = await fetch(`/api/admin/radio/playlist?_t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        let nextSetId: number | null = data.active_set_id ? Number(data.active_set_id) : null;
+        if (!nextSetId) {
+          const liveRes = await fetch("/api/radio/live", { cache: "no-store" }).catch(() => null);
+          if (liveRes?.ok) {
+            const liveJson = await liveRes.json();
+            if (liveJson?.now_playing?.id) nextSetId = Number(liveJson.now_playing.id);
+          }
+        }
+        if (active) {
+          setActiveOnAirSetId(nextSetId);
+          setActiveOnAirPlaylistId(data.playlist_id ? Number(data.playlist_id) : null);
+        }
+      } catch {}
+    };
+
+    syncActivePlayout();
+    const timer = setInterval(syncActivePlayout, 8000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -638,10 +727,15 @@ export default function PlaylistManagerPanel({
     }
   };
 
-  // Delete playlist
-  const handleDeletePlaylist = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete playlist "${name}"?`)) return;
+  // Delete playlist (opens custom modal instead of native browser confirm)
+  const handleDeletePlaylist = (id: number, name: string) => {
+    setDeleteModalTarget({ id, name });
+  };
 
+  const executeDeletePlaylist = async () => {
+    if (!deleteModalTarget || deletingPlaylist) return;
+    const { id, name } = deleteModalTarget;
+    setDeletingPlaylist(true);
     try {
       const res = await fetch(`/api/admin/radio/playlists/${id}`, { method: "DELETE" });
       const data = await res.json();
@@ -650,6 +744,7 @@ export default function PlaylistManagerPanel({
         return;
       }
 
+      setDeleteModalTarget(null);
       showBanner(`Playlist "${name}" deleted`, "success");
       if (selectedPlaylistId === id) {
         setSelectedPlaylistId(null);
@@ -657,6 +752,8 @@ export default function PlaylistManagerPanel({
       await fetchPlaylists();
     } catch (err: any) {
       showBanner(err.message || "Network error", "error");
+    } finally {
+      setDeletingPlaylist(false);
     }
   };
 
@@ -719,6 +816,244 @@ export default function PlaylistManagerPanel({
       }
     } catch (err: any) {
       showBanner(err.message || "Failed to add track", "error");
+    }
+  };
+
+  // Search song / resolve YouTube song link for quick add into current playlist
+  const handleQuickSongSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const raw = quickSongQuery.trim();
+    if (!raw) return;
+
+    const ytMatch = raw.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/))([a-zA-Z0-9_-]{11})/);
+    const extractedVideoId = ytMatch ? ytMatch[1] : null;
+    const searchTerm = extractedVideoId || raw;
+
+    setQuickSongSearching(true);
+    try {
+      const res = await fetch(`/api/admin/radio/search?q=${encodeURIComponent(searchTerm)}`);
+      const data = await res.json();
+      let items = Array.isArray(data) ? data : [];
+      if (items.length === 0 && extractedVideoId) {
+        items = [
+          {
+            video_id: extractedVideoId,
+            title: `YouTube Track (${extractedVideoId})`,
+            artist: "GOODLIFE Resident",
+            duration_sec: 180,
+            thumbnail_url: `https://i.ytimg.com/vi/${extractedVideoId}/hqdefault.jpg`,
+            source: "youtube",
+            url: `https://www.youtube.com/watch?v=${extractedVideoId}`,
+          },
+        ];
+      }
+      setQuickSongResults(items);
+      if (items.length === 0) {
+        showBanner("No songs found for that query or link.", "error");
+      }
+    } catch (err: any) {
+      showBanner(err?.message || "Failed to search for song", "error");
+    } finally {
+      setQuickSongSearching(false);
+    }
+  };
+
+  // Quick-add a search result (either immediate library track OR background YouTube ingest) into open playlist
+  const handleQuickAddSongToPlaylist = async (item: {
+    id?: number;
+    video_id: string;
+    title: string;
+    artist: string;
+    duration_sec: number;
+    thumbnail_url: string;
+    source: string;
+    url?: string;
+  }) => {
+    const activePl = playlists.find((p) => p.id === selectedPlaylistId);
+    if (!activePl) return;
+
+    setQuickAddingSongId(item.video_id);
+    try {
+      if (item.source === "library" && typeof item.id === "number") {
+        const res = await fetch(`/api/admin/radio/playlists/${activePl.id}/tracks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track_id: item.id }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showBanner(`Added "${item.title}" to "${activePl.name}"`, "success");
+          fetchPlaylistDetails(activePl.id);
+          fetchPlaylists();
+        } else {
+          showBanner(data.error || "Failed to add library track", "error");
+        }
+        return;
+      }
+
+      const qRes = await fetch("/api/admin/radio/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tracks: [
+            {
+              video_id: item.video_id,
+              title: item.title,
+              artist: item.artist || "GOODLIFE Resident",
+              duration_sec: item.duration_sec || 180,
+              thumbnail_url: item.thumbnail_url || `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`,
+            },
+          ],
+          genre: activePl.genre || "Amapiano",
+          playlist_id: activePl.id,
+          playlist_title: activePl.name,
+          source_url: item.url || `https://www.youtube.com/watch?v=${item.video_id}`,
+        }),
+      });
+      const qJson = await qRes.json();
+      if (!qRes.ok || !qJson.job_id) {
+        showBanner(qJson.error || "Failed to queue song ingestion into playlist", "error");
+        return;
+      }
+
+      const job: PlaylistIngestJob = {
+        job_id: qJson.job_id,
+        playlist_id: activePl.id,
+        playlist_name: activePl.name,
+        total_tracks: qJson.total_tracks || 1,
+        completed_tracks: 0,
+        status: qJson.status || "queued",
+        current_track: item.title,
+        source_url: item.url || `https://www.youtube.com/watch?v=${item.video_id}`,
+      };
+      setIngestJobs((prev) => ({ ...prev, [job.job_id]: job }));
+      showBanner(`Queued "${item.title}" for broadcast mastering into "${activePl.name}"`, "success");
+    } catch (err: any) {
+      showBanner(err?.message || "Failed to add song to playlist", "error");
+    } finally {
+      setQuickAddingSongId(null);
+    }
+  };
+
+  // Preview YouTube / Spotify playlist URL to import into currently open playlist
+  const handlePreviewImportPlaylistUrl = async () => {
+    const url = importPlaylistUrl.trim();
+    if (!url) return;
+    setImportPlaylistPreviewing(true);
+    try {
+      const res = await fetch(`/api/admin/radio/playlist-preview?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data.tracks) || data.tracks.length === 0) {
+        setImportPlaylistPreview(null);
+        showBanner(data.error || "Could not extract tracks from that playlist URL.", "error");
+        return;
+      }
+      setImportPlaylistPreview({
+        title: data.title || "Imported Playlist",
+        source: data.source || "stream",
+        tracks: data.tracks,
+      });
+    } catch (err: any) {
+      showBanner(err?.message || "Failed to preview streaming playlist", "error");
+    } finally {
+      setImportPlaylistPreviewing(false);
+    }
+  };
+
+  // Enqueue resolved YouTube / Spotify playlist URL into currently open playlist
+  const handleImportExternalPlaylistToCurrent = async () => {
+    const activePl = playlists.find((p) => p.id === selectedPlaylistId);
+    if (!activePl || !importPlaylistPreview || importPlaylistPreview.tracks.length === 0) return;
+
+    setImportingPlaylist(true);
+    try {
+      const qRes = await fetch("/api/admin/radio/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tracks: importPlaylistPreview.tracks,
+          genre: activePl.genre || "Amapiano",
+          playlist_id: activePl.id,
+          playlist_title: activePl.name,
+          source_url: importPlaylistUrl.trim(),
+        }),
+      });
+      const qJson = await qRes.json();
+      if (!qRes.ok || !qJson.job_id) {
+        showBanner(qJson.error || "Failed to enqueue playlist ingestion", "error");
+        return;
+      }
+
+      const job: PlaylistIngestJob = {
+        job_id: qJson.job_id,
+        playlist_id: activePl.id,
+        playlist_name: activePl.name,
+        total_tracks: qJson.total_tracks || importPlaylistPreview.tracks.length,
+        completed_tracks: 0,
+        status: qJson.status || "queued",
+        current_track: importPlaylistPreview.tracks[0]?.title,
+        source_url: importPlaylistUrl.trim(),
+      };
+      setIngestJobs((prev) => ({ ...prev, [job.job_id]: job }));
+      showBanner(
+        `Queued ${job.total_tracks} tracks from "${importPlaylistPreview.title}" into "${activePl.name}"`,
+        "success"
+      );
+      setImportPlaylistUrl("");
+      setImportPlaylistPreview(null);
+    } catch (err: any) {
+      showBanner(err?.message || "Network error importing playlist", "error");
+    } finally {
+      setImportingPlaylist(false);
+    }
+  };
+
+  // Merge / Copy all non-duplicate tracks from another saved GOODLIFE playlist into current playlist
+  const handleMergeSavedPlaylist = async () => {
+    const activePl = playlists.find((p) => p.id === selectedPlaylistId);
+    const sourceId = parseInt(mergeSourcePlaylistId, 10);
+    if (!activePl || isNaN(sourceId) || sourceId === activePl.id) return;
+
+    setMergingPlaylist(true);
+    try {
+      const srcRes = await fetch(`/api/admin/radio/playlists/${sourceId}?_t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      const srcData = await srcRes.json();
+      if (!srcRes.ok || !srcData.success || !Array.isArray(srcData.tracks)) {
+        showBanner(srcData.error || "Failed to read source playlist", "error");
+        return;
+      }
+
+      const currentIds = new Set(selectedPlaylistTracks.map((t) => t.id));
+      const newIds = (srcData.tracks as Array<{ id: number }>)
+        .map((t) => t.id)
+        .filter((id) => !currentIds.has(id));
+
+      if (newIds.length === 0) {
+        showBanner("All tracks from that playlist are already in this playlist.", "success");
+        return;
+      }
+
+      const addRes = await fetch(`/api/admin/radio/playlists/${activePl.id}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_ids: newIds }),
+      });
+      const addData = await addRes.json();
+      if (addRes.ok && addData.success) {
+        const addedCount = typeof addData.added === "number" ? addData.added : newIds.length;
+        showBanner(`Merged ${addedCount} tracks into "${activePl.name}"`, "success");
+        setMergeSourcePlaylistId("");
+        fetchPlaylistDetails(activePl.id);
+        fetchPlaylists();
+      } else {
+        showBanner(addData.error || "Failed to copy playlist tracks", "error");
+      }
+    } catch (err: any) {
+      showBanner(err?.message || "Failed to merge saved playlist", "error");
+    } finally {
+      setMergingPlaylist(false);
     }
   };
 
@@ -1143,9 +1478,29 @@ export default function PlaylistManagerPanel({
 
               {/* Action Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                  Tracklist Sequence (Plays In This Order On Air)
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                    Tracklist Sequence (Plays In This Order On Air)
+                  </span>
+                  {selectedPlaylist.is_broadcast_active &&
+                    activeOnAirSetId &&
+                    selectedPlaylistTracks.some((t) => t.id === activeOnAirSetId) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playingTrackRowRef.current?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                          });
+                        }}
+                        className="px-2.5 py-1 bg-[#E84855]/20 hover:bg-[#E84855] text-red-200 hover:text-white border border-[#E84855]/60 rounded-lg text-[10px] font-mono font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Scroll directly to the currently playing track"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#F5C842] animate-ping" />
+                        <span>Jump to Playing (#{selectedPlaylistTracks.findIndex((t) => t.id === activeOnAirSetId) + 1})</span>
+                      </button>
+                    )}
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowHarmonizeModal(true)}
@@ -1179,6 +1534,48 @@ export default function PlaylistManagerPanel({
               {/* Add Tracks Drawer */}
               {showAddTracks && (
                 <div className="p-4 rounded-2xl bg-[#121316] border-2 border-white/20 space-y-3">
+                  {/* Drawer Mode Switcher: Library | Quick Add Song | Import Playlist / Merge */}
+                  <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setAddDrawerMode("library")}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                        addDrawerMode === "library"
+                          ? "bg-[#DFBB7D] text-[#16181D] shadow-[2px_2px_0px_#000]"
+                          : "bg-white/5 hover:bg-white/15 text-white/75"
+                      }`}
+                    >
+                      <Music2 className="w-3.5 h-3.5" />
+                      <span>From Library</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddDrawerMode("quick_song")}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                        addDrawerMode === "quick_song"
+                          ? "bg-[#DFBB7D] text-[#16181D] shadow-[2px_2px_0px_#000]"
+                          : "bg-white/5 hover:bg-white/15 text-white/75"
+                      }`}
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Quick Add Song (Search / Link)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddDrawerMode("import_playlist")}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-black uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
+                        addDrawerMode === "import_playlist"
+                          ? "bg-[#DFBB7D] text-[#16181D] shadow-[2px_2px_0px_#000]"
+                          : "bg-white/5 hover:bg-white/15 text-white/75"
+                      }`}
+                    >
+                      <ListPlus className="w-3.5 h-3.5" />
+                      <span>Import Playlist / Merge</span>
+                    </button>
+                  </div>
+
+                  {addDrawerMode === "library" && (
+                    <>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
                     <div className="relative flex-1">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
@@ -1284,6 +1681,198 @@ export default function PlaylistManagerPanel({
                       })
                     )}
                   </div>
+                    </>
+                  )}
+
+                  {addDrawerMode === "quick_song" && (
+                    <div className="space-y-3">
+                      <form onSubmit={handleQuickSongSearch} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
+                          <input
+                            type="text"
+                            placeholder="Search YouTube/catalog OR paste YouTube song URL (watch?v= / youtu.be/)..."
+                            value={quickSongQuery}
+                            onChange={(e) => setQuickSongQuery(e.target.value)}
+                            className="w-full bg-[#1A1D24] border-2 border-white/20 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={quickSongSearching || !quickSongQuery.trim()}
+                          className="px-4 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase flex items-center justify-center gap-1.5 disabled:opacity-40 cursor-pointer shrink-0"
+                        >
+                          {quickSongSearching ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Search className="w-3.5 h-3.5" />
+                          )}
+                          <span>{quickSongSearching ? "Searching..." : "Find Song"}</span>
+                        </button>
+                      </form>
+
+                      {quickSongResults.length > 0 && (
+                        <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+                          {quickSongResults.map((item) => {
+                            const isLib = item.source === "library";
+                            const alreadyInPlaylist = isLib && typeof item.id === "number" && existingTrackIds.has(item.id);
+                            const isBusy = quickAddingSongId === item.video_id;
+                            const durM = Math.floor((item.duration_sec || 0) / 60);
+                            const durS = String((item.duration_sec || 0) % 60).padStart(2, "0");
+                            return (
+                              <div
+                                key={`${item.source}-${item.video_id}`}
+                                className="p-2.5 rounded-xl bg-[#1A1D24] border border-white/15 flex items-center justify-between gap-3"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {item.thumbnail_url && (
+                                    <img
+                                      src={item.thumbnail_url}
+                                      alt={item.title}
+                                      className="w-9 h-9 rounded-lg object-cover shrink-0 border border-white/20"
+                                    />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-mono font-bold text-white truncate flex items-center gap-1.5">
+                                      <span className="truncate">{item.title}</span>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${
+                                          isLib
+                                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                            : "bg-[#DFBB7D]/20 text-[#DFBB7D] border border-[#DFBB7D]/40"
+                                        }`}
+                                      >
+                                        {isLib ? "IN LIBRARY" : "YOUTUBE"}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] font-mono text-white/60 truncate">
+                                      {item.artist || "Resident"} · {durM}:{durS}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={alreadyInPlaylist || isBusy}
+                                  onClick={() => handleQuickAddSongToPlaylist(item)}
+                                  className="px-3 py-1.5 rounded-lg bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-[10px] font-mono font-black uppercase shrink-0 disabled:opacity-40 cursor-pointer flex items-center gap-1"
+                                >
+                                  {isBusy ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Plus className="w-3 h-3" />
+                                  )}
+                                  <span>
+                                    {alreadyInPlaylist
+                                      ? "Added"
+                                      : isBusy
+                                      ? "Adding..."
+                                      : isLib
+                                      ? "Add Now"
+                                      : "Ingest to Playlist"}
+                                  </span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {addDrawerMode === "import_playlist" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* Copy / Merge from existing GOODLIFE Playlist */}
+                      <div className="p-3.5 rounded-xl bg-[#1A1D24] border border-white/15 space-y-2.5">
+                        <div className="text-[11px] font-mono font-black uppercase text-[#DFBB7D] flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Copy from Saved Playlist</span>
+                        </div>
+                        <p className="text-[11px] font-mono text-white/60">
+                          Merge non-duplicate tracks from any saved GOODLIFE playlist into &ldquo;{selectedPlaylist.name}&rdquo;.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <select
+                            value={mergeSourcePlaylistId}
+                            onChange={(e) => setMergeSourcePlaylistId(e.target.value)}
+                            className="flex-1 bg-[#121316] border-2 border-white/20 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#DFBB7D]"
+                          >
+                            <option value="">Select source playlist...</option>
+                            {playlists
+                              .filter((p) => p.id !== selectedPlaylist.id && p.track_count > 0)
+                              .map((p) => (
+                                <option key={p.id} value={String(p.id)}>
+                                  {p.name} ({p.track_count} tracks)
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={!mergeSourcePlaylistId || mergingPlaylist}
+                            onClick={handleMergeSavedPlaylist}
+                            className="px-3.5 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] font-mono font-black text-xs uppercase disabled:opacity-40 cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
+                          >
+                            {mergingPlaylist ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="w-3.5 h-3.5" />
+                            )}
+                            <span>{mergingPlaylist ? "Merging..." : "Copy Tracks"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Import YouTube / Spotify Playlist URL directly into open playlist */}
+                      <div className="p-3.5 rounded-xl bg-[#1A1D24] border border-white/15 space-y-2.5">
+                        <div className="text-[11px] font-mono font-black uppercase text-[#DFBB7D] flex items-center gap-1.5">
+                          <Link2 className="w-3.5 h-3.5" />
+                          <span>Import YouTube / Spotify Playlist Link</span>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="url"
+                            value={importPlaylistUrl}
+                            onChange={(e) => {
+                              setImportPlaylistUrl(e.target.value);
+                              setImportPlaylistPreview(null);
+                            }}
+                            placeholder="https://open.spotify.com/playlist/... or youtube.com/playlist?list=..."
+                            className="flex-1 bg-[#121316] border-2 border-white/20 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-white/40 focus:outline-none focus:border-[#DFBB7D]"
+                          />
+                          <button
+                            type="button"
+                            disabled={!importPlaylistUrl.trim() || importPlaylistPreviewing}
+                            onClick={handlePreviewImportPlaylistUrl}
+                            className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono font-bold text-xs uppercase disabled:opacity-40 cursor-pointer shrink-0"
+                          >
+                            {importPlaylistPreviewing ? "Resolving..." : "Preview"}
+                          </button>
+                        </div>
+
+                        {importPlaylistPreview && (
+                          <div className="p-2.5 rounded-lg bg-[#121316] border border-[#DFBB7D]/50 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-mono font-bold text-white truncate">
+                                {importPlaylistPreview.title}
+                              </div>
+                              <div className="text-[10px] font-mono text-[#DFBB7D]">
+                                {importPlaylistPreview.tracks.length} tracks ready · {importPlaylistPreview.source.toUpperCase()}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={importingPlaylist}
+                              onClick={handleImportExternalPlaylistToCurrent}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-[#16181D] font-mono font-black text-[10px] uppercase shrink-0 cursor-pointer disabled:opacity-40"
+                            >
+                              {importingPlaylist
+                                ? "Queuing..."
+                                : `+ Import ${importPlaylistPreview.tracks.length} Tracks`}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1308,16 +1897,34 @@ export default function PlaylistManagerPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {selectedPlaylistTracks.map((track, idx) => (
+                  {selectedPlaylistTracks.map((track, idx) => {
+                    const isPlayingNow =
+                      Boolean(selectedPlaylist.is_broadcast_active) &&
+                      activeOnAirSetId === track.id &&
+                      (!activeOnAirPlaylistId || activeOnAirPlaylistId === selectedPlaylist.id);
+                    return (
                     <div
                       key={track.id}
-                      className="p-2.5 sm:p-3 rounded-xl bg-[#1A1D24] border border-white/15 flex items-center gap-2 sm:gap-3.5 group hover:border-[#DFBB7D] hover:bg-[#202530] transition-all"
+                      ref={isPlayingNow ? playingTrackRowRef : undefined}
+                      className={`p-2.5 sm:p-3 rounded-xl flex items-center gap-2 sm:gap-3.5 group transition-all ${
+                        isPlayingNow
+                          ? "bg-gradient-to-r from-[#DFBB7D]/25 via-[#222733] to-[#1A1D24] border-2 border-[#DFBB7D] shadow-[0_0_20px_rgba(223,187,125,0.22)] ring-1 ring-[#F5C842]/40"
+                          : "bg-[#1A1D24] border border-white/15 hover:border-[#DFBB7D] hover:bg-[#202530]"
+                      }`}
                     >
-                      <span className="text-xs font-mono font-bold text-[#DFBB7D] w-5 sm:w-6 text-right shrink-0">
-                        {idx + 1}
+                      <span
+                        className={`text-xs font-mono font-bold w-7 sm:w-8 text-right shrink-0 ${
+                          isPlayingNow ? "text-[#F5C842] font-black" : "text-[#DFBB7D]"
+                        }`}
+                      >
+                        {isPlayingNow ? `▶ ${idx + 1}` : idx + 1}
                       </span>
 
-                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border border-white/20">
+                      <div
+                        className={`w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border ${
+                          isPlayingNow ? "border-[#F5C842] ring-2 ring-[#DFBB7D]/40" : "border-white/20"
+                        }`}
+                      >
                         {track.cover_url ? (
                           <img
                             src={track.cover_url}
@@ -1333,7 +1940,15 @@ export default function PlaylistManagerPanel({
 
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-mono font-bold text-white truncate flex items-center gap-2">
-                          <span>{track.title}</span>
+                          <span className={isPlayingNow ? "text-[#F5C842] font-black" : ""}>
+                            {track.title}
+                          </span>
+                          {isPlayingNow && (
+                            <span className="px-2 py-0.5 rounded bg-[#E84855] text-white text-[9px] font-mono font-black uppercase tracking-wider flex items-center gap-1 shrink-0 animate-pulse shadow-sm">
+                              <Radio className="w-2.5 h-2.5" />
+                              ON AIR NOW
+                            </span>
+                          )}
                           {track.is_full_set && (
                             <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-500/50 text-[9px] font-mono font-black uppercase">
                               DJ MIX
@@ -1381,8 +1996,35 @@ export default function PlaylistManagerPanel({
                         {track.duration}
                       </div>
 
-                      {/* Reorder and Delete controls */}
+                      {/* Reorder, Edit and Delete controls */}
                       <div className="flex items-center gap-1 shrink-0">
+                        {onEditTrack && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const libMatch = library.find((l) => l.id === track.id);
+                              onEditTrack(
+                                libMatch || {
+                                  ...track,
+                                  cover_url: track.cover_url || "",
+                                  file_size: 0,
+                                  bitrate: 160,
+                                  processing_status: "ready",
+                                  play_count: 0,
+                                  is_active: true,
+                                  is_full_set: Boolean(track.is_full_set),
+                                  display_order: track.position,
+                                  source_type: "r2",
+                                  created_at: new Date().toISOString(),
+                                }
+                              );
+                            }}
+                            className="p-1.5 rounded-lg bg-white/10 text-[#DFBB7D] hover:bg-[#DFBB7D] hover:text-[#16181D] border border-white/20 transition-all cursor-pointer"
+                            title="Edit track properties"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           disabled={idx === 0}
                           onClick={() => handleMoveTrack(idx, "up")}
@@ -1408,7 +2050,8 @@ export default function PlaylistManagerPanel({
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1674,6 +2317,190 @@ export default function PlaylistManagerPanel({
         }}
         showBanner={showBanner}
       />
+
+      {/* Custom Delete Playlist Confirmation Modal */}
+      {deleteModalTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !deletingPlaylist && setDeleteModalTarget(null)}
+        >
+          <div
+            className="bg-[#16181D] border-2 border-[#E84855] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-[6px_6px_0px_#000] font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+              <div className="flex items-center gap-2.5 text-white font-black text-sm uppercase">
+                <div className="p-1.5 rounded-lg bg-[#E84855]/20 text-[#E84855] border border-[#E84855]/40">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <span>Delete Playlist</span>
+              </div>
+              <button
+                type="button"
+                disabled={deletingPlaylist}
+                onClick={() => setDeleteModalTarget(null)}
+                className="p-1 rounded-lg text-white/60 hover:text-white cursor-pointer disabled:opacity-40"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-white/80 leading-relaxed">
+              <p>
+                Are you sure you want to delete playlist{" "}
+                <span className="font-black text-[#DFBB7D]">&ldquo;{deleteModalTarget.name}&rdquo;</span>?
+              </p>
+              <p className="text-[11px] text-white/50">
+                Songs stay safely in your main Music Library; only this curated playlist sequence will be removed.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={deletingPlaylist}
+                onClick={() => setDeleteModalTarget(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase cursor-pointer disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingPlaylist}
+                onClick={executeDeletePlaylist}
+                className="px-4 py-2 rounded-xl bg-[#E84855] hover:bg-red-500 text-white text-xs font-black uppercase flex items-center gap-1.5 shadow-[2px_2px_0px_#000] cursor-pointer disabled:opacity-50"
+              >
+                {deletingPlaylist ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Playlist</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Undo Reorder Confirmation Modal */}
+      {showUndoModal && selectedPlaylist && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !undoingReorder && setShowUndoModal(false)}
+        >
+          <div
+            className="bg-[#16181D] border-2 border-[#DFBB7D] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-[6px_6px_0px_#000] font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+              <div className="flex items-center gap-2 text-white font-black text-sm uppercase">
+                <Undo2 className="w-4 h-4 text-[#DFBB7D]" />
+                <span>Restore Previous Order</span>
+              </div>
+              <button
+                type="button"
+                disabled={undoingReorder}
+                onClick={() => setShowUndoModal(false)}
+                className="p-1 rounded-lg text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-white/80 leading-relaxed">
+              <p>
+                Revert <span className="font-bold text-[#DFBB7D]">{selectedPlaylist.name}</span> to the previous saved snapshot? (One-way undo.)
+              </p>
+              {selectedPlaylist.is_broadcast_active && (
+                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#DFBB7D]/10 border border-[#DFBB7D]/40 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={undoReanchor}
+                    onChange={(e) => setUndoReanchor(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 accent-[#DFBB7D]"
+                  />
+                  <span className="text-[11px] text-white">
+                    Playlist is <strong className="text-[#DFBB7D]">LIVE ON AIR</strong> — re-anchor broadcast timeline cleanly to Track #1?
+                  </span>
+                </label>
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={undoingReorder}
+                onClick={() => setShowUndoModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={undoingReorder}
+                onClick={executeUndoReorder}
+                className="px-4 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-black uppercase flex items-center gap-1.5 shadow-[2px_2px_0px_#000] cursor-pointer disabled:opacity-50"
+              >
+                {undoingReorder ? "Restoring..." : "Restore Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Harmonize Unindexed Catalog Confirmation Modal */}
+      {showHarmonizeAllModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowHarmonizeAllModal(false)}
+        >
+          <div
+            className="bg-[#16181D] border-2 border-[#DFBB7D] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-[6px_6px_0px_#000] font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+              <div className="flex items-center gap-2 text-white font-black text-sm uppercase">
+                <Zap className="w-4 h-4 text-[#DFBB7D]" />
+                <span>Harmonize {unindexedCount} Unindexed Tracks</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHarmonizeAllModal(false)}
+                className="p-1 rounded-lg text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-white/80 leading-relaxed">
+              Analyze audio tempo (BPM), Camelot musical key, and energy across{" "}
+              <span className="font-bold text-[#DFBB7D]">{unindexedCount}</span> unindexed library tracks via the parallel studio bridge?
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowHarmonizeAllModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeHarmonizeAll}
+                className="px-4 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer"
+              >
+                Start Harmonizing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

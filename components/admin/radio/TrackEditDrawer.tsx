@@ -176,7 +176,7 @@ export default function TrackEditDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity">
+    <div className="fixed inset-0 z-[60] flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity">
       <div className="w-full max-w-lg h-full bg-[#16181D] border-l-2 border-[#DFBB7D] text-[#FBF9F6] shadow-[-6px_0px_20px_rgba(0,0,0,0.8)] flex flex-col font-mono">
         {/* Header */}
         <div className="p-4 bg-[#121316] border-b-2 border-white/10 flex items-center justify-between">

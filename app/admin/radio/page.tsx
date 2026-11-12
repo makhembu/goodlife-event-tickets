@@ -165,6 +165,7 @@ export default function AdminRadioPage() {
   const [libPage, setLibPage] = useState(1);
   const libPageSize = 25;
   const [editingTrack, setEditingTrack] = useState<RadioSet | null>(null);
+  const [rundownRefreshTick, setRundownRefreshTick] = useState(0);
   const [uploadTargetPlaylistId, setUploadTargetPlaylistId] = useState<number | null>(null);
   const [availablePlaylists, setAvailablePlaylists] = useState<{ id: number; name: string; genre: string }[]>([]);
   const [quickAddPlaylistMap, setQuickAddPlaylistMap] = useState<Record<number, number>>({});
@@ -626,6 +627,35 @@ export default function AdminRadioPage() {
               {/* On-Air Rundown, Mic & Cue: Front and center for Live Talkover */}
               <div className={`space-y-6 ${studioDeck === "drops" ? "hidden lg:block" : "block"}`}>
                 <OnAirRundown
+                  refreshTrigger={rundownRefreshTick}
+                  onEditTrack={(track) => {
+                    const fullTrack = library.find((l) => l.id === track.id);
+                    if (fullTrack) {
+                      setEditingTrack(fullTrack);
+                    } else {
+                      setEditingTrack({
+                        id: track.id,
+                        title: track.title,
+                        dj_name: track.dj_name,
+                        duration: track.duration,
+                        duration_sec: track.duration_sec,
+                        cover_url: track.cover_url,
+                        audio_url: track.audio_url,
+                        display_order: track.display_order,
+                        genre: track.genre || "Afro House",
+                        file_size: 0,
+                        bitrate: 160,
+                        processing_status: "ready",
+                        play_count: 0,
+                        is_active: true,
+                        is_full_set: false,
+                        bpm: null,
+                        musical_key: null,
+                        source_type: "r2",
+                        created_at: new Date().toISOString(),
+                      });
+                    }
+                  }}
                   onTrackStateSync={(active, next) => {
                     setSyncedBroadcastTrack(active);
                     setSyncedBroadcastNext(next);
@@ -1239,10 +1269,12 @@ export default function AdminRadioPage() {
         onClose={() => setEditingTrack(null)}
         onTrackUpdated={(updated) => {
           setLibrary((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          setRundownRefreshTick((n) => n + 1);
           showMsg(`Saved changes for "${updated.title}"`, "success");
         }}
         onTrackDeleted={(delId) => {
           setLibrary((prev) => prev.filter((t) => t.id !== delId));
+          setRundownRefreshTick((n) => n + 1);
           showMsg("Track deleted from library", "success");
         }}
       />
@@ -1252,6 +1284,8 @@ export default function AdminRadioPage() {
         <div className="space-y-6">
           <PlaylistManagerPanel
             library={library}
+            onEditTrack={(track) => setEditingTrack(track)}
+            refreshTrigger={rundownRefreshTick}
             onRefreshLive={fetchBroadcastSettings}
             onPlaylistsChanged={fetchAvailablePlaylists}
           />

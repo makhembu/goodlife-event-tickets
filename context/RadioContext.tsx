@@ -315,10 +315,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // Refs for audio elements and HLS engine
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const preloadAudioRef = useRef<HTMLAudioElement | null>(null); // Kept inert for vault set preloading
+  const preloadAudioRef = useRef<HTMLAudioElement | null>(null); // Dual-deck standby & crossfader audio element
   const dropAudioRef = useRef<HTMLAudioElement | null>(null);
   const hlsRef = useRef<any>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+
+  // Dual-deck broadcast engine & smooth crossfader state
+  const activeDeckRef = useRef<"A" | "B">("A");
+  const isCrossfadingRef = useRef(false);
+  const crossfadeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasFiredAutoDjCrossfadeRef = useRef(false);
+  const executeCrossfadeRef = useRef<any>(null);
 
   // Stale-stream and stall detection refs
   const timingConfigRef = useRef(RADIO_TIMING);
@@ -889,6 +896,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       backupProbeTimerRef.current = null;
     }
 
+    if (crossfadeTimerRef.current) {
+      clearInterval(crossfadeTimerRef.current);
+      crossfadeTimerRef.current = null;
+    }
+    isCrossfadingRef.current = false;
+
     if (hlsRef.current) {
       try {
         hlsRef.current.stopLoad();
@@ -903,6 +916,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         audioRef.current.pause();
         audioRef.current.removeAttribute("src");
         audioRef.current.load();
+      } catch {}
+    }
+    if (preloadAudioRef.current) {
+      try {
+        preloadAudioRef.current.pause();
+        preloadAudioRef.current.removeAttribute("src");
+        preloadAudioRef.current.load();
       } catch {}
     }
     /* teardownDropSnippet_done */
@@ -1198,27 +1218,67 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [teardownPlayback]);
 
-  // 11. Stalled playback buffer watchdog (Only runs in 'live' state)
-  const handleTimeUpdate = useCallback(() => {
-    if (!audioRef.current) return;
-    const cur = audioRef.current.currentTime;
-    const dur = audioRef.current.duration;
+  // 11. Stalled playback buffer watchdog & AutoDJ natural crossfader
+  const handleTimeUpdate = useCallback(
+    (deck: "A" | "B") => {
+      if (deck !== activeDeckRef.current) return;
+      const audio = deck === "A" ? audioRef.current : preloadAudioRef.current;
+      if (!audio) return;
+      const cur = audio.currentTime;
+      const dur = audio.duration;
 
-    if (!isLiveRef.current && dur && !isNaN(dur) && dur > 0) {
-      setInterpolatedElapsed(cur);
-    }
+      if (!isLiveRef.current && dur && !isNaN(dur) && dur > 0) {
+        setInterpolatedElapsed(cur);
+      }
 
-    if (cur > lastPlaybackTimeRef.current) {
-      lastPlaybackTimeRef.current = cur;
-      if (engineStateRef.current === "reconnecting") {
-        setEngineState("live");
-        if (stallTimerRef.current) {
-          clearTimeout(stallTimerRef.current);
-          stallTimerRef.current = null;
+      if (cur > lastPlaybackTimeRef.current) {
+        lastPlaybackTimeRef.current = cur;
+        if (engineStateRef.current === "reconnecting") {
+          setEngineState("live");
+          if (stallTimerRef.current) {
+            clearTimeout(stallTimerRef.current);
+            stallTimerRef.current = null;
+          }
         }
       }
-    }
-  }, []);
+
+      // 🎚️ AutoDJ natural smooth crossfade in the last 3.5 seconds
+      if (dur && !isNaN(dur) && dur > 12 && !isCrossfadingRef.current && isLiveRef.current) {
+        const remaining = dur - cur;
+        if (remaining <= 3.5 && remaining > 0.5 && !hasFiredAutoDjCrossfadeRef.current) {
+          hasFiredAutoDjCrossfadeRef.current = true;
+          let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+          if (!nextCandidate?.audio_url && backupSetsRef.current.length > 0) {
+            const rawEndedId = currentTrackIdRef.current || "";
+            const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
+            const sets = backupSetsRef.current;
+            const curIdx = sets.findIndex(
+              (s) => String(s.id) === cleanEndedId || (audio && s.audio_url === audio.src)
+            );
+            const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
+            if (sets[nIdx]?.audio_url) {
+              nextCandidate = sets[nIdx];
+            }
+          }
+          if (nextCandidate?.audio_url && executeCrossfadeRef.current) {
+            console.log(`[RadioContext] 🎚️ AutoDJ natural crossfade blending into "${nextCandidate.title}"`);
+            executeCrossfadeRef.current(nextCandidate, { fast: false });
+            setNowPlayingTrack({
+              ...nextCandidate,
+              title: formatTrackTitle(nextCandidate.title),
+              elapsed: 0,
+              duration: nextCandidate.duration_sec || nextCandidate.duration || 180,
+            });
+            currentTrackIdRef.current = nextCandidate.video_id || `set-${nextCandidate.id}`;
+            setInterpolatedElapsed(0);
+            lastPollElapsedRef.current = 0;
+            lastPollTimestampRef.current = Date.now();
+          }
+        }
+      }
+    },
+    [upNextQueue]
+  );
 
   // 12. MediaSession API (Lockscreen & Bluetooth Controls)
   const togglePlayDispatcherRef = useRef<() => void>(() => {});
@@ -1271,9 +1331,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
     const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
-    const startVol = audioRef.current ? audioRef.current.volume : duckedVol;
+    const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+    const startVol = activeAudio ? activeAudio.volume : duckedVol;
     const target = isMutedRef.current ? 0 : volumeRef.current;
     if (startVol >= target || target <= 0) {
+      if (activeAudio) activeAudio.volume = target;
       if (audioRef.current) audioRef.current.volume = target;
       return;
     }
@@ -1281,8 +1343,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const swellDuration = 400; // 400ms broadcast beat drop swell
     swellIntervalRef.current = setInterval(() => {
       const progress = Math.min(1, (Date.now() - startTime) / swellDuration);
+      const curVol = startVol + (target - startVol) * progress;
+      if (activeAudio) {
+        activeAudio.volume = curVol;
+      }
       if (audioRef.current) {
-        audioRef.current.volume = startVol + (target - startVol) * progress;
+        audioRef.current.volume = curVol;
       }
       if (progress >= 1) {
         if (swellIntervalRef.current) clearInterval(swellIntervalRef.current);
@@ -1392,7 +1458,109 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     [swellMusicToFullVolume]
   );
 
-  // Instant Studio Track Switcher: stops previous track immediately and begins target track cleanly from 0:00
+  // Seamless Dual-Deck Equal-Power Audio Crossfader
+  // Seamlessly mixes from outgoing deck to incoming deck with zero gap, zero cutoff, and full ducking support
+  const executeCrossfade = useCallback(
+    (
+      track: { id?: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string; [key: string]: any },
+      options: { fast?: boolean; targetSeek?: number } = {}
+    ) => {
+      if (!track || !track.audio_url) return;
+      const outgoing = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+      const incoming = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
+
+      const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+      const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
+      const targetVol = isDropPlayingRef.current ? duckedVol : masterVol;
+
+      if (!incoming) {
+        if (outgoing) {
+          outgoing.src = track.audio_url;
+          outgoing.currentTime = options.targetSeek || 0;
+          outgoing.volume = targetVol;
+          outgoing.play().catch(() => {});
+        }
+        return;
+      }
+
+      if (crossfadeTimerRef.current) {
+        clearInterval(crossfadeTimerRef.current);
+        crossfadeTimerRef.current = null;
+      }
+
+      isCrossfadingRef.current = true;
+      incoming.volume = 0;
+      if (incoming.src !== track.audio_url) {
+        incoming.src = track.audio_url;
+      }
+      incoming.currentTime = options.targetSeek || 0;
+
+      const isOutPlaying = Boolean(
+        outgoing &&
+        !outgoing.paused &&
+        !outgoing.ended &&
+        outgoing.currentTime > 0 &&
+        outgoing.src
+      );
+      const durationMs = options.fast ? 850 : 1300;
+      const startTime = performance.now();
+      const startOutVol = outgoing ? outgoing.volume : 0;
+
+      const playPromise = incoming.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            setEngineState("live");
+            if (!isOutPlaying || startOutVol <= 0) {
+              incoming.volume = targetVol;
+              isCrossfadingRef.current = false;
+              activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
+              return;
+            }
+
+            crossfadeTimerRef.current = setInterval(() => {
+              const elapsed = performance.now() - startTime;
+              const progress = Math.min(1, elapsed / durationMs);
+
+              // Equal-power sinusoidal curve for professional seamless radio broadcast mixing
+              const outGain = Math.cos(progress * 0.5 * Math.PI);
+              const inGain = Math.sin(progress * 0.5 * Math.PI);
+
+              if (outgoing) outgoing.volume = Math.max(0, startOutVol * outGain);
+              if (incoming) incoming.volume = Math.min(targetVol, targetVol * inGain);
+
+              if (progress >= 1) {
+                if (crossfadeTimerRef.current) {
+                  clearInterval(crossfadeTimerRef.current);
+                  crossfadeTimerRef.current = null;
+                }
+                isCrossfadingRef.current = false;
+                if (outgoing) {
+                  try {
+                    outgoing.pause();
+                    outgoing.currentTime = 0;
+                    outgoing.volume = targetVol;
+                  } catch {}
+                }
+                if (incoming) incoming.volume = targetVol;
+                activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
+              }
+            }, 30);
+          })
+          .catch((err) => {
+            console.warn("[RadioContext] crossfade incoming play error:", err);
+            isCrossfadingRef.current = false;
+            if (outgoing && isOutPlaying) {
+              outgoing.volume = targetVol;
+            }
+          });
+      }
+    },
+    []
+  );
+
+  // Instant Studio Track Switcher: smooth equal-power crossfade from playing track into target track
   const playImmediateBroadcastTrack = useCallback(
     (track: { id: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string }) => {
       if (!track || !track.audio_url) return;
@@ -1402,6 +1570,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setBroadcastMode("mania");
       currentTrackIdRef.current = trackVideoId;
       hasFiredOutroDropRef.current = false;
+      hasFiredAutoDjCrossfadeRef.current = false;
       hasSentBeaconRef.current = false;
       secondsListenedRef.current = 0;
       lastPollElapsedRef.current = 0;
@@ -1418,25 +1587,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         video_id: trackVideoId,
       });
 
-      if (audioRef.current) {
-        const audio = audioRef.current;
-        isTransitioningRef.current = true;
-        audio.pause();
-        audio.src = track.audio_url;
-        audio.currentTime = 0;
-        const masterVol = isMutedRef.current ? 0 : volumeRef.current;
-        audio.volume = masterVol;
-        audio.play().then(() => {
-          isTransitioningRef.current = false;
-          setIsPlaying(true);
-          setEngineState("live");
-        }).catch((err) => {
-          console.warn("[RadioContext] playImmediateBroadcastTrack error:", err);
-          isTransitioningRef.current = false;
-        });
-      }
+      executeCrossfade(track, { fast: true, targetSeek: 0 });
     },
-    []
+    [executeCrossfade]
   );
 
   // 12A. Outro Drop Crossover Trigger (Starts at 15s before track ends, bridges into next song)
@@ -1936,12 +2089,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
+      const targetVol = next ? 0 : volume;
+      const targetDucked = next ? 0 : Math.max(0.24, Math.min(0.36, volume * 0.30));
+      const newVol = isDropPlayingRef.current ? targetDucked : targetVol;
       if (audioRef.current) {
-        if (isDropPlayingRef.current) {
-          audioRef.current.volume = next ? 0 : Math.max(0.24, Math.min(0.36, volume * 0.30));
-        } else {
-          audioRef.current.volume = next ? 0 : volume;
-        }
+        audioRef.current.volume = newVol;
+      }
+      if (preloadAudioRef.current && activeDeckRef.current === "B") {
+        preloadAudioRef.current.volume = newVol;
       }
       if (dropAudioRef.current) {
         dropAudioRef.current.volume = next ? 0 : volume;
@@ -1954,12 +2109,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const clamped = Math.max(0, Math.min(1, v));
     setVolumeState(clamped);
     setIsMuted(false);
+    const newVol = isDropPlayingRef.current ? Math.max(0.24, Math.min(0.36, clamped * 0.30)) : clamped;
     if (audioRef.current) {
-      if (isDropPlayingRef.current) {
-        audioRef.current.volume = Math.max(0.24, Math.min(0.36, clamped * 0.30));
-      } else {
-        audioRef.current.volume = clamped;
-      }
+      audioRef.current.volume = newVol;
+    }
+    if (preloadAudioRef.current && activeDeckRef.current === "B") {
+      preloadAudioRef.current.volume = newVol;
     }
     if (dropAudioRef.current) {
       dropAudioRef.current.volume = clamped;
@@ -2255,11 +2410,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [backupSets, currentBackupIndex]);
 
   const seek = useCallback((percent: number) => {
-    if (!audioRef.current || isLiveRef.current) return;
-    const dur = audioRef.current.duration;
+    const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+    if (!activeAudio || isLiveRef.current) return;
+    const dur = activeAudio.duration;
     if (dur && !isNaN(dur) && dur > 0) {
       const targetTime = (Math.max(0, Math.min(100, percent)) / 100) * dur;
-      audioRef.current.currentTime = targetTime;
+      activeAudio.currentTime = targetTime;
       setInterpolatedElapsed(targetTime);
     }
   }, []);
@@ -2301,6 +2457,106 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const progressPercent = hasValidProgress ? Math.min(100, (interpolatedElapsed / totalDuration) * 100) : 0;
   const searchLinks = useMemo(() => buildSongSearchUrls(displayTitle, displayArtist), [displayTitle, displayArtist]);
   const currentSet = backupSets[currentBackupIndex] || null;
+
+  const handleEnded = useCallback(
+    (deck: "A" | "B") => {
+      // Ignore ended events from the inactive/faded-out deck
+      if (deck !== activeDeckRef.current) return;
+      sendPlayBeaconOnce(true);
+      hasFiredOutroDropRef.current = false;
+      hasFiredAutoDjCrossfadeRef.current = false;
+
+      if (isLiveRef.current) {
+        // Gapless live auto-advance: start next track immediately even under an active outro drop (audible ducked bed!)
+        let nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+        if (!nextTrackCandidate?.audio_url && backupSetsRef.current.length > 0) {
+          const rawEndedId = currentTrackIdRef.current || "";
+          const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
+          const sets = backupSetsRef.current;
+          const curAudio = deck === "A" ? audioRef.current : preloadAudioRef.current;
+          const curIdx = sets.findIndex(
+            (s) => String(s.id) === cleanEndedId || (curAudio && s.audio_url === curAudio.src)
+          );
+          const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
+          if (sets[nIdx]?.audio_url) {
+            nextTrackCandidate = sets[nIdx];
+          }
+        }
+
+        if (nextTrackCandidate && nextTrackCandidate.audio_url && executeCrossfadeRef.current) {
+          executeCrossfadeRef.current(nextTrackCandidate, { fast: false });
+          setNowPlayingTrack({
+            ...nextTrackCandidate,
+            title: formatTrackTitle(nextTrackCandidate.title),
+            elapsed: 0,
+            duration: nextTrackCandidate.duration_sec || nextTrackCandidate.duration || 180,
+          });
+          currentTrackIdRef.current = nextTrackCandidate.video_id || `set-${nextTrackCandidate.id}`;
+          setInterpolatedElapsed(0);
+          lastPollElapsedRef.current = 0;
+          lastPollTimestampRef.current = Date.now();
+        }
+        fetchRadioLive();
+      } else {
+        playDropAndAdvance();
+      }
+    },
+    [upNextQueue, fetchRadioLive, playDropAndAdvance]
+  );
+
+  // 14. 3-Track Browser Cache Preloader
+  // Automatically warms audio buffers for the next 3 upcoming tracks in the queue so transitions are 0ms instant
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urlsToPreload: string[] = [];
+
+    // 1. Collect from Up Next queue
+    if (Array.isArray(upNextQueue) && upNextQueue.length > 0) {
+      for (let i = 0; i < Math.min(3, upNextQueue.length); i++) {
+        const item = upNextQueue[i] as any;
+        if (item?.audio_url && !urlsToPreload.includes(item.audio_url)) {
+          urlsToPreload.push(item.audio_url);
+        }
+      }
+    }
+
+    // 2. Collect from catalog / backup sets if queue is short
+    if (urlsToPreload.length < 3 && backupSets.length > 0) {
+      const rawId = currentTrackIdRef.current || "";
+      const cleanId = rawId.replace(/^(set-|vault-|pl-\d+-)/, "");
+      let curIdx = backupSets.findIndex((s) => String(s.id) === cleanId);
+      if (curIdx === -1) curIdx = 0;
+      for (let i = 1; i <= 3 && urlsToPreload.length < 3; i++) {
+        const track = backupSets[(curIdx + i) % backupSets.length];
+        if (track?.audio_url && !urlsToPreload.includes(track.audio_url)) {
+          urlsToPreload.push(track.audio_url);
+        }
+      }
+    }
+
+    // Warm standby audio deck with immediate upcoming track
+    if (urlsToPreload[0]) {
+      const standby = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
+      if (standby && standby.paused && !isCrossfadingRef.current && standby.src !== urlsToPreload[0]) {
+        standby.preload = "auto";
+        standby.src = urlsToPreload[0];
+      }
+    }
+
+    // Warm tracks 2 & 3 via <link rel="prefetch"> in document head
+    for (let i = 1; i < urlsToPreload.length; i++) {
+      const url = urlsToPreload[i];
+      if (!url) continue;
+      const existing = document.querySelector(`link[data-gl-preload="${url}"]`);
+      if (!existing) {
+        const link = document.createElement("link");
+        link.rel = "prefetch";
+        link.href = url;
+        link.dataset.glPreload = url;
+        document.head.appendChild(link);
+      }
+    }
+  }, [upNextQueue, backupSets, nowPlayingTrack?.video_id]);
 
   return (
     <RadioContext.Provider
@@ -2367,66 +2623,57 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
 
-      {/* Global Hidden Audio Element */}
+      {/* Global Deck A Audio Element */}
       <audio
         ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
+        onTimeUpdate={() => handleTimeUpdate("A")}
         onPlay={() => {
-          setIsPlaying(true);
+          if (activeDeckRef.current === "A") {
+            setIsPlaying(true);
+          }
           if (audioRef.current) audioRef.current.preload = "auto";
         }}
         onPause={() => {
-          if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current) return;
-          setIsPlaying(false);
-        }}
-        onError={() => {
-          setIsPlaying(false);
-          setEngineState("error");
-        }}
-        onEnded={() => {
-          sendPlayBeaconOnce(true);
-          hasFiredOutroDropRef.current = false;
-          if (isLiveRef.current) {
-            // Gapless live auto-advance: start next track immediately even under an active outro drop (audible ducked bed!)
-            let nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
-            if (!nextTrackCandidate?.audio_url && backupSetsRef.current.length > 0) {
-              const rawEndedId = currentTrackIdRef.current || "";
-              const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
-              const sets = backupSetsRef.current;
-              const curIdx = sets.findIndex(
-                (s) => String(s.id) === cleanEndedId || (audioRef.current && s.audio_url === audioRef.current.src)
-              );
-              const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
-              if (sets[nIdx]?.audio_url) {
-                nextTrackCandidate = sets[nIdx];
-              }
-            }
-
-            if (nextTrackCandidate && nextTrackCandidate.audio_url && audioRef.current) {
-              const audio = audioRef.current;
-              const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
-              const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
-              audio.volume = isDropPlayingRef.current ? duckedVol : masterVol;
-              audio.src = nextTrackCandidate.audio_url;
-              audio.currentTime = 0;
-              audio.play().catch((e) => console.warn("[RadioContext] gapless advance play error:", e));
-              setNowPlayingTrack({
-                ...nextTrackCandidate,
-                title: formatTrackTitle(nextTrackCandidate.title),
-                elapsed: 0,
-                duration: nextTrackCandidate.duration_sec || nextTrackCandidate.duration || 180,
-              });
-              currentTrackIdRef.current = nextTrackCandidate.video_id || `set-${nextTrackCandidate.id}`;
-              setInterpolatedElapsed(0);
-              lastPollElapsedRef.current = 0;
-              lastPollTimestampRef.current = Date.now();
-            }
-            fetchRadioLive();
-          } else {
-            playDropAndAdvance();
+          if (activeDeckRef.current === "A") {
+            if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
+            setIsPlaying(false);
           }
         }}
+        onError={() => {
+          if (activeDeckRef.current === "A" && !isCrossfadingRef.current) {
+            setIsPlaying(false);
+            setEngineState("error");
+          }
+        }}
+        onEnded={() => handleEnded("A")}
         preload="none"
+        playsInline
+      />
+
+      {/* Global Deck B Audio Element (Seamless Dual-Deck Crossfade & Standby) */}
+      <audio
+        ref={preloadAudioRef}
+        onTimeUpdate={() => handleTimeUpdate("B")}
+        onPlay={() => {
+          if (activeDeckRef.current === "B") {
+            setIsPlaying(true);
+          }
+          if (preloadAudioRef.current) preloadAudioRef.current.preload = "auto";
+        }}
+        onPause={() => {
+          if (activeDeckRef.current === "B") {
+            if (preloadAudioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
+            setIsPlaying(false);
+          }
+        }}
+        onError={() => {
+          if (activeDeckRef.current === "B" && !isCrossfadingRef.current) {
+            setIsPlaying(false);
+            setEngineState("error");
+          }
+        }}
+        onEnded={() => handleEnded("B")}
+        preload="auto"
         playsInline
       />
 

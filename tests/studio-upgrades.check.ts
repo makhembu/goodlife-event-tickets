@@ -211,6 +211,39 @@ check(
     !radioCtxCode.includes("* 0.22") &&
     radioCtxCode.includes("if (isDropPlayingRef.current && !audioRef.current?.ended) return;")
 );
+check(
+  "PlaylistManagerPanel highlights the currently playing track with ON AIR NOW badge and Jump to Playing",
+  plPanelCode.includes("activeOnAirSetId") &&
+    plPanelCode.includes("ON AIR NOW") &&
+    plPanelCode.includes("Jump to Playing")
+);
+check(
+  "PlaylistManagerPanel uses custom modals instead of native browser confirm() dialogs",
+  !plPanelCode.includes("confirm(") &&
+    plPanelCode.includes("deleteModalTarget") &&
+    plPanelCode.includes("showUndoModal")
+);
+check(
+  "PlaylistManagerPanel supports Quick Add Song (Search/Link) and Import Playlist / Merge inside open playlist",
+  plPanelCode.includes("Quick Add Song") &&
+    plPanelCode.includes("Import Playlist / Merge") &&
+    plPanelCode.includes("handleMergeSavedPlaylist")
+);
+
+check(
+  "OnAirRundown and PlaylistManagerPanel both expose Quick Edit Track Properties modal/drawer",
+  rundownCode.includes("onEditTrack") &&
+    rundownCode.includes("Edit Track Properties") &&
+    plPanelCode.includes("onEditTrack") &&
+    studioPageCode.includes("rundownRefreshTick")
+);
+check(
+  "RadioContext implements Dual-Deck Equal-Power Crossfader and 3-Track Browser Preloader",
+  radioCtxCode.includes("executeCrossfade") &&
+    radioCtxCode.includes("activeDeckRef") &&
+    radioCtxCode.includes("urlsToPreload") &&
+    rundownCode.includes("localTrack?.audio_url")
+);
 
 console.log(`\nChecks: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

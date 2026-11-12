@@ -18,6 +18,7 @@ import {
   MoreVertical,
   ListMusic,
   X,
+  Sliders,
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 import { useRadio } from "@/context/RadioContext";
@@ -45,9 +46,11 @@ export interface OnAirRundownProps {
     active: OnAirSyncedTrack | null,
     next: OnAirSyncedTrack | null
   ) => void;
+  onEditTrack?: (track: PlaylistTrack) => void;
+  refreshTrigger?: number;
 }
 
-export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
+export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTrigger }: OnAirRundownProps) {
   const { fetchRadioLive, playImmediateBroadcastTrack } = useRadio();
   const [sets, setSets] = useState<PlaylistTrack[]>([]);
   const [playlistName, setPlaylistName] = useState<string | null>(null);
@@ -128,6 +131,12 @@ export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      fetchPlaylist();
+    }
+  }, [refreshTrigger]);
+
   const handleToggleMode = async (newMode: "autodj" | "mania") => {
     if (modeSwitching || newMode === broadcastMode) return;
     setModeSwitching(true);
@@ -158,6 +167,16 @@ export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
   const handlePlayNow = async (setId: number, trackTitle: string) => {
     if (operatingId) return;
     setOperatingId(setId);
+
+    // Instant zero-lag crossfade: start incoming deck immediately from local memory
+    const localTrack = sets.find((s) => s.id === setId);
+    if (localTrack?.audio_url) {
+      playImmediateBroadcastTrack(localTrack);
+      setActiveSetId(setId);
+      setBroadcastMode("mania");
+      notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
+    }
+
     try {
       const res = await fetch("/api/admin/radio/playlist", {
         method: "POST",
@@ -166,13 +185,11 @@ export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        setActiveSetId(setId);
-        setBroadcastMode("mania");
-        notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
-        if (data?.active_track?.audio_url) {
+        if (!localTrack?.audio_url && data?.active_track?.audio_url) {
           playImmediateBroadcastTrack(data.active_track);
-        } else {
-          await fetchRadioLive().catch(() => {});
+          setActiveSetId(setId);
+          setBroadcastMode("mania");
+          notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
         }
         fetchPlaylist();
       } else {
@@ -527,7 +544,23 @@ export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
 
                 {/* Overflow Popover Menu */}
                 {openMenuTrackId === track.id && (
-                  <div className="absolute right-2 top-12 z-20 bg-[#16181D] border-2 border-[#DFBB7D] rounded-lg p-1.5 shadow-2xl flex flex-col space-y-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100 font-mono text-xs">
+                  <div className="absolute right-2 top-12 z-20 bg-[#16181D] border-2 border-[#DFBB7D] rounded-lg p-1.5 shadow-2xl flex flex-col space-y-1 min-w-[175px] animate-in fade-in zoom-in-95 duration-100 font-mono text-xs">
+                    {onEditTrack && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onEditTrack(track);
+                            setOpenMenuTrackId(null);
+                          }}
+                          className="flex items-center space-x-2 px-2.5 py-2 hover:bg-white/10 text-[#DFBB7D] hover:text-white rounded text-left transition-colors font-bold"
+                        >
+                          <Sliders className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                          <span>Edit Track Properties</span>
+                        </button>
+                        <div className="border-t border-white/10 my-0.5" />
+                      </>
+                    )}
                     <button
                       onClick={() => {
                         handleReorder(track.id, "up");
@@ -676,6 +709,16 @@ export default function OnAirRundown({ onTrackStateSync }: OnAirRundownProps) {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {onEditTrack && (
+                          <button
+                            type="button"
+                            onClick={() => onEditTrack(track)}
+                            title="Edit track properties"
+                            className="p-2 bg-white/5 hover:bg-[#DFBB7D]/20 text-white/70 hover:text-[#DFBB7D] rounded transition-colors cursor-pointer"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleReorder(track.id, "up")}
