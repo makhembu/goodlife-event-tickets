@@ -43,6 +43,8 @@ async function signScannerToken(secret: string = "goodlife_scanner_secret_salt")
 
 async function runTests() {
   console.log("Starting Commit 1 Offline Security Verification Suite...\n");
+  process.env.ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "test_admin_session_secret_for_hardening_suite";
+  process.env.SCANNER_SESSION_SECRET = process.env.SCANNER_SESSION_SECRET || "goodlife_scanner_secret_salt";
 
   const validAdminToken = await signAdminSession(3600);
   const validScannerToken = await signScannerToken();

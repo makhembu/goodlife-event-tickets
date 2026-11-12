@@ -56,7 +56,8 @@ async function isValidScannerSession(cookieValue: string | undefined): Promise<b
   if (!cookieValue || !cookieValue.includes(".")) return false;
   const [payloadB64, sig] = cookieValue.split(".");
   if (!payloadB64 || !sig) return false;
-  const secret = process.env.SCANNER_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_scanner_secret_salt";
+  const secret = process.env.SCANNER_SESSION_SECRET?.trim() || process.env.TAB_SELF_PAY_SECRET?.trim() || process.env.PAYHERO_CALLBACK_TOKEN?.trim();
+  if (!secret) return false; // Fail closed: strictly no hardcoded fallback salt
   const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
   if (!isSigValid) return false;
   const parsed = decodePayload(payloadB64);
@@ -67,31 +68,36 @@ async function isValidVendorSession(cookieValue: string | undefined): Promise<bo
   if (!cookieValue || !cookieValue.includes(".")) return false;
   const [payloadB64, sig] = cookieValue.split(".");
   if (!payloadB64 || !sig) return false;
-  const secret = process.env.VENDOR_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_vendor_secret_salt";
+  const secret = process.env.VENDOR_SESSION_SECRET?.trim() || process.env.TAB_SELF_PAY_SECRET?.trim() || process.env.PAYHERO_CALLBACK_TOKEN?.trim();
+  if (!secret) return false; // Fail closed: strictly no hardcoded fallback salt
   const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
   if (!isSigValid) return false;
   const parsed = decodePayload(payloadB64);
   return Boolean(parsed && parsed.vendorId);
 }
 
-async function isValidAdminSession(cookieValue: string | undefined): Promise<boolean> {
-  if (!cookieValue) return false;
-  // Dual-accept legacy cookie during 24h migration window unless disabled
-  if (process.env.ALLOW_LEGACY_ADMIN_COOKIE !== "false" && cookieValue === "true") {
-    return true;
-  }
-  if (!cookieValue.includes(".")) return false;
+interface AdminSessionInfo {
+  isValid: boolean;
+  adminRole: "superadmin" | "station_manager" | "ticketing_admin";
+}
+
+async function getAdminSessionInfo(cookieValue: string | undefined): Promise<AdminSessionInfo | null> {
+  if (!cookieValue || !cookieValue.includes(".")) return null;
   const [payloadB64, sig] = cookieValue.split(".");
-  if (!payloadB64 || !sig) return false;
-  const secret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD || "goodlife_admin_secret_fallback_salt";
+  if (!payloadB64 || !sig) return null;
+  const secret = process.env.ADMIN_SESSION_SECRET?.trim() || process.env.ADMIN_PASSWORD?.trim();
+  if (!secret) return null; // Fail closed: strictly no hardcoded fallback salt
   const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
-  if (!isSigValid) return false;
+  if (!isSigValid) return null;
   const parsed = decodePayload(payloadB64);
-  if (!parsed || parsed.role !== "admin") return false;
+  if (!parsed || parsed.role !== "admin") return null;
   if (typeof parsed.exp === "number" && Math.floor(Date.now() / 1000) > parsed.exp) {
-    return false;
+    return null;
   }
-  return true;
+  return {
+    isValid: true,
+    adminRole: parsed.adminRole || "superadmin",
+  };
 }
 
 async function isValidPresenterSession(cookieValue: string | undefined): Promise<boolean> {
@@ -110,7 +116,6 @@ async function isValidPresenterSession(cookieValue: string | undefined): Promise
   return true;
 }
 
-
 export async function middleware(request: NextRequest) {
   const session = request.cookies.get("goodlife_admin_session")?.value;
   const vendorSession = request.cookies.get("goodlife_vendor_session")?.value;
@@ -118,7 +123,9 @@ export async function middleware(request: NextRequest) {
   const presenterSession = request.cookies.get("goodlife_presenter_session")?.value;
   const pathname = request.nextUrl.pathname;
 
-  const isAdmin = await isValidAdminSession(session);
+  const adminInfo = await getAdminSessionInfo(session);
+  const isAdmin = Boolean(adminInfo?.isValid);
+  const adminRole = adminInfo?.adminRole || "superadmin";
   const isPresenter = await isValidPresenterSession(presenterSession);
 
   // Presenter portal page protection
@@ -148,7 +155,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Protect admin page routes
+  // Protect admin page routes & enforce RBAC
   if (pathname.startsWith("/admin")) {
     if (pathname === "/admin/scanner" && (await isValidScannerSession(scannerSession))) {
       const url = request.nextUrl.clone();
@@ -159,6 +166,25 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       return NextResponse.redirect(url);
+    }
+
+    // Role-based route gating:
+    // station_manager can ONLY access /admin/radio/* (blocked from dashboard tickets, vendors, settlements, budget)
+    if (adminRole === "station_manager") {
+      if (!pathname.startsWith("/admin/radio")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/radio";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // ticketing_admin CANNOT touch /admin/radio/*
+    if (adminRole === "ticketing_admin") {
+      if (pathname.startsWith("/admin/radio")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/dashboard";
+        return NextResponse.redirect(url);
+      }
     }
   }
 
@@ -208,86 +234,49 @@ export async function middleware(request: NextRequest) {
     const publicAdminRoutes = ["/api/admin/login", "/api/admin/logout", "/api/admin/me"];
     
     // Gate scanners can call ticket scan verification API
-    if (pathname.startsWith("/api/admin/scan/")) {
-      if (!isAdmin && !(await isValidScannerSession(scannerSession))) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-    } else if (!publicAdminRoutes.includes(pathname) && !isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  // Protect ticket-tiers mutations
-  if (pathname.startsWith("/api/ticket-tiers") && request.method !== "GET") {
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  // Protect events routes (except public GET on /api/events/active)
-  if (pathname.startsWith("/api/events")) {
-    // Allow public access to active event
-    if (pathname === "/api/events/active" && request.method === "GET") {
+    if (pathname.startsWith("/api/admin/scan/") && (await isValidScannerSession(scannerSession))) {
       return NextResponse.next();
     }
-    // Protect all other event routes
+
+    if (publicAdminRoutes.includes(pathname)) {
+      return NextResponse.next();
+    }
+
     if (!isAdmin) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Role-based API route gating
+    if (adminRole === "station_manager") {
+      // station_manager can ONLY access /api/admin/radio/*
+      if (!pathname.startsWith("/api/admin/radio")) {
+        return NextResponse.json({ error: "Forbidden: Station managers cannot access ticketing or finance APIs" }, { status: 403 });
+      }
+    }
+
+    if (adminRole === "ticketing_admin") {
+      // ticketing_admin CANNOT touch /api/admin/radio/*
+      if (pathname.startsWith("/api/admin/radio")) {
+        return NextResponse.json({ error: "Forbidden: Ticketing admins cannot access radio management APIs" }, { status: 403 });
+      }
+    }
   }
 
-  // Protect vendor page routes
-  if (pathname.startsWith("/vendor/") || pathname === "/vendor") {
+  // Vendor routes
+  if (pathname.startsWith("/vendor")) {
     const isVendorValid = await isValidVendorSession(vendorSession);
     if (pathname === "/vendor/login") {
-      if (isVendorValid) {
+      if (isVendorValid || isAdmin) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/sell";
         return NextResponse.redirect(url);
       }
     } else {
-      if (!isVendorValid) {
+      if (!isVendorValid && !isAdmin) {
         const url = request.nextUrl.clone();
         url.pathname = "/vendor/login";
         return NextResponse.redirect(url);
       }
-    }
-  }
-
-  // Protect vendor API routes
-  if (pathname.startsWith("/api/vendor/") || pathname === "/api/vendor") {
-    const isPublicRoute =
-      pathname === "/api/vendor/auth" ||
-      pathname === "/api/vendor/logout" ||
-      pathname === "/api/vendor/mpesa/status"; // read-only; TABPAY_ refs only (see route)
-
-    // Tab actions are reachable from the ADMIN customer-audit panel as well as
-    // from the vendor's own /vendor/tabs page, so the admin cookie is accepted
-    // here. Scoped to `/api/vendor/tabs/` on purpose: this does NOT let an
-    // admin cookie stand in for a vendor session on checkout, sales, metrics or
-    // the customer list, where `vendorId` in the body drives real money
-    // movement and those handlers still resolve the vendor from the session.
-    //
-    // The handlers re-check ownership via lib/vendor-tab-auth.ts — this is a
-    // gate, not the authorization.
-    const isAdminTabAction =
-      isAdmin && pathname.startsWith("/api/vendor/tabs/");
-
-    if (
-      !isPublicRoute &&
-      !isAdminTabAction &&
-      !(await isValidVendorSession(vendorSession))
-    ) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  // Redirect to dashboard if logged in and trying to access login page
-  if (pathname === "/login") {
-    if (isAdmin) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/admin/dashboard";
-      return NextResponse.redirect(url);
     }
   }
 
@@ -298,16 +287,11 @@ export const config = {
   matcher: [
     "/admin/:path*",
     "/scanner/:path*",
-    "/scanner",
-    "/login",
     "/vendor/:path*",
+    "/presenter/:path*",
     "/api/admin/:path*",
     "/api/scanner/:path*",
-    "/api/vendor/:path*",
-    "/api/event-details",
-    "/api/ticket-tiers/:path*",
-    "/api/events/:path*",
-    "/presenter/:path*",
     "/api/presenter/:path*",
+    "/api/event-details",
   ],
 };

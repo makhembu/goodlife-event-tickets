@@ -2,24 +2,49 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/admin-session";
 
 /**
- * Who is acting on a customer tab.
- *
- * Tabs are a vendor-side feature (`app/vendor/tabs`), and their routes were
- * gated on the `goodlife_vendor_session` cookie only. That left the ADMIN
- * customer-audit panel (`components/admin/VendorDetailDrawer.tsx`) unable to
- * act on the very balances it displayed: an admin could see a customer owed
- * KES 4,500 and had no way to record a payment, send a reminder, or settle the
- * tab without logging out of the dashboard and into a stall operator's PIN.
- *
- * The admin cookie is therefore accepted as a superuser — the same precedent
- * as `app/api/scanner/auth/route.ts`, where the master admin password is a
- * superuser bypass on a device-local session.
- *
- * Note the asymmetry with `middleware.ts`: the vendor session there is
- * HMAC-signed, whereas `goodlife_vendor_session` is only base64 JSON. So
- * `vendorId` arriving from a *request body* is always untrusted, and nothing
- * in this file should be read as validating one.
+ * Validates HMAC-SHA256 signature and returns decoded vendor session payload.
+ * Fail closed: requires VENDOR_SESSION_SECRET, TAB_SELF_PAY_SECRET, or PAYHERO_CALLBACK_TOKEN.
  */
+export async function verifyVendorSession(cookieValue: string | undefined | null): Promise<any | null> {
+  if (!cookieValue || !cookieValue.includes(".")) return null;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return null;
+
+  const secret =
+    process.env.VENDOR_SESSION_SECRET?.trim() ||
+    process.env.TAB_SELF_PAY_SECRET?.trim() ||
+    process.env.PAYHERO_CALLBACK_TOKEN?.trim();
+  if (!secret) return null; // Fail closed
+
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const base64 = sig.replace(/-/g, "+").replace(/_/g, "/");
+    const padLen = (4 - (base64.length % 4)) % 4;
+    const padded = base64 + "=".repeat(padLen);
+    const binary = atob(padded);
+    const sigBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      sigBytes[i] = binary.charCodeAt(i);
+    }
+    const isValid = await crypto.subtle.verify("HMAC", key, sigBytes, enc.encode(payloadB64));
+    if (!isValid) return null;
+
+    const payloadRaw = Buffer.from(payloadB64, "base64url").toString("utf8");
+    const parsed = JSON.parse(payloadRaw);
+    if (!parsed || !parsed.vendorId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export interface TabActor {
   /** null for an admin acting outside any single vendor account. */
   vendorId: number | null;
@@ -33,7 +58,7 @@ export async function isAdminSession(request: NextRequest): Promise<boolean> {
   return await verifyAdminSession(session);
 }
 
-/** Decode the vendor session, or null when absent/unparseable. */
+/** Decode and cryptographically verify the vendor session, or null when absent/unparseable. */
 export async function getTabActor(request: NextRequest): Promise<TabActor | null> {
   if (await isAdminSession(request)) {
     return { vendorId: null, operatorId: null, isAdmin: true };
@@ -42,25 +67,14 @@ export async function getTabActor(request: NextRequest): Promise<TabActor | null
   const sessionCookie = request.cookies.get("goodlife_vendor_session");
   if (!sessionCookie || !sessionCookie.value) return null;
 
-  try {
-    const raw = sessionCookie.value.includes(".")
-      ? sessionCookie.value.split(".")[0]
-      : sessionCookie.value;
-    let parsed: any;
-    try {
-      parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    } catch {
-      parsed = JSON.parse(atob(raw));
-    }
-    if (!parsed || !parsed.vendorId) return null;
-    return {
-      vendorId: Number(parsed.vendorId),
-      operatorId: parsed.operatorId != null ? Number(parsed.operatorId) : null,
-      isAdmin: false
-    };
-  } catch {
-    return null;
-  }
+  const parsed = await verifyVendorSession(sessionCookie.value);
+  if (!parsed || !parsed.vendorId) return null;
+
+  return {
+    vendorId: Number(parsed.vendorId),
+    operatorId: parsed.operatorId != null ? Number(parsed.operatorId) : null,
+    isAdmin: false,
+  };
 }
 
 /**
@@ -78,7 +92,7 @@ export function tabOwnershipGuard(
   if (actor.isAdmin) return null;
   if (tabVendorId && tabVendorId !== actor.vendorId) {
     return NextResponse.json(
-      { success: false, message: "Forbidden" },
+      { error: "Forbidden: You cannot access tabs belonging to another vendor" },
       { status: 403 }
     );
   }

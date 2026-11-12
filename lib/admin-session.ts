@@ -1,16 +1,23 @@
 /**
  * HMAC-SHA256 Admin Session Token Management.
- * Implements specifications from RADIO-MASTER-PLAN.md §5.1 / D4.
- * Dual-accepts signed tokens and legacy session cookies during migration window.
+ * Implements specifications from RADIO-MASTER-PLAN.md §5.1 / D4 and Phase 5 RBAC.
+ * Supports roles: "superadmin" | "station_manager" | "ticketing_admin" (defaults to "superadmin").
+ * Fail closed: strictly rejects legacy unhashed/unauthenticated cookies.
  */
 
-const ADMIN_SECRET =
-  process.env.ADMIN_SESSION_SECRET ||
-  process.env.ADMIN_PASSWORD ||
-  "goodlife_admin_secret_fallback_salt";
+export type AdminRole = "superadmin" | "station_manager" | "ticketing_admin";
 
-const ALLOW_LEGACY_ADMIN_COOKIE =
-  process.env.ALLOW_LEGACY_ADMIN_COOKIE !== "false"; // Default true for 24h dual-accept
+export interface AdminSessionPayload {
+  role: "admin";
+  adminRole?: AdminRole;
+  email?: string;
+  exp: number;
+}
+
+function getAdminSecret(): string | null {
+  const secret = process.env.ADMIN_SESSION_SECRET?.trim() || process.env.ADMIN_PASSWORD?.trim();
+  return secret || null;
+}
 
 function base64UrlEncode(str: string): string {
   const bytes = new TextEncoder().encode(str);
@@ -55,43 +62,61 @@ async function computeHmac(data: string, secret: string): Promise<string> {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export async function signAdminSession(maxAgeSec: number = 86400): Promise<string> {
-  const payload = JSON.stringify({
+export async function signAdminSession(
+  maxAgeSec: number = 86400,
+  adminRole: AdminRole = "superadmin",
+  email?: string
+): Promise<string> {
+  const secret = getAdminSecret();
+  if (!secret) {
+    throw new Error("Admin session secret not configured. Fail-closed.");
+  }
+
+  const payload: AdminSessionPayload = {
     role: "admin",
+    adminRole,
+    email: email || "admin@goodlife.com",
     exp: Math.floor(Date.now() / 1000) + maxAgeSec,
-  });
-  const payloadB64 = base64UrlEncode(payload);
-  const signature = await computeHmac(payloadB64, ADMIN_SECRET);
+  };
+  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
+  const signature = await computeHmac(payloadB64, secret);
   return `${payloadB64}.${signature}`;
 }
 
-export async function verifyAdminSession(token: string | null | undefined): Promise<boolean> {
-  if (!token) return false;
+export async function getAdminSessionPayload(token: string | null | undefined): Promise<AdminSessionPayload | null> {
+  if (!token) return null;
 
-  // 1. Dual-accept legacy "true" cookie during migration window
-  if (process.env.ALLOW_LEGACY_ADMIN_COOKIE !== "false" && token === "true") {
-    return true;
+  // Legacy cookie cutover is complete: legacy "true" is rejected (fail-closed)
+  if (token === "true") {
+    return null;
   }
 
-  // 2. Verify signed token: payload.signature
   const parts = token.split(".");
-  if (parts.length !== 2) return false;
+  if (parts.length !== 2) return null;
   const [payloadB64, signature] = parts;
 
+  const secret = getAdminSecret();
+  if (!secret) return null;
+
   try {
-    const expectedSig = await computeHmac(payloadB64, ADMIN_SECRET);
-    if (signature !== expectedSig) return false;
+    const expectedSig = await computeHmac(payloadB64, secret);
+    if (signature !== expectedSig) return null;
 
     const decoded = base64UrlDecode(payloadB64);
-    if (!decoded) return false;
-    const data = JSON.parse(decoded);
+    if (!decoded) return null;
+    const data: AdminSessionPayload = JSON.parse(decoded);
 
-    if (data.role !== "admin") return false;
+    if (data.role !== "admin") return null;
     if (typeof data.exp === "number" && Math.floor(Date.now() / 1000) > data.exp) {
-      return false; // Expired
+      return null; // Expired
     }
-    return true;
+    return data;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function verifyAdminSession(token: string | null | undefined): Promise<boolean> {
+  const payload = await getAdminSessionPayload(token);
+  return payload !== null;
 }

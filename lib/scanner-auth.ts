@@ -47,10 +47,10 @@ export async function isValidScannerSession(cookieValue: string | undefined | nu
   const [payloadB64, sig] = cookieValue.split(".");
   if (!payloadB64 || !sig) return false;
   const secret =
-    process.env.SCANNER_SESSION_SECRET ||
-    process.env.TAB_SELF_PAY_SECRET ||
-    process.env.PAYHERO_CALLBACK_TOKEN ||
-    "goodlife_scanner_secret_salt";
+    process.env.SCANNER_SESSION_SECRET?.trim() ||
+    process.env.TAB_SELF_PAY_SECRET?.trim() ||
+    process.env.PAYHERO_CALLBACK_TOKEN?.trim();
+  if (!secret) return false; // Fail closed: strictly no hardcoded salt
   const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
   if (!isSigValid) return false;
   const decoded = base64UrlDecode(payloadB64);

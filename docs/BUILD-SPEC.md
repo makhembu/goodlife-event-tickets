@@ -14,7 +14,7 @@ Read docs/ARCHITECTURE.md and docs/RADIO-PLAN.md before every phase. If the code
 8. Stream keys are show-once: shown in full once at creation/regeneration; only a hash and a preview prefix (e.g. gl_live_...9f4a) are stored.
 9. Default listener audio is low-bitrate (64 to 96 kbps). 192 kbps is an opt-in "Hi-Fi" toggle.
 10. Times: store UTC, generate recurrences in Africa/Nairobi (EAT, no DST), display Nairobi by default with a toggle to the viewer's local time.
-11. Tips accumulate in a station ledger; payouts are manual for now.
+11. Tips are GOODLIFE revenue paid into the GOODLIFE PayHero account. Presenters are staff and are paid through the existing staff module. The radio app does not track tip balances owed to presenters and does not pay out.
 12. Pre-recorded show fallback is a stretch goal, not on the critical path.
 
 ## Rules for every phase

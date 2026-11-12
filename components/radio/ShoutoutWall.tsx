@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { MessageSquare, Send, Music, Sparkles, Check, AlertCircle } from "lucide-react";
+import { MessageSquare, Send, Music, Sparkles, Check, AlertCircle, Heart } from "lucide-react";
+import TipModal from "@/components/radio/TipModal";
 
 interface ShoutoutWallProps {
   className?: string;
@@ -28,6 +29,7 @@ export default function ShoutoutWall({ className = "" }: ShoutoutWallProps) {
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showTipModal, setShowTipModal] = useState(false);
 
   // Poll Shoutouts every 15s
   useEffect(() => {
@@ -110,9 +112,19 @@ export default function ShoutoutWall({ className = "" }: ShoutoutWallProps) {
           </div>
         </div>
 
-        <span className="bg-brand-accent/20 border border-brand-navy text-brand-navy font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded">
-          MODERATED LIVE
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTipModal(true)}
+            className="flex items-center gap-1.5 bg-[#C8A54A] hover:bg-[#d9b65b] text-[#142B4C] font-mono text-[10px] font-black uppercase px-2.5 py-1 rounded border border-[#142B4C] cursor-pointer shadow-xs transition-transform active:scale-95"
+          >
+            <Heart className="w-3 h-3 fill-[#142B4C]" />
+            <span>TIP STATION</span>
+          </button>
+          <span className="bg-brand-accent/20 border border-brand-navy text-brand-navy font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded">
+            MODERATED LIVE
+          </span>
+        </div>
       </div>
 
       {/* Live Shoutout Ticker / Feed */}
@@ -266,6 +278,11 @@ export default function ShoutoutWall({ className = "" }: ShoutoutWallProps) {
           Or send via WhatsApp: Message <strong className="text-brand-navy">SHOUT &lt;your message&gt;</strong> to the station number.
         </p>
       </form>
+
+      <TipModal
+        isOpen={showTipModal}
+        onClose={() => setShowTipModal(false)}
+      />
     </div>
   );
 }

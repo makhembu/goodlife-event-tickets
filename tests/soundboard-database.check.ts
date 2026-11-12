@@ -73,7 +73,11 @@ async function runTests() {
   );
 
   console.log("\n--- SECTION 2: Behavioral Unit Tests (Admin Session Auth Verification) ---");
-  check("checkAdminSessionValid accepts valid session cookie", (await checkAdminSessionValid("true")) === true);
+  process.env.ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "test_admin_session_secret_for_hardening_suite";
+  const { signAdminSession } = await import("../lib/admin-session");
+  const testSignedAdminToken = await signAdminSession(3600);
+  check("checkAdminSessionValid accepts valid session cookie", (await checkAdminSessionValid(testSignedAdminToken)) === true);
+  check("checkAdminSessionValid rejects legacy 'true' cookie", (await checkAdminSessionValid("true")) === false);
   check("checkAdminSessionValid rejects false string", (await checkAdminSessionValid("false")) === false);
   check("checkAdminSessionValid rejects undefined cookie", (await checkAdminSessionValid(undefined)) === false);
   check("checkAdminSessionValid rejects arbitrary token injection", (await checkAdminSessionValid("bearer-token-123")) === false);

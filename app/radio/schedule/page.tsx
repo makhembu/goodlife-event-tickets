@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Clock, Calendar, Radio, Globe, CalendarPlus, ChevronRight } from "lucide-react";
+import SponsorBanner from "@/components/radio/SponsorBanner";
 
 interface SlotData {
   id: number;
@@ -168,7 +169,9 @@ export default function SchedulePage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 py-8 sm:px-8">
+      <main className="max-w-6xl mx-auto px-4 py-8 sm:px-8 space-y-6">
+        <SponsorBanner />
+
         {/* Day Switcher Tabs */}
         <div className="flex overflow-x-auto pb-2 mb-8 border-b-2 border-brand-navy gap-2 sm:gap-4 no-scrollbar">
           {WEEKDAYS.map((dayName, idx) => {

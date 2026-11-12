@@ -36,6 +36,14 @@ export async function POST(
         [presenterId]
       );
 
+      const { recordRadioAuditLog } = await import("@/lib/radio/ops-service");
+      await recordRadioAuditLog({
+        adminActor: "admin",
+        action: "revoke_stream_key",
+        targetType: "presenter",
+        targetId: presenterId,
+      });
+
       return NextResponse.json({
         success: true,
         action: "revoke",
@@ -62,6 +70,15 @@ export async function POST(
     }
 
     const presenter = updateRes.rows[0];
+
+    const { recordRadioAuditLog } = await import("@/lib/radio/ops-service");
+    await recordRadioAuditLog({
+      adminActor: "admin",
+      action: "regenerate_stream_key",
+      targetType: "presenter",
+      targetId: presenterId,
+      details: { prefix },
+    });
 
     return NextResponse.json({
       success: true,

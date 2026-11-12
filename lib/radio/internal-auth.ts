@@ -3,8 +3,9 @@ import crypto from "crypto";
 
 export function getInternalBridgeSecret(): string | null {
   const secret = (
-    process.env.RADIO_BRIDGE_SECRET ||
     process.env.GOODLIFE_RADIO_SECRET_KEY ||
+    process.env.RADIO_BRIDGE_SECRET ||
+    process.env.RADIO_DAEMON_SECRET ||
     ""
   ).replace(/^["']|["']$/g, "").trim();
 

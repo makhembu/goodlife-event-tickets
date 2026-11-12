@@ -28,7 +28,11 @@ export async function POST(request: NextRequest) {
   try {
     const rawExpected = process.env.PAYHERO_CALLBACK_TOKEN?.replace(/^["']|["']$/g, "").trim();
     if (!rawExpected) {
-      console.warn("[payhero/callback] WARNING: PAYHERO_CALLBACK_TOKEN is unset on the server. Skipping token verification.");
+      if (process.env.NODE_ENV === "production") {
+        console.error("[payhero/callback] FATAL: PAYHERO_CALLBACK_TOKEN is unset in production. Rejecting callback.");
+        return NextResponse.json({ error: "Server misconfiguration: PAYHERO_CALLBACK_TOKEN required in production" }, { status: 500 });
+      }
+      console.warn("[payhero/callback] WARNING: PAYHERO_CALLBACK_TOKEN is unset on the server. Skipping token verification in non-production.");
     } else {
       const url = new URL(request.url);
       const queryToken = url.searchParams.get("token") || "";
@@ -86,6 +90,23 @@ export async function POST(request: NextRequest) {
       const providerReference = String(
         verifiedData.provider_reference || payload?.provider_reference || payload?.reference
       );
+
+      // Check if this is a Radio Listener Tip (reference starts with TIP-)
+      if (ourReference.startsWith("TIP-")) {
+        const { fulfillRadioTip } = await import("@/lib/radio/ops-service");
+        const tipResult = await fulfillRadioTip({
+          reference: ourReference,
+          payheroReference: payload?.reference,
+          mpesaReceipt: providerReference,
+          amountPaid,
+        });
+
+        return NextResponse.json({
+          message: "Radio tip processed",
+          reference: ourReference,
+          ...tipResult,
+        });
+      }
 
       // Check if this is a Tab Remote Self-Pay payment
       if (ourReference.startsWith("TABPAY_")) {
@@ -155,6 +176,12 @@ export async function POST(request: NextRequest) {
     }
 
     // failed / cancelled
+    if (ourReference.startsWith("TIP-")) {
+      const { markRadioTipFailed } = await import("@/lib/radio/ops-service");
+      await markRadioTipFailed(ourReference, payload?.message || "PayHero callback failure");
+      return NextResponse.json({ message: "Radio tip failure recorded", reference: ourReference });
+    }
+
     recordPayheroFailure({
       phone: payload?.phone || payload?.phone_number,
       reference: ourReference,

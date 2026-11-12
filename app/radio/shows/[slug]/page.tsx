@@ -6,6 +6,7 @@ import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
 import CatchUpVault from "@/components/radio/CatchUpVault";
 import ShowReminderButton from "@/components/radio/ShowReminderButton";
+import PresenterTipButton from "@/components/radio/PresenterTipButton";
 import { ArrowLeft, Clock, Calendar, CalendarPlus, Radio, Disc3, ExternalLink } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -197,6 +198,11 @@ export default async function ShowDetailPage({
               </div>
 
               <ShowReminderButton showId={show.id} showTitle={show.title} />
+
+              <PresenterTipButton
+                presenterId={show.presenter_id}
+                presenterName={show.dj_name}
+              />
 
               <a
                 href={`/api/radio/shows/${show.slug}/calendar.ics`}

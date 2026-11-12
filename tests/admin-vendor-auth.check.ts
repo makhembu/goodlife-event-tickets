@@ -18,6 +18,7 @@ function check(desc: string, condition: boolean) {
 }
 
 async function runTests() {
+  process.env.ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || "test_admin_session_secret_for_hardening_suite";
   console.log("Testing Admin Session & Vendor Takeover Auth...");
 
   // 1. Signed session generation & verification
@@ -36,10 +37,8 @@ async function runTests() {
   check("verifyAdminSession rejects null token", (await verifyAdminSession(null)) === false);
   check("verifyAdminSession rejects random string", (await verifyAdminSession("random_cookie_value")) === false);
 
-  // 4. Dual-accept legacy cookie
-  if (process.env.ALLOW_LEGACY_ADMIN_COOKIE !== "false") {
-    check("verifyAdminSession accepts legacy 'true' cookie", (await verifyAdminSession("true")) === true);
-  }
+  // 4. Fail-closed on legacy cookie (Phase 5 hardening: legacy 'true' is strictly rejected)
+  check("verifyAdminSession strictly rejects legacy 'true' cookie", (await verifyAdminSession("true")) === false);
 
   // 5. Test Mock Request with signed admin cookie in isAdminSession & getTabActor
   const mockReq = new NextRequest("http://localhost:3000/api/admin/vendors/2/analytics", {

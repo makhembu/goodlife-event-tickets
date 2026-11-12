@@ -94,6 +94,10 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/contests/enter/route.ts:POST", "Public contest entry with max_winners cap and rate limits"],
   ["app/api/radio/reminders/route.ts:POST", "Public show reminder opt-in with rate limits"],
   ["app/api/radio/reminders/route.ts:DELETE", "Public show reminder unsubscribe by secret token"],
+  ["app/api/radio/sponsors/route.ts:GET", "Public active radio sponsors and promotions"],
+  ["app/api/radio/tips/initialize/route.ts:POST", "Public radio listener tip STK initialization"],
+  ["app/api/radio/tips/verify/route.ts:GET", "Public radio listener tip status verification polling"],
+  ["app/api/cron/radio-health-monitor/route.ts:GET", "Internal cron job for radio health, noshows, and stream status monitoring"],
 
   // Session login/logout endpoints (unauthenticated by definition)
   ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],

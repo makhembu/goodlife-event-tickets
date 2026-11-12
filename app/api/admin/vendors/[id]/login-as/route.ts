@@ -80,7 +80,14 @@ export async function POST(
       redirectUrl: "/vendor/sell"
     });
 
-    const secret = process.env.VENDOR_SESSION_SECRET || process.env.TAB_SELF_PAY_SECRET || process.env.PAYHERO_CALLBACK_TOKEN || "goodlife_vendor_secret_salt";
+    const secret =
+      process.env.VENDOR_SESSION_SECRET?.trim() ||
+      process.env.TAB_SELF_PAY_SECRET?.trim() ||
+      process.env.PAYHERO_CALLBACK_TOKEN?.trim();
+    if (!secret) {
+      console.error("[Vendor Login-As] Missing session signing secret");
+      return NextResponse.json({ error: "Configuration error" }, { status: 500 });
+    }
     const payloadB64 = Buffer.from(JSON.stringify(sessionData)).toString("base64url");
     const sig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
     const signedToken = `${payloadB64}.${sig}`;

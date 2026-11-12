@@ -6,6 +6,7 @@ import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
 import CatchUpVault from "@/components/radio/CatchUpVault";
 import { ArrowLeft, Radio, Calendar, ExternalLink, Globe } from "lucide-react";
+import PresenterTipButton from "@/components/radio/PresenterTipButton";
 
 export const dynamic = "force-dynamic";
 
@@ -166,6 +167,14 @@ export default async function PresenterDetailPage({
             <p className="text-sm text-neutral-800 font-sans leading-relaxed pt-2">
               {presenter.bio || "Resident DJ & Radio Presenter broadcasting live on GOODLIFE Radio 254 from Nairobi."}
             </p>
+
+            {/* Listener Tip Support */}
+            <div className="pt-2 flex justify-center sm:justify-start">
+              <PresenterTipButton
+                presenterId={presenter.id}
+                presenterName={presenter.dj_name}
+              />
+            </div>
 
             {/* Social Links */}
             {Object.keys(socials).length > 0 && (

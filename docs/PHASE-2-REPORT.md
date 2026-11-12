@@ -249,3 +249,26 @@ Phase 2 successfully delivered automated live ingest, schedule enforcement, and 
 1. **Moderated Listener Shoutouts & Song Requests:** Web request form on `/radio` plus inbound WhatsApp webhook integration with WAHA/Cloud API.
 2. **Presenter Studio Cartwall / Live Drops:** Cartwall in presenter studio to trigger station jingles or read approved shoutouts on air.
 3. **M-Pesa Tips & Sponsor Slots:** PayHero STK push integration to tip the on-air DJ into the station ledger.
+
+---
+
+## 13. What is Not Done
+
+1. **Hardware / Real DJ Ingest Verification:**
+   - Ingest auth and stream takeover were verified via unit tests, curl, python daemon mocks, and ffmpeg sine tone broadcast (`scripts/test-stream-encoder.sh`).
+   - No physical DJ mixer or live DJ software (VirtualDJ, Mixxx, Serato, Traktor) was tested streaming real audio over an internet uplink.
+2. **Live Cloud VPS Playout Provisioning:**
+   - The deployment specification and container configuration were written (`home-server/DEPLOY-VPS.md`), but production provisioning on Hetzner/DigitalOcean was deferred until all code phases pass verification.
+3. **Live Set Track Identification / Cues:**
+   - Mastered live recordings capture raw 320kbps MP3/AAC streams; automated track splitting or real-time ACR/Shazam tracklist identification was not implemented.
+
+---
+
+## 14. Open Questions
+
+1. **Remote Uplink Harbor Buffering:**
+   - What buffer size (2s vs 5s) is optimal for Kenyan 4G / residential fiber links to prevent harbor stutter without adding excessive latency to live mic talk-back?
+2. **Automated Cover Broadcasts:**
+   - Should a presenter's cover request automatically dispatch a WhatsApp or SMS alert to all rostered presenters ("DJ X needs cover for 6PM Sunday"), or remain an admin-moderated workflow via the console?
+3. **R2 Audio Retention Lifecycle:**
+   - Unapproved private recordings consume Cloudflare R2 bucket storage indefinitely. Should an automated 60-day auto-purge policy be applied to unapproved sets?
