@@ -275,10 +275,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const ping = () => {
       const sid = listenerSessionIdRef.current;
       if (!sid) return;
+      const tz = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : null;
       fetch("/api/radio/heartbeat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, action: "ping", client: "listener" }),
+        body: JSON.stringify({ sessionId: sid, action: "ping", client: "listener", tz }),
         keepalive: true,
       }).catch(() => {});
     };
