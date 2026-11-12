@@ -360,8 +360,8 @@ async def run_follower_loop():
                                 try:
                                     await async_db("""
                                         INSERT INTO radio_drops 
-                                        (title, audio_url, category, is_active, persona, mood, script, target_track_id, status)
-                                        VALUES (%s, %s, 'ai_voice', true, 'DJ Smokey', 'hype', %s, %s, 'READY')
+                                        (title, audio_url, category, is_active, persona, mood, script, target_track_id, status, timing_type, created_at)
+                                        VALUES (%s, %s, 'ai_voice', true, 'DJ Smokey', 'live_air', %s, %s, 'READY', 'live_drop', NOW())
                                     """, (f"DJ Smokey - {title[:40]}", drop_url, script, next_track_id), fetch=False)
                                     print(f"[PlayoutFollower] Inserted into Postgres radio_drops for track {next_track_id}")
                                 except Exception as dbe:
