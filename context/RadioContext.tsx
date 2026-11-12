@@ -465,6 +465,24 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         availableDropsRef.current = data.drops;
       }
 
+      // Ingest authoritative upcoming drop prepared by Home Server daemon
+      if (data.upcoming_drop && data.upcoming_drop.drop_url) {
+        const u = data.upcoming_drop;
+        const upcomingId = `upcoming-${u.id}`;
+        if (!firedDropIdsRef.current.has(upcomingId) && !availableDropsRef.current.some((d) => d.id === upcomingId)) {
+          const freshUpcomingDrop: RadioDrop = {
+            id: upcomingId,
+            title: u.title || `${u.persona} · Upcoming`,
+            audio_url: u.drop_url,
+            persona: u.persona,
+            mood: u.mood,
+            target_track_id: String(u.target_track_id),
+            script: u.script,
+          };
+          availableDropsRef.current = [freshUpcomingDrop, ...availableDropsRef.current];
+        }
+      }
+
         try {
           localStorage.setItem(CACHED_SETS_KEY, JSON.stringify(data.sets.slice(0, 50)));
         } catch {}
@@ -775,70 +793,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         triggerOutroDropCrossoverRef.current();
       }
 
-      // JIT Dynamic Drop Generation: enabled exclusively in authenticated /admin/radio Studio cockpit
-      const CLIENT_JIT_ENABLED = Boolean(pathname?.startsWith("/admin/radio"));
-      if (
-        CLIENT_JIT_ENABLED &&
-        remainingSec <= 60 &&
-        remainingSec > 15 &&
-        !hasFiredOutroDropRef.current &&
-        !isDropPlayingRef.current &&
-        !isGeneratingDropRef.current
-      ) {
-        let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
-        if (!nextCandidate && backupSetsRef.current.length > 0) {
-          const sets = backupSetsRef.current;
-          const rawId = currentTrackIdRef.current || "";
-          const cleanId = rawId.replace(/^(set-|vault-|pl-\d+-)/, "");
-          let cIdx = sets.findIndex(
-            (s) => String(s.id) === cleanId || (audioRef.current && s.audio_url === audioRef.current.src)
-          );
-          if (cIdx === -1) cIdx = 0;
-          const nIdx = (cIdx + 1) % sets.length;
-          nextCandidate = sets[nIdx];
-        }
-
-        if (nextCandidate?.title) {
-          const nextKey = `jit-${(nextCandidate as any).id || nextCandidate.title}`;
-          if (lastPrefetchedTrackKeyRef.current !== nextKey) {
-            lastPrefetchedTrackKeyRef.current = nextKey;
-            isGeneratingDropRef.current = true;
-            fetch("/api/radio/drops/dynamic", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                nextTrackId: (nextCandidate as any).id,
-                nextTrackTitle: nextCandidate.title,
-                nextTrackArtist: nextCandidate.artist || nextCandidate.dj_name,
-                nextTrackGenre: (nextCandidate as any).genre,
-              }),
-            })
-              .then((r) => r.json())
-              .then((data) => {
-                if (data?.drop_url && data?.script) {
-                  const freshDrop: RadioDrop = {
-                    id: `dyn-${Date.now()}`,
-                    title: data.title || `${data.persona} · ${nextCandidate.title}`,
-                    audio_url: data.drop_url,
-                    persona: data.persona,
-                    mood: data.mood,
-                    target_track_id: (nextCandidate as any).id ? String((nextCandidate as any).id) : undefined,
-                    target_track_title: nextCandidate.title,
-                    script: data.script,
-                  };
-                  availableDropsRef.current = [freshDrop, ...availableDropsRef.current];
-                  console.log(`[RadioContext] 🎙️ JIT drop ready: "${data.script?.slice(0, 60)}..."`);
-                }
-              })
-              .catch((err) => console.warn("[RadioContext] JIT drop generation failed:", err))
-              .finally(() => {
-                isGeneratingDropRef.current = false;
-              });
-          }
-        }
-      }
-
-      // Preload next matching drop if available from station pool
+      // Preload next matching drop if available from station pool (pre-mastered on Home Server)
       if (clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
         let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
         if (!nextCandidate && backupSetsRef.current.length > 0) {
