@@ -5,8 +5,8 @@
     "broadcast_slot_lead_sec": 2.0,
     "max_drop_duration_sec": 28,
     "minimum_track_duration_for_drop_sec": 90,
-    "drop_cadence_min_tracks_between_drops": 3,
-    "drop_cooldown_min_sec": 600
+    "drop_cadence_min_tracks_between_drops": 2,
+    "drop_cooldown_min_sec": 300
   },
   "audio_standards": {
     "vocal_target_lufs": -14.0,

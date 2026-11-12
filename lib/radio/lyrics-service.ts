@@ -11,6 +11,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 function cleanString(str: string): string {
   return str
     .replace(/\(.*?\)|\[.*?\]/g, "")
+    .split(/\s+(?:ft\.?|feat\.?|featuring)\s+/i)[0]
     .replace(/[^a-zA-Z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim()
@@ -35,7 +36,7 @@ export async function fetchTrackLyrics(title: string, artist: string, durationSe
   };
 
   try {
-    // 1. Try with duration first
+    // 1. Try exact get with duration first
     let query = `https://lrclib.net/api/get?track_name=${encodeURIComponent(normTitle)}&artist_name=${encodeURIComponent(normArtist)}`;
     if (durationSec > 0) {
       query += `&duration=${Math.round(durationSec)}`;
@@ -48,8 +49,8 @@ export async function fetchTrackLyrics(title: string, artist: string, durationSe
       next: { revalidate: 86400 },
     });
 
-    // 2. If not found with exact duration, fall back to matching by track + artist
-    if (!resp.ok && durationSec > 0) {
+    // 2. If not found with exact duration, try relaxed get without duration
+    if (!resp.ok) {
       const relaxedQuery = `https://lrclib.net/api/get?track_name=${encodeURIComponent(normTitle)}&artist_name=${encodeURIComponent(normArtist)}`;
       resp = await fetch(relaxedQuery, {
         headers: {
@@ -57,6 +58,34 @@ export async function fetchTrackLyrics(title: string, artist: string, durationSe
         },
         next: { revalidate: 86400 },
       });
+    }
+
+    // 3. If still not found, try search fallback
+    if (!resp.ok) {
+      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${normTitle} ${normArtist}`)}`;
+      const searchResp = await fetch(searchUrl, {
+        headers: {
+          "User-Agent": "GoodLifeRadio/2.1 (broadcast-sync@goodlife.smwhr.space)",
+        },
+        next: { revalidate: 86400 },
+      });
+      if (searchResp.ok) {
+        const list = await searchResp.json();
+        if (Array.isArray(list) && list.length > 0) {
+          // Find first entry with syncedLyrics matching approximate duration
+          const match = list.find((x: any) => x.syncedLyrics && (durationSec <= 0 || Math.abs((x.duration || 0) - durationSec) <= 10)) || list[0];
+          if (match && (match.syncedLyrics || match.plainLyrics)) {
+            const result: LyricsResult = {
+              synced_lyrics: match.syncedLyrics || null,
+              plain_lyrics: match.plainLyrics || null,
+              is_instrumental: Boolean(match.instrumental),
+              confidence_score: match.syncedLyrics ? 1.0 : 0.6,
+            };
+            lyricsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+            return result;
+          }
+        }
+      }
     }
 
     if (resp.ok) {

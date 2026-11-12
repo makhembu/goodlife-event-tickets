@@ -166,6 +166,10 @@ def get_approved_trends() -> list:
 
 async def generate_script_with_retries(client: httpx.AsyncClient, title: str, artist: str, tier: int = 2) -> tuple[str, str, int]:
     """Generates structured DJ Smokey script, validating through deterministic NFKC phrase gate."""
+    # Clean track title and artist for natural radio announcement
+    clean_title = re.sub(r'\(.*?\)|\[.*?\]', '', title).split(" ft.")[0].split(" feat.")[0].strip() or title
+    clean_artist = re.sub(r'\(.*?\)|\[.*?\]', '', artist).split(" ft.")[0].split(" feat.")[0].strip() or artist
+
     # Check for active Storyline lease
     storyline_lease = dj_memory_manager.acquire_storyline_lease(WORKER_ID, lease_sec=75)
     arc_id = None
@@ -184,20 +188,22 @@ async def generate_script_with_retries(client: httpx.AsyncClient, title: str, ar
         "You are DJ Smokey, the premier on-air radio presenter on GOODLIFE Radio 254.\n"
         "You broadcast authentic Kenyan urban radio vibes with high energy, playful punchlines, and deep charisma.\n\n"
         "CRITICAL BROADCAST CONSTRAINTS:\n"
-        "1. CODE-SWITCHING: Blend natural Kenyan English and vibrant Sheng.\n"
-        "2. STRICTLY FORBIDDEN WORDS: NEVER use 'wazi', 'waz', or 'wazi wazi'. They are permanently banned.\n"
-        "3. FORBIDDEN OPENERS: NEVER start with 'Yo', 'Yoo', or 'Yo what is good'. Never use 'Rise and shine'.\n"
-        "4. FORBIDDEN DOMAINS: NEVER say '.co.ke', '.space', or mention a URL domain. Always say 'the Goodlife website'.\n"
-        "5. VENUE & FESTIVAL FOCUS: Hype the GOODLIFE Festival at Marara Camp, Thika. Nyama choma grills, heavy sound, open skies.\n"
-        "6. LENGTH: 2 punchy sentences maximum (18 to 32 words).\n"
-        "7. Return ONLY the spoken radio script. No quotation marks, no emojis.\n"
+        f"1. MANDATORY TRACK ANNOUNCEMENT: You MUST naturally introduce the incoming song '{clean_title}' by '{clean_artist}'. A great radio host ALWAYS announces the music!\n"
+        "2. AUTHENTIC NAIROBI RADIO FLOW: Smooth, witty, confident Nairobi radio personality. Blend natural Kenyan English and vibrant Sheng cleanly. Never use broken or awkward grammar like 'Si un drama'.\n"
+        "3. FORBIDDEN WORDS: NEVER use 'wazi', 'waz', or 'wazi wazi'. They are permanently banned.\n"
+        "4. FORBIDDEN CLICHÉS: NEVER say 'Next level sound incoming', 'ready for the next chapter', 'feel the vibe', 'turn the volume up', or 'here we go'.\n"
+        "5. FORBIDDEN OPENERS: NEVER start with 'Yo', 'Yoo', 'Yo what is good', or 'Rise and shine'.\n"
+        "6. FORBIDDEN DOMAINS: NEVER say '.co.ke', '.space', or mention a URL domain. Always say 'the Goodlife website'.\n"
+        "7. FESTIVAL TIE-IN: Drop a sharp, organic teaser about the GOODLIFE Festival at Marara Camp, Thika (nyama choma grills, heavy sound, camping passes).\n"
+        "8. LENGTH: Exactly 2 punchy sentences (20 to 35 words).\n"
+        "9. Return ONLY the spoken radio script. No quotation marks, no emojis.\n"
     )
 
     user_prompt = (
-        f"Track incoming: '{title}' by '{artist}'.\n"
+        f"Incoming track dropping right now: '{clean_title}' by '{clean_artist}'.\n"
         f"{storyline_context}\n"
         f"{trend_context}\n"
-        f"Hype the transition into '{title}' and drop a quick punchy cliffhanger or thought."
+        f"Announce '{clean_title}' by '{clean_artist}', tie it into the Marara Camp festival vibe, and drop a quick punchy cliffhanger."
     )
 
     for attempt in range(2):
@@ -249,16 +255,21 @@ async def generate_script_with_retries(client: httpx.AsyncClient, title: str, ar
         if generated:
             is_clean, reason, clean_script = phrase_validator.sanitize_and_validate_script(generated)
             if is_clean:
-                return clean_script, arc_id, ep_num
+                has_mention, mention_reason = phrase_validator.validate_track_mention(clean_script, clean_title, clean_artist)
+                if has_mention:
+                    return clean_script, arc_id, ep_num
+                else:
+                    print(f"[PhraseGate Warning] Attempt {attempt+1} rejected due to {mention_reason}: '{clean_script}'")
+                    user_prompt += f" REJECTED: You forgot to mention the song '{clean_title}'. You MUST say '{clean_title}' by '{clean_artist}'."
             else:
                 print(f"[PhraseGate Warning] Attempt {attempt+1} rejected due to {reason}: '{generated}'")
-                user_prompt += f" REJECTED: Avoid {reason}. Write a clean, high-energy transition line."
+                user_prompt += f" REJECTED: Avoid {reason}. Write a clean, high-energy line announcing '{clean_title}'."
 
-    # Pre-validated safe fallback
+    # Pre-validated safe fallback with explicit track title and artist
     safe_fallbacks = [
-        f"Grounds are set for the Sunday Festival at Marara Camp Thika! Turn the volume up, GOODLIFE Radio rolling straight into {title} by {artist}!",
-        f"Festival weather outside and pure rhythm inside! Lock your passes on the Goodlife website now before tiers vanish, taking you into {title}!",
-        f"Heavy sound systems warming up and nyama choma on the highway! DJ Smokey on the decks for GOODLIFE Radio, let us run {title} by {artist}!"
+        f"Grounds are getting set for the Sunday Festival at Marara Camp Thika! DJ Smokey sliding you straight into {clean_title} by {clean_artist}!",
+        f"Festival weather outside and pure rhythm on GOODLIFE Radio! Lock your passes on the Goodlife website now before tiers vanish, taking you into {clean_title} by {clean_artist}!",
+        f"Heavy sound systems warming up and nyama choma on the Thika highway! DJ Smokey on the decks, let us run {clean_title} by {clean_artist}!"
     ]
     fallback_choice = random.choice(safe_fallbacks)
     return fallback_choice, arc_id, ep_num
