@@ -41,7 +41,7 @@ export async function requirePresenter(
   // Fetch presenter from database to verify active status
   try {
     const res = await neonQuery(
-      `SELECT id, full_name, dj_name, slug, email, phone, must_change_password,
+      `SELECT id, full_name, dj_name, slug, email, phone, password_hash, must_change_password,
               bio, avatar_url, social_links, status, failed_login_count, locked_until,
               created_at, updated_at
        FROM presenters

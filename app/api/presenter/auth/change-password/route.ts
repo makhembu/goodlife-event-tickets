@@ -38,9 +38,25 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify current password
+    let passwordHash = presenter.password_hash;
+    if (!passwordHash) {
+      const dbRes = await neonQuery(
+        `SELECT password_hash FROM presenters WHERE id = $1 LIMIT 1;`,
+        [presenter.id]
+      );
+      passwordHash = dbRes.rows?.[0]?.password_hash;
+    }
+
+    if (!passwordHash) {
+      return NextResponse.json(
+        { error: "Presenter password hash not found. Please contact administration." },
+        { status: 500 }
+      );
+    }
+
     const isCurrentValid = await comparePresenterPassword(
       currentPassword,
-      presenter.password_hash!
+      passwordHash
     );
     if (!isCurrentValid) {
       return NextResponse.json({ error: "Incorrect current password" }, { status: 401 });
