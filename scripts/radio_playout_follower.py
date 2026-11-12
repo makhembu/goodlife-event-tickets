@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 
 import httpx
+import boto3
+from botocore.config import Config
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -83,6 +85,21 @@ primary_tts = FishAudioProvider(FISH_AUDIO_KEY)
 fallback_tts = FallbackEdgeTTSProvider()
 tts_client = ResilientTTSClient(primary=primary_tts, secondary=fallback_tts)
 
+def get_s3_client():
+    account_id = env_vars.get("R2_ACCOUNT_ID")
+    access_key = env_vars.get("R2_ACCESS_KEY_ID")
+    secret_key = env_vars.get("R2_SECRET_ACCESS_KEY")
+    if not (account_id and access_key and secret_key):
+        return None
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(signature_version="s3v4"),
+        region_name="auto"
+    )
+
 def sync_db(query: str, params: tuple = (), fetch: bool = True):
     if not DATABASE_URL:
         return []
@@ -100,19 +117,39 @@ async def async_db(query: str, params: tuple = (), fetch: bool = True):
     return await loop.run_in_executor(None, sync_db, query, params, fetch)
 
 async def check_last_drop_cadence_allowed() -> bool:
+    cooldown = timing_cfg.get("drop_cooldown_min_sec", 600)
+    # Check local SQLite drop_ledger
+    try:
+        conn = dj_memory_manager.sqlite3.connect(dj_memory_manager.DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT (strftime('%s', 'now') - strftime('%s', created_at)) as age_sec
+            FROM drop_ledger
+            WHERE status IN ('STAGED', 'AIRING', 'AIRED', 'CONFIRMED')
+            ORDER BY created_at DESC
+            LIMIT 1;
+        """)
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0] is not None and row[0] < cooldown:
+            return False
+    except Exception as e:
+        print(f"[Cadence SQLite Notice] {e}")
+
+    # Check Postgres radio_drops table
     try:
         sql = """
             SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as age_sec
-            FROM radio_voice_drops
+            FROM radio_drops
             ORDER BY created_at DESC
             LIMIT 1;
         """
         res = await async_db(sql)
-        if not res:
-            return True
-        return res[0]["age_sec"] >= timing_cfg.get("drop_cooldown_min_sec", 600)
-    except Exception:
-        return False
+        if res and res[0]["age_sec"] is not None:
+            return res[0]["age_sec"] >= cooldown
+    except Exception as e:
+        print(f"[Cadence Postgres Notice] {e}")
+    return True
 
 def get_approved_trends() -> list:
     trends_file = CURRENT_DIR / "cache/approved_trends.json"
@@ -297,6 +334,39 @@ async def run_follower_loop():
                             # Synthesize & Master
                             mastered_file = await synthesize_and_master(script, drop_uid)
 
+                            # Upload to Cloudflare R2
+                            drop_url = ""
+                            try:
+                                s3 = get_s3_client()
+                                if s3:
+                                    r2_key = f"radio/drops/smokey_{drop_uid}.mp3"
+                                    loop = asyncio.get_running_loop()
+                                    await loop.run_in_executor(
+                                        None,
+                                        lambda: s3.upload_file(
+                                            str(mastered_file),
+                                            R2_BUCKET,
+                                            r2_key,
+                                            ExtraArgs={"ContentType": "audio/mpeg"}
+                                        )
+                                    )
+                                    drop_url = f"{R2_PUBLIC_DOMAIN}/{r2_key}"
+                                    print(f"[PlayoutFollower] R2 upload success: {drop_url}")
+                            except Exception as ue:
+                                print(f"[PlayoutFollower] R2 upload failed: {ue}")
+
+                            # Insert into Postgres radio_drops so playout-state / web player consumes it
+                            if drop_url and next_track_id:
+                                try:
+                                    await async_db("""
+                                        INSERT INTO radio_drops 
+                                        (title, audio_url, category, is_active, persona, mood, script, target_track_id, status)
+                                        VALUES (%s, %s, 'ai_voice', true, 'DJ Smokey', 'hype', %s, %s, 'READY')
+                                    """, (f"DJ Smokey - {title[:40]}", drop_url, script, next_track_id), fetch=False)
+                                    print(f"[PlayoutFollower] Inserted into Postgres radio_drops for track {next_track_id}")
+                                except Exception as dbe:
+                                    print(f"[PlayoutFollower] Postgres insert error: {dbe}")
+
                             # Record in SQLite Ledger
                             conn = dj_memory_manager.sqlite3.connect(dj_memory_manager.DB_PATH)
                             cur = conn.cursor()
@@ -315,7 +385,9 @@ async def run_follower_loop():
                             print(f"[PlayoutFollower] Drop {drop_id_str} STAGED and CONFIRMED for transition {transition_id}!")
 
             except Exception as e:
+                import traceback
                 print(f"[PlayoutFollower Loop Error] {e}")
+                traceback.print_exc()
 
             await asyncio.sleep(3)
 
