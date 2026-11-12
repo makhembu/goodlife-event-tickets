@@ -41,9 +41,24 @@ if (( FILE_SIZE < MIN_BYTES )); then
 fi
 
 # Secret key shared with the Goodlife Radio Daemon
-SECRET_KEY="${GOODLIFE_RADIO_SECRET_KEY:-goodlife_radio_default_secret}"
-DAEMON_URL="http://127.0.0.1:8060/api/internal/archive-session"
+SECRET_KEY="${GOODLIFE_RADIO_SECRET_KEY:-${BRIDGE_SECRET:-${RADIO_BRIDGE_SECRET:-}}}"
+DAEMON_HOST="${DAEMON_HOST:-127.0.0.1}"
+DAEMON_PORT="${DAEMON_PORT:-8060}"
+
+# Auto-detect daemon hostname if in docker network
+if ! curl -s --connect-timeout 1 "http://${DAEMON_HOST}:${DAEMON_PORT}/health" >/dev/null 2>&1; then
+  if curl -s --connect-timeout 1 "http://goodlife_daemon:${DAEMON_PORT}/health" >/dev/null 2>&1; then
+    DAEMON_HOST="goodlife_daemon"
+  fi
+fi
+
+DAEMON_URL="http://${DAEMON_HOST}:${DAEMON_PORT}/api/internal/archive-session"
 TIMESTAMP=$(date +%s)
+
+# Inform daemon of source disconnect immediately to start disconnect grace timer
+curl -s -X POST "http://${DAEMON_HOST}:${DAEMON_PORT}/radio/source-disconnect" \
+  -H "Content-Type: application/json" \
+  -d '{"connected": false}' >/dev/null 2>&1 || true
 
 # Compute HMAC-SHA256 signature using unified scheme: HMAC(secret, "${TIMESTAMP}:${BODY_HASH}")
 PAYLOAD="{\"file_path\":\"$RECORDING_PATH\",\"timestamp\":$TIMESTAMP,\"file_size\":$FILE_SIZE}"

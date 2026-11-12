@@ -79,6 +79,36 @@ async function getCachedRecentLiveDrop() {
   return drop;
 }
 
+async function getLiveSlotOnAir() {
+  try {
+    const res = await neonQuery(`
+      SELECT s.id AS slot_id, s.starts_at, s.ends_at,
+             sh.id AS show_id, sh.title AS show_title, sh.slug AS show_slug,
+             p.id AS presenter_id,
+             COALESCE(sub.dj_name, p.dj_name) AS on_air_dj_name,
+             COALESCE(sub.slug, p.slug) AS on_air_dj_slug
+      FROM show_slots s
+      JOIN shows sh ON s.show_id = sh.id
+      JOIN presenters p ON s.presenter_id = p.id
+      LEFT JOIN presenters sub ON s.substitute_presenter_id = sub.id
+      WHERE s.status = 'live'
+      LIMIT 1;
+    `);
+    if (res.rows.length > 0) {
+      const r = res.rows[0];
+      return {
+        slot_id: r.slot_id,
+        show: { id: r.show_id, title: r.show_title, slug: r.show_slug },
+        presenter: { id: r.presenter_id, dj_name: r.on_air_dj_name, slug: r.on_air_dj_slug },
+        starts_at: r.starts_at,
+        ends_at: r.ends_at,
+        is_live: true,
+      };
+    }
+  } catch {}
+  return null;
+}
+
 async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
   const now = Date.now();
   if (_dbPlayoutCache && now - _dbPlayoutCache.timestamp < PLAYOUT_CACHE_TTL_MS) {
@@ -382,11 +412,19 @@ export async function GET() {
       };
     }
 
+    const onAirSlot = await getLiveSlotOnAir();
+    if (onAirSlot && liveData.nowPlaying) {
+      liveData.nowPlaying.on_air_slot = onAirSlot;
+      liveData.nowPlaying.title = onAirSlot.show.title;
+      liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
+    }
+
     return NextResponse.json(
       {
         offline: false,
         stale: false,
         listeners_count: activeListeners,
+        on_air_slot: onAirSlot,
         now_playing: liveData.nowPlaying,
         up_next: liveData.upNext,
         history: liveData.history,

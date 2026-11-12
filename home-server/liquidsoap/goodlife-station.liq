@@ -8,6 +8,11 @@
 log.level.set(3)
 log.stdout.set(true)
 
+# Enable local telnet control for machine harbor kick / slot overrun enforcement
+settings.server.telnet.set(true)
+settings.server.telnet.port.set(1234)
+settings.server.telnet.bind_addr.set("127.0.0.1")
+
 # 1. Emergency Fallback Track or Randomized Playlist (In case of complete playout silence)
 emergency_track =
   if file.exists("/var/goodlife/drops/emergency") then
@@ -25,20 +30,18 @@ emergency_track =
 autodj_source = request.queue(id="autodj_queue")
 
 # 3. Live Harbor DJ Ingest (Port 8005, Mount /live)
-# Direct connection from BUTT, OBS, Rekordbox, Serato
-harbor_user = environment.get("HARBOR_USER", default="source")
-harbor_pass = environment.get("HARBOR_PASSWORD", default="")
-
-if harbor_pass == "" then
-  log(level=1, "FATAL: HARBOR_PASSWORD env var must be set.")
-end
+# Direct connection from BUTT, OBS, Rekordbox, Serato, VirtualDJ, Mixxx
+# Individual credentials verified via check-harbor-auth.sh against Next.js schedule API
 
 def auth_dj(user, password) =
-  if harbor_pass != "" and user == harbor_user and password == harbor_pass then
-    log("DJ authenticated successfully: #{user}")
+  log("Validating DJ credentials for #{user}...")
+  let auth_cmd = "/usr/local/bin/check-harbor-auth.sh " ^ process.quote(user) ^ " " ^ process.quote(password)
+  let result = string.trim(process.read(auth_cmd))
+  if result == "ALLOW" then
+    log("DJ authenticated successfully via GOODLIFE schedule: #{user}")
     true
   else
-    log("DJ authentication failed for user: #{user}")
+    log("DJ authentication failed for user: #{user} (response: #{result})")
     false
   end
 end
@@ -62,6 +65,8 @@ def on_dj_connect() =
   let path = "/var/goodlife/recordings/pending/" ^ timestamp ^ "_live_set.mp3"
   current_recording_path := path
   log("Live DJ connected. Starting pristine 320kbps capture to: #{path}")
+  let cmd = "/usr/local/bin/on-connect.sh &"
+  ignore(process.run(cmd))
 end
 
 def on_dj_disconnect() =

@@ -14,6 +14,7 @@ let _stateDbCache: {
   activatedAt: string | null;
   activePlaylistName: string | null;
   activePlaylistId: number | null;
+  onAirSlot: any;
   ts: number;
 } | null = null;
 
@@ -62,6 +63,52 @@ export async function GET() {
         }
       } catch (err) {
         console.warn("[api/radio/state] Error loading radio_settings:", err);
+      }
+
+      // Check for an authentically live show slot in Neon database
+      let onAirSlotData: any = null;
+      try {
+        const liveSlotRes = await neonQuery(`
+          SELECT s.id AS slot_id, s.starts_at, s.ends_at, s.actual_started_at,
+                 sh.id AS show_id, sh.title AS show_title, sh.slug AS show_slug,
+                 p.id AS presenter_id, p.dj_name AS presenter_dj_name, p.slug AS presenter_slug,
+                 COALESCE(sub.dj_name, p.dj_name) AS on_air_dj_name,
+                 COALESCE(sub.slug, p.slug) AS on_air_dj_slug
+          FROM show_slots s
+          JOIN shows sh ON s.show_id = sh.id
+          JOIN presenters p ON s.presenter_id = p.id
+          LEFT JOIN presenters sub ON s.substitute_presenter_id = sub.id
+          WHERE s.status = 'live'
+          LIMIT 1;
+        `);
+
+        if (liveSlotRes.rows.length > 0) {
+          const row = liveSlotRes.rows[0];
+          onAirSlotData = {
+            slot_id: row.slot_id,
+            starts_at: row.starts_at,
+            ends_at: row.ends_at,
+            actual_started_at: row.actual_started_at,
+            show: {
+              id: row.show_id,
+              title: row.show_title,
+              slug: row.show_slug,
+            },
+            presenter: {
+              id: row.presenter_id,
+              dj_name: row.on_air_dj_name,
+              slug: row.on_air_dj_slug,
+            },
+            is_live: true,
+          };
+          settings.broadcast_mode = "live";
+          settings.live_title = `${row.show_title} with ${row.on_air_dj_name}`;
+        } else if (settings.broadcast_mode === "live") {
+          // No presenter slot is live right now: fail-safe to autodj so player doesn't lie
+          settings.broadcast_mode = "autodj";
+        }
+      } catch (slotErr) {
+        console.warn("[api/radio/state] Error checking live show_slots:", slotErr);
       }
 
       // If station broadcast_mode is not 'live', there is no external stream — 24/7 R2 tracks are active
@@ -140,12 +187,22 @@ export async function GET() {
         activatedAt,
         activePlaylistName,
         activePlaylistId,
+        onAirSlot: onAirSlotData,
         ts: now,
       };
       _stateDbCache = cached;
     }
 
-    const { settings, sets, fallbackSet, totalDurationSec, activatedAt, activePlaylistName, activePlaylistId } = cached;
+    const {
+      settings,
+      sets,
+      fallbackSet,
+      totalDurationSec,
+      activatedAt,
+      activePlaylistName,
+      activePlaylistId,
+      onAirSlot,
+    } = cached;
 
     // 3. Compute 24/7 Virtual Synchronized Broadcast Schedule (Instant math, 0ms)
     let broadcastSchedule = null;
@@ -285,6 +342,7 @@ export async function GET() {
       enabled: settings.radio_enabled !== false,
       mode: settings.broadcast_mode || "live",
       listeners_count: activeListeners,
+      on_air_slot: onAirSlot || null,
       live: {
         title: settings.live_title || "GOODLIFE RADIO LIVE",
         stream_url: settings.live_stream_url || "",

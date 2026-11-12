@@ -204,9 +204,14 @@ class SessionArchiver:
         file_size: int,
         bitrate: int = 320,
         genre: str = "Live DJ Set",
+        slot_id: Optional[int] = None,
+        show_id: Optional[int] = None,
+        presenter_id: Optional[int] = None,
+        is_public: bool = False,
     ) -> Optional[int]:
         """
         Inserts recording metadata into Neon PostgreSQL table `radio_recordings`.
+        Recordings default to private (is_public=false) until approved.
         """
         if not self.database_url:
             logger.warning("DATABASE_URL not set. Skipping database insert.")
@@ -218,19 +223,33 @@ class SessionArchiver:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 query = """
                     INSERT INTO radio_recordings (
-                        title, dj_name, audio_url, r2_key, duration, file_size, bitrate, genre, recorded_at, is_public
+                        title, dj_name, audio_url, r2_key, duration, file_size, bitrate, genre,
+                        slot_id, show_id, presenter_id, recorded_at, is_public
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, NOW(), true
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s
                     )
                     RETURNING id;
                 """
                 cur.execute(
                     query,
-                    (title, dj_name, audio_url, r2_key, duration, file_size, bitrate, genre),
+                    (
+                        title,
+                        dj_name,
+                        audio_url,
+                        r2_key,
+                        duration,
+                        file_size,
+                        bitrate,
+                        genre,
+                        slot_id,
+                        show_id,
+                        presenter_id,
+                        is_public,
+                    ),
                 )
                 record_id = cur.fetchone()["id"]
                 conn.commit()
-                logger.info(f"Neon DB row created: radio_recordings ID={record_id}")
+                logger.info(f"Neon DB row created: radio_recordings ID={record_id} (slot={slot_id}, is_public={is_public})")
                 return record_id
         except Exception as e:
             logger.error(f"Neon DB insert failed: {e}")
@@ -241,7 +260,15 @@ class SessionArchiver:
             if conn:
                 conn.close()
 
-    def process_live_session(self, raw_file_path: str, dj_name: str = "Resident DJ") -> Dict[str, Any]:
+    def process_live_session(
+        self,
+        raw_file_path: str,
+        dj_name: str = "Resident DJ",
+        title_override: Optional[str] = None,
+        slot_id: Optional[int] = None,
+        show_id: Optional[int] = None,
+        presenter_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Orchestrates full session archival with a durable pending_archives queue.
         Failures are persisted and can be retried by the recovery cron.
@@ -256,7 +283,7 @@ class SessionArchiver:
         try:
             file_size = os.path.getsize(raw_file_path)
             timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-            title = f"Live Festival Set ({timestamp_str})"
+            title = title_override or f"Live Festival Set ({timestamp_str})"
 
             duration = self.extract_audio_duration(raw_file_path)
             mastered_local_path = self.master_session_audio(raw_file_path, title, dj_name)
@@ -276,6 +303,10 @@ class SessionArchiver:
                     file_size=file_size,
                     bitrate=320,
                     genre="Festival Live Set",
+                    slot_id=slot_id,
+                    show_id=show_id,
+                    presenter_id=presenter_id,
+                    is_public=False,  # Private by default per locked decision 5
                 )
             else:
                 logger.warning(f"R2 upload returned local URL; skipping DB insert. Job {job_id} will be retried.")

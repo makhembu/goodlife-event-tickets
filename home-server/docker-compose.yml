@@ -32,6 +32,8 @@ services:
       - /var/goodlife/drops:/var/goodlife/drops
       - ./liquidsoap/goodlife-station.liq:/var/azuracast/stations/goodlife_radio_254/config/liquidsoap.liq:ro
       - ./liquidsoap/on-disconnect.sh:/usr/local/bin/on-disconnect.sh:ro
+      - ./liquidsoap/check-harbor-auth.sh:/usr/local/bin/check-harbor-auth.sh:ro
+      - ./liquidsoap/on-connect.sh:/usr/local/bin/on-connect.sh:ro
     networks:
       - goodlife_net
     healthcheck:

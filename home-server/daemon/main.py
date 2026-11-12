@@ -4,16 +4,19 @@ FastAPI application running on Home Server (192.168.100.29:8060).
 Bridges Next.js 15 BFF, AzuraCast, NVIDIA NIM, and Fish Audio.
 """
 
+import asyncio
 import hmac
 import hashlib
+import json
 import logging
 import os
 import re
 import shutil
 import time
 import uuid
-from typing import Optional
+from typing import Optional, Dict, Any
 
+import httpx
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -144,8 +147,26 @@ async def verify_hmac_auth(
 
 
 # ------------------------------------------------------------------------------
-# Models
+# Models & Outbound HMAC Signing
 # ------------------------------------------------------------------------------
+APP_URL = (os.getenv("GOODLIFE_APP_URL") or os.getenv("APP_URL") or "https://goodlife.co.ke").rstrip("/")
+
+harbor_connected: bool = False
+active_presenter_info: Optional[Dict[str, Any]] = None
+
+
+def make_outbound_hmac_headers(body_str: str) -> Dict[str, str]:
+    ts = int(time.time())
+    body_hash = hashlib.sha256(body_str.encode("utf-8")).hexdigest()
+    sig_payload = f"{ts}:{body_hash}".encode("utf-8")
+    sig = hmac.new(SECRET_KEY.encode("utf-8"), sig_payload, hashlib.sha256).hexdigest()
+    return {
+        "Content-Type": "application/json",
+        "X-Bridge-Timestamp": str(ts),
+        "X-Bridge-Signature": sig,
+    }
+
+
 class QueueNextUrlRequest(BaseModel):
     url: str
     custom_drop_text: Optional[str] = None
@@ -156,6 +177,15 @@ class DisconnectPayload(BaseModel):
     file_path: str
     timestamp: int
     file_size: int
+
+
+class HarborAuthPayload(BaseModel):
+    username: str
+    stream_key: str
+
+
+class SourceEventPayload(BaseModel):
+    connected: bool
 
 
 # ------------------------------------------------------------------------------
@@ -274,11 +304,29 @@ async def archive_session_webhook(
     """
     logger.info(f"Received session archive notification: {payload.file_path} ({payload.file_size} bytes)")
     
+    # Extract active slot context if available
+    dj_name = "Resident DJ"
+    slot_id = None
+    show_id = None
+    presenter_id = None
+
+    global active_presenter_info
+    if active_presenter_info and isinstance(active_presenter_info, dict):
+        p_obj = active_presenter_info.get("presenter") or {}
+        s_obj = active_presenter_info.get("slot") or {}
+        dj_name = p_obj.get("name") or dj_name
+        presenter_id = p_obj.get("id")
+        slot_id = s_obj.get("id")
+        show_id = s_obj.get("show_id")
+
     # Schedule background worker to master, upload to R2, and sync with Neon DB
     background_tasks.add_task(
         session_archiver.process_live_session,
         payload.file_path,
-        "Resident DJ",
+        dj_name,
+        slot_id=slot_id,
+        show_id=show_id,
+        presenter_id=presenter_id,
     )
 
     return {
@@ -330,4 +378,127 @@ async def delete_azuracast_queue_item(queue_id: int):
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to remove queue item {queue_id}")
     return {"status": "success", "removed_id": queue_id}
+
+
+# ------------------------------------------------------------------------------
+# Phase 2 Machine Harbor Auth & Lifecycle Bridge Endpoints
+# ------------------------------------------------------------------------------
+@app.post("/radio/harbor-auth")
+async def harbor_auth_endpoint(payload: HarborAuthPayload):
+    """
+    Called locally by Liquidsoap check-harbor-auth.sh to authorize an incoming DJ.
+    Signs request with HMAC and forwards to Next.js BFF /api/internal/radio-auth.
+    """
+    logger.info(f"Harbor auth attempt for user: {payload.username}")
+    req_body = json.dumps({"username": payload.username, "stream_key": payload.stream_key})
+    headers = make_outbound_hmac_headers(req_body)
+    target_url = f"{APP_URL}/api/internal/radio-auth"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(target_url, content=req_body, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("allowed"):
+                    logger.info(f"Harbor auth ALLOWED for {payload.username}")
+                    global active_presenter_info
+                    active_presenter_info = data
+                    return data
+                else:
+                    logger.warning(f"Harbor auth DENIED for {payload.username}: {data.get('reason')}")
+                    return data
+            logger.error(f"Next.js auth endpoint returned {resp.status_code}: {resp.text}")
+            return {"allowed": False, "reason": f"auth_server_error_{resp.status_code}"}
+    except Exception as e:
+        logger.error(f"Error checking harbor auth against {target_url}: {e}")
+        return {"allowed": False, "reason": "auth_service_unreachable"}
+
+
+@app.post("/radio/source-connect")
+async def source_connect_endpoint(payload: SourceEventPayload):
+    """Called by Liquidsoap on-connect.sh when a live DJ stream connects."""
+    global harbor_connected
+    harbor_connected = payload.connected
+    logger.info("Live DJ connected event received. Triggering immediate radio tick...")
+    await send_radio_tick()
+    return {"status": "ok", "harbor_connected": harbor_connected}
+
+
+@app.post("/radio/source-disconnect")
+async def source_disconnect_endpoint(payload: SourceEventPayload):
+    """Called by Liquidsoap on-disconnect.sh when a live DJ stream disconnects."""
+    global harbor_connected
+    harbor_connected = payload.connected
+    logger.info("Live DJ disconnected event received. Triggering immediate radio tick...")
+    await send_radio_tick()
+    return {"status": "ok", "harbor_connected": harbor_connected}
+
+
+async def kick_harbor_source():
+    """Disconnects live DJ when overrun grace expires and next slot is queued."""
+    logger.warning("Executing harbor kick for active DJ...")
+    try:
+        # 1. Skip via AzuraCast if managed by AzuraCast backend
+        await azuracast_client.skip_track()
+    except Exception as e:
+        logger.warning(f"AzuraCast skip failed during harbor kick: {e}")
+
+    try:
+        # 2. Issue harbor_live_dj.stop over Liquidsoap local telnet
+        reader, writer = await asyncio.open_connection("127.0.0.1", 1234)
+        writer.write(b"harbor_live_dj.stop\nquit\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        logger.info("Sent harbor_live_dj.stop over Liquidsoap telnet successfully")
+    except Exception as e:
+        logger.warning(f"Telnet to Liquidsoap port 1234 skipped or failed: {e}")
+
+
+async def send_radio_tick():
+    """Sends current playout & harbor state to Next.js /api/internal/radio-tick."""
+    now_playing = await azuracast_client.get_now_playing()
+    live_data = now_playing.get("live", {}) if isinstance(now_playing, dict) else {}
+    is_live = harbor_connected or bool(live_data.get("is_live", False))
+    streamer = live_data.get("streamer_name")
+    if not streamer and active_presenter_info and isinstance(active_presenter_info, dict):
+        p_obj = active_presenter_info.get("presenter") or {}
+        streamer = p_obj.get("name")
+
+    payload_dict = {
+        "harbor_connected": is_live,
+        "active_username": streamer,
+        "timestamp": int(time.time()),
+    }
+    req_body = json.dumps(payload_dict)
+    headers = make_outbound_hmac_headers(req_body)
+    target_url = f"{APP_URL}/api/internal/radio-tick"
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(target_url, content=req_body, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("action") == "kick_harbor" or data.get("cutoff_overrun"):
+                    logger.warning("Overrun cutoff triggered by Next.js. Kicking harbor connection...")
+                    await kick_harbor_source()
+                return data
+            logger.warning(f"Radio tick returned {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Failed to deliver radio tick to {target_url}: {e}")
+
+
+@app.on_event("startup")
+async def start_periodic_ticker():
+    """Background task to sync slot lifecycle with Next.js BFF every 30 seconds."""
+    async def periodic_tick_loop():
+        while True:
+            try:
+                await send_radio_tick()
+            except Exception as e:
+                logger.error(f"Error in periodic radio tick loop: {e}")
+            await asyncio.sleep(30)
+
+    asyncio.create_task(periodic_tick_loop())
+
 

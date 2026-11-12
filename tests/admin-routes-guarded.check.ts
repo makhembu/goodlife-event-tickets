@@ -85,6 +85,7 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/diagnostics/route.ts:GET", "Public radio playout diagnostics and drop telemetry"],
   ["app/api/radio/schedule/route.ts:GET", "Public 7-day radio broadcast timetable and schedule slots"],
   ["app/api/radio/shows/[slug]/calendar.ics/route.ts:GET", "Public RFC 5545 iCalendar (.ics) export per show"],
+  ["app/api/radio/apply/route.ts:POST", "Public DJ/presenter application form submission with 24h DB rate limiting"],
 
   // Session login/logout endpoints (unauthenticated by definition)
   ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],
@@ -312,12 +313,16 @@ function checkNonAdminRoutes(): { totalMethodsChecked: number; allowlistedCount:
         body.includes("verifyPresenterSession") ||
         body.includes("goodlife_presenter_session");
 
-      // 6. Delegation to an in-file or imported guarded handler
+      // 6. Machine Route HMAC Auth
+      const hasMachineAuth =
+        body.includes("verifyInternalMachineAuth");
+
+      // 7. Delegation to an in-file or imported guarded handler
       const delegatesToGuarded =
         /return\s+(handle\w+|POST|GET|PUT|DELETE)\s*\(/.test(body) &&
-        (content.includes("getSession") || content.includes("getVendorSession") || content.includes("handleVendorVoidSale") || content.includes("requireAdmin"));
+        (content.includes("getSession") || content.includes("getVendorSession") || content.includes("handleVendorVoidSale") || content.includes("requireAdmin") || content.includes("verifyCronAuth"));
 
-      if (hasAdminGuard || hasVendorOrScannerGuard || hasTabAuth || hasWebhookAuth || hasPresenterGuard || delegatesToGuarded) {
+      if (hasAdminGuard || hasVendorOrScannerGuard || hasTabAuth || hasWebhookAuth || hasPresenterGuard || hasMachineAuth || delegatesToGuarded) {
         guardedCount++;
       } else {
         failures.push({

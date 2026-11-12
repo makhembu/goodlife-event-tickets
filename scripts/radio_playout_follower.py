@@ -35,6 +35,9 @@ if not DATABASE_URL:
     sys.exit(1)
 
 APP_URL = os.environ.get("APP_URL", "https://goodlife.smwhr.space").rstrip("/")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY_FALLBACK = os.environ.get("GROQ_API_KEY_FALLBACK", "")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 FISH_AUDIO_KEY = os.environ.get("FISH_AUDIO_KEY", "")
 FISH_VOICE_ID = os.environ.get("FISH_VOICE_ID", "6801890ec345469d8818129e5bdd50dd")
 R2_BUCKET = os.environ.get("R2_BUCKET_NAME", "goodlife")
@@ -54,6 +57,7 @@ TRACKS_SINCE_LAST_DROP = 0
 CURRENT_JOB_ID = None
 LAST_ERROR = None
 LAST_ERROR_TIME = None
+RECENT_SCRIPTS = []
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -75,9 +79,18 @@ async def async_db(query: str, params=None, fetch=True):
 def clean_script_for_tts(text: str) -> str:
     """Strips non-broadcast characters, emojis and normalizes broadcast phonetics."""
     no_emoji = re.sub(r'[\U00010000-\U0010ffff]', '', text)
-    clean = re.sub(r'[*"\'_#]', '', no_emoji)
+    clean = re.sub(r'[*"\'_#`~]', '', no_emoji)
+    # Strip any leading "Yo", "Yoo", "Yo what's good"
+    clean = re.sub(r'^(yo+|yo+ what\'?s? good|yoo+)[,!\s]+', '', clean, flags=re.IGNORECASE)
+    # Strip permanently banned words: "wazi", "waz", "wazi wazi"
+    clean = re.sub(r'\bwazi\s+wazi\b', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\bwazi\b', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\bwaz\b', '', clean, flags=re.IGNORECASE)
     clean = clean.replace("254", "two five four").replace("200 bob", "two hundred bob")
-    clean = clean.replace("goodlife.smwhr.space", "goodlife dot smwhr dot space")
+    clean = clean.replace("CBD", "C B D").replace("cbd", "C B D")
+    clean = clean.replace("Ksh", "shillings").replace("ksh", "shillings")
+    clean = clean.replace(".co.ke", " dot space")
+    clean = clean.replace("goodlife.smwhr.space", "the Goodlife website")
     clean = re.sub(r'\s+', ' ', clean)
     return clean.strip()
 
@@ -85,27 +98,236 @@ def get_daypart_name() -> str:
     # EAT time (UTC + 3)
     hour = (datetime.now(timezone.utc).hour + 3) % 24
     if 5 <= hour < 12:
-        return "morning"
+        return "morning hustle"
     elif 12 <= hour < 17:
-        return "afternoon"
+        return "midday groove"
     elif 17 <= hour < 22:
-        return "peak_evening"
-    return "deep_overnight"
+        return "evening rush"
+    return "night flight"
 
-def generate_dj_script(next_track: dict, daypart: str, county_shoutout: str = None) -> str:
-    title = next_track.get("title", "Fresh Vibes")
+async def get_active_counties() -> list:
+    """Fetch active Kenyan counties with recent pings for live radar shoutouts."""
+    try:
+        rows = await async_db(
+            """
+            SELECT DISTINCT county_name 
+            FROM radio_listener_pings 
+            WHERE last_seen >= NOW() - INTERVAL '180 seconds' 
+              AND county_name IS NOT NULL 
+              AND county_name != ''
+            LIMIT 4
+            """
+        )
+        return [r["county_name"] for r in rows if r.get("county_name")]
+    except Exception:
+        return []
+
+async def seed_recent_scripts():
+    """Initializes in-memory anti-repetition cache from Postgres."""
+    global RECENT_SCRIPTS
+    try:
+        rows = await async_db(
+            "SELECT script FROM radio_drops WHERE script IS NOT NULL ORDER BY created_at DESC LIMIT 15"
+        )
+        if rows:
+            RECENT_SCRIPTS = [r["script"] for r in rows if r.get("script")]
+            print(f"[PlayoutFollower] Seeded {len(RECENT_SCRIPTS)} recent drops for anti-repetition memory.")
+    except Exception as e:
+        print(f"[PlayoutFollower] Seed recent scripts warning: {e}", file=sys.stderr)
+
+SHENG_DICTIONARY = [
+    "cheki vile hii inabounce", "rada ni gani msee", "bila wasi tuko locked",
+    "baze imetulia spika zikilia", "wacha mziki utiririke bila breki",
+    "kam through na mbogi yako", "kila kona ya jiji inasikiza hii",
+    "shika kiti utulie kiasi", "weka volume kwa ceiling maboys",
+    "rieng ni moto sana huku nje", "bassline inashake mtaa mzima",
+    "round hii ni full throttle", "selector anachoma meza ya mixer",
+    "kila pande ya two five four tunabamba", "shika rhythm utulie nayo",
+    "vibes ziko intact kabisa", "haina presha tuko ngangari",
+    "maraundi za jiji na ngoma kali", "mavibe za two five four",
+    "piga luku safi tukutane mbele", "ngoma imenoga aje maze",
+    "goodlife ni lifestyle si event tu", "step kwa dancefloor bila aibu"
+]
+
+DYNAMIC_OPENERS = [
+    "Turn the volume all the way to the ceiling!",
+    "Straight heat on the frequency right now!",
+    "Spika zikilia pande zote across the two five four!",
+    "Cheki vile hii inabounce fresh off the decks!",
+    "We outside right now, no slowdown!",
+    "Kila pembe ya two five four, tuko locked in!",
+    "Baze imetulia mtambo ukiwaka vizuri!",
+    "Frequency ya mabazuu inabamba bila breki!",
+    "Mziki inatiririka straight to your speakers!",
+    "Hold tight, selector anachoma meza!",
+    "Kutoka mtaa hadi mtaa, vibez strictly on point!",
+    "Full throttle energy right into your space!",
+    "Twende kazi sasa hivi na sound safi kabisa!"
+]
+
+async def generate_dj_script(next_track: dict, daypart: str, client: httpx.AsyncClient) -> str:
+    """
+    Generates authentic Homeboyz Radio style on-air script:
+    - 70% Kenyan English + 30% Nairobi Sheng
+    - Mid-clause code-switching without synthetic rigid repetition
+    - PERMANENTLY BANNED: 'wazi', 'waz', and repeating 'Nairobi'
+    - Rotating archetypes: Track Stager, Radar Shoutout, Event Teaser, Station ID
+    - Zero emojis, no leading 'Yo', 15-drop anti-repetition memory
+    """
+    global RECENT_SCRIPTS
+    import random
+    title = next_track.get("title", "Fresh Heat")
     dj_name = next_track.get("artist") or "GOODLIFE Selector"
+    active_counties = await get_active_counties()
     
-    if county_shoutout:
-        return f"Yo, locked into GOODLIFE Radio 254! Big energy out in {county_shoutout}. Taking it higher right now with {title} by {dj_name}. Turn it up!"
-    
-    templates = {
-        "morning": f"Rise and shine Nairobi! You locked into GOODLIFE Radio 254. Setting the morning groove with {title} by {dj_name}. Let's go!",
-        "afternoon": f"Midday soundtrack strictly on point. You locked into GOODLIFE Radio 254! Rolling straight into {title} by {dj_name}!",
-        "peak_evening": f"Turn up the volume! GOODLIFE Radio 254 taking over the airwaves. Up next, pure heat: {title} by {dj_name}!",
-        "deep_overnight": f"Late night sessions on GOODLIFE Radio 254. Keeping the frequency alive with {title} by {dj_name}."
-    }
-    return templates.get(daypart, f"Yo! You locked into GOODLIFE Radio 254. Taking it higher with {title} by {dj_name}!")
+    # Archetype selection
+    if active_counties and random.random() < 0.35:
+        archetype = "RADAR_SHOUTOUT"
+    elif random.random() < 0.60:
+        archetype = "TRACK_STAGER"
+    elif random.random() < 0.85:
+        archetype = "EVENT_SPOTLIGHT"
+    else:
+        archetype = "STATION_ID"
+
+    # Sample random fresh Sheng phrase & opener
+    sheng_flavor = random.choice(SHENG_DICTIONARY)
+    suggested_opener = random.choice(DYNAMIC_OPENERS)
+
+    system_prompt = (
+        "You are DJ Fusion, the premier on-air radio presenter on GOODLIFE Radio two five four.\n"
+        "You broadcast authentic Kenyan urban radio vibes (Homeboyz Radio / NRG style).\n\n"
+        "CRITICAL BROADCAST CONSTRAINTS:\n"
+        "1. CODE-SWITCHING: Blend 70% Kenyan English and 30% Nairobi Sheng naturally mid-sentence.\n"
+        "2. STRICTLY FORBIDDEN WORDS: NEVER use 'wazi', 'waz', or 'wazi wazi'. They are permanently banned.\n"
+        "3. GEOGRAPHY DIVERSITY: Do NOT default to saying 'Nairobi' on every drop. GOODLIFE Radio broadcasts to all forty seven counties (Mombasa, Nakuru, Kisumu, Kiambu, Machakos, Eldoret, Thika) and diaspora worldwide. Only mention a specific location if provided in the user prompt. Otherwise speak to 'the two five four' or 'kila pembe' or focus purely on the track.\n"
+        "4. STRICTLY BANNED: NEVER EVER start with 'Yo', 'Yoo', or 'Yo what is good'. Never use generic greetings like 'Rise and shine'.\n"
+        "5. NO EMOJIS OR SPECIAL CHARACTERS: Never output emojis, quotation marks, hashtags, or asterisks. Output plain text only.\n"
+        "6. BROADCAST SPEECH: Say 'two five four' (never '254'). Say 'C B D' (never 'CBD'). Say 'two hundred bob' (never '200 bob'). For website, say 'the Goodlife website' (NEVER say '.co.ke').\n"
+        "7. LENGTH: 1 to 2 punchy sentences maximum (14 to 22 words).\n"
+        "8. Output ONLY the raw spoken radio script. Nothing else.\n"
+    )
+
+    if RECENT_SCRIPTS:
+        recent_snippet = " | ".join(RECENT_SCRIPTS[-6:])
+        system_prompt += f"\nRECENT DROPS ALREADY AIRED (DO NOT REPEAT THESE OPENERS OR PHRASES):\n{recent_snippet}\n"
+
+    if archetype == "RADAR_SHOUTOUT" and active_counties:
+        counties_str = " and ".join(active_counties)
+        user_prompt = (
+            f"Archetype: LIVE RADAR SHOUTOUT. Active counties on the radar: {counties_str}. "
+            f"Give them massive love and hype incoming track '{title}' by '{dj_name}'. "
+            f"Suggested flavor phrase: '{sheng_flavor}'."
+        )
+    elif archetype == "EVENT_SPOTLIGHT":
+        user_prompt = (
+            f"Archetype: EVENT SPOTLIGHT. Hype the Sunday Festival at Marara Camp Thika. "
+            f"Grounds are set, secure tickets on the Goodlife website, leading into '{title}' by '{dj_name}'. "
+            f"Suggested flavor phrase: '{sheng_flavor}'."
+        )
+    elif archetype == "STATION_ID":
+        user_prompt = (
+            f"Archetype: STATION ID. Frequency pride for {daypart}. Street hustle, matatus, and beats on GOODLIFE Radio two five four leading into '{title}' by '{dj_name}'. "
+            f"Suggested opening style: '{suggested_opener}'. Suggested flavor phrase: '{sheng_flavor}'."
+        )
+    else:
+        user_prompt = (
+            f"Archetype: TRACK STAGER. Hype the transition and sound for incoming track '{title}' by '{dj_name}' during {daypart}. "
+            f"Suggested opening style: '{suggested_opener}'. Suggested flavor phrase: '{sheng_flavor}'. "
+            f"Focus on the DJ mix, bassline, and high-pace energy."
+        )
+
+    generated_script = None
+
+    # Provider 1: NVIDIA NIM (nvidia/nemotron-3.5-bolt-e4b) - fastest & sharpest
+    if NVIDIA_API_KEY:
+        try:
+            nv_resp = await client.post(
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "nvidia/nemotron-3.5-bolt-e4b",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.85,
+                    "max_tokens": 60
+                },
+                timeout=5.0
+            )
+            if nv_resp.status_code == 200:
+                raw_c = nv_resp.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if raw_c and len(raw_c) > 10:
+                    generated_script = raw_c
+        except Exception:
+            pass
+
+    # Provider 2: Groq (Primary: qwen/qwen3.8-27b, Fallback: openai/gpt-oss-20b)
+    if not generated_script:
+        for api_key in [GROQ_API_KEY, GROQ_API_KEY_FALLBACK]:
+            if not api_key:
+                continue
+            for model in ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"]:
+                try:
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        json={
+                            "model": model,
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": 0.8,
+                            "max_tokens": 65
+                        },
+                        timeout=6.0
+                    )
+                    if resp.status_code == 200:
+                        content = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        if content and len(content) > 10:
+                            generated_script = content
+                            break
+                except Exception:
+                    pass
+            if generated_script:
+                break
+
+    # Curated Diverse Fallbacks with zero 'wazi' and varied geography
+    if not generated_script:
+        fallbacks = [
+            f"Spika zikilia across the two five four! Taking the energy all the way up right now with {title} by {dj_name} on GOODLIFE Radio!",
+            f"Kila pembe tuko locked in! Incoming pure heat kutoka {dj_name} na ngoma inaitwa {title}. Twende kazi!",
+            f"Grounds ziko ready this Sunday at Marara Camp Thika! Turn the volume up, GOODLIFE Radio two five four rolling straight into {title}!",
+            f"Frequency ya mabazuu haisimami! Mziki inatiririka bila breki, ngoma inafuata ni {title} by {dj_name}!",
+            f"Hold tight, selector anachoma meza! Massive energy across the frequency right now with {title} by {dj_name}!",
+            f"Turn the volume to the ceiling! We outside with pure fire, {dj_name} dropping {title} on GOODLIFE Radio two five four!",
+            f"Mavibe za two five four straight to your speakers! Transition safi kabisa into {title} by {dj_name}!"
+        ]
+        generated_script = random.choice(fallbacks)
+
+    final_script = clean_script_for_tts(generated_script)
+
+    # Anti-repetition check: if first 3 words match any recent script, swap opener
+    script_words = final_script.lower().split()[:3]
+    for past_script in RECENT_SCRIPTS[-10:]:
+        past_words = past_script.lower().split()[:3]
+        if script_words == past_words:
+            # Swap with random distinct opener
+            alt_opener = random.choice(DYNAMIC_OPENERS)
+            final_script = clean_script_for_tts(f"{alt_opener} GOODLIFE Radio two five four rolling with {title} by {dj_name}!")
+            break
+
+    # Update anti-repetition memory
+    RECENT_SCRIPTS.append(final_script)
+    if len(RECENT_SCRIPTS) > 15:
+        RECENT_SCRIPTS.pop(0)
+
+    return final_script
 
 async def update_worker_heartbeat(status: str = "IDLE"):
     global CURRENT_JOB_ID, LAST_ERROR, LAST_ERROR_TIME
@@ -272,6 +494,8 @@ async def follower_main_loop():
     global LAST_PROCESSED_TRANSITION_ID, TRACKS_SINCE_LAST_DROP, CURRENT_JOB_ID, LAST_ERROR, LAST_ERROR_TIME
     print(f"[PlayoutFollower] Playout Follower daemon started. Worker ID: {WORKER_ID}")
 
+    await seed_recent_scripts()
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         last_heartbeat_time = 0
 
@@ -330,9 +554,10 @@ async def follower_main_loop():
                                 print(f"[PlayoutFollower] Claimed Drop #{drop_id} for Track #{next_track_id} ('{next_track.get('title')}')")
 
                                 try:
-                                    # Generate Script
+                                    # Generate Authentic Homeboyz Radio Script
                                     daypart = get_daypart_name()
-                                    script = generate_dj_script(next_track, daypart)
+                                    script = await generate_dj_script(next_track, daypart, client)
+                                    print(f"[PlayoutFollower] Script generated for Drop #{drop_id}: \"{script}\"")
                                     
                                     # Synthesize TTS
                                     await async_db("UPDATE radio_drops SET status = 'SYNTHESIZING', script = %s WHERE id = %s", (script, drop_id), fetch=False)

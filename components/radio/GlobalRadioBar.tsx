@@ -70,7 +70,12 @@ export default function GlobalRadioBar() {
 
   // Schedule Now / Up Next strip data
   const [scheduleData, setScheduleData] = useState<{
-    nowSlot?: { show_title: string; presenter_name: string; substitute_name?: string | null };
+    nowSlot?: {
+      show_title: string;
+      presenter_name: string;
+      substitute_name?: string | null;
+      isReallyLive?: boolean;
+    };
     nextSlot?: { show_title: string; presenter_name: string; timeLabel: string };
   }>({});
 
@@ -78,20 +83,39 @@ export default function GlobalRadioBar() {
     let cancelled = false;
     async function loadSchedule() {
       try {
-        const res = await fetch("/api/radio/schedule", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
+        const [schedRes, stateRes] = await Promise.all([
+          fetch("/api/radio/schedule", { cache: "no-store" }).catch(() => null),
+          fetch("/api/radio/state", { cache: "no-store" }).catch(() => null),
+        ]);
+
+        let stateOnAirSlot: any = null;
+        if (stateRes && stateRes.ok) {
+          const stateData = await stateRes.json().catch(() => null);
+          stateOnAirSlot = stateData?.on_air_slot || null;
+        }
+
+        if (!schedRes || !schedRes.ok) return;
+        const data = await schedRes.json();
         if (cancelled || !data?.slots) return;
 
         const now = new Date();
-        const active = data.slots.find(
+        // A slot is really live if state API confirms on_air_slot or slot status is 'live'
+        const liveSlot = data.slots.find((s: any) => s.status === "live");
+        const activeScheduled = data.slots.find(
           (s: any) =>
             new Date(s.start_time) <= now &&
             now < new Date(s.end_time) &&
             s.status !== "cancelled"
         );
+
+        const currentSlot = liveSlot || activeScheduled;
+        const isReallyLive = Boolean(stateOnAirSlot?.is_live || liveSlot);
+
         const upcoming = data.slots.find(
-          (s: any) => new Date(s.start_time) > now && s.status !== "cancelled"
+          (s: any) =>
+            new Date(s.start_time) > now &&
+            s.status !== "cancelled" &&
+            s.id !== currentSlot?.id
         );
 
         let nextTimeLabel = "";
@@ -109,11 +133,12 @@ export default function GlobalRadioBar() {
         }
 
         setScheduleData({
-          nowSlot: active
+          nowSlot: currentSlot
             ? {
-                show_title: active.show_title,
-                presenter_name: active.presenter_name,
-                substitute_name: active.substitute_name,
+                show_title: currentSlot.show_title,
+                presenter_name: currentSlot.presenter_name,
+                substitute_name: currentSlot.substitute_name,
+                isReallyLive,
               }
             : undefined,
           nextSlot: upcoming
@@ -130,7 +155,7 @@ export default function GlobalRadioBar() {
     }
 
     loadSchedule();
-    const timer = setInterval(loadSchedule, 60000);
+    const timer = setInterval(loadSchedule, 30000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -216,7 +241,11 @@ export default function GlobalRadioBar() {
           {scheduleData.nowSlot ? (
             <span className="flex items-center justify-between gap-1">
               <span className="truncate">
-                🔴 <strong className="text-brand-accent">ON AIR:</strong> {scheduleData.nowSlot.show_title}
+                {scheduleData.nowSlot.isReallyLive ? (
+                  <>🔴 <strong className="text-red-400">ON AIR NOW:</strong> {scheduleData.nowSlot.show_title}</>
+                ) : (
+                  <>📻 <strong className="text-brand-accent">SCHEDULED:</strong> {scheduleData.nowSlot.show_title}</>
+                )}
               </span>
               <span className="text-brand-accent font-bold shrink-0">TIMETABLE →</span>
             </span>
@@ -360,11 +389,20 @@ export default function GlobalRadioBar() {
           title="View full Goodlife broadcast timetable"
         >
           <div className="flex items-center gap-2 truncate">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse shrink-0" />
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${scheduleData.nowSlot?.isReallyLive ? "bg-red-500 animate-ping" : "bg-brand-accent animate-pulse"}`} />
             {scheduleData.nowSlot ? (
               <span className="truncate">
-                <strong className="text-brand-accent font-black uppercase">ON AIR (SCHED):</strong>{" "}
-                {scheduleData.nowSlot.show_title} with {scheduleData.nowSlot.substitute_name || scheduleData.nowSlot.presenter_name}
+                {scheduleData.nowSlot.isReallyLive ? (
+                  <>
+                    <strong className="text-red-400 font-black uppercase">ON AIR NOW (LIVE):</strong>{" "}
+                    {scheduleData.nowSlot.show_title} with {scheduleData.nowSlot.substitute_name || scheduleData.nowSlot.presenter_name}
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-brand-accent font-black uppercase">SCHEDULED (AUTODJ):</strong>{" "}
+                    {scheduleData.nowSlot.show_title} with {scheduleData.nowSlot.substitute_name || scheduleData.nowSlot.presenter_name}
+                  </>
+                )}
               </span>
             ) : scheduleData.nextSlot ? (
               <span className="truncate">

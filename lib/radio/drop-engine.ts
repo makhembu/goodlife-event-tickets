@@ -445,7 +445,9 @@ ${personaVoiceGuide}
    - NEVER EVER say ".co.ke" under any circumstances.
 3. ANTI-REPETITION & HIGH-PACE RULES (STRICT 50-DROP DIVERSITY):
    - STRICTLY BANNED: NEVER start with "Yo", "Yoo", "Yo what's good", or weak generic intros. Starting with "Yo" is an immediate failure.
-   - Start with explosive, dynamic hooks: e.g., "Turn it up across the 254!", "Wazi wazi wanavybe!", "Nairobi locks in right now!", "Straight fire on the decks!".
+   - STRICTLY FORBIDDEN WORDS: NEVER use "wazi", "waz", or "wazi wazi". They are permanently banned.
+   - GEOGRAPHY DIVERSITY: Do NOT default to saying "Nairobi" on every drop. GOODLIFE Radio broadcasts to all forty seven counties (e.g. Mombasa, Nakuru, Kisumu, Kiambu, Machakos, Eldoret) and diaspora worldwide. Rotate regions or use national phrases like "across the two five four" or "kila pembe".
+   - Start with explosive, varied dynamic hooks: e.g., "Turn it up across the two five four!", "Straight fire on the decks!", "Spika zikilia pande zote!", "Cheki vile hii inabounce!".
    - Do NOT repeat the same catchphrase (like "Chapaa sasa, msee!" or "vibe ya leo") over and over.
    - Never reuse opening structures from recent drops.
    - Vary sentence lengths and punchy rhythms. If facts.next_track is provided, ALWAYS hype up the upcoming song title and artist dynamically!
@@ -762,7 +764,7 @@ async function callCascadingLlm(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "meta/llama-3.2-11b-vision-instruct",
+          model: "nvidia/nemotron-3.5-bolt-e4b",
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
