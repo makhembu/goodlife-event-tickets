@@ -51,32 +51,32 @@ export interface PerformanceSoundboardProps {
   onChoke?: () => void;
 }
 
-// 1. Static Initial Fallback Banks (Ensures soundboard NEVER renders blank)
+// 1. Static Initial Fallback Banks (UI skeleton while database pads load; NO hardcoded audio URLs in code)
 const STATIC_DJ_PADS: SoundPad[] = [
-  { id: 1, name: "DJ Fusion", emoji: "🔥", soundType: "audio", audioUrl: "/drops/samples/dj_fusion_marara_drop.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 2, name: "DJ Sudi", emoji: "💿", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_3.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 3, name: "DJ Sney", emoji: "⚡", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_4.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 4, name: "MC Cheche", emoji: "🎙️", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_5.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 5, name: "DJ Shax", emoji: "🔊", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_2.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 6, name: "Amina", emoji: "🌅", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_1.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 7, name: "Bwana Mkubwa", emoji: "📻", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_4.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 8, name: "Malkia Kenya", emoji: "✨", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_5.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 9, name: "Wigman", emoji: "🎧", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_6.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 10, name: "Zari", emoji: "🌊", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_1.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 11, name: "Gemini Aoede", emoji: "🌟", soundType: "audio", audioUrl: "/drops/sample_aoede.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 12, name: "Gemini Puck", emoji: "🚀", soundType: "audio", audioUrl: "/drops/sample_puck.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 13, name: "Gemini Charon", emoji: "🌌", soundType: "audio", audioUrl: "/drops/sample_charon.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 14, name: "Gemini Fenrir", emoji: "⚡", soundType: "audio", audioUrl: "/drops/sample_fenrir.mp3", category: "VOICE", color: "#DFBB7D" },
-  { id: 15, name: "Gemini Kore", emoji: "🌸", soundType: "audio", audioUrl: "/drops/sample_kore.mp3", category: "VOICE", color: "#DFBB7D" },
+  { id: 1, name: "DJ Fusion", emoji: "🔥", soundType: "audio", category: "CUSTOM", color: "#DFBB7D" },
+  { id: 2, name: "DJ Sudi", emoji: "💿", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 3, name: "DJ Sney", emoji: "⚡", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 4, name: "MC Cheche", emoji: "🎙️", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 5, name: "DJ Shax", emoji: "🔊", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 6, name: "Amina", emoji: "🌅", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 7, name: "Bwana Mkubwa", emoji: "📻", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 8, name: "Malkia Kenya", emoji: "✨", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 9, name: "Wigman", emoji: "🎧", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 10, name: "Zari", emoji: "🌊", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 11, name: "Gemini Aoede", emoji: "🌟", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 12, name: "Gemini Puck", emoji: "🚀", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 13, name: "Gemini Charon", emoji: "🌌", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 14, name: "Gemini Fenrir", emoji: "⚡", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
+  { id: 15, name: "Gemini Kore", emoji: "🌸", soundType: "audio", category: "VOICE", color: "#DFBB7D" },
 ];
 
 const STATIC_FX_PADS: SoundPad[] = [
-  { id: 16, name: "DJ Fusion (Marara)", emoji: "🔥", soundType: "audio", audioUrl: "/drops/samples/dj_fusion_marara_drop.mp3", category: "VOICE", color: "#F5C842" },
-  { id: 17, name: "DJ Fusion (English)", emoji: "🎙️", soundType: "audio", audioUrl: "/drops/samples/dj_fusion_english_drop.mp3", category: "VOICE", color: "#F5C842" },
-  { id: 18, name: "Nairobi Sunrise", emoji: "☀️", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_5.mp3", category: "STATION", color: "#DFBB7D" },
-  { id: 19, name: "Festival Heat", emoji: "✨", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_2.mp3", category: "STATION", color: "#DFBB7D" },
-  { id: 20, name: "Wazi 254 Hype", emoji: "🇰🇪", soundType: "audio", audioUrl: "/drops/wazi-254.mp3", category: "STATION", color: "#10B981" },
-  { id: 21, name: "DIY Recorded Drop", emoji: "🎤", soundType: "audio", audioUrl: "/drops/samples/kenyan_vibes_6.mp3", category: "CUSTOM", color: "#10B981" },
+  { id: 16, name: "DJ Fusion (Alt)", emoji: "🔥", soundType: "audio", category: "VOICE", color: "#F5C842" },
+  { id: 17, name: "DJ Fusion (English)", emoji: "🎙️", soundType: "audio", category: "VOICE", color: "#F5C842" },
+  { id: 18, name: "Nairobi Sunrise", emoji: "☀️", soundType: "audio", category: "STATION", color: "#DFBB7D" },
+  { id: 19, name: "Festival Heat", emoji: "✨", soundType: "audio", category: "STATION", color: "#DFBB7D" },
+  { id: 20, name: "Wazi 254 Hype", emoji: "🇰🇪", soundType: "audio", category: "STATION", color: "#10B981" },
+  { id: 21, name: "DIY Recorded Drop", emoji: "🎤", soundType: "audio", category: "CUSTOM", color: "#10B981" },
 ];
 
 const EMOJI_PRESETS = [

@@ -61,31 +61,45 @@ export async function POST(req: NextRequest) {
         console.warn("[drops/generate] Direct synthesis error:", synthErr.message);
       }
 
-      // Graceful fallback to verified authentic Kenyan drop samples extracted from live broadcasts
-      const voiceSampleMap: Record<string, string> = {
-        "dj-fusion": "/drops/samples/dj_fusion_marara_drop.mp3",
-        "fusion": "/drops/samples/dj_fusion_marara_drop.mp3",
-        "amina": "/drops/samples/kenyan_vibes_1.mp3",
-        "dj-shax": "/drops/samples/kenyan_vibes_2.mp3",
-        "shax": "/drops/samples/kenyan_vibes_2.mp3",
-        "mc-cheche": "/drops/samples/kenyan_vibes_3.mp3",
-        "cheche": "/drops/samples/kenyan_vibes_3.mp3",
-        "wigman": "/drops/samples/kenyan_vibes_4.mp3",
-        "the-chief": "/drops/samples/kenyan_vibes_4.mp3",
-        "zari": "/drops/samples/kenyan_vibes_5.mp3",
-        "puck": "/drops/samples/kenyan_vibes_2.mp3",
-        "fenrir": "/drops/samples/kenyan_vibes_3.mp3",
-        "aoede": "/drops/samples/kenyan_vibes_1.mp3",
-        "charon": "/drops/samples/kenyan_vibes_4.mp3",
-        "kore": "/drops/samples/kenyan_vibes_5.mp3",
-      };
-      const fallbackUrl = voiceSampleMap[personaVoice.toLowerCase()] || "/drops/samples/kenyan_vibes_1.mp3";
+      // Graceful dynamic fallback: Query latest customized pad from DB first, then R2 defaults
+      let fallbackUrl: string | null = null;
+      try {
+        const { getDbPool } = await import("@/lib/neon-client");
+        const db = getDbPool();
+        const searchPattern = `%${personaVoice.replace(/^dj-|^gemini-|-/g, " ").trim()}%`;
+        const padRes = await db.query(
+          `SELECT audio_url FROM soundboard_pads 
+           WHERE label ILIKE $1 AND audio_url IS NOT NULL AND audio_url != ''
+           ORDER BY bank_id ASC, position ASC LIMIT 1`,
+          [searchPattern]
+        );
+        if (padRes.rows.length > 0 && padRes.rows[0].audio_url) {
+          fallbackUrl = padRes.rows[0].audio_url;
+        }
+      } catch (dbErr: any) {
+        console.warn("[drops/generate] DB pad lookup warning:", dbErr?.message);
+      }
+
+      if (!fallbackUrl) {
+        try {
+          const { getDbPool } = await import("@/lib/neon-client");
+          const db = getDbPool();
+          const anyPad = await db.query(
+            `SELECT audio_url FROM soundboard_pads 
+             WHERE audio_url IS NOT NULL AND audio_url != '' 
+             ORDER BY position ASC LIMIT 1`
+          );
+          if (anyPad.rows.length > 0) {
+            fallbackUrl = anyPad.rows[0].audio_url;
+          }
+        } catch {}
+      }
       return NextResponse.json({
         success: true,
         script: scriptText,
-        drop_url: fallbackUrl,
-        mastered_file: fallbackUrl.replace("/drops/", ""),
-        note: "Served via local broadcast master cache",
+        drop_url: fallbackUrl || "",
+        mastered_file: fallbackUrl ? fallbackUrl.split("/").pop() || "" : "",
+        note: "Served via dynamic broadcast master cache",
       }, { status: 200 });
     }
 

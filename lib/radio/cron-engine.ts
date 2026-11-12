@@ -240,11 +240,27 @@ export async function executeCronRadioDrops(
       const reviewed = deps.selectFallbackDrop(selectedPersona);
       scriptToUse = reviewed.script;
       tagToUse = reviewed.tag;
-      audioUrlToUse = (reviewed as any).audio_url || `/drops/samples/${selectedPersona}_context_drop.mp3`;
+      audioUrlToUse = (reviewed as any).audio_url || "";
     } else {
       scriptToUse = "Niaje Kanairo! You are tuned into GOODLIFE Radio 254, keeping the city connected.";
       tagToUse = "[excited]";
-      audioUrlToUse = `/drops/samples/${selectedPersona}_context_drop.mp3`;
+      audioUrlToUse = "";
+    }
+
+    if (!audioUrlToUse) {
+      try {
+        const padRes = await deps.queryDb(
+          `SELECT audio_url FROM soundboard_pads 
+           WHERE label ILIKE $1 AND audio_url IS NOT NULL AND audio_url != '' 
+           ORDER BY bank_id ASC, position ASC LIMIT 1`,
+          [`%${selectedPersona.replace(/^dj-|^gemini-|-/g, " ").trim()}%`]
+        );
+        if (padRes.rows.length > 0 && padRes.rows[0].audio_url) {
+          audioUrlToUse = padRes.rows[0].audio_url;
+        }
+      } catch (err: any) {
+        console.warn("[cron-engine] DB pad fallback lookup warning:", err?.message);
+      }
     }
     isFallback = true;
   }
