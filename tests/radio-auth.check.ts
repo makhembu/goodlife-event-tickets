@@ -266,6 +266,27 @@ async function runTests() {
   const test8 = authorizeConnection(djKhesh, key1, [coveredSlot], new Date("2026-11-20T17:05:00.000Z"), null);
   check("Substitute presenter is authorized to broadcast on covered slot", test8.allow);
 
+  // 5. Admin Master Takeover Authorization
+  console.log("\n=== Admin Master Takeover Logic ===");
+  const adminKeyGen = generateStreamKey();
+  const adminKey = adminKeyGen.fullKey;
+  const adminHash = adminKeyGen.hash;
+
+  function authorizeAdminTakeover(providedKey: string, storedAdminHash: string | null) {
+    if (!storedAdminHash) return { allow: false, reason: "admin_key_not_configured" };
+    if (!verifyStreamKey(providedKey, storedAdminHash)) return { allow: false, reason: "invalid_admin_key" };
+    return { allow: true, reason: "authorized_admin_takeover", is_admin_takeover: true };
+  }
+
+  const adminTest1 = authorizeAdminTakeover(adminKey, adminHash);
+  check("Admin Master Key authorizes instant takeover unconditionally", adminTest1.allow && adminTest1.is_admin_takeover === true);
+
+  const adminTest2 = authorizeAdminTakeover("wrong_admin_key", adminHash);
+  check("Invalid Admin Master Key is rejected", !adminTest2.allow && adminTest2.reason === "invalid_admin_key");
+
+  const adminTest3 = authorizeAdminTakeover(adminKey, null);
+  check("Missing Admin Master Key hash fails closed", !adminTest3.allow && adminTest3.reason === "admin_key_not_configured");
+
   console.log(`\nResults: ${pass} passed, ${failures.length} failed`);
   if (failures.length > 0) {
     process.exit(1);

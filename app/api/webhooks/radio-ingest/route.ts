@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { neonQuery } from "@/lib/supabase-db";
 import { slotTrackAsPlaylistUpNext } from "@/lib/radio/playlist-slotter";
+import { probeAudioMetadata, formatAudioDuration } from "@/lib/radio/audio-prober";
 
 const rawSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
 
@@ -57,10 +58,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Title and audio_url required" }, { status: 400 });
     }
 
-    // Format mm:ss for display
-    const mins = Math.floor((duration_sec || 0) / 60);
-    const secs = (duration_sec || 0) % 60;
-    const durationStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+    let finalDurationSec = typeof duration_sec === "number" && duration_sec > 0 ? duration_sec : 180;
+    let finalBitrate = typeof bitrate === "number" && bitrate > 0 ? bitrate : 160;
+
+    // Probe the real audio stream to detect and eliminate any trailing silence (e.g. YouTube lyric outro)
+    try {
+      const probed = await probeAudioMetadata(audio_url, file_size);
+      if (probed && probed.durationSec > 0) {
+        finalDurationSec = probed.durationSec;
+        if (probed.bitrateKbps > 0) finalBitrate = probed.bitrateKbps;
+      }
+    } catch (e) {
+      console.warn("[radio-ingest webhook] Auto-probe silence detection warning:", e);
+    }
+
+    const durationStr = formatAudioDuration(finalDurationSec);
 
     const query = `
       INSERT INTO radio_sets (
@@ -87,10 +99,10 @@ export async function POST(req: NextRequest) {
       r2_key || null,
       cover_url || "",
       durationStr,
-      duration_sec || 0,
+      finalDurationSec,
       genre || "Afro House",
       file_size || 0,
-      bitrate || 160,
+      finalBitrate,
       video_id || null,
     ];
 

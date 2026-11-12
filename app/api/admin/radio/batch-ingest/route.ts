@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
+import { probeAudioMetadata, formatAudioDuration } from "@/lib/radio/audio-prober";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +58,16 @@ export async function POST(req: NextRequest) {
       const audioUrl = t.audio_url || t.url || `https://www.youtube.com/watch?v=${t.video_id}`;
       const title = t.title || `Track ${t.video_id}`;
       const djName = t.artist || "GOODLIFE Artist";
-      const durationSec = t.duration_sec && t.duration_sec > 0 ? t.duration_sec : 180;
-      const mins = Math.floor(durationSec / 60);
-      const secs = durationSec % 60;
-      const durationStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+      let durationSec = t.duration_sec && t.duration_sec > 0 ? t.duration_sec : 180;
+      if (audioUrl.includes(".r2.dev") || audioUrl.endsWith(".mp3") || audioUrl.endsWith(".m4a")) {
+        try {
+          const probed = await probeAudioMetadata(audioUrl);
+          if (probed && probed.durationSec > 0) {
+            durationSec = probed.durationSec;
+          }
+        } catch {}
+      }
+      const durationStr = formatAudioDuration(durationSec);
 
       // Check if track already exists
       const existing = await neonQuery(

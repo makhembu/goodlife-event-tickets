@@ -211,10 +211,15 @@ export default function CartwallSoundboard({
     setActivePad(pad.id);
     setTimeout(() => setActivePad(null), 300);
 
-    if (broadcastMode === "on_air" && onFireOnAir) {
-      onFireOnAir(pad.name, pad.audioUrl);
+    if (broadcastMode === "on_air") {
+      if (onFireOnAir) {
+        onFireOnAir(pad.name, pad.audioUrl);
+      }
+      // On-Air mode: fire to broadcast stream only. Do NOT play locally to avoid double-play echo!
+      return;
     }
 
+    // Rehearse / Preview mode: audition locally through device speakers
     if (pad.soundType === "audio" && pad.audioUrl) {
       if (!customAudioRef.current) {
         customAudioRef.current = new Audio();

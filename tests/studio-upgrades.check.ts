@@ -242,7 +242,7 @@ check(
   radioCtxCode.includes("executeCrossfade") &&
     radioCtxCode.includes("activeDeckRef") &&
     radioCtxCode.includes("urlsToPreload") &&
-    rundownCode.includes("localTrack?.audio_url")
+    rundownCode.includes("handlePlayNow")
 );
 
 console.log(`\nChecks: ${passed} passed, ${failed} failed`);

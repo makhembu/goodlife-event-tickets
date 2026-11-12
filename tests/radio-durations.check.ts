@@ -92,12 +92,41 @@ async function run() {
           assert(grown.duration_sec === 3422, `GROWN AND SEXY 2 duration_sec is 3422s (actual: ${grown.duration_sec})`);
           assert(grown.bitrate === 192, `GROWN AND SEXY 2 bitrate is 192k (actual: ${grown.bitrate})`);
         }
+
+        // Check SAWA SAWA (id = 768) - previously had 60s silence outro!
+        const sawaRes = await pool.query(`SELECT id, title, duration_sec, duration, bitrate FROM radio_sets WHERE id = 768`);
+        const sawa = sawaRes.rows[0];
+        assert(sawa !== undefined, "SAWA SAWA (id=768) exists in database");
+        if (sawa) {
+          assert(sawa.duration_sec === 191, `SAWA SAWA duration_sec is 191s (3:11) (actual: ${sawa.duration_sec})`);
+          assert(sawa.duration === "3:11", `SAWA SAWA formatted duration is '3:11' (actual: '${sawa.duration}')`);
+        }
       } catch (err: any) {
         assert(false, "Database query succeeded", err.message);
       } finally {
         await pool.end();
       }
     }
+  }
+
+  // 5. Static analysis: radio-ingest webhook and batch-ingest routes integrate probeAudioMetadata
+  const webhookPath = path.resolve(process.cwd(), "app/api/webhooks/radio-ingest/route.ts");
+  if (fs.existsSync(webhookPath)) {
+    const content = fs.readFileSync(webhookPath, "utf8");
+    assert(content.includes("probeAudioMetadata"), "radio-ingest webhook imports probeAudioMetadata");
+  }
+
+  const batchIngestPath = path.resolve(process.cwd(), "app/api/admin/radio/batch-ingest/route.ts");
+  if (fs.existsSync(batchIngestPath)) {
+    const content = fs.readFileSync(batchIngestPath, "utf8");
+    assert(content.includes("probeAudioMetadata"), "batch-ingest route imports probeAudioMetadata");
+  }
+
+  // 6. Static analysis: radio-bridge-server.py has silenceremove filter
+  const bridgeServerPath = path.resolve(process.cwd(), "scripts/radio-bridge-server.py");
+  if (fs.existsSync(bridgeServerPath)) {
+    const content = fs.readFileSync(bridgeServerPath, "utf8");
+    assert(content.includes("silenceremove=stop_periods=-1"), "radio-bridge-server.py includes silenceremove filter to strip trailing dead air");
   }
 
   console.log("=== Verification Completed ===");

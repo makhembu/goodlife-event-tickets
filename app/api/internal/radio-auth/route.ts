@@ -66,6 +66,60 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // 0. Admin Master Takeover Check
+    // If username is "admin" or slug is "admin", verify against radio_settings.admin_stream_key_hash
+    if (slug === "admin" || rawUsername.toLowerCase() === "admin") {
+      const adminRes = await neonQuery(
+        `SELECT admin_stream_key_hash, admin_stream_key_prefix, live_title
+         FROM radio_settings
+         WHERE id = 1
+         LIMIT 1;`
+      );
+
+      const adminRow = adminRes.rows[0];
+      const adminHash = adminRow?.admin_stream_key_hash;
+
+      if (!adminHash || !verifyStreamKey(rawKey, adminHash)) {
+        await logAttempt(null, null, false, "Invalid admin master stream key");
+        return NextResponse.json({
+          allow: false,
+          reason: "Invalid admin stream key",
+        });
+      }
+
+      // Admin has instant, unconditional takeover privileges (anytime 24/7)
+      const liveTitle = adminRow?.live_title || "GOODLIFE MAIN STAGE LIVE (ADMIN TAKEOVER)";
+      await logAttempt(null, null, true, "Admin Master Live Takeover Authorized");
+
+      // Stamp radio_settings to live mode immediately
+      try {
+        await neonQuery(
+          `UPDATE radio_settings
+           SET broadcast_mode = 'live',
+               live_title = $1,
+               last_heartbeat = NOW(),
+               updated_at = NOW()
+           WHERE id = 1;`,
+          [liveTitle]
+        );
+      } catch (e) {
+        console.warn("[radio-auth] Failed to update radio_settings on admin takeover:", e);
+      }
+
+      return NextResponse.json({
+        allow: true,
+        reason: "Authorized (Admin Master Takeover)",
+        slot_id: null,
+        show_id: null,
+        show_title: liveTitle,
+        presenter_id: null,
+        dj_name: "Admin Control",
+        is_admin_takeover: true,
+        starts_at: new Date().toISOString(),
+        ends_at: null,
+      });
+    }
+
     // 1. Presenter Lookup
     const presRes = await neonQuery(
       `SELECT id, full_name, dj_name, slug, email, stream_key_hash, status

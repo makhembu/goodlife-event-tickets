@@ -7,6 +7,8 @@ export interface ProbedAudioMetadata {
   durationSec: number;
   durationFormatted: string;
   bitrateKbps: number;
+  hasTrailingSilence?: boolean;
+  rawDurationSec?: number;
 }
 
 /**
@@ -25,8 +27,42 @@ export function formatAudioDuration(totalSeconds: number): string {
 }
 
 /**
- * Probes the exact duration and bitrate of an audio file via ffprobe or streaming header inspection.
- * Never guesses duration from a hardcoded 160kbps formula.
+ * Detects if the audio file has trailing silence (e.g. YouTube lyric video outro, blank tail).
+ * Returns the timestamp where audible audio ends so the broadcast engine never idles on silence.
+ */
+async function detectAudibleEnd(audioUrl: string, rawDurationSec: number): Promise<number> {
+  if (rawDurationSec <= 20) return rawDurationSec;
+  try {
+    const probeWindow = Math.min(60, Math.max(15, Math.floor(rawDurationSec * 0.3)));
+    const cmd = `ffmpeg -sseof -${probeWindow} -i "${audioUrl}" -af "silencedetect=noise=-35dB:d=2.0" -f null -`;
+    const { stderr } = await execAsync(cmd, { timeout: 15000 });
+
+    const matches = [...stderr.matchAll(/silence_start:\s*([0-9.]+)/g)];
+    const endMatches = [...stderr.matchAll(/silence_end:\s*([0-9.]+)\s*\|\s*silence_duration:\s*([0-9.]+)/g)];
+
+    if (matches.length > 0) {
+      const lastStartRelative = parseFloat(matches[matches.length - 1][1]);
+      const lastEndRelative = endMatches.length > 0 ? parseFloat(endMatches[endMatches.length - 1][1]) : -1;
+
+      const windowStart = rawDurationSec - probeWindow;
+      const silenceStartAbsolute = windowStart + lastStartRelative;
+      const silenceDuration = rawDurationSec - silenceStartAbsolute;
+
+      // If trailing silence lasts >= 3 seconds and runs to EOF
+      if (silenceDuration >= 3.0 && (lastEndRelative === -1 || Math.abs(lastEndRelative - probeWindow) < 1.0)) {
+        console.log(`[audio-prober] Trailing silence detected in ${audioUrl}: ${silenceDuration.toFixed(1)}s. Trimming audible duration from ${rawDurationSec}s to ${Math.round(silenceStartAbsolute)}s.`);
+        return Math.max(15, Math.round(silenceStartAbsolute));
+      }
+    }
+  } catch (err: any) {
+    // Non-fatal if silence probe fails or is unsupported on remote host
+  }
+  return rawDurationSec;
+}
+
+/**
+ * Probes the exact duration, bitrate, and audible endpoint of an audio file.
+ * Automatically eliminates trailing silence from duration calculations.
  */
 export async function probeAudioMetadata(audioUrl: string, fileSize?: number): Promise<ProbedAudioMetadata | null> {
   // Method 1: ffprobe (handles MP3 CBR/VBR, M4A, WAV, AAC with container accuracy)
@@ -39,12 +75,19 @@ export async function probeAudioMetadata(audioUrl: string, fileSize?: number): P
     const bit = parseInt(parsed?.format?.bit_rate || "0", 10);
 
     if (dur && isFinite(dur) && dur > 0) {
-      const durationSec = Math.round(dur);
+      const rawDurSec = Math.round(dur);
       const bitrateKbps = bit > 0 ? Math.round(bit / 1000) : 192;
+
+      // Check for trailing silence so the song never idles on silence at the end
+      const audibleDurSec = await detectAudibleEnd(audioUrl, rawDurSec);
+      const hasTrailingSilence = audibleDurSec < rawDurSec;
+
       return {
-        durationSec,
-        durationFormatted: formatAudioDuration(durationSec),
+        durationSec: audibleDurSec,
+        durationFormatted: formatAudioDuration(audibleDurSec),
         bitrateKbps,
+        hasTrailingSilence,
+        rawDurationSec: rawDurSec,
       };
     }
   } catch (err: any) {

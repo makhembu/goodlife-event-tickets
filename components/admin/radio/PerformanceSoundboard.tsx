@@ -317,7 +317,10 @@ export default function PerformanceSoundboard({
 
     try {
       const audio = new Audio(pad.audioUrl);
-      audio.volume = muted ? 0 : volume;
+      // In on_air mode: mute local element so countdown timer works without playing sound locally!
+      const isMutedLocal = broadcastMode === "on_air" || muted;
+      audio.volume = isMutedLocal ? 0 : volume;
+      audio.muted = isMutedLocal;
 
       audio.onloadedmetadata = () => {
         const dur = audio.duration || 4;

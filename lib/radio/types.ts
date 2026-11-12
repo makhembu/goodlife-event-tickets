@@ -99,6 +99,7 @@ export interface LiveNowPlayingTrack {
   thumbnail?: string;
   audio_url?: string;
   duration?: number;
+  duration_sec?: number;
   elapsed?: number;
   video_id?: string;
   thought?: string;

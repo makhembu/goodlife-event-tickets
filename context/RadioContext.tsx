@@ -590,8 +590,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && track.audio_url) {
             if (audioRef.current.src !== track.audio_url) {
               const audio = audioRef.current;
-              const remaining = (audio.duration && !isNaN(audio.duration) && audio.currentTime)
-                ? audio.duration - audio.currentTime
+              const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
+              const effectiveTrackDur = (targetDur && targetDur > 10)
+                ? Math.min(audio.duration || Infinity, targetDur)
+                : (audio.duration || 0);
+              const remaining = (effectiveTrackDur && !isNaN(effectiveTrackDur) && audio.currentTime)
+                ? effectiveTrackDur - audio.currentTime
                 : 0;
 
               // Guard against premature cutoff: swap if in outro window (<=15s), song has stopped/ended,
@@ -1259,9 +1263,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const audio = deck === "A" ? audioRef.current : preloadAudioRef.current;
       if (!audio) return;
       const cur = audio.currentTime;
-      const dur = audio.duration;
+      // Cap effective duration to database duration if audio file has trailing silence
+      const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
+      const targetTrackDur = (targetDur && targetDur > 10)
+        ? targetDur
+        : undefined;
+      const effectiveDur = targetTrackDur
+        ? Math.min(audio.duration || Infinity, targetTrackDur)
+        : (audio.duration || 0);
 
-      if (!isLiveRef.current && dur && !isNaN(dur) && dur > 0) {
+      if (!isLiveRef.current && effectiveDur && !isNaN(effectiveDur) && effectiveDur > 0) {
         setInterpolatedElapsed(cur);
       }
 
@@ -1277,9 +1288,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 🎚️ AutoDJ natural smooth crossfade in the last 3.5 seconds
-      if (dur && !isNaN(dur) && dur > 12 && !isCrossfadingRef.current && isLiveRef.current) {
-        const remaining = dur - cur;
-        if (remaining <= 3.5 && remaining > 0.5 && !hasFiredAutoDjCrossfadeRef.current) {
+      if (effectiveDur && !isNaN(effectiveDur) && effectiveDur > 12 && !isCrossfadingRef.current && isLiveRef.current) {
+        const remaining = effectiveDur - cur;
+        if (remaining <= 3.5 && remaining > -1.0 && !hasFiredAutoDjCrossfadeRef.current) {
           hasFiredAutoDjCrossfadeRef.current = true;
           let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
           if (!nextCandidate?.audio_url && backupSetsRef.current.length > 0) {
@@ -1498,7 +1509,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     [swellMusicToFullVolume]
   );
 
-  // Method exposed to admin and DJ soundboard: broadcast drop to entire stream and fire locally
+  // Method exposed to admin and DJ soundboard: broadcast drop to live stream only (no local echo)
   const airLiveDrop = useCallback(
     async (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => {
       try {
@@ -1515,7 +1526,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           if (data.drop) {
-            triggerLiveInjectedDrop(data.drop);
+            // Aired to live stream broadcast for all listeners!
+            // Do NOT trigger local playback on the DJ/admin browser to prevent double-play echo.
             return true;
           }
         }
@@ -1524,7 +1536,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
       return false;
     },
-    [triggerLiveInjectedDrop]
+    []
   );
 
   const setManualDucking = useCallback(

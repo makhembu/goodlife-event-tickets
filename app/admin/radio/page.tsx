@@ -103,7 +103,7 @@ export default function AdminRadioPage() {
     dj_name?: string | null;
   } | null>(null);
 
-  // Uploads blob audio if needed, broadcasts to live stream for all listeners, and plays locally
+  // Uploads blob audio if needed, broadcasts to live stream for all listeners (Stream only, no local echo)
   const handleFireCueOnAir = async (item: CueDropItem) => {
     setIsDucking(true);
     let targetUrl = item.audioUrl;
@@ -131,9 +131,8 @@ export default function AdminRadioPage() {
       persona: item.persona,
       script: item.script,
     });
-    const audio = new Audio(targetUrl);
-    audio.onended = () => setIsDucking(false);
-    audio.play().catch(() => setIsDucking(false));
+    // Stream only: do NOT play locally via new Audio() to prevent double-play echo!
+    setTimeout(() => setIsDucking(false), 4500);
   };
 
   // Search tab state
@@ -193,6 +192,19 @@ export default function AdminRadioPage() {
   // Status banners
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
+  // Live on-air state (is someone broadcasting via Icecast/Harbor?)
+  const [liveOnAirStatus, setLiveOnAirStatus] = useState<{
+    isConnected: boolean;
+    type: "autodj" | "presenter" | "admin";
+    name: string | null;
+    showTitle: string | null;
+  }>({
+    isConnected: false,
+    type: "autodj",
+    name: null,
+    showTitle: null,
+  });
+
   const showMsg = (text: string, type: "success" | "error") => {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
@@ -250,6 +262,12 @@ export default function AdminRadioPage() {
       const res = await fetch("/api/admin/radio/health");
       const data = await res.json();
       setBridgeOnline(Boolean(data.ok));
+      setLiveOnAirStatus({
+        isConnected: Boolean(data.live_dj_connected),
+        type: data.live_type || "autodj",
+        name: data.live_dj_name || null,
+        showTitle: data.live_show?.show_title || data.live_title || null,
+      });
     } catch {
       setBridgeOnline(false);
     }
@@ -587,6 +605,45 @@ export default function AdminRadioPage() {
       {/* VIEW 1: STUDIO COCKPIT (DUAL DECK ON DESKTOP, SUB-DECK SWITCHER ON MOBILE) */}
       {activeTab === "studio" && (
         <div className="space-y-4">
+          {/* Live Ingest Alert: Notifies admin when presenter/admin is live on air and cockpit playout is overridden */}
+          {liveOnAirStatus.isConnected && (
+            <div className="bg-amber-500/15 border-2 border-amber-400 p-3 shadow-[3px_3px_0px_#000] font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="p-1.5 bg-amber-400 text-black font-black shrink-0 mt-0.5 sm:mt-0">
+                  <RadioTower className="w-4 h-4 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-amber-300 uppercase tracking-wider">
+                      LIVE BROADCAST IN PROGRESS:
+                    </span>
+                    <span className="px-2 py-0.5 bg-black/60 border border-amber-400/50 text-white font-bold">
+                      {liveOnAirStatus.type === "admin"
+                        ? "ADMIN MASTER TAKEOVER"
+                        : `DJ ${liveOnAirStatus.name || "LIVE PRESENTER"}`}
+                    </span>
+                    {liveOnAirStatus.showTitle && (
+                      <span className="text-white/70 text-[11px]">
+                        ({liveOnAirStatus.showTitle})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-200/90 mt-1">
+                    ⚠️ The station feed is currently locked to direct hardware/Icecast ingest. Cockpit playlist skips and live cueing will <strong>not affect the live stream</strong> until the live session concludes or you release the harbor.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("live")}
+                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>VIEW HARBOR / ENCODER</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Mobile Studio Deck Segmented Switcher (< lg) */}
           <div className="lg:hidden flex items-center p-1 bg-[#16181D] border-2 border-[#DFBB7D] shadow-[2px_2px_0px_#16181D] font-mono text-xs select-none">
             <button
@@ -705,11 +762,10 @@ export default function AdminRadioPage() {
               <div className={`space-y-6 ${studioDeck === "perform" ? "hidden lg:block" : "block"}`}>
                 <DropStudio
                   onDropReady={(cue) => setCueItem(cue)}
-                  onFireDirect={(audioUrl, title) => {
+                  onFireDirect={async (audioUrl, title) => {
                     setIsDucking(true);
-                    const audio = new Audio(audioUrl);
-                    audio.onended = () => setIsDucking(false);
-                    audio.play().catch(() => setIsDucking(false));
+                    await airLiveDrop({ audioUrl, title, persona: "Station DJ" });
+                    setTimeout(() => setIsDucking(false), 4500);
                   }}
                   onAirLive={async (audioUrl, title, persona, script) => {
                     return await airLiveDrop({ audioUrl, title, persona, script });
@@ -720,18 +776,7 @@ export default function AdminRadioPage() {
                   <CueDock
                     cueItem={cueItem}
                     onClearCue={() => setCueItem(null)}
-                    onFireOnAir={async (item) => {
-                      setIsDucking(true);
-                      await airLiveDrop({
-                        audioUrl: item.audioUrl,
-                        title: item.title,
-                        persona: item.persona,
-                        script: item.script,
-                      });
-                      const audio = new Audio(item.audioUrl);
-                      audio.onended = () => setIsDucking(false);
-                      audio.play().catch(() => setIsDucking(false));
-                    }}
+                    onFireOnAir={handleFireCueOnAir}
                   />
                 </div>
               </div>
