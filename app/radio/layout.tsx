@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
+  manifest: "/manifests/radio.json",
   title: {
     absolute: "GOODLIFE Radio 254 · 24/7 Live Festival Airwaves & DJ Vault",
   },

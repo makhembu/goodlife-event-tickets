@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
+import CatchUpVault from "@/components/radio/CatchUpVault";
 import { ArrowLeft, Radio, Calendar, ExternalLink, Globe } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export async function generateMetadata(props: {
   const pageUrl = `${baseUrl}/radio/presenters/${slug}`;
   const title = `${presenter.dj_name} | GOODLIFE Radio 254`;
   const description = presenter.bio || `Listen to ${presenter.dj_name} on GOODLIFE Radio 254.`;
+  const ogImageUrl = `${baseUrl}/api/og/radio?presenter=${encodeURIComponent(slug)}`;
 
   return {
     title: { absolute: title },
@@ -34,12 +36,21 @@ export async function generateMetadata(props: {
       url: pageUrl,
       siteName: SITE_NAME,
       locale: "en_KE",
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: `${presenter.dj_name} on GOODLIFE Radio 254`,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       site: TWITTER_HANDLE,
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }
@@ -239,6 +250,8 @@ export default async function PresenterDetailPage({
             </ul>
           </div>
         )}
+        {/* Catch Up Vault (Public Approved Recordings by Presenter) */}
+        <CatchUpVault presenterSlug={slug} title={`CATCH UP · ${presenter.dj_name}`} />
       </main>
     </div>
   );

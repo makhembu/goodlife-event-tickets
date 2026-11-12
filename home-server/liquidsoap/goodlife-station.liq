@@ -139,24 +139,55 @@ radio_stream = smooth_add(
 radio_stream = normalize(target=-14.0, window=0.03, radio_stream)
 radio_stream = compress.exponential(mu=2.0, radio_stream)
 
-# 6. Stream Output 1: Primary Low-Latency 192kbps MP3 Stream
-# Serves instant snap-to-live (<2s) on goodlife.co.ke/radio
+# 6. Stream Output 1A: Default Mobile Low-Bitrate Stream (Data Saver: 64kbps MP3)
+# Optimized for mobile data in Kenya (~28MB/hour)
+output.icecast(
+  %mp3(bitrate=64, samplerate=44100, stereo=true),
+  host="127.0.0.1",
+  port=8000,
+  password=environment.get("ICECAST_SOURCE_PASSWORD", default="change_me_in_env"),
+  mount="/listen/goodlife/live_low.mp3",
+  name="GOODLIFE Radio 254 (Data Saver 64k)",
+  description="Afrobeats, Amapiano & Festival Anthems Live from Nairobi (Low Data)",
+  genre="Afro-House, Amapiano, Urban",
+  url="https://goodlife.co.ke/radio",
+  public=true,
+  radio_stream
+)
+
+# 6b. Stream Output 1B: Opt-In Hi-Fi Stream (192kbps MP3)
+# Pristine stereo for Wi-Fi / home listening (~84MB/hour)
 output.icecast(
   %mp3(bitrate=192, samplerate=44100, stereo=true),
   host="127.0.0.1",
   port=8000,
   password=environment.get("ICECAST_SOURCE_PASSWORD", default="change_me_in_env"),
-  mount="/listen/goodlife/live.mp3",
-  name="GOODLIFE Radio 254 (192k MP3 Direct)",
-  description="Afrobeats, Amapiano & Festival Anthems Live from Nairobi",
+  mount="/listen/goodlife/live_hi.mp3",
+  name="GOODLIFE Radio 254 (Hi-Fi 192k)",
+  description="Afrobeats, Amapiano & Festival Anthems Live from Nairobi (Hi-Fi)",
   genre="Afro-House, Amapiano, Urban",
-  url="https://dj.darajadigital.com",
+  url="https://goodlife.co.ke/radio",
   public=true,
   radio_stream
 )
 
-# 7. Stream Output 2: Fallback HLS Stream (4-Second Chunks)
-# For high-packet-loss mobile networks
+# 6c. Legacy compatibility mount pointing to default Data Saver stream
+output.icecast(
+  %mp3(bitrate=64, samplerate=44100, stereo=true),
+  host="127.0.0.1",
+  port=8000,
+  password=environment.get("ICECAST_SOURCE_PASSWORD", default="change_me_in_env"),
+  mount="/listen/goodlife/live.mp3",
+  name="GOODLIFE Radio 254 (Live Default)",
+  description="Afrobeats, Amapiano & Festival Anthems Live from Nairobi",
+  genre="Afro-House, Amapiano, Urban",
+  url="https://goodlife.co.ke/radio",
+  public=true,
+  radio_stream
+)
+
+# 7. Stream Output 2: Multi-Bitrate HLS Stream (4-Second Chunks)
+# Delivers dual adaptive streams: live_low (64k) for mobile data + live_hi (192k) for high bandwidth
 output.hls(
   segment_duration=4.0,
   segments=6,
@@ -168,6 +199,9 @@ output.hls(
       ignore(file.remove(fname))
     end
   ),
-  [("live_192k", %mp3(bitrate=192, samplerate=44100, stereo=true))],
+  [
+    ("live_low", %mp3(bitrate=64, samplerate=44100, stereo=true)),
+    ("live_hi", %mp3(bitrate=192, samplerate=44100, stereo=true))
+  ],
   radio_stream
 )

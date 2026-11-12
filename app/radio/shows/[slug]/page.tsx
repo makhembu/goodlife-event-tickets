@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
+import CatchUpVault from "@/components/radio/CatchUpVault";
 import { ArrowLeft, Clock, Calendar, CalendarPlus, Radio, Disc3, ExternalLink } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export async function generateMetadata(props: {
   const pageUrl = `${baseUrl}/radio/shows/${slug}`;
   const title = `${show.title} | GOODLIFE Radio 254`;
   const description = show.description || `Listen to ${show.title} on GOODLIFE Radio 254.`;
+  const ogImageUrl = `${baseUrl}/api/og/radio?show=${encodeURIComponent(slug)}`;
 
   return {
     title: { absolute: title },
@@ -34,12 +36,21 @@ export async function generateMetadata(props: {
       url: pageUrl,
       siteName: SITE_NAME,
       locale: "en_KE",
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: `${show.title} on GOODLIFE Radio 254`,
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       site: TWITTER_HANDLE,
       title,
       description,
+      images: [ogImageUrl],
     },
   };
 }
@@ -276,7 +287,10 @@ export default async function ShowDetailPage({
           </div>
         </div>
 
-        {/* Past Episodes / Vault */}
+        {/* Catch Up Vault (Public Approved Recordings) */}
+        <CatchUpVault showSlug={slug} title={`CATCH UP · ${show.title}`} />
+
+        {/* Past Episodes / Legacy Audio fallback if any */}
         {recordings.length > 0 && (
           <div className="border-3 border-brand-navy bg-white p-6 shadow-[4px_4px_0px_#142B4C]">
             <h2 className="font-display text-xl uppercase tracking-wide text-brand-navy border-b-2 border-brand-navy pb-2 mb-4 flex items-center gap-2">

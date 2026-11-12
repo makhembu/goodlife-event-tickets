@@ -33,6 +33,7 @@ import {
   buildSongSearchUrls,
   SongSearchLink,
 } from "@/lib/radio/media-helpers";
+import { resolveLiveStreamUrl } from "@/lib/radio/bitrate";
 
 export interface ActivePlaylist {
   id: number;
@@ -90,6 +91,7 @@ export interface RadioContextType {
   activeMood: string | null;
   isDropPlaying: boolean;
   isDropUnlocked?: boolean;
+  onAirSlot: any | null;
 
   // Curated Playlist support
   activePlaylist: ActivePlaylist | null;
@@ -157,6 +159,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   activeMood: null,
   isDropPlaying: false,
   isDropUnlocked: true,
+  onAirSlot: null,
   activePlaylist: null,
   togglePlay: () => {},
   unlockStationVoice: async () => {},
@@ -311,6 +314,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isMinimized, setIsMinimized] = useState(true);
   const [quality, setQuality] = useState<AudioQuality>("standard");
+  const [onAirSlot, setOnAirSlot] = useState<any | null>(null);
 
   // Backup sets & vault
   const [backupSets, setBackupSets] = useState<RadioSet[]>([]);
@@ -405,6 +409,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   radioEnabledRef.current = radioEnabled;
   const isLiveRef = useRef(isLive);
   isLiveRef.current = isLive;
+  const qualityRef = useRef(quality);
+  qualityRef.current = quality;
+  const onAirSlotRef = useRef(onAirSlot);
+  onAirSlotRef.current = onAirSlot;
   const isSyncedRef = useRef(true);
   const nowPlayingTrackRef = useRef(nowPlayingTrack);
   nowPlayingTrackRef.current = nowPlayingTrack;
@@ -455,6 +463,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       if (data.mode) {
         setBroadcastMode(data.mode);
+      }
+      if (data.on_air_slot !== undefined) {
+        setOnAirSlot(data.on_air_slot);
       }
       if (typeof data.live?.stream_url === "string") {
         setLiveStreamUrl(data.live.stream_url.trim());
@@ -528,6 +539,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       setIsStale(Boolean(data.stale));
+      if (data.on_air_slot !== undefined) {
+        setOnAirSlot(data.on_air_slot);
+      }
       if (data.target_duration_sec && data.target_duration_sec > 0) {
         setTargetDurationSec(data.target_duration_sec);
       }
@@ -1043,7 +1057,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const streamUrl = liveStreamUrlRef.current;
+    const rawStreamUrl = liveStreamUrlRef.current;
+    const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
     // Helper: Play the synchronized R2 festival track directly
@@ -1151,6 +1166,24 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const audio = audioRef.current;
     if (!audio) return;
     audio.volume = isMutedRef.current ? 0 : volumeRef.current;
+
+    // Direct MP3 Icecast Stream (Standard 64k Data Saver / High 192k Hi-Fi)
+    if (streamUrl && !streamUrl.includes(".m3u8")) {
+      audio.src = streamUrl;
+      try {
+        await audio.play();
+        setEngineState("live");
+        setIsPlaying(true);
+      } catch (err: any) {
+        if (err?.name === "NotAllowedError") {
+          setEngineState("idle");
+          setIsPlaying(false);
+        } else {
+          await playCurrentTrackAudio();
+        }
+      }
+      return;
+    }
 
     // A. Native Safari / iOS HLS
     if (audio.canPlayType("application/vnd.apple.mpegurl")) {
@@ -1285,6 +1318,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const togglePlayDispatcherRef = useRef<() => void>(() => {});
   const nextTrackDispatcherRef = useRef<() => void>(() => {});
   const prevTrackDispatcherRef = useRef<() => void>(() => {});
+  const seekDispatcherRef = useRef<(pct: number) => void>(() => {});
   useEffect(() => {
     togglePlayDispatcherRef.current = () => togglePlay();
     nextTrackDispatcherRef.current = () => advanceBroadcastTrack(true);
@@ -1294,15 +1328,37 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined" || !("mediaSession" in navigator)) return;
 
-    const displayTitle = formatTrackTitle(nowPlayingTrack?.title);
-    const displayArtist = nowPlayingTrack?.artist || "GOODLIFE RADIO";
+    const showTitle = onAirSlot?.show?.title || (isLive ? (nowPlayingTrack?.title || "GOODLIFE LIVE") : null);
+    const presenterName = onAirSlot?.presenter?.dj_name;
+
+    let displayTitle = formatTrackTitle(nowPlayingTrack?.title);
+    let displayArtist = nowPlayingTrack?.artist || presenterName || "GOODLIFE Radio 254";
+    let displayAlbum = showTitle
+      ? `${showTitle} · GOODLIFE Radio 254`
+      : "GOODLIFE Radio 254 (Nairobi)";
+
+    if (showTitle && displayTitle && displayTitle !== showTitle) {
+      displayAlbum = `${showTitle} · GOODLIFE Radio 254`;
+      if (presenterName && !displayArtist.includes(presenterName)) {
+        displayArtist = `${displayArtist} · DJ ${presenterName}`;
+      }
+    } else if (showTitle && !displayTitle) {
+      displayTitle = showTitle;
+      displayArtist = presenterName || "Resident DJ";
+    }
+
     const artworkUrl = resolveCoverArt(nowPlayingTrack?.thumbnail);
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: displayTitle,
       artist: displayArtist,
-      album: "GOODLIFE Radio Live",
+      album: displayAlbum,
       artwork: [
+        {
+          src: artworkUrl,
+          sizes: "512x512",
+          type: "image/png",
+        },
         {
           src: artworkUrl,
           sizes: "320x180",
@@ -1311,7 +1367,39 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       ],
     });
 
-    navigator.mediaSession.setActionHandler("seekto", null);
+    // Keep playbackState accurate for lock screen & bluetooth controls
+    if ("playbackState" in navigator.mediaSession) {
+      if (!isPlaying || engineState === "offline") {
+        navigator.mediaSession.playbackState = "paused";
+      } else {
+        navigator.mediaSession.playbackState = "playing";
+      }
+    }
+
+    const trackDuration = nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : (audioRef.current?.duration || 0);
+    const currentPos = audioRef.current?.currentTime || 0;
+
+    // Keep positionState accurate where it applies (non-live / recorded set)
+    if ("setPositionState" in navigator.mediaSession) {
+      try {
+        if (!isLive && trackDuration > 0 && currentPos >= 0) {
+          navigator.mediaSession.setPositionState({
+            duration: Math.max(trackDuration, 1),
+            playbackRate: 1,
+            position: Math.min(Math.max(0, currentPos), trackDuration),
+          });
+        } else {
+          navigator.mediaSession.setPositionState(null as any);
+        }
+      } catch {}
+    }
+
+    navigator.mediaSession.setActionHandler("seekto", !isLive ? (details) => {
+      if (details.seekTime !== undefined && trackDuration > 0) {
+        const percent = (details.seekTime / trackDuration) * 100;
+        seekDispatcherRef.current(percent);
+      }
+    } : null);
     navigator.mediaSession.setActionHandler("seekforward", null);
     navigator.mediaSession.setActionHandler("seekbackward", null);
 
@@ -1321,7 +1409,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     navigator.mediaSession.setActionHandler("play", () => togglePlayDispatcherRef.current());
     navigator.mediaSession.setActionHandler("pause", () => togglePlayDispatcherRef.current());
-  }, [nowPlayingTrack]);
+    navigator.mediaSession.setActionHandler("stop", () => togglePlayDispatcherRef.current());
+  }, [nowPlayingTrack, onAirSlot, isPlaying, isLive, engineState]);
 
   
   // Helper: Smooth volume swell when drop concludes (the broadcast beat drop)
@@ -2128,9 +2217,22 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const switchQuality = useCallback((q: AudioQuality) => {
     setQuality(q);
+    qualityRef.current = q;
     try {
       localStorage.setItem(QUALITY_KEY, q);
     } catch {}
+
+    // If currently playing live stream, seamlessly switch audio stream URL
+    if (audioRef.current && isPlayingRef.current && isLiveRef.current) {
+      const rawUrl = liveStreamUrlRef.current;
+      const targetUrl = resolveLiveStreamUrl(rawUrl, q);
+      if (targetUrl && audioRef.current.src !== targetUrl) {
+        audioRef.current.src = targetUrl;
+        audioRef.current.play().catch((err) => {
+          console.warn("[RadioContext] Error switching live stream bitrate:", err);
+        });
+      }
+    }
   }, []);
 
   const switchToLive = useCallback(() => {
@@ -2421,6 +2523,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    seekDispatcherRef.current = (percent: number) => {
+      seek(percent);
+    };
+  }, [seek]);
+
   // Format honest status text
   const statusText = useMemo(() => {
     switch (engineState) {
@@ -2590,6 +2698,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         radioEnabled,
         backupSets,
         currentSet,
+        onAirSlot,
         isSyncedToBroadcast: engineState === "live",
         liveTitle: displayTitle,
         liveDropFallback: engineState === "backup-mix",

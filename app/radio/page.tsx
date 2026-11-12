@@ -21,6 +21,10 @@ import { useRadio } from "@/context/RadioContext";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
 import CuratedPlaylists from "@/components/radio/CuratedPlaylists";
 import { resolveCoverArt, resolveFallbackCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
+import UpcomingEventCard from "@/components/radio/UpcomingEventCard";
+import CatchUpVault from "@/components/radio/CatchUpVault";
+import ShareStationModal from "@/components/radio/ShareStationModal";
+import PwaInstallButton from "@/components/ui/PwaInstallButton";
 import { resolveEventFlyer } from "@/lib/event-flyer";
 import { isEventSellable } from "@/lib/event-availability";
 import { computeKenyaCountdown, isEventCardVisible } from "@/lib/radio/event-card";
@@ -83,6 +87,7 @@ export default function RadioPage() {
 
   // Share state
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // View toggle between Live Broadcast Station, Curated Tapes/Playlists, and Festival Set Vault
   const [activeView, setActiveView] = useState<"live" | "playlists" | "vault">("live");
@@ -152,37 +157,9 @@ export default function RadioPage() {
   }, [togglePlay, toggleMute]);
 
   // Share Handler
-  const handleShare = useCallback(async () => {
-    const shareUrl = typeof window !== "undefined" ? window.location.href : "https://tickets.goodlife.co.ke/radio";
-    const shareText =
-      title && title !== "Updating..."
-        ? `Listening to ${title}${artist ? ` by ${artist}` : ""} on GOODLIFE Radio 254`
-        : "Tuned into GOODLIFE Radio 254 · Nairobi Live Festival Airwaves";
-
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({
-          title: "GOODLIFE Radio 254",
-          text: shareText,
-          url: shareUrl,
-        });
-        return;
-      } catch (err: any) {
-        if (err.name === "AbortError") return;
-      }
-    }
-
-    // Clipboard fallback
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
-        setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 3000);
-      } catch {
-        // Fallback quiet
-      }
-    }
-  }, [title, artist]);
+  const handleShare = useCallback(() => {
+    setShowShareModal(true);
+  }, []);
 
   // Derived cover URL
   const resolvedCover = useMemo(() => {
@@ -200,97 +177,8 @@ export default function RadioPage() {
   // Determine if active event is sellable
   const isSellable = activeEvent ? isEventSellable(activeEvent) : false;
 
-  // Reusable Event Card Component (remains visible through event day & sales window)
-  const eventCardNode = activeEvent && isEventCardVisible(activeEvent) && (
-    <div className="border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-4">
-      <div className="flex items-center justify-between border-b-2 border-brand-navy/15 pb-2">
-        <span className="font-mono text-xs font-bold uppercase tracking-wider text-brand-navy/80 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-brand-accent fill-brand-accent" />
-          <span>NEXT FESTIVAL EDITION</span>
-        </span>
-        {isSellable ? (
-          <span className="font-mono text-xs font-bold bg-brand-accent text-brand-navy px-2.5 py-0.5 rounded border border-brand-navy/20">
-            TICKETS LIVE
-          </span>
-        ) : (
-          <span className="font-mono text-xs font-bold bg-neutral-200 text-brand-navy/70 px-2.5 py-0.5 rounded border border-brand-navy/20">
-            SALES CLOSED
-          </span>
-        )}
-      </div>
-
-      <div className="flex gap-3.5 items-center">
-        {/* Event Poster Thumbnail */}
-        <div className="w-20 h-28 rounded border-2 border-brand-navy overflow-hidden bg-brand-navy shrink-0 shadow-(--shadow-brut-xs)">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={resolveEventFlyer(activeEvent)}
-            alt=""
-            className="w-full h-full object-cover"
-          />
-        </div>
-
-        {/* Event Details */}
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <h4 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-navy leading-tight">
-            {activeEvent.title}
-          </h4>
-
-          {activeEvent.venue && (
-            <p className="font-mono text-xs sm:text-sm text-brand-navy/80 flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-brand-navy/60 shrink-0" />
-              <span className="truncate">{activeEvent.venue}</span>
-            </p>
-          )}
-
-          {activeEvent.event_date && (
-            <p className="font-mono text-xs sm:text-sm text-brand-navy/80 flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-brand-navy/60 shrink-0" />
-              <span>
-                {new Date(activeEvent.event_date).toLocaleDateString("en-KE", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  timeZone: "Africa/Nairobi",
-                })}
-              </span>
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Real Nairobi Countdown / Event Day Display */}
-      <div className="p-3 bg-white border-2 border-brand-navy rounded font-mono text-center">
-        <span className="text-xs uppercase font-bold text-brand-navy/70 block mb-1">
-          {countdown?.isPassed
-            ? "TODAY (KENYA TIME)"
-            : "COUNTDOWN TO EVENT DATE (KENYA TIME)"}
-        </span>
-        {countdown?.isPassed ? (
-          <div className="flex justify-center items-center py-0.5 font-display text-2xl sm:text-3xl text-brand-navy tracking-widest leading-none">
-            <span>EVENT DAY</span>
-          </div>
-        ) : (
-          <div className="flex justify-center items-center gap-2 font-display text-2xl sm:text-3xl text-brand-navy leading-none">
-            <span>{countdown?.days ?? 0}D</span>
-            <span className="text-brand-navy/30">:</span>
-            <span>{countdown?.hours ?? 0}H</span>
-            <span className="text-brand-navy/30">:</span>
-            <span>{countdown?.minutes ?? 0}M</span>
-          </div>
-        )}
-      </div>
-
-      {/* Pass Purchase CTA */}
-      <Link
-        href="/"
-        className="w-full py-3 px-4 bg-brand-accent hover:bg-brand-accent-vivid text-brand-navy font-display text-lg tracking-wider uppercase border-2 border-brand-navy shadow-(--shadow-brut-xs) hover:translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 font-bold cursor-pointer"
-      >
-        <Ticket className="w-4 h-4" />
-        <span>{isSellable ? "GET FESTIVAL PASSES" : "VIEW EVENT DETAILS"}</span>
-      </Link>
-    </div>
-  );
+  // Reusable Event Card Component (extracted into UpcomingEventCard)
+  const eventCardNode = <UpcomingEventCard event={activeEvent} />;
 
   // Reusable Share Station Card
   const shareCardNode = (
@@ -367,7 +255,7 @@ export default function RadioPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Switcher: Live vs Playlists vs Vault */}
+            {/* View Switcher: Live vs Playlists vs Vault vs Catch Up */}
             <div className="flex border-2 border-brand-navy bg-brand-off-white rounded overflow-hidden shadow-(--shadow-brut-xs)">
               <button
                 type="button"
@@ -416,6 +304,9 @@ export default function RadioPage() {
               <Calendar className="w-3.5 h-3.5 text-brand-navy" />
               <span>TIMETABLE</span>
             </Link>
+
+            {/* PWA App Install Button */}
+            <PwaInstallButton appName="GOODLIFE Radio" />
 
             {/* Engine Status Badge (Derived strictly from engineState) */}
             {engineState === "live" && (
@@ -1028,10 +919,11 @@ export default function RadioPage() {
                   )}
                 </div>
 
-                {/* RIGHT COLUMN: EVENT CARD & SHARE (5 COLS) */}
+                {/* RIGHT COLUMN: EVENT CARD & SHARE & CATCH UP (5 COLS) */}
                 <div className="lg:col-span-5 space-y-6">
                   {eventCardNode}
                   {shareCardNode}
+                  <CatchUpVault />
                 </div>
               </div>
             ) : (
@@ -1039,6 +931,7 @@ export default function RadioPage() {
               <div className="max-w-xl mx-auto space-y-6 pt-2">
                 {eventCardNode}
                 {shareCardNode}
+                <CatchUpVault />
               </div>
             )}
           </div>
@@ -1087,6 +980,14 @@ export default function RadioPage() {
           </div>
         )}
       </div>
+
+      {/* Social / Instagram Story / WhatsApp Share Modal */}
+      <ShareStationModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        title={title}
+        artist={artist || undefined}
+      />
     </div>
   );
 }

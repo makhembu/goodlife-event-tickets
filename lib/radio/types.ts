@@ -154,6 +154,7 @@ export interface RadioLiveBffResponse {
   } | null;
   target_duration_sec?: number;
   listeners_count?: number;
+  on_air_slot?: any;
 }
 
 export type PresenterStatus = 'pending' | 'active' | 'suspended';

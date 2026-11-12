@@ -76,7 +76,13 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/vendor') ||
     url.pathname.startsWith('/admin') ||
     url.pathname.startsWith('/scanner') ||
-    url.pathname.startsWith('/pay/')
+    url.pathname.startsWith('/pay/') ||
+    // 1b. NEVER INTERCEPT OR CACHE LIVE AUDIO STREAMS OR MEDIA CHUNKS
+    url.pathname.endsWith('.mp3') ||
+    url.pathname.endsWith('.m3u8') ||
+    url.pathname.endsWith('.ts') ||
+    url.pathname.endsWith('.aac') ||
+    url.pathname.startsWith('/listen/')
   ) {
     return;
   }

@@ -1,0 +1,38 @@
+{
+  "id": "/radio",
+  "name": "GOODLIFE Radio 254",
+  "short_name": "GL Radio",
+  "description": "24/7 Afrobeats, Amapiano & Festival Anthems Live from Nairobi",
+  "start_url": "/radio",
+  "scope": "/radio",
+  "display": "standalone",
+  "background_color": "#142B4C",
+  "theme_color": "#C8A54A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

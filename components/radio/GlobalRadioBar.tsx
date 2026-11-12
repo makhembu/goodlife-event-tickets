@@ -13,13 +13,17 @@ import {
   Radio,
   Maximize2,
   ChevronDown,
+  Share2,
   X,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import { cleanTrackInfo } from "@/lib/radio/utils";
+import UpcomingEventCard from "@/components/radio/UpcomingEventCard";
+import ShareStationModal from "@/components/radio/ShareStationModal";
 
 export default function GlobalRadioBar() {
   const pathname = usePathname();
+  const [showShareModal, setShowShareModal] = useState(false);
   const {
     currentSet,
     isPlaying,
@@ -338,6 +342,15 @@ export default function GlobalRadioBar() {
               </button>
             )}
 
+            {/* Mobile Data Saver Toggle */}
+            <button
+              onClick={() => switchQuality(quality === "high" ? "standard" : "high")}
+              className="px-2 py-1 border border-brand-accent text-[9px] font-black uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer shrink-0"
+              title="Toggle mobile data saver"
+            >
+              <span>{quality === "high" ? "🔊 192K" : "📱 64K"}</span>
+            </button>
+
             {/* Expand to full boombox view */}
             <Link
               href="/radio"
@@ -375,6 +388,9 @@ export default function GlobalRadioBar() {
             <span className="font-mono w-6">{formatTime(duration)}</span>
           </div>
         )}
+
+        {/* Compact Upcoming Event Banner */}
+        <UpcomingEventCard compact className="mt-1.5" />
       </aside>
 
       {/* 2B. DESKTOP VIEW: Full Bottom Bar docked at bottom-0 */}
@@ -382,6 +398,9 @@ export default function GlobalRadioBar() {
         aria-label="Persistent Radio Player"
         className="hidden sm:block fixed left-0 right-0 bottom-0 z-40 bg-brand-navy text-brand-off-white border-t-4 border-brand-accent shadow-(--shadow-brut-2xl) transition-all"
       >
+        {/* Compact Upcoming Event Banner (Desktop) */}
+        <UpcomingEventCard compact className="px-4 py-0.5 border-b border-brand-accent/20 bg-brand-navy/90" />
+
         {/* Schedule Strip (Desktop) */}
         <Link
           href="/radio/schedule"
@@ -516,15 +535,13 @@ export default function GlobalRadioBar() {
 
           {/* Right: Audio Quality Toggle, Mute, Boombox Link & Minimize */}
           <div className="flex items-center gap-2 shrink-0">
-            {!isLive && (
-              <button
-                onClick={() => switchQuality(quality === "high" ? "standard" : "high")}
-                className="px-2 py-1 border border-brand-accent text-[10px] font-black uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer flex items-center gap-1"
-                title="Toggle audio quality tier"
-              >
-                <span>{quality === "high" ? "🔊 HI-FI 320K" : "📱 DATA SAVER"}</span>
-              </button>
-            )}
+            <button
+              onClick={() => switchQuality(quality === "high" ? "standard" : "high")}
+              className="px-2.5 py-1 border border-brand-accent text-[10px] font-black uppercase hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Toggle audio quality tier and mobile data consumption"
+            >
+              <span>{quality === "high" ? "🔊 HI-FI (~84 MB/h)" : "📱 DATA SAVER (~28 MB/h)"}</span>
+            </button>
 
             <button
               onClick={toggleMute}
@@ -532,6 +549,15 @@ export default function GlobalRadioBar() {
               className="p-1.5 border border-brand-accent hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"
             >
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={() => setShowShareModal(true)}
+              aria-label="Share Broadcast"
+              className="p-1.5 border border-brand-accent hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"
+              title="Share Stream"
+            >
+              <Share2 className="w-4 h-4" />
             </button>
 
             <Link
@@ -554,6 +580,15 @@ export default function GlobalRadioBar() {
           </div>
         </div>
       </aside>
+
+      {/* Share Modal */}
+      <ShareStationModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        title={isLive ? liveTitle : cleanedTrack.title}
+        artist={isLive ? (scheduleData.nowSlot?.substitute_name || scheduleData.nowSlot?.presenter_name || "GOODLIFE Resident") : cleanedTrack.artist}
+        showTitle={scheduleData.nowSlot?.show_title}
+      />
     </>
   );
 }
