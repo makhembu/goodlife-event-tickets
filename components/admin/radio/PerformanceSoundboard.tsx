@@ -112,6 +112,7 @@ export default function PerformanceSoundboard({
     activeBankId,
     setActiveBankId,
     vaultDrops,
+    refreshSoundboard,
     createBank,
     renameBank,
     deleteBank,
@@ -264,11 +265,12 @@ export default function PerformanceSoundboard({
     setClipSourceTab("vault");
     setUploadError(null);
     resetRecording();
+    void refreshSoundboard();
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
       setPreviewingUrl(null);
     }
-  }, [resetRecording]);
+  }, [resetRecording, refreshSoundboard]);
 
   // Trigger Pad in Perform Mode
   const triggerPad = (pad: SoundPad) => {
@@ -1478,6 +1480,7 @@ export default function PerformanceSoundboard({
                     onClick={() => {
                       setClipSourceTab("vault");
                       setUploadError(null);
+                      void refreshSoundboard();
                     }}
                     className={`px-2.5 py-1 font-mono text-[11px] font-bold flex items-center space-x-1 rounded cursor-pointer transition-colors ${
                       clipSourceTab === "vault"
@@ -1545,8 +1548,15 @@ export default function PerformanceSoundboard({
 
                   <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                     {filteredVaultDrops.length === 0 ? (
-                      <div className="py-6 text-center text-white/40 font-mono text-xs">
-                        No drops found.
+                      <div className="py-6 text-center text-white/40 font-mono text-xs flex flex-col items-center justify-center space-y-2">
+                        <span>No drops found.</span>
+                        <button
+                          type="button"
+                          onClick={() => void refreshSoundboard()}
+                          className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#DFBB7D] rounded border border-white/20 text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          ↻ Reload Drops Vault
+                        </button>
                       </div>
                     ) : (
                       filteredVaultDrops.map((d) => {

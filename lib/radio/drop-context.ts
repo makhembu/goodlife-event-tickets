@@ -2,6 +2,7 @@ import { neonQuery } from "@/lib/supabase-db";
 import { publicState, isEventSellable, getEventAvailability, type SchedulableEvent } from "@/lib/event-availability";
 import { getPromotableEvents, speakPrice, normalizeEventTitle } from "@/lib/radio/events";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
+import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
 
 export type BroadcastTagCategory =
   | "event"
@@ -134,6 +135,7 @@ export interface UnifiedDropContext {
     }>;
     ready_track_count: number;
     recent_library_adds: Array<{ id: number; title: string; artist: string | null; genre: string | null; created_at: string }>;
+    active_listeners: number;
     active_listeners_10m: number;
     listeners_24h: number;
   };
@@ -925,6 +927,16 @@ export async function buildUnifiedDropContext(options?: {
     label: `📡 Station: GOODLIFE Radio 254`,
     value: "GOODLIFE Radio 254",
   });
+
+  const activeListeners = await getActiveListenersCount().catch(() => 0);
+  if (activeListeners > 0) {
+    tags.push({
+      id: "active_listeners",
+      category: "radio",
+      label: `👥 ${activeListeners} Live Listeners`,
+      value: `${activeListeners} listeners tuned in right now across the 254`,
+    });
+  }
   tags.push({
     id: "clock",
     category: "clock",
@@ -1004,7 +1016,8 @@ export async function buildUnifiedDropContext(options?: {
         genre: r.genre || null,
         created_at: r.created_at ? new Date(r.created_at).toISOString() : "",
       })),
-      active_listeners_10m: Number(playsStatsRes.rows?.[0]?.active_10m || 0),
+      active_listeners: activeListeners,
+      active_listeners_10m: Math.max(activeListeners, Number(playsStatsRes.rows?.[0]?.active_10m || 0)),
       listeners_24h: Number(playsStatsRes.rows?.[0]?.plays_24h || 0),
     },
     primary_event: primaryEvent,

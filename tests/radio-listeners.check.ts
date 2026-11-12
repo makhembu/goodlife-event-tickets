@@ -40,6 +40,12 @@ async function run() {
   check("/api/radio/state imports getActiveListenersCount", stateCode.includes("getActiveListenersCount"));
   check("/api/radio/state returns dynamic listeners_count", stateCode.includes("listeners_count: activeListeners"));
 
+  // 4B. Unified Drop Context Contract
+  const dropContextPath = path.join(process.cwd(), "lib/radio/drop-context.ts");
+  const dropContextCode = fs.readFileSync(dropContextPath, "utf8");
+  check("Unified Drop Context imports getActiveListenersCount", dropContextCode.includes("getActiveListenersCount"));
+  check("Unified Drop Context includes active_listeners", dropContextCode.includes("active_listeners: activeListeners"));
+
   // 5. Client Heartbeat in RadioContext & TransportBar
   const radioContextPath = path.join(process.cwd(), "context/RadioContext.tsx");
   const radioContextCode = fs.readFileSync(radioContextPath, "utf8");

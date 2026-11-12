@@ -30,7 +30,7 @@ export default function BrowserMicRecorder({
   const prompterNextArtist = syncedNextTrack
     ? (syncedNextTrack.dj_name || null)
     : (currentOnAirUpNext?.[0]?.artist || null);
-  const { openAssignModal } = useSoundboard();
+  const { openAssignModal, refreshSoundboard } = useSoundboard();
   const {
     isRecording,
     recordingDuration,
@@ -304,6 +304,7 @@ export default function BrowserMicRecorder({
         text: "✓ Mic drop mastered to -14 LUFS!",
         type: "success",
       });
+      void refreshSoundboard();
 
       if (onDropMastered && finalUrl) {
         onDropMastered(finalUrl, dropName);

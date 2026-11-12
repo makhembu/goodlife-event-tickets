@@ -25,7 +25,7 @@ const PRESET_VIBES = [
 ];
 
 export default function AiDropGenerator({ onDropGenerated, onSendToCue }: AiDropGeneratorProps) {
-  const { openAssignModal } = useSoundboard();
+  const { openAssignModal, refreshSoundboard } = useSoundboard();
   const { airLiveDrop } = useRadio();
   const [firingLive, setFiringLive] = useState<boolean>(false);
   const [selectedPreset, setSelectedPreset] = useState<string>(PRESET_VIBES[0].label);
@@ -129,6 +129,7 @@ export default function AiDropGenerator({ onDropGenerated, onSendToCue }: AiDrop
       });
 
       // Automatically notify parent soundboard
+      void refreshSoundboard();
       if (onDropGenerated && finalUrl) {
         onDropGenerated(finalUrl, `AI: ${selectedPreset}`);
       }
