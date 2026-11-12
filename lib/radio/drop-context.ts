@@ -1070,6 +1070,12 @@ export function formatContextPromptSummary(ctx: UnifiedDropContext): string {
     }
   }
 
+  if (ctx.radio.active_listeners > 0) {
+    lines.push(
+      `Live Radio Audience: ${ctx.radio.active_listeners} listeners locked into the live stream right now`
+    );
+  }
+
   if (ctx.radio.now_playing) {
     lines.push(
       `Now Playing On Air: ${ctx.radio.now_playing.title}${ctx.radio.now_playing.artist ? ` by ${ctx.radio.now_playing.artist}` : ""}`
