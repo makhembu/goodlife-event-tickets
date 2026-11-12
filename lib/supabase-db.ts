@@ -419,17 +419,19 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
 // Update event
 export async function updateEvent(id: number, updates: Partial<Event>): Promise<Event | null> {
   if (typeof window !== "undefined") {
-    try {
-      const res = await fetch(`/api/events/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates)
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn("API updateEvent failed.", e);
+    const res = await fetch(`/api/events/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      if (res.status === 401) {
+        throw new Error("Admin session expired. Please log in again.");
+      }
+      throw new Error(errData?.error || `Event update failed with status ${res.status}`);
     }
-    return null;
+    return await res.json();
   }
 
   try {

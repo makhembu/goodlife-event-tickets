@@ -1697,21 +1697,26 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-[var(--brand-navy)]/50 mb-1">
                 Setup
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-              <Link
-                href={selectedEventId ? `/admin/events/${selectedEventId}/edit` : "/admin/events/-1/edit"}
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 bg-white shadow-(--shadow-brut-xs)"
-              >
-                <Edit className="w-3 h-3 shrink-0" />
-                <span>EDIT EVENT</span>
-              </Link>
-              <Link
-                href={selectedEventId ? `/admin/budget?eventId=${selectedEventId}` : "/admin/budget"}
-                className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
-              >
-                <DollarSign className="w-3 h-3 shrink-0" />
-                <span>BUDGET &amp; P&amp;L</span>
-              </Link>
+              {(() => {
+                const targetEditEventId = selectedEventId && selectedEventId > 0
+                  ? selectedEventId
+                  : data?.allEvents?.find((e: any) => e.is_active)?.id || data?.allEvents?.[0]?.id || null;
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                    <Link
+                      href={targetEditEventId ? `/admin/events/${targetEditEventId}/edit` : "/admin/events"}
+                      className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 bg-white shadow-(--shadow-brut-xs)"
+                    >
+                      <Edit className="w-3 h-3 shrink-0" />
+                      <span>EDIT EVENT</span>
+                    </Link>
+                    <Link
+                      href={targetEditEventId ? `/admin/budget?eventId=${targetEditEventId}` : "/admin/budget"}
+                      className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
+                    >
+                      <DollarSign className="w-3 h-3 shrink-0" />
+                      <span>BUDGET &amp; P&amp;L</span>
+                    </Link>
               <Link
                 href="/admin/gallery"
                 className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
@@ -1735,7 +1740,9 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
                 <MessageSquare className="w-3 h-3 shrink-0" />
                 <span>WHATSAPP</span>
               </Link>
-              </div>
+                  </div>
+                );
+              })()}
             </div>
             {/* DANGER ZONE: END / REOPEN EVENT — isolated at bottom */}
             {selectedEventId && selectedEventId > 0 && (() => {

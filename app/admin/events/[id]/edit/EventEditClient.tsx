@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -112,6 +113,10 @@ export default function EventEditClient({
     operator_notifications_enabled: details.operator_notifications_enabled ?? false,
     lineup: (initialEvent.lineup || []).join(", "),
     lineup_confirmed: initialEvent.lineup_confirmed ?? false,
+    category: initialEvent.category || "flagship",
+    recurrence_pattern: initialEvent.recurrence_pattern || "none",
+    recurrence_day: initialEvent.recurrence_day || "sunday",
+    recurrence_time: initialEvent.recurrence_time || "14:00",
   });
 
   const derivedScheduleText = React.useMemo(() => {
@@ -221,6 +226,10 @@ export default function EventEditClient({
         next_event_title: (form.next_event_title as string) ?? null,
         status: nextStatus,
         is_active: nextStatus === "live",
+        category: (form.category as "flagship" | "mini") || "flagship",
+        recurrence_pattern: (form.recurrence_pattern as "none" | "weekly" | "biweekly" | "monthly") || "none",
+        recurrence_day: (form.recurrence_day as string) || undefined,
+        recurrence_time: (form.recurrence_time as string) || undefined,
         custom_schedule_text: (form.custom_schedule_text as string) ?? null,
         regulations: (form.regulations as string) ?? "",
         lineup: typeof form.lineup === "string"
@@ -247,6 +256,11 @@ export default function EventEditClient({
       setForm((f) => ({
         ...f,
         status: normalizeLifecycleStatus(updated.status, updated.is_active),
+        category: updated.category || "flagship",
+        recurrence_pattern: updated.recurrence_pattern || "none",
+        recurrence_day: updated.recurrence_day || "sunday",
+        recurrence_time: updated.recurrence_time || "14:00",
+        custom_schedule_text: updated.custom_schedule_text || "",
         event_date: toDateInput(updated.event_date),
         sales_open_date: toDatetimeLocal(updated.sales_open_date),
         sales_close_date: toDatetimeLocal(updated.sales_close_date),
@@ -350,8 +364,23 @@ export default function EventEditClient({
         )}
 
         {formError && (
-          <div className="mb-6 rounded border-2 border-red-600 bg-red-600/10 px-4 py-3 text-xs font-bold text-red-700">
-            {formError}
+          <div className="mb-6 rounded border-2 border-red-600 bg-red-600/10 px-4 py-3 text-xs font-bold text-red-700 flex items-center justify-between gap-3">
+            <div>
+              <span>{formError}</span>
+              {(formError.toLowerCase().includes("session") || formError.toLowerCase().includes("login") || formError.toLowerCase().includes("unauthorized")) && (
+                <Link href="/login" className="underline ml-2 font-black text-brand-navy hover:text-black">
+                  Log in now &rarr;
+                </Link>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormError("")}
+              className="text-red-700 hover:text-red-950 font-mono text-xs cursor-pointer font-bold shrink-0"
+              aria-label="Dismiss error"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -384,6 +413,125 @@ export default function EventEditClient({
               </div>
               {statusError && (
                 <p className="text-xs font-bold text-red-700">{statusError}</p>
+              )}
+            </section>
+
+            {/* EVENT FORMAT / CATEGORY */}
+            <section className="bg-white border-2 border-[var(--brand-navy)] p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-[var(--brand-navy)]/20 pb-2">
+                <h2 className="text-xs font-black uppercase">
+                  Event Format / Category
+                </h2>
+                <span className="text-[10px] font-mono font-bold uppercase text-[var(--brand-navy)]/70">
+                  {form.category === "mini" ? "🌿 Series Edition" : "⭐ Major Festival"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => set("category", "flagship")}
+                  className={`py-2 px-3 border-2 border-[var(--brand-navy)] text-xs font-bold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    form.category === "flagship"
+                      ? "bg-[var(--brand-navy)] text-white shadow-(--shadow-brut-xs)"
+                      : "bg-white text-brand-navy hover:bg-[var(--brand-navy)]/5"
+                  }`}
+                  disabled={saving !== null}
+                >
+                  <span>⭐</span> MAJOR FESTIVAL (FLAGSHIP)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    set("category", "mini");
+                    if (!form.recurrence_pattern || form.recurrence_pattern === "none") {
+                      set("recurrence_pattern", "weekly");
+                    }
+                  }}
+                  className={`py-2 px-3 border-2 border-[var(--brand-navy)] text-xs font-bold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    form.category === "mini"
+                      ? "bg-[var(--brand-navy)] text-white shadow-(--shadow-brut-xs)"
+                      : "bg-white text-brand-navy hover:bg-[var(--brand-navy)]/5"
+                  }`}
+                  disabled={saving !== null}
+                >
+                  <span>🌿</span> WEEKLY MINI-EVENT (PARK &amp; CHILL)
+                </button>
+              </div>
+
+              {/* Recurrence Configuration (Visible when category === 'mini') */}
+              {form.category === "mini" && (
+                <div className="p-3 bg-[var(--brand-accent)]/15 border-2 border-[var(--brand-navy)] space-y-3 mt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold uppercase text-[var(--brand-navy)]">
+                      🔁 MINI-EVENT RECURRENCE SCHEDULE:
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-[var(--brand-navy)] block mb-1">
+                        RECURRENCE PATTERN
+                      </label>
+                      <select
+                        value={(form.recurrence_pattern as string) || "weekly"}
+                        onChange={(e) => set("recurrence_pattern", e.target.value)}
+                        className="w-full p-1.5 border border-[var(--brand-navy)] bg-white text-xs font-bold uppercase focus:outline-none"
+                        disabled={saving !== null}
+                      >
+                        <option value="weekly">WEEKLY (EVERY WEEK)</option>
+                        <option value="biweekly">BI-WEEKLY (EVERY 2 WEEKS)</option>
+                        <option value="daily">DAILY (EVERY DAY)</option>
+                        <option value="none">ONE DAY ONLY (SINGLE DATE)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-[var(--brand-navy)] block mb-1">
+                        DAY OF WEEK
+                      </label>
+                      <select
+                        value={String(form.recurrence_day || "sunday").toLowerCase()}
+                        disabled={form.recurrence_pattern === "none" || form.recurrence_pattern === "daily" || saving !== null}
+                        onChange={(e) => set("recurrence_day", e.target.value)}
+                        className="w-full p-1.5 border border-[var(--brand-navy)] bg-white text-xs font-bold uppercase focus:outline-none disabled:opacity-50"
+                      >
+                        <option value="sunday">SUNDAY</option>
+                        <option value="saturday">SATURDAY</option>
+                        <option value="friday">FRIDAY</option>
+                        <option value="thursday">THURSDAY</option>
+                        <option value="wednesday">WEDNESDAY</option>
+                        <option value="tuesday">TUESDAY</option>
+                        <option value="monday">MONDAY</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-[var(--brand-navy)] block mb-1">
+                        START TIME (EAT)
+                      </label>
+                      <input
+                        type="time"
+                        value={(form.recurrence_time as string) || "14:00"}
+                        onChange={(e) => set("recurrence_time", e.target.value)}
+                        className="w-full p-1.5 border border-[var(--brand-navy)] bg-white text-xs font-bold uppercase focus:outline-none"
+                        disabled={saving !== null}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-[var(--brand-navy)] block mb-1">
+                      CUSTOM SCHEDULE TEXT (OVERRIDE HEADER)
+                    </label>
+                    <input
+                      type="text"
+                      value={(form.custom_schedule_text as string) || ""}
+                      onChange={(e) => set("custom_schedule_text", e.target.value)}
+                      placeholder="E.g. EVERY SUNDAY • 2:00 PM TILL LATE"
+                      className="w-full p-1.5 border border-[var(--brand-navy)] bg-white text-xs font-bold uppercase focus:outline-none"
+                      disabled={saving !== null}
+                    />
+                  </div>
+                </div>
               )}
             </section>
 
