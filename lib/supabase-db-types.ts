@@ -17,6 +17,7 @@ export interface Event {
   status?: 'scheduled' | 'live' | 'closed' | 'archived';
   sales_open_date?: string | null;
   sales_close_date?: string | null;
+  sales_lead_days?: number | null;
   next_event_title?: string;
   recap_video_url?: string;
   video_url?: string | null;

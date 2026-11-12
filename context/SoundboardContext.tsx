@@ -69,8 +69,29 @@ export function SoundboardProvider({ children }: { children: React.ReactNode }) 
             localStorage.setItem(CACHE_KEY, JSON.stringify(data.banks));
           } catch {}
         }
-        if (Array.isArray(data.drops)) {
+        if (Array.isArray(data.drops) && data.drops.length > 0) {
           setVaultDrops(data.drops);
+        } else {
+          // Double-guard fallback: fetch directly from /api/admin/radio/drops
+          try {
+            const dropRes = await fetch("/api/admin/radio/drops");
+            if (dropRes.ok) {
+              const dropData = await dropRes.json();
+              if (Array.isArray(dropData.drops) && dropData.drops.length > 0) {
+                setVaultDrops(
+                  dropData.drops.map((d: any) => ({
+                    id: d.id,
+                    title: d.title || d.script?.slice(0, 32) || "Station Drop",
+                    persona: d.persona || "Presenter",
+                    mood: d.mood || "hype",
+                    audio_url: d.audio_url || "",
+                    script: d.script,
+                    created_at: d.created_at,
+                  }))
+                );
+              }
+            }
+          } catch {}
         }
       }
     } catch (err) {

@@ -110,6 +110,42 @@ const cases: Array<[string, SchedulableEvent, string]> = [
     "checkout",
   ],
   [
+    "a recurring mini before its sales lead window shows countdown (Option A)",
+    {
+      status: "scheduled",
+      category: "mini",
+      recurrence_pattern: "weekly",
+      recurrence_day: "Sunday",
+      recurrence_time: "14:00",
+      sales_lead_days: 2, // next occurrence is ~4 days away, so 2 days lead means not open yet
+    },
+    "coming_soon",
+  ],
+  [
+    "a recurring mini inside its sales lead window reaches checkout (Option A)",
+    {
+      status: "scheduled",
+      category: "mini",
+      recurrence_pattern: "weekly",
+      recurrence_day: "Sunday",
+      recurrence_time: "14:00",
+      sales_lead_days: 7, // 7 days lead opens sales now
+    },
+    "checkout",
+  ],
+  [
+    "a recurring mini with an old past close date is not permanently closed (Option A)",
+    {
+      status: "scheduled",
+      category: "mini",
+      recurrence_pattern: "weekly",
+      recurrence_day: "Sunday",
+      recurrence_time: "14:00",
+      sales_close_date: "2026-08-01T00:00:00Z", // past cycle date
+    },
+    "checkout",
+  ],
+  [
     "a mini on its session day still reaches checkout",
     {
       status: "live",

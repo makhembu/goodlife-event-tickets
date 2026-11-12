@@ -16,6 +16,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       context,
+      listeners_count: context.radio.active_listeners,
+      active_listeners: context.radio.active_listeners,
+      listeners: {
+        active: context.radio.active_listeners,
+        active_10m: context.radio.active_listeners_10m,
+        total_24h: context.radio.listeners_24h,
+      },
       tags: context.tags,
       generated_at: context.generated_at,
     });

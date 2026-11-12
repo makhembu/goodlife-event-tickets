@@ -319,3 +319,219 @@ export async function renderEventOgImage(
     }
   );
 }
+
+/**
+ * Dedicated 1200x630 social card for GOODLIFE Radio 254.
+ *
+ * Scrapers on WhatsApp, X/Twitter, iMessage, Facebook and LinkedIn
+ * render this dedicated broadcast studio card instead of the festival ticket flyer.
+ */
+export async function renderRadioOgImage(): Promise<ImageResponse> {
+  const fonts = await loadBrandFont();
+  const displayFont = fonts ? BRAND_FONT : undefined;
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          background: '#0A0E17',
+          color: CREAM,
+          fontFamily: displayFont,
+        }}
+      >
+        {/* Copy / Station Details column */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            width: '64%',
+            padding: '0 64px',
+          }}
+        >
+          {/* Live broadcast header strip */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: '#EF4444',
+                color: '#FFFFFF',
+                padding: '6px 14px',
+                fontSize: 18,
+                letterSpacing: 2,
+                fontWeight: 'bold',
+                textTransform: 'uppercase',
+              }}
+            >
+              <div
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 5,
+                  background: '#FFFFFF',
+                  marginRight: 8,
+                }}
+              />
+              LIVE AIRWAVES
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: 'rgba(223, 187, 125, 0.15)',
+                border: '1px solid #DFBB7D',
+                color: '#DFBB7D',
+                padding: '6px 14px',
+                fontSize: 18,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+              }}
+            >
+              254.0 FM · NAIROBI
+            </div>
+          </div>
+
+          {/* Station Title */}
+          <div
+            style={{
+              fontSize: 82,
+              lineHeight: 1.0,
+              marginTop: 24,
+              color: '#FFFFFF',
+              letterSpacing: 2,
+              textTransform: 'uppercase',
+            }}
+          >
+            GOODLIFE RADIO 254
+          </div>
+
+          {/* Gold accent bar */}
+          <div
+            style={{
+              width: 140,
+              height: 6,
+              background: '#DFBB7D',
+              marginTop: 22,
+              marginBottom: 22,
+            }}
+          />
+
+          {/* Frequency & Genre Subtitle */}
+          <div
+            style={{
+              fontSize: 30,
+              letterSpacing: 3,
+              color: '#DFBB7D',
+              textTransform: 'uppercase',
+            }}
+          >
+            AFRO HOUSE · AMAPIANO · SHENG DJ DROPS
+          </div>
+
+          {/* Location & broadcast info */}
+          <div
+            style={{
+              fontSize: 22,
+              letterSpacing: 2,
+              color: 'rgba(243,236,225,0.75)',
+              marginTop: 18,
+              textTransform: 'uppercase',
+            }}
+          >
+            BROADCASTING 24/7 · MARARA CAMP & NAIROBI · TUNE IN LIVE
+          </div>
+        </div>
+
+        {/* Right column: Studio Deck Graphic & Frequency Equalizer */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '36%',
+            paddingRight: 64,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: 340,
+              height: 420,
+              background: '#121724',
+              border: '3px solid #DFBB7D',
+              padding: 28,
+            }}
+          >
+            {/* Top Dial */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
+                borderBottom: '1px solid rgba(223, 187, 125, 0.3)',
+                paddingBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 16, letterSpacing: 4, color: '#DFBB7D' }}>FREQUENCY DIAL</div>
+              <div style={{ fontSize: 56, color: '#FFFFFF', letterSpacing: 3 }}>254.0 MHZ</div>
+            </div>
+
+            {/* Simulated Live Audio Equalizer Bars */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                gap: 10,
+                width: '100%',
+                height: 150,
+                padding: '10px 0',
+              }}
+            >
+              <div style={{ width: 14, height: 60, background: '#10B981' }} />
+              <div style={{ width: 14, height: 95, background: '#10B981' }} />
+              <div style={{ width: 14, height: 130, background: '#DFBB7D' }} />
+              <div style={{ width: 14, height: 75, background: '#10B981' }} />
+              <div style={{ width: 14, height: 145, background: '#EF4444' }} />
+              <div style={{ width: 14, height: 110, background: '#DFBB7D' }} />
+              <div style={{ width: 14, height: 85, background: '#10B981' }} />
+              <div style={{ width: 14, height: 125, background: '#DFBB7D' }} />
+              <div style={{ width: 14, height: 50, background: '#10B981' }} />
+            </div>
+
+            {/* Bottom Stream Quality Badge */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                background: 'rgba(223, 187, 125, 0.1)',
+                border: '1px solid rgba(223, 187, 125, 0.4)',
+                padding: '8px 12px',
+                fontSize: 16,
+                letterSpacing: 2,
+                color: '#DFBB7D',
+              }}
+            >
+              HIGH-FIDELITY MASTER AUDIO
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+    {
+      width: OG_WIDTH,
+      height: OG_HEIGHT,
+      ...(fonts ? { fonts } : {}),
+    }
+  );
+}

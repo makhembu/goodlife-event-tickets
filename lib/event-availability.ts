@@ -96,6 +96,7 @@ export type SchedulableEvent = {
   event_date?: string | null;
   sales_open_date?: string | null;
   sales_close_date?: string | null;
+  sales_lead_days?: number | null;
   recurrence_pattern?: string | null;
   recurrence_day?: string | null;
   recurrence_time?: string | null;
@@ -454,12 +455,49 @@ export function getEventAvailability(
     return { sellable: false, reason: "not_live", nextOccurrence };
   }
 
-  // Explicit admin-set window, applied as an extra restriction.
-  if (event.sales_open_date && now < new Date(event.sales_open_date)) {
-    return { sellable: false, reason: "not_open_yet", nextOccurrence };
+  // Sales opening gate: dynamic recurring lead window vs. explicit date
+  if (isRecurring(event) && nextOccurrence) {
+    // Dynamic recurring sales window: opens `leadDays` before the next occurrence.
+    // Default: weekly -> 7 days, biweekly -> 14 days, daily -> 1 day.
+    const pattern = String(event.recurrence_pattern ?? "none").trim().toLowerCase();
+    const defaultLead = pattern === "biweekly" ? 14 : pattern === "daily" ? 1 : 7;
+    const leadDays =
+      typeof event.sales_lead_days === "number" && event.sales_lead_days > 0
+        ? event.sales_lead_days
+        : defaultLead;
+    const recurringOpen = new Date(nextOccurrence.getTime() - leadDays * 86_400_000);
+
+    if (now < recurringOpen) {
+      return { sellable: false, reason: "not_open_yet", nextOccurrence };
+    }
+  } else {
+    // Explicit admin-set window for one-off events
+    if (event.sales_open_date && now < new Date(event.sales_open_date)) {
+      return { sellable: false, reason: "not_open_yet", nextOccurrence };
+    }
   }
-  if (event.sales_close_date && now > new Date(event.sales_close_date)) {
-    return { sellable: false, reason: "sales_closed", nextOccurrence };
+
+  // Sales closing gate:
+  if (!isRecurring(event)) {
+    if (event.sales_close_date && now > new Date(event.sales_close_date)) {
+      return { sellable: false, reason: "sales_closed", nextOccurrence };
+    }
+  } else if (event.sales_close_date) {
+    // For recurring series, an explicit sales_close_date applies only if it is
+    // scheduled within the active occurrence cycle (past close dates from previous weeks do not lock sales forever).
+    const closeDate = new Date(event.sales_close_date);
+    if (closeDate <= now) {
+      const pattern = String(event.recurrence_pattern ?? "none").trim().toLowerCase();
+      const defaultLead = pattern === "biweekly" ? 14 : pattern === "daily" ? 1 : 7;
+      const leadDays =
+        typeof event.sales_lead_days === "number" && event.sales_lead_days > 0
+          ? event.sales_lead_days
+          : defaultLead;
+      const cycleStart = nextOccurrence ? new Date(nextOccurrence.getTime() - leadDays * 86_400_000) : null;
+      if (cycleStart && closeDate > cycleStart) {
+        return { sellable: false, reason: "sales_closed", nextOccurrence };
+      }
+    }
   }
 
   // A one-off event happens on its `event_date` and nowhere else. This is what

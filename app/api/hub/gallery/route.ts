@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const authError = await requireAdmin();
+  const authError = await requireAdmin(req);
   if (authError) return authError;
   try {
     const body = await req.json();
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, image: rows[0] });
   } catch (err: any) {
     console.error('Error adding gallery image:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Internal server error' }, { status: 500 });
   }
 }
 

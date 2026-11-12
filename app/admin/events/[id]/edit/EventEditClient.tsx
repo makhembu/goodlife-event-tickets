@@ -117,6 +117,7 @@ export default function EventEditClient({
     recurrence_pattern: initialEvent.recurrence_pattern || "none",
     recurrence_day: initialEvent.recurrence_day || "sunday",
     recurrence_time: initialEvent.recurrence_time || "14:00",
+    sales_lead_days: initialEvent.sales_lead_days ?? 7,
   });
 
   const derivedScheduleText = React.useMemo(() => {
@@ -230,6 +231,7 @@ export default function EventEditClient({
         recurrence_pattern: (form.recurrence_pattern as "none" | "weekly" | "biweekly" | "monthly") || "none",
         recurrence_day: (form.recurrence_day as string) || undefined,
         recurrence_time: (form.recurrence_time as string) || undefined,
+        sales_lead_days: form.sales_lead_days ? Number(form.sales_lead_days) : null,
         custom_schedule_text: (form.custom_schedule_text as string) ?? null,
         regulations: (form.regulations as string) ?? "",
         lineup: typeof form.lineup === "string"
@@ -260,6 +262,7 @@ export default function EventEditClient({
         recurrence_pattern: updated.recurrence_pattern || "none",
         recurrence_day: updated.recurrence_day || "sunday",
         recurrence_time: updated.recurrence_time || "14:00",
+        sales_lead_days: updated.sales_lead_days ?? 7,
         custom_schedule_text: updated.custom_schedule_text || "",
         event_date: toDateInput(updated.event_date),
         sales_open_date: toDatetimeLocal(updated.sales_open_date),
@@ -591,8 +594,52 @@ export default function EventEditClient({
                 Sales Window
               </h2>
               <div className="grid grid-cols-2 gap-4">
+                {form.category === "mini" && (
+                  <div className="col-span-2 p-3 bg-[var(--brand-cream)]/40 border border-[var(--brand-navy)]/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-[var(--brand-navy)]">
+                        Dynamic Recurring Sales Window (Lead Time Before Each Session)
+                      </label>
+                      <span className="text-[10px] font-mono text-[var(--brand-navy)] font-bold bg-[var(--brand-gold)]/20 border border-[var(--brand-gold)] px-2 py-0.5">
+                        {String(form.sales_lead_days || (form.recurrence_pattern === "biweekly" ? 14 : 7))} DAYS LEAD
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "3 Days Lead", val: 3 },
+                        { label: "7 Days (1 Wk)", val: 7 },
+                        { label: "14 Days (2 Wks)", val: 14 },
+                        { label: "21 Days (3 Wks)", val: 21 },
+                      ].map((opt) => {
+                        const currentVal = Number(form.sales_lead_days) || (form.recurrence_pattern === "biweekly" ? 14 : 7);
+                        const isSelected = currentVal === opt.val;
+                        return (
+                          <button
+                            key={opt.val}
+                            type="button"
+                            onClick={() => {
+                              set("sales_lead_days", opt.val);
+                              trackChange();
+                            }}
+                            className={`py-1.5 px-2 text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                              isSelected
+                                ? "bg-[var(--brand-navy)] text-white border-[var(--brand-navy)]"
+                                : "bg-white text-[var(--brand-navy)] border-[var(--brand-navy)]/30 hover:border-[var(--brand-navy)]"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] font-mono text-[var(--brand-navy)]/70">
+                      Option A: Sales automatically reopen {String(form.sales_lead_days || (form.recurrence_pattern === "biweekly" ? 14 : 7))} days prior to every occurrence. Before this window, attendees see the countdown. Past session dates do not lock sales.
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-1">
-                  <label className={LABEL_CLASS}>Tickets Open</label>
+                  <label className={LABEL_CLASS}>Tickets Open {form.category === "mini" ? "(Optional Static Override)" : ""}</label>
                   <input
                     type="datetime-local"
                     value={toDatetimeLocal(form.sales_open_date as string | null)}
@@ -608,7 +655,7 @@ export default function EventEditClient({
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <label className={LABEL_CLASS}>Tickets Close</label>
+                  <label className={LABEL_CLASS}>Tickets Close {form.category === "mini" ? "(Optional Static Override)" : ""}</label>
                   <input
                     type="datetime-local"
                     value={toDatetimeLocal(form.sales_close_date as string | null)}

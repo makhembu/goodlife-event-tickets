@@ -224,6 +224,30 @@ assert(
   "siteUrl() refuses to publish a tunnel/localhost as canonical or og:url"
 );
 
+// ---------------------------------------------------------------------------
+// 7. Radio social sharing: dedicated broadcast studio card, not ticket flyer.
+// ---------------------------------------------------------------------------
+const radioOg = read("app/radio/opengraph-image.tsx");
+assert(radioOg !== null, "app/radio/opengraph-image.tsx exists (dedicated radio social card)");
+assert(
+  !!radioOg && /renderRadioOgImage/.test(radioOg),
+  "Radio social banner calls renderRadioOgImage()"
+);
+assert(
+  !!ogLib && /export async function renderRadioOgImage/.test(ogLib),
+  "renderRadioOgImage() is exported from lib/og-image.tsx"
+);
+const radioLayout = read("app/radio/layout.tsx");
+assert(
+  !!radioLayout && /siteName:\s*['"]GOODLIFE Radio 254['"]/.test(radioLayout),
+  "Radio layout sets siteName to 'GOODLIFE Radio 254'"
+);
+assert(
+  !!radioLayout && !/openGraph:\s*\{[\s\S]*?\bimages:/.test(radioLayout),
+  "Radio layout declares no openGraph.images override, so opengraph-image.tsx is used"
+);
+
+
 if (failures > 0) {
   console.error(`\n${failures} OG/social check(s) failed.`);
   process.exit(1);

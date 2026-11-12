@@ -88,6 +88,8 @@ export default function AdminVendorsPage() {
   });
 
   const [takingOverVendorId, setTakingOverVendorId] = useState<number | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const handleQuickLoginAsVendor = async (vendorId: number) => {
     setTakingOverVendorId(vendorId);
@@ -158,6 +160,8 @@ export default function AdminVendorsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreating(true);
+    setCreateError(null);
     try {
       const res = await fetch("/api/admin/vendors", {
         method: "POST",
@@ -167,6 +171,7 @@ export default function AdminVendorsPage() {
           commission_rate: formData.category === "operational" ? 0 : (parseFloat(formData.commission_rate) || 10.0),
         }),
       });
+      const data = await res.json().catch(() => null);
       if (res.ok) {
         setShowAddModal(false);
         setFormData({
@@ -179,8 +184,14 @@ export default function AdminVendorsPage() {
           operator_pin: "",
         });
         await loadVendors();
+      } else {
+        setCreateError(data?.error || `Failed to create department (HTTP ${res.status})`);
       }
-    } catch (err) {}
+    } catch (err: any) {
+      setCreateError(err?.message || "Failed to create department");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const openResetPinModal = (vendor: any, operator?: any) => {
@@ -703,6 +714,11 @@ export default function AdminVendorsPage() {
                 </button>
               </div>
               <form onSubmit={handleCreate} className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {createError && (
+                  <div className="p-3 bg-red-100 border-2 border-red-600 text-red-700 font-bold text-xs">
+                    {createError}
+                  </div>
+                )}
                 {/* 2-Way Classification Switch */}
                 <div>
                   <label className="block text-xs font-black uppercase mb-1.5 opacity-70">
@@ -823,9 +839,10 @@ export default function AdminVendorsPage() {
                 <div className="flex gap-3 pt-3 border-t border-stone-200 sticky bottom-0 bg-brand-off-white mt-2">
                   <button
                     type="submit"
-                    className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-black uppercase p-2.5 text-xs hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer"
+                    disabled={creating}
+                    className="flex-1 bg-brand-navy text-brand-off-white border-2 border-brand-navy font-black uppercase p-2.5 text-xs hover:bg-brand-accent hover:text-brand-navy transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    Create {formData.category === "commercial" ? "Stall" : "Department"}
+                    {creating ? "Creating..." : `Create ${formData.category === "commercial" ? "Stall" : "Department"}`}
                   </button>
                   <button
                     type="button"

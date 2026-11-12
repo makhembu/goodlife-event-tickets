@@ -449,7 +449,7 @@ export async function updateEvent(id: number, updates: Partial<Event>): Promise<
     const MUTABLE_EVENT_FIELDS = new Set<string>([
       'title', 'subtitle', 'tag', 'venue', 'flyer_url', 'video_url', 'logo_url', 'regulations',
       'ticker_text', 'till_number', 'event_date', 'status', 'is_active',
-      'sales_open_date', 'sales_close_date', 'next_event_title', 'recap_video_url',
+      'sales_open_date', 'sales_close_date', 'sales_lead_days', 'next_event_title', 'recap_video_url',
       'category', 'recurrence_pattern', 'recurrence_day', 'recurrence_time',
       'custom_schedule_text', 'max_tent_inventory', 'max_shared_beds', 'maps_url',
       'archived_at', 'budget_allocated', 'story_media', 'lineup', 'lineup_confirmed'
