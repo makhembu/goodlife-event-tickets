@@ -1,0 +1,55 @@
+{
+  "storylines": [
+    {
+      "arc_id": "marara_festival_roadtrip",
+      "title": "The Road Trip to Marara Camp Thika",
+      "category": "festival_lifestyle",
+      "total_episodes": 3,
+      "episodes": [
+        {
+          "episode": 1,
+          "hook": "Packing the squad for Thika Road",
+          "context": "Debating who gets the aux cable and who is bringing the cold sodas to Marara Camp Thika.",
+          "prompt_hint": "Talk about the squad loading up the car for the festival, fighting over playlist control, and realizing the early bird tiers on the Goodlife website are moving fast.",
+          "cliffhanger": "Wait, did anyone actually download the passes, or are we going to be explaining ourselves at the gate?"
+        },
+        {
+          "episode": 2,
+          "hook": "The scent of Nyama Choma hits the highway",
+          "context": "Pulling up near Marara Camp, hearing the bass bin vibrations from 2km away.",
+          "prompt_hint": "Hype the open skies, the outdoor grills, and the crowd energy already building up at Marara Camp.",
+          "cliffhanger": "Security checks the passes... but what did Brian leave back in the boot?"
+        },
+        {
+          "episode": 3,
+          "hook": "Full festival energy under the stars",
+          "context": "The headline DJ drops the biggest track of the night.",
+          "prompt_hint": "Talk about the pure vibe, lights, and heavy sound at Marara Camp Thika. Remind listeners who missed out to lock in for the next edition.",
+          "cliffhanger": "The track hits, the crowd roars... and who just lost their shoe in the dancefloor?"
+        }
+      ]
+    },
+    {
+      "arc_id": "cinema_popcorn_vs_street_grill",
+      "title": "Cinema Popcorn Heist vs Festival Vibes",
+      "category": "entertainment",
+      "total_episodes": 2,
+      "episodes": [
+        {
+          "episode": 1,
+          "hook": "Avengers cinema ticket madness",
+          "context": "Sitting in a dead-quiet cinema hall paying crazy money for small popcorn versus hitting the festival.",
+          "prompt_hint": "Compare exorbitant cinema snack prices to grabbing legit hot roadside samosas or festival grills.",
+          "cliffhanger": "If you try sneaking in hot samosas into the movie theater, does Thanos hear the crunch?"
+        },
+        {
+          "episode": 2,
+          "hook": "Choosing the real weekend vibe",
+          "context": "Why outdoor festivals beat dark cinema screens every single time.",
+          "prompt_hint": "Urge listeners to get outside under the open skies at Marara Camp instead of being trapped in air conditioning.",
+          "cliffhanger": "So what is the move: movie screen in the dark, or bassline under the stars with your mbogi?"
+        }
+      ]
+    }
+  ]
+}

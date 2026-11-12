@@ -1,0 +1,17 @@
+{
+  "timing_rules": {
+    "generation_window_start_sec": 38,
+    "generation_window_end_sec": 14,
+    "broadcast_slot_lead_sec": 2.0,
+    "max_drop_duration_sec": 28,
+    "minimum_track_duration_for_drop_sec": 90,
+    "drop_cadence_min_tracks_between_drops": 3,
+    "drop_cooldown_min_sec": 600
+  },
+  "audio_standards": {
+    "vocal_target_lufs": -14.0,
+    "vocal_true_peak": -1.0,
+    "sidechain_ducking_target_db": -7.5,
+    "sidechain_release_ms": 350
+  }
+}
