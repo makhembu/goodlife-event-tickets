@@ -48,6 +48,7 @@ import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel"
 import TrackEditDrawer from "@/components/admin/radio/TrackEditDrawer";
 import LibraryIngestDock from "@/components/admin/radio/LibraryIngestDock";
 import { KenyaListenerMap } from "@/components/admin/radio/KenyaListenerMap";
+import { AutomationHealthWidget } from "@/components/admin/radio/AutomationHealthWidget";
 import { SoundboardProvider } from "@/context/SoundboardContext";
 import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
 import { useRadio } from "@/context/RadioContext";
@@ -737,6 +738,9 @@ export default function AdminRadioPage() {
 
             {/* DECK B: Performance Soundboard & Queue (5 cols / ~40%) */}
             <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
+              {/* Home Server Automation Health */}
+              <AutomationHealthWidget />
+
               {/* 47-County Live Listener Radar */}
               <KenyaListenerMap
                 onSelectCounty={(countyName, count, cities) => {
