@@ -15,30 +15,70 @@ export function sanitizeSessionId(raw: any): string | null {
   return clean;
 }
 
+export interface ListenerGeoInput {
+  countyCode?: string | null;
+  countyName?: string | null;
+  city?: string | null;
+  country?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
 /**
  * Records a real-time heartbeat ping for an active radio listener.
  */
 export async function recordListenerHeartbeat(
   sessionId: string,
-  clientType: "listener" | "studio" = "listener"
+  clientType: "listener" | "studio" = "listener",
+  geo?: ListenerGeoInput
 ): Promise<{ success: boolean; activeListeners: number }> {
   const cleanId = sanitizeSessionId(sessionId);
   if (!cleanId) return { success: false, activeListeners: _cachedListenerCount };
 
   try {
-    await neonQuery(
-      `INSERT INTO radio_listener_pings (session_id, client_type, last_seen)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (session_id) DO UPDATE SET last_seen = NOW()`,
-      [cleanId, clientType]
-    );
+    if (geo && (geo.country || geo.city || geo.countyCode)) {
+      await neonQuery(
+        `INSERT INTO radio_listener_pings 
+           (session_id, client_type, last_seen, county_code, county_name, city, country, latitude, longitude, location_updated_at)
+         VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (session_id) DO UPDATE SET 
+           last_seen = NOW(),
+           county_code = COALESCE(EXCLUDED.county_code, radio_listener_pings.county_code),
+           county_name = COALESCE(EXCLUDED.county_name, radio_listener_pings.county_name),
+           city = COALESCE(EXCLUDED.city, radio_listener_pings.city),
+           country = COALESCE(EXCLUDED.country, radio_listener_pings.country),
+           latitude = COALESCE(EXCLUDED.latitude, radio_listener_pings.latitude),
+           longitude = COALESCE(EXCLUDED.longitude, radio_listener_pings.longitude),
+           location_updated_at = CASE 
+             WHEN EXCLUDED.country IS NOT NULL THEN NOW() 
+             ELSE radio_listener_pings.location_updated_at 
+           END`,
+        [
+          cleanId,
+          clientType,
+          geo.countyCode || null,
+          geo.countyName || null,
+          geo.city || null,
+          geo.country || null,
+          geo.latitude ?? null,
+          geo.longitude ?? null,
+        ]
+      );
+    } else {
+      await neonQuery(
+        `INSERT INTO radio_listener_pings (session_id, client_type, last_seen)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (session_id) DO UPDATE SET last_seen = NOW()`,
+        [cleanId, clientType]
+      );
+    }
 
-    // Opportunistic cleanup of dead sessions every ~20 heartbeats
+    // Opportunistic cleanup of dead sessions every ~25 heartbeats
     _cleanupCounter++;
-    if (_cleanupCounter >= 20) {
+    if (_cleanupCounter >= 25) {
       _cleanupCounter = 0;
       neonQuery(
-        `DELETE FROM radio_listener_pings WHERE last_seen < NOW() - INTERVAL '5 minutes'`
+        `DELETE FROM radio_listener_pings WHERE last_seen < NOW() - INTERVAL '10 minutes'`
       ).catch(() => {});
     }
 

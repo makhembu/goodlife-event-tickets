@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordListenerHeartbeat, removeListenerSession, getActiveListenersCount } from "@/lib/radio/listener-tracker";
+import { resolveKenyaLocation } from "@/lib/radio/kenya-geo";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +29,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, action: "leave", listeners_count: count });
     }
 
-    const res = await recordListenerHeartbeat(sessionId, clientType);
+    // Ingest Vercel Edge Geolocation Headers
+    const rawCountry = req.headers.get("x-vercel-ip-country");
+    const rawCity = req.headers.get("x-vercel-ip-city");
+    const rawLat = parseFloat(req.headers.get("x-vercel-ip-latitude") || "");
+    const rawLng = parseFloat(req.headers.get("x-vercel-ip-longitude") || "");
+
+    const resolvedGeo = resolveKenyaLocation(
+      rawCity,
+      rawCountry,
+      isNaN(rawLat) ? null : rawLat,
+      isNaN(rawLng) ? null : rawLng
+    );
+
+    const res = await recordListenerHeartbeat(sessionId, clientType, {
+      countyCode: resolvedGeo.countyCode,
+      countyName: resolvedGeo.countyName,
+      city: resolvedGeo.canonicalCity,
+      country: resolvedGeo.country,
+      latitude: resolvedGeo.lat,
+      longitude: resolvedGeo.lng,
+    });
+
     return NextResponse.json({
       ok: res.success,
       action: "ping",
       listeners_count: res.activeListeners,
+      geo: {
+        country: resolvedGeo.country,
+        county: resolvedGeo.countyName,
+        county_code: resolvedGeo.countyCode,
+      },
     });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || "Internal error" }, { status: 500 });
