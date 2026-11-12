@@ -5,7 +5,14 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
+    let body: any = null;
+    try {
+      const text = await req.text();
+      if (text) {
+        body = JSON.parse(text);
+      }
+    } catch {}
+
     const sessionId = body?.sessionId || body?.session_id;
 
     if (!sessionId) {
