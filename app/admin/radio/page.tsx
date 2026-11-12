@@ -47,6 +47,7 @@ import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor"
 import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
 import TrackEditDrawer from "@/components/admin/radio/TrackEditDrawer";
 import LibraryIngestDock from "@/components/admin/radio/LibraryIngestDock";
+import { KenyaListenerMap } from "@/components/admin/radio/KenyaListenerMap";
 import { SoundboardProvider } from "@/context/SoundboardContext";
 import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
 import { useRadio } from "@/context/RadioContext";
@@ -736,6 +737,21 @@ export default function AdminRadioPage() {
 
             {/* DECK B: Performance Soundboard & Queue (5 cols / ~40%) */}
             <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
+              {/* 47-County Live Listener Radar */}
+              <KenyaListenerMap
+                onSelectCounty={(countyName, count, cities) => {
+                  const cityText = cities.length > 0 ? ` out in ${cities.join(", ")}` : "";
+                  const shoutoutScript = `Big shoutout to the ${count} tuned in across ${countyName}${cityText}! Locked into GOODLIFE Radio 254!`;
+                  showMsg(`Radar Cue: ${countyName} shoutout loaded to Cue Dock!`, "success");
+                  setCueItem({
+                    id: `radar_${Date.now()}`,
+                    title: `Shoutout: ${countyName}`,
+                    script: shoutoutScript,
+                    audioUrl: "",
+                    persona: "DJ Fusion",
+                  });
+                }}
+              />
               <PerformanceSoundboard
                 onFireOnAir={async (name, url) => {
                   setIsDucking(true);
