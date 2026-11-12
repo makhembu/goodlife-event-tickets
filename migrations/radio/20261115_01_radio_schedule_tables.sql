@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS presenters (
     avatar_url VARCHAR(500),
     social_links JSONB DEFAULT '{}'::jsonb,
     stream_key_hash VARCHAR(255),
-    stream_key_prefix VARCHAR(16),
+    stream_key_prefix VARCHAR(32),
     status VARCHAR(30) NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'suspended')),
     failed_login_count INTEGER NOT NULL DEFAULT 0,
     locked_until TIMESTAMP WITH TIME ZONE,

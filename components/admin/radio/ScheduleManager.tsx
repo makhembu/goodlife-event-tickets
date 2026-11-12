@@ -187,6 +187,7 @@ export default function ScheduleManager() {
         dj_name: data.presenter.dj_name,
         email: data.presenter.email,
         temporary_password: data.temporary_password,
+        stream_key: data.stream_key,
       });
       setShowPresenterModal(false);
       setNewPresName("");

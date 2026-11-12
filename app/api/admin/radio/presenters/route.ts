@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
 import { hashPresenterPassword } from "@/lib/presenter-session";
+import { generateStreamKey } from "@/lib/radio/stream-keys";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,16 @@ export async function POST(req: NextRequest) {
     const temporaryPassword = `GL-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
     const passwordHash = await hashPresenterPassword(temporaryPassword);
 
+    // Generate initial stream key shown once
+    const { fullKey, hash: streamKeyHash, prefix: streamKeyPrefix } = generateStreamKey();
+
     const query = `
       INSERT INTO presenters (
         full_name, dj_name, slug, email, phone, password_hash, must_change_password,
-        bio, avatar_url, status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, 'active', NOW(), NOW())
-      RETURNING id, full_name, dj_name, slug, email, phone, bio, avatar_url, status, must_change_password, created_at;
+        bio, avatar_url, status, stream_key_hash, stream_key_prefix, stream_key_created_at,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, 'active', $9, $10, NOW(), NOW(), NOW())
+      RETURNING id, full_name, dj_name, slug, email, phone, bio, avatar_url, status, stream_key_prefix, must_change_password, created_at;
     `;
 
     const { rows } = await neonQuery(query, [
@@ -68,12 +73,15 @@ export async function POST(req: NextRequest) {
       passwordHash,
       bio ? String(bio).trim() : null,
       avatar_url ? String(avatar_url).trim() : null,
+      streamKeyHash,
+      streamKeyPrefix,
     ]);
 
     return NextResponse.json({
       success: true,
       presenter: rows[0],
       temporary_password: temporaryPassword, // Handled show-once in admin UI
+      stream_key: fullKey,                   // Handled show-once in admin UI
     });
   } catch (err: any) {
     console.error("[api/admin/radio/presenters] Create error:", err);
