@@ -68,6 +68,75 @@ export default function GlobalRadioBar() {
     setImgError(false);
   }
 
+  // Schedule Now / Up Next strip data
+  const [scheduleData, setScheduleData] = useState<{
+    nowSlot?: { show_title: string; presenter_name: string; substitute_name?: string | null };
+    nextSlot?: { show_title: string; presenter_name: string; timeLabel: string };
+  }>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSchedule() {
+      try {
+        const res = await fetch("/api/radio/schedule", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.slots) return;
+
+        const now = new Date();
+        const active = data.slots.find(
+          (s: any) =>
+            new Date(s.start_time) <= now &&
+            now < new Date(s.end_time) &&
+            s.status !== "cancelled"
+        );
+        const upcoming = data.slots.find(
+          (s: any) => new Date(s.start_time) > now && s.status !== "cancelled"
+        );
+
+        let nextTimeLabel = "";
+        if (upcoming) {
+          try {
+            nextTimeLabel = new Date(upcoming.start_time).toLocaleTimeString("en-KE", {
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+              timeZone: "Africa/Nairobi",
+            });
+          } catch {
+            nextTimeLabel = "";
+          }
+        }
+
+        setScheduleData({
+          nowSlot: active
+            ? {
+                show_title: active.show_title,
+                presenter_name: active.presenter_name,
+                substitute_name: active.substitute_name,
+              }
+            : undefined,
+          nextSlot: upcoming
+            ? {
+                show_title: upcoming.show_title,
+                presenter_name: upcoming.substitute_name || upcoming.presenter_name,
+                timeLabel: nextTimeLabel,
+              }
+            : undefined,
+        });
+      } catch {
+        // Silently keep empty strip if network or schedule fails
+      }
+    }
+
+    loadSchedule();
+    const timer = setInterval(loadSchedule, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   const cleanedTrack = useMemo(() => {
     if (isDropPlaying) {
       return {
@@ -137,6 +206,34 @@ export default function GlobalRadioBar() {
             <span>Warmup</span>
           </div>
         )}
+
+        {/* Schedule Now / Next Strip (Mobile) */}
+        <Link
+          href="/radio/schedule"
+          className="block text-[9px] text-brand-off-white/80 hover:text-brand-accent truncate border-b border-brand-accent/20 pb-1 mb-2 font-mono"
+          title="View broadcast timetable"
+        >
+          {scheduleData.nowSlot ? (
+            <span className="flex items-center justify-between gap-1">
+              <span className="truncate">
+                🔴 <strong className="text-brand-accent">ON AIR:</strong> {scheduleData.nowSlot.show_title}
+              </span>
+              <span className="text-brand-accent font-bold shrink-0">TIMETABLE →</span>
+            </span>
+          ) : scheduleData.nextSlot ? (
+            <span className="flex items-center justify-between gap-1">
+              <span className="truncate">
+                ⏳ <strong className="text-brand-accent">NEXT:</strong> {scheduleData.nextSlot.show_title} ({scheduleData.nextSlot.timeLabel})
+              </span>
+              <span className="text-brand-accent font-bold shrink-0">TIMETABLE →</span>
+            </span>
+          ) : (
+            <span className="flex items-center justify-between gap-1">
+              <span>📅 GOODLIFE TIMETABLE</span>
+              <span className="text-brand-accent font-bold shrink-0">VIEW →</span>
+            </span>
+          )}
+        </Link>
 
         {/* Top line: Art + Meta + Controls + Collapse */}
         <div className="flex items-center justify-between gap-2">
@@ -256,6 +353,33 @@ export default function GlobalRadioBar() {
         aria-label="Persistent Radio Player"
         className="hidden sm:block fixed left-0 right-0 bottom-0 z-40 bg-brand-navy text-brand-off-white border-t-4 border-brand-accent shadow-(--shadow-brut-2xl) transition-all"
       >
+        {/* Schedule Strip (Desktop) */}
+        <Link
+          href="/radio/schedule"
+          className="w-full bg-brand-navy/95 border-b border-brand-accent/20 px-4 py-1 text-[10px] font-mono flex items-center justify-between text-brand-off-white/80 hover:text-brand-accent hover:bg-brand-navy transition-colors"
+          title="View full Goodlife broadcast timetable"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse shrink-0" />
+            {scheduleData.nowSlot ? (
+              <span className="truncate">
+                <strong className="text-brand-accent font-black uppercase">ON AIR (SCHED):</strong>{" "}
+                {scheduleData.nowSlot.show_title} with {scheduleData.nowSlot.substitute_name || scheduleData.nowSlot.presenter_name}
+              </span>
+            ) : scheduleData.nextSlot ? (
+              <span className="truncate">
+                <strong className="text-brand-accent font-black uppercase">UP NEXT:</strong>{" "}
+                {scheduleData.nextSlot.show_title} ({scheduleData.nextSlot.timeLabel}) with {scheduleData.nextSlot.presenter_name}
+              </span>
+            ) : (
+              <span>GOODLIFE 24/7 BROADCAST TIMETABLE & SHOW PROGRAMMING</span>
+            )}
+          </div>
+          <span className="shrink-0 text-brand-accent font-bold uppercase text-[9px] ml-3 tracking-wider">
+            TIMETABLE →
+          </span>
+        </Link>
+
         {liveDropFallback && (
           <div className="bg-amber-400 text-brand-navy font-mono text-[10px] font-black uppercase px-3 py-1 flex items-center justify-between">
             <span>⚠️ Venue stream reconnecting... playing curated festival warmup</span>

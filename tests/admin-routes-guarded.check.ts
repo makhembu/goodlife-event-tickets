@@ -83,12 +83,16 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/playout-state/route.ts:GET", "Public radio broadcast playout schedule for player & automation synchronization"],
   ["app/api/radio/radar/route.ts:GET", "Public listener radar aggregate for Kenya map and diaspora ticker"],
   ["app/api/radio/diagnostics/route.ts:GET", "Public radio playout diagnostics and drop telemetry"],
+  ["app/api/radio/schedule/route.ts:GET", "Public 7-day radio broadcast timetable and schedule slots"],
+  ["app/api/radio/shows/[slug]/calendar.ics/route.ts:GET", "Public RFC 5545 iCalendar (.ics) export per show"],
 
   // Session login/logout endpoints (unauthenticated by definition)
   ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],
   ["app/api/scanner/logout/route.ts:POST", "Gate scanner logout (clears session cookie)"],
   ["app/api/vendor/auth/route.ts:POST", "Vendor operator login (authenticates via Operator PIN)"],
   ["app/api/vendor/logout/route.ts:POST", "Vendor operator logout (clears session cookie)"],
+  ["app/api/presenter/auth/login/route.ts:POST", "Presenter portal login (authenticates via email and password)"],
+  ["app/api/presenter/auth/logout/route.ts:POST", "Presenter portal logout (clears session cookie)"],
 ]);
 
 /**
@@ -295,19 +299,25 @@ function checkNonAdminRoutes(): { totalMethodsChecked: number; allowlistedCount:
 
       // 4. Webhook / Cron cryptographic verification
       const hasWebhookAuth =
-        (body.includes("timingSafeEqual") &&
+        ((body.includes("timingSafeEqual") || body.includes("verifyCronAuth")) &&
           (body.includes("X-Bridge-Signature") ||
             body.includes("X-Webhook-Hmac") ||
             body.includes("PAYHERO_CALLBACK_TOKEN") ||
             body.includes("CRON_SECRET"))) ||
         body.includes("x-paystack-signature");
 
-      // 5. Delegation to an in-file or imported guarded handler
+      // 5. Presenter Session Guard
+      const hasPresenterGuard =
+        body.includes("requirePresenter") ||
+        body.includes("verifyPresenterSession") ||
+        body.includes("goodlife_presenter_session");
+
+      // 6. Delegation to an in-file or imported guarded handler
       const delegatesToGuarded =
         /return\s+(handle\w+|POST|GET|PUT|DELETE)\s*\(/.test(body) &&
         (content.includes("getSession") || content.includes("getVendorSession") || content.includes("handleVendorVoidSale") || content.includes("requireAdmin"));
 
-      if (hasAdminGuard || hasVendorOrScannerGuard || hasTabAuth || hasWebhookAuth || delegatesToGuarded) {
+      if (hasAdminGuard || hasVendorOrScannerGuard || hasTabAuth || hasWebhookAuth || hasPresenterGuard || delegatesToGuarded) {
         guardedCount++;
       } else {
         failures.push({

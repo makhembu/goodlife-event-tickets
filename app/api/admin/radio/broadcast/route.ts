@@ -44,3 +44,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: err.message || "Failed to update broadcast settings" }, { status: 500 });
   }
 }
+
+// Support POST alias for PUT to prevent 405 Method Not Allowed from UI callers
+export const POST = PUT;
+

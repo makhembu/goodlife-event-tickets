@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
+import { probeAudioMetadata, formatAudioDuration } from "@/lib/radio/audio-prober";
 
 export async function POST(req: NextRequest) {
   const authErr = await requireAdmin(req);
@@ -31,13 +32,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "audio_url is required" }, { status: 400 });
     }
 
-    const durSec = typeof duration_sec === "number" && duration_sec > 0 ? Math.round(duration_sec) : 0;
-    const mins = Math.floor(durSec / 60);
-    const secs = durSec % 60;
-    const durationStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+    let durSec = typeof duration_sec === "number" && duration_sec > 0 ? Math.round(duration_sec) : 0;
+    let targetBitrate = typeof bitrate === "number" && bitrate > 0 ? bitrate : (Boolean(is_high_quality) ? 320 : 192);
 
+    // If duration was not provided or defaulted to generic 180s, probe stream metadata
+    if (durSec <= 0 || durSec === 180) {
+      try {
+        const probed = await probeAudioMetadata(audio_url.trim(), file_size);
+        if (probed && probed.durationSec > 0) {
+          durSec = probed.durationSec;
+          if (probed.bitrateKbps > 0) targetBitrate = probed.bitrateKbps;
+        }
+      } catch (e) {
+        console.warn("[register-upload] Auto-probe fallback failed:", e);
+      }
+    }
+
+    const durationStr = formatAudioDuration(durSec);
     const isHq = Boolean(is_high_quality);
-    const targetBitrate = typeof bitrate === "number" && bitrate > 0 ? bitrate : (isHq ? 320 : 192);
     const targetFileSize = typeof file_size === "number" && file_size > 0 ? file_size : 0;
 
     const query = `

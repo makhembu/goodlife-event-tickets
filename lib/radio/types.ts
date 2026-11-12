@@ -155,3 +155,66 @@ export interface RadioLiveBffResponse {
   target_duration_sec?: number;
   listeners_count?: number;
 }
+
+export type PresenterStatus = 'pending' | 'active' | 'suspended';
+
+export interface Presenter {
+  id: number;
+  full_name: string;
+  dj_name: string;
+  slug: string;
+  email: string;
+  phone?: string | null;
+  password_hash?: string;
+  must_change_password: boolean;
+  bio?: string | null;
+  avatar_url?: string | null;
+  social_links?: Record<string, string>;
+  stream_key_hash?: string | null;
+  stream_key_prefix?: string | null;
+  status: PresenterStatus;
+  failed_login_count: number;
+  locked_until?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ShowRecurrencePattern = 'none' | 'daily' | 'weekly' | 'biweekly';
+
+export interface Show {
+  id: number;
+  title: string;
+  slug: string;
+  description?: string | null;
+  genre: string;
+  cover_image_url?: string | null;
+  primary_presenter_id: number;
+  primary_presenter?: Presenter;
+  default_duration_min: number;
+  recurrence_pattern: ShowRecurrencePattern;
+  recurrence_days: string[];
+  default_start_time: string; // "HH:MM:SS" (Africa/Nairobi)
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SlotStatus = 'scheduled' | 'warmup' | 'live' | 'completed' | 'cancelled' | 'noshow';
+
+export interface ShowSlot {
+  id: number;
+  show_id: number;
+  show?: Show;
+  presenter_id: number;
+  presenter?: Presenter;
+  substitute_presenter_id?: number | null;
+  substitute_presenter?: Presenter | null;
+  starts_at: string; // ISO 8601 UTC
+  ends_at: string;   // ISO 8601 UTC
+  status: SlotStatus;
+  notes?: string | null;
+  generated_from_recurrence: boolean;
+  created_at: string;
+  updated_at: string;
+}
+

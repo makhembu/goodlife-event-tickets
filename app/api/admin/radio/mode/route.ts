@@ -29,9 +29,37 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const mode = body.mode === "mania" ? "mania" : "autodj";
+    const rawMode = String(body.mode || "").trim().toLowerCase();
+    const allowedModes = ["autodj", "mania", "live", "curated"];
 
-    if (mode === "mania") {
+    if (!allowedModes.includes(rawMode)) {
+      return NextResponse.json(
+        { error: `Invalid mode "${rawMode}". Must be one of: ${allowedModes.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const mode = rawMode;
+
+    if (mode === "live") {
+      const { live_stream_url, live_title } = body;
+      await neonQuery(
+        `UPDATE radio_settings 
+         SET broadcast_mode = 'live',
+             live_stream_url = COALESCE($1, live_stream_url),
+             live_title = COALESCE($2, live_title),
+             updated_at = NOW() 
+         WHERE id = 1`,
+        [live_stream_url || null, live_title || null]
+      );
+    } else if (mode === "curated") {
+      await neonQuery(
+        `UPDATE radio_settings 
+         SET broadcast_mode = 'curated', 
+             updated_at = NOW() 
+         WHERE id = 1`
+      );
+    } else if (mode === "mania") {
       // If entering mania mode and active_set_id is null, pick the first active set
       const cur = await neonQuery(
         "SELECT active_set_id FROM radio_settings WHERE id = 1"

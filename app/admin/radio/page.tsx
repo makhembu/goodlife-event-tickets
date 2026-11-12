@@ -47,6 +47,7 @@ import RadioOverridesEditor from "@/components/admin/radio/RadioOverridesEditor"
 import PlaylistManagerPanel from "@/components/admin/radio/PlaylistManagerPanel";
 import TrackEditDrawer from "@/components/admin/radio/TrackEditDrawer";
 import LibraryIngestDock from "@/components/admin/radio/LibraryIngestDock";
+import ScheduleManager from "@/components/admin/radio/ScheduleManager";
 import { KenyaListenerMap } from "@/components/admin/radio/KenyaListenerMap";
 import { AutomationHealthWidget } from "@/components/admin/radio/AutomationHealthWidget";
 import { SoundboardProvider } from "@/context/SoundboardContext";
@@ -1316,6 +1317,13 @@ export default function AdminRadioPage() {
       {activeTab === "live" && (
         <div className="space-y-6 max-w-2xl">
           <DecksConnectCard />
+        </div>
+      )}
+
+      {/* VIEW 4B: TIMETABLE & PRESENTER ROSTER */}
+      {activeTab === "schedule" && (
+        <div className="space-y-6">
+          <ScheduleManager />
         </div>
       )}
 

@@ -153,11 +153,13 @@ async def synthesize_voice(script_text: str, client: httpx.AsyncClient) -> bytes
     clean_text = clean_script_for_tts(script_text)
     headers = {
         "Authorization": f"Bearer {FISH_AUDIO_KEY}",
-        "Content-Type": "application/msgpack"
+        "Content-Type": "application/msgpack",
+        "model": "s2.1-pro-free"
     }
     payload = {
         "text": clean_text,
         "format": "mp3",
+        "model": "s2.1-pro-free",
         "temperature": 0.6,
         "prosody": {"speed": 0.95, "volume": 0},
         "latency": "balanced"

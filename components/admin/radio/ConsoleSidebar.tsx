@@ -14,9 +14,10 @@ import {
   MoreHorizontal,
   X,
   ChevronRight,
+  Calendar,
 } from "lucide-react";
 
-export type ConsoleTab = "studio" | "drops" | "library" | "playlists" | "live" | "telemetry" | "overrides";
+export type ConsoleTab = "studio" | "drops" | "library" | "playlists" | "live" | "schedule" | "telemetry" | "overrides";
 
 export interface ConsoleSidebarProps {
   activeTab: ConsoleTab;
@@ -62,6 +63,12 @@ export default function ConsoleSidebar({
       label: "Live DJ Decks",
       icon: <RadioTower className="w-5 h-5" />,
       desc: "Stream connection & DJ hardware credentials",
+    },
+    {
+      id: "schedule",
+      label: "Timetable & Roster",
+      icon: <Calendar className="w-5 h-5" />,
+      desc: "Weekly shows, presenter roster & slot editor",
     },
     {
       id: "telemetry",

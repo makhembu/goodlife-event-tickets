@@ -94,13 +94,59 @@ async function isValidAdminSession(cookieValue: string | undefined): Promise<boo
   return true;
 }
 
+async function isValidPresenterSession(cookieValue: string | undefined): Promise<boolean> {
+  if (!cookieValue || !cookieValue.includes(".")) return false;
+  const [payloadB64, sig] = cookieValue.split(".");
+  if (!payloadB64 || !sig) return false;
+  const secret = process.env.PRESENTER_SESSION_SECRET?.trim();
+  if (!secret) return false; // Fail closed: strictly no hardcoded fallback
+  const isSigValid = await verifyHmacSha256(payloadB64, sig, secret);
+  if (!isSigValid) return false;
+  const parsed = decodePayload(payloadB64);
+  if (!parsed || parsed.role !== "presenter" || !parsed.presenterId) return false;
+  if (typeof parsed.exp === "number" && Math.floor(Date.now() / 1000) > parsed.exp) {
+    return false;
+  }
+  return true;
+}
+
+
 export async function middleware(request: NextRequest) {
   const session = request.cookies.get("goodlife_admin_session")?.value;
   const vendorSession = request.cookies.get("goodlife_vendor_session")?.value;
   const scannerSession = request.cookies.get("goodlife_scanner_session")?.value;
+  const presenterSession = request.cookies.get("goodlife_presenter_session")?.value;
   const pathname = request.nextUrl.pathname;
 
   const isAdmin = await isValidAdminSession(session);
+  const isPresenter = await isValidPresenterSession(presenterSession);
+
+  // Presenter portal page protection
+  if (pathname.startsWith("/presenter")) {
+    if (pathname === "/presenter/login") {
+      if (isPresenter) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/presenter/dashboard";
+        return NextResponse.redirect(url);
+      }
+      return NextResponse.next();
+    }
+    // All other /presenter/* pages require presenter authentication
+    // Admin cookies are strictly not treated as presenter
+    if (!isPresenter) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/presenter/login";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Presenter API protection
+  if (pathname.startsWith("/api/presenter")) {
+    const isPublicPresenterApi = pathname === "/api/presenter/auth/login";
+    if (!isPublicPresenterApi && !isPresenter) {
+      return NextResponse.json({ error: "Presenter session required" }, { status: 401 });
+    }
+  }
 
   // Protect admin page routes
   if (pathname.startsWith("/admin")) {
@@ -261,5 +307,7 @@ export const config = {
     "/api/event-details",
     "/api/ticket-tiers/:path*",
     "/api/events/:path*",
+    "/presenter/:path*",
+    "/api/presenter/:path*",
   ],
 };

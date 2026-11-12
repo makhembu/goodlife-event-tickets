@@ -407,6 +407,16 @@ export default function RadioPage() {
               </button>
             </div>
 
+            {/* Broadcast Timetable Link */}
+            <Link
+              href="/radio/schedule"
+              className="px-2.5 sm:px-3 py-1 font-mono text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs) flex items-center gap-1.5 text-brand-navy"
+              title="View full broadcast timetable"
+            >
+              <Calendar className="w-3.5 h-3.5 text-brand-navy" />
+              <span>TIMETABLE</span>
+            </Link>
+
             {/* Engine Status Badge (Derived strictly from engineState) */}
             {engineState === "live" && (
               <span className="bg-red-600 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
