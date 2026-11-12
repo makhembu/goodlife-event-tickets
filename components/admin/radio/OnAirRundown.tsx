@@ -168,14 +168,10 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
     if (operatingId) return;
     setOperatingId(setId);
 
-    // Instant zero-lag crossfade: start incoming deck immediately from local memory
-    const localTrack = sets.find((s) => s.id === setId);
-    if (localTrack?.audio_url) {
-      playImmediateBroadcastTrack(localTrack);
-      setActiveSetId(setId);
-      setBroadcastMode("mania");
-      notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
-    }
+    // Switch server-side on-air broadcast (do NOT play locally through browser audio)
+    setActiveSetId(setId);
+    setBroadcastMode("mania");
+    notify(`🔥 CUEING ON AIR: "${trackTitle}"...`);
 
     try {
       const res = await fetch("/api/admin/radio/playlist", {
@@ -184,19 +180,35 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
         body: JSON.stringify({ action: "play_now", setId }),
       });
       if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (!localTrack?.audio_url && data?.active_track?.audio_url) {
-          playImmediateBroadcastTrack(data.active_track);
-          setActiveSetId(setId);
-          setBroadcastMode("mania");
-          notify(`🔥 ON AIR: "${trackTitle}" is now live!`);
-        }
+        notify(`🔥 ON AIR: "${trackTitle}" is now live on stream!`);
         fetchPlaylist();
       } else {
         alert("Failed to cue track.");
       }
     } catch {
       alert("Network timeout cueing track.");
+    } finally {
+      setOperatingId(null);
+    }
+  };
+
+  const handlePlayNext = async (setId: number, trackTitle: string) => {
+    if (operatingId) return;
+    setOperatingId(setId);
+    try {
+      const res = await fetch("/api/admin/radio/playlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "play_next", setId }),
+      });
+      if (res.ok) {
+        notify(`⏭️ QUEUED NEXT: "${trackTitle}" will play right after this track!`);
+        fetchPlaylist();
+      } else {
+        alert("Failed to queue track as next.");
+      }
+    } catch {
+      alert("Network timeout queueing track as next.");
     } finally {
       setOperatingId(null);
     }
@@ -562,6 +574,20 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
                       </>
                     )}
                     <button
+                      type="button"
+                      onClick={() => {
+                        handlePlayNext(track.id, track.title);
+                        setOpenMenuTrackId(null);
+                      }}
+                      disabled={isPlaying}
+                      className="flex items-center space-x-2 px-2.5 py-2 hover:bg-[#DFBB7D]/20 text-[#F5C842] hover:text-[#DFBB7D] rounded text-left transition-colors font-bold disabled:opacity-30 cursor-pointer"
+                      title="Queue this song to play immediately after current track"
+                    >
+                      <SkipForward className="w-3.5 h-3.5 text-[#F5C842]" />
+                      <span>Play Next (Queue Next)</span>
+                    </button>
+                    <div className="border-t border-white/10 my-0.5" />
+                    <button
                       onClick={() => {
                         handleReorder(track.id, "up");
                         setOpenMenuTrackId(null);
@@ -739,8 +765,18 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
                         </button>
                         <button
                           type="button"
+                          onClick={() => handlePlayNext(track.id, track.title)}
+                          disabled={isPlaying}
+                          title="Queue to play immediately after current track"
+                          className="px-2.5 py-2 bg-white/5 hover:bg-[#DFBB7D]/20 text-[#F5C842] hover:text-[#DFBB7D] disabled:opacity-25 rounded font-mono text-[11px] font-bold uppercase transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <SkipForward className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">NEXT</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handlePlayNow(track.id, track.title)}
-                          title={`Play ${track.title} now`}
+                          title={`Play ${track.title} now on stream`}
                           className={`px-3 py-2 rounded font-mono text-xs font-black uppercase flex items-center gap-1 cursor-pointer ${
                             isPlaying
                               ? "bg-[#F5C842] text-[#16181D]"

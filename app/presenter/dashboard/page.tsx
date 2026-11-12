@@ -116,6 +116,9 @@ export default function PresenterDashboardPage() {
 
   // Stream Key Generation & Display Modal State
   const [newlyGeneratedKey, setNewlyGeneratedKey] = useState<string | null>(null);
+  const [cachedKey, setCachedKey] = useState<string | null>(null);
+  const [showRegenConfirmModal, setShowRegenConfirmModal] = useState(false);
+  const [showKeyHint, setShowKeyHint] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
   const [keyRegenLoading, setKeyRegenLoading] = useState(false);
 
@@ -156,6 +159,15 @@ export default function PresenterDashboardPage() {
 
         if (meData.presenter.must_change_password) {
           setShowPasswordModal(true);
+        }
+
+        if (typeof window !== "undefined" && meData.presenter?.id) {
+          try {
+            const cached = sessionStorage.getItem("gl_dj_stream_key_" + meData.presenter.id);
+            if (cached) setCachedKey(cached);
+          } catch {
+            // ignore storage access errors
+          }
         }
       }
 
@@ -198,10 +210,12 @@ export default function PresenterDashboardPage() {
     }
   };
 
-  const handleRegenerateKey = async () => {
-    if (!confirm("Are you sure you want to regenerate your stream key? Your previous key will be immediately revoked.")) {
-      return;
-    }
+  const handleRegenerateKey = () => {
+    setShowRegenConfirmModal(true);
+  };
+
+  const executeRegenerateKey = async () => {
+    setShowRegenConfirmModal(false);
     setKeyRegenLoading(true);
     try {
       const res = await fetch("/api/presenter/stream-key/regenerate", { method: "POST" });
@@ -209,6 +223,14 @@ export default function PresenterDashboardPage() {
       if (!res.ok) throw new Error(data.error || "Failed to regenerate key");
 
       setNewlyGeneratedKey(data.fullKey);
+      setCachedKey(data.fullKey);
+      if (typeof window !== "undefined" && profile?.id) {
+        try {
+          sessionStorage.setItem("gl_dj_stream_key_" + profile.id, data.fullKey);
+        } catch {
+          // ignore storage error
+        }
+      }
       if (connStatus) {
         setConnStatus({
           ...connStatus,
@@ -569,16 +591,48 @@ export default function PresenterDashboardPage() {
 
               {/* Stream Key Preview row */}
               <div className="p-3 bg-brand-off-white/80 border-2 border-brand-navy flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   <span className="text-[10px] text-neutral-500 font-black uppercase block">Active Stream Key</span>
-                  <div className="font-mono text-xs font-bold text-brand-navy flex items-center gap-2">
-                    <span className="bg-white px-2 py-0.5 border border-brand-navy/30">
-                      {connStatus?.key_prefix || "gl_live_••••••••••••"}
+                  <div className="font-mono text-xs font-bold text-brand-navy flex flex-wrap items-center gap-2">
+                    <span className="bg-white px-2.5 py-1 border border-brand-navy/30 select-all font-mono font-bold text-brand-navy shadow-xs">
+                      {newlyGeneratedKey || cachedKey || connStatus?.key_prefix || "gl_live_••••••••••••"}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const full = newlyGeneratedKey || cachedKey;
+                        if (full) {
+                          copyToClipboard(full, "stream_key");
+                        } else if (connStatus?.key_prefix) {
+                          copyToClipboard(connStatus.key_prefix, "stream_key");
+                          setShowKeyHint(true);
+                          setTimeout(() => setShowKeyHint(false), 5000);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-brand-navy hover:bg-brand-accent text-white hover:text-brand-navy border-2 border-brand-navy font-mono text-[11px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Copy Stream Key to clipboard"
+                    >
+                      {copiedField === "stream_key" ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-300">COPIED!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>COPY</span>
+                        </>
+                      )}
+                    </button>
                     <span className="text-[11px] text-neutral-500 font-normal">
                       (Secret key stored as secure SHA-256 hash)
                     </span>
                   </div>
+                  {showKeyHint && (
+                    <p className="text-[10px] text-amber-800 font-sans mt-1 bg-amber-50 p-1.5 border border-amber-300 rounded">
+                      ⚠️ Copied key prefix. For security, full keys are shown once on creation. If you lost your secret key, click &ldquo;Regenerate Stream Key&rdquo; to generate a fresh one.
+                    </p>
+                  )}
                 </div>
 
                 <div className="text-[11px] text-neutral-600 font-mono">
@@ -1219,6 +1273,49 @@ export default function PresenterDashboardPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: CONFIRM REGENERATE STREAM KEY                                    */}
+      {/* ========================================================================= */}
+      {showRegenConfirmModal && (
+        <div className="fixed inset-0 bg-brand-navy/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-brand-navy p-6 max-w-md w-full shadow-[8px_8px_0px_#142B4C] space-y-4 font-mono text-xs">
+            <div className="flex items-center gap-2 text-brand-navy border-b-2 border-brand-navy pb-3">
+              <RefreshCw className="w-5 h-5 text-amber-600" />
+              <h3 className="font-display text-lg uppercase tracking-wide">
+                Regenerate Stream Key?
+              </h3>
+            </div>
+
+            <p className="text-neutral-700 leading-relaxed">
+              Are you sure you want to regenerate your stream key for{" "}
+              <strong>{profile?.dj_name || "your account"}</strong>?
+            </p>
+            <div className="p-3 bg-red-50 border-2 border-red-500 text-red-900 font-bold">
+              ⚠️ Your current stream key will be immediately revoked. Any ongoing or saved encoder connection using the old key will be rejected.
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowRegenConfirmModal(false)}
+                className="flex-1 py-2 border-2 border-brand-navy text-neutral-700 hover:bg-neutral-100 font-bold uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={keyRegenLoading}
+                onClick={executeRegenerateKey}
+                className="flex-1 py-2 bg-red-600 text-white hover:bg-red-700 font-bold uppercase border-2 border-brand-navy cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                {keyRegenLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{keyRegenLoading ? "Generating..." : "Revoke & Regenerate"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

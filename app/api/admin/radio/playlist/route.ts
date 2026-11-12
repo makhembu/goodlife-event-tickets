@@ -208,12 +208,117 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (action === "play_next") {
+      if (!setId) {
+        return NextResponse.json({ error: "Missing setId" }, { status: 400 });
+      }
+
+      // Check for active broadcast playlist first
+      const activePlRes = await neonQuery(`
+        SELECT p.id as playlist_id
+        FROM radio_playlists p
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        LIMIT 1
+      `);
+
+      // Determine active track ID from settings
+      const settingsRes = await neonQuery("SELECT active_set_id FROM radio_settings WHERE id = 1");
+      const activeSetId = settingsRes.rows[0]?.active_set_id ? Number(settingsRes.rows[0].active_set_id) : null;
+
+      if (activePlRes.rows.length > 0) {
+        const playlistId = activePlRes.rows[0].playlist_id;
+        const tracksRes = await neonQuery(
+          `SELECT track_id, position FROM radio_playlist_tracks WHERE playlist_id = $1 ORDER BY position ASC, id ASC`,
+          [playlistId]
+        );
+        const list = tracksRes.rows.map((r: any) => Number(r.track_id));
+        const fromIdx = list.indexOf(Number(setId));
+        const activeIdx = activeSetId ? list.indexOf(Number(activeSetId)) : -1;
+
+        if (fromIdx !== -1) {
+          const [item] = list.splice(fromIdx, 1);
+          // Insert immediately after active track (or at index 1 / 0 if not active)
+          const insertIdx = activeIdx !== -1
+            ? (fromIdx > activeIdx ? activeIdx + 1 : activeIdx)
+            : 0;
+          list.splice(insertIdx, 0, item);
+
+          for (let i = 0; i < list.length; i++) {
+            await neonQuery(
+              `UPDATE radio_playlist_tracks SET position = $3 WHERE playlist_id = $1 AND track_id = $2`,
+              [playlistId, list[i], i]
+            );
+          }
+          await neonQuery("UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1", [playlistId]);
+          return NextResponse.json({ success: true, message: "Queued as next track" });
+        }
+      }
+
+      // Fallback: general radio_sets catalog
+      const allSets = await neonQuery(
+        "SELECT id, display_order FROM radio_sets WHERE deleted_at IS NULL AND is_active = true ORDER BY display_order ASC, id ASC"
+      );
+      const list = allSets.rows.map((r: any) => Number(r.id));
+      const fromIdx = list.indexOf(Number(setId));
+      const activeIdx = activeSetId ? list.indexOf(Number(activeSetId)) : -1;
+
+      if (fromIdx !== -1) {
+        const [item] = list.splice(fromIdx, 1);
+        const insertIdx = activeIdx !== -1
+          ? (fromIdx > activeIdx ? activeIdx + 1 : activeIdx)
+          : 0;
+        list.splice(insertIdx, 0, item);
+
+        for (let i = 0; i < list.length; i++) {
+          await neonQuery("UPDATE radio_sets SET display_order = $1 WHERE id = $2", [i, list[i]]);
+        }
+        return NextResponse.json({ success: true, message: "Queued as next track" });
+      }
+
+      return NextResponse.json({ error: "Track not found in rotation" }, { status: 404 });
+    }
+
     if (action === "reorder") {
       if (!setId || !direction) {
         return NextResponse.json({ error: "Missing setId or direction" }, { status: 400 });
       }
 
-      // Get current list of sets ordered by display_order
+      // Check active broadcast playlist
+      const activePlRes = await neonQuery(`
+        SELECT p.id as playlist_id
+        FROM radio_playlists p
+        WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+        LIMIT 1
+      `);
+
+      if (activePlRes.rows.length > 0) {
+        const playlistId = activePlRes.rows[0].playlist_id;
+        const tracksRes = await neonQuery(
+          `SELECT track_id, position FROM radio_playlist_tracks WHERE playlist_id = $1 ORDER BY position ASC, id ASC`,
+          [playlistId]
+        );
+        const list = tracksRes.rows.map((r: any) => Number(r.track_id));
+        const idx = list.indexOf(Number(setId));
+        if (idx !== -1) {
+          const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+          if (swapIdx >= 0 && swapIdx < list.length) {
+            const temp = list[idx];
+            list[idx] = list[swapIdx];
+            list[swapIdx] = temp;
+            for (let i = 0; i < list.length; i++) {
+              await neonQuery(
+                `UPDATE radio_playlist_tracks SET position = $3 WHERE playlist_id = $1 AND track_id = $2`,
+                [playlistId, list[i], i]
+              );
+            }
+            await neonQuery("UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1", [playlistId]);
+            return NextResponse.json({ success: true });
+          }
+          return NextResponse.json({ success: true, message: "Already at boundary" });
+        }
+      }
+
+      // Fallback: general radio_sets
       const allSets = await neonQuery(
         "SELECT id, display_order FROM radio_sets WHERE deleted_at IS NULL AND is_active = true ORDER BY display_order ASC, id ASC"
       );
