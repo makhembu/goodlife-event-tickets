@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import PresenterShoutoutQueue from "@/components/presenter/PresenterShoutoutQueue";
+import PresenterInteractionTools from "@/components/presenter/PresenterInteractionTools";
 import {
   Radio,
   Calendar,
@@ -94,7 +96,7 @@ export default function PresenterDashboardPage() {
   const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [connStatus, setConnStatus] = useState<ConnectionStatusData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"go-live" | "slots" | "recordings" | "profile">("go-live");
+  const [activeTab, setActiveTab] = useState<"go-live" | "slots" | "recordings" | "interaction" | "profile">("go-live");
 
   // Profile Edit State
   const [djName, setDjName] = useState("");
@@ -417,6 +419,18 @@ export default function PresenterDashboardPage() {
           >
             <Music className="w-4 h-4 text-brand-accent" />
             <span>My Recordings ({recordings.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("interaction")}
+            className={`px-4 sm:px-5 py-2 font-display text-base sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer transition-all flex items-center gap-1.5 ${
+              activeTab === "interaction"
+                ? "bg-white text-brand-navy font-black shadow-xs"
+                : "bg-neutral-200 text-neutral-600 hover:bg-white"
+            }`}
+          >
+            <Radio className="w-4 h-4 text-brand-accent" />
+            <span>Shoutouts & Polls</span>
           </button>
 
           <button
@@ -994,6 +1008,16 @@ export default function PresenterDashboardPage() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: SHOUTOUTS, POLLS & INTERACTION TOOLS                               */}
+        {/* ========================================================================= */}
+        {activeTab === "interaction" && (
+          <div className="space-y-6">
+            <PresenterShoutoutQueue />
+            <PresenterInteractionTools />
           </div>
         )}
       </main>

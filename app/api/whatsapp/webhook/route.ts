@@ -1,89 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { neonQuery } from "@/lib/supabase-db";
+import { sanitizeShoutoutMessage, sanitizeSenderName, hashIdentifier } from "@/lib/radio/shoutout-filter";
+import { normalizePhone } from "@/lib/phone";
+import { radioMessaging } from "@/lib/radio/messaging-provider";
 
-/**
- * Inbound WhatsApp webhook (WAHA / n8n).
- *
- * WHY THIS LOOKS SO SMALL
- * -----------------------
- * This used to be a debug stub that dumped the whole payload to the console and
- * appended it to `process.cwd()/webhook-logs.txt`. Three problems, all real:
- *
- *  1. `fs.appendFileSync(process.cwd(), ...)` throws on Vercel. The Lambda
- *     filesystem is read-only except `/tmp`, so on every deployed environment
- *     this endpoint answered **500** — while the operator's local `next dev` run
- *     answered 200 and looked healthy. A gateway that retries a 500 will deliver
- *     the same message many times over.
- *  2. It printed raw inbound messages: customer phone numbers and the message
- *     bodies they sent. That is personal data landing in platform logs, and it
- *     was also committed (`webhook-logs.txt` had 49 lines of it).
- *  3. It answered 500 on a malformed body, which invites the retry storm above.
- *
- * WHAT IT DOES NOW
- * ----------------
- * It accepts the delivery, records a *shape* summary with the identifiers
- * redacted, and always answers 200. It deliberately does NOT yet forward to the
- * ticket dispatcher: the outbound path is `lib/whatsapp.ts`, and wiring inbound
- * replies into ticket lookup is a product decision, not a logging fix.
- *
- * NOTE this route is currently not reachable by the gateway — see AGENTS.md: the
- * n8n workflow that owns `POST /webhook/waha` is inactive, so nothing posts here
- * yet. It is kept because it is the documented target once that workflow is
- * switched on, and because a 200 here is what makes that switch safe.
- */
+export const dynamic = "force-dynamic";
 
 /** Keys whose values must never reach a log line. */
 const REDACTED_KEYS = new Set([
-  "body",
-  "text",
-  "message",
-  "content",
-  "caption",
-  "pushName",
-  "profileName",
-  "pushname",
-  "profilename",
-  "from",
-  "to",
-  "sender",
-  "recipient",
-  "phone",
-  "number",
-  "chatId",
-  "session",
-  "key",
-  "remoteJid",
-  "senderJid",
-  "_data",
+  "body", "text", "message", "content", "caption",
+  "pushName", "profileName", "pushname", "profilename",
+  "from", "to", "sender", "recipient", "phone", "number",
+  "chatId", "session", "key", "remoteJid", "senderJid", "_data"
 ]);
 
-/**
- * A short, stable, non-reversible handle for an identifier so two payloads for
- * the same conversation can be correlated in logs without the log containing the
- * phone number itself.
- */
 function pseudonym(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 10);
 }
 
-/**
- * Reduce an arbitrary payload to something safe to log: no message bodies, no
- * phone numbers, no session names. Arrays are collapsed to a count, and unknown
- * keys are reported by name only.
- */
 function summarize(value: unknown, depth = 0): unknown {
   if (depth > 3) return "[deep]";
   if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) {
-    return { __arrayLength: value.length };
-  }
+  if (Array.isArray(value)) return { __arrayLength: value.length };
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
       if (REDACTED_KEYS.has(key)) {
-        // Keep correlation, drop the value.
-        out[key] =
-          typeof raw === "string" && raw.length > 0 ? `[redacted:${pseudonym(raw)}]` : "[redacted]";
+        out[key] = typeof raw === "string" && raw.length > 0 ? `[redacted:${pseudonym(raw)}]` : "[redacted]";
         continue;
       }
       out[key] = summarize(raw, depth + 1);
@@ -95,6 +39,12 @@ function summarize(value: unknown, depth = 0): unknown {
   return `[${typeof value}]`;
 }
 
+/**
+ * Parses inbound message body for radio commands:
+ * SHOUT <name> <message>
+ * REQUEST <song> by <artist>
+ * STOP (opt out of reminders)
+ */
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.WHATSAPP_WEBHOOK_SECRET?.replace(/^["']|["']$/g, "").trim();
 
@@ -111,10 +61,9 @@ export async function POST(request: NextRequest) {
   }
 
   const rawBody = await request.text();
-
   let authorized = false;
 
-  // 1. Verify via WAHA native HMAC (X-Webhook-Hmac)
+  // 1. Verify HMAC
   if (hmacHeader) {
     try {
       const expectedHmac = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
@@ -128,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 2. Verify via WAHA custom header (X-Webhook-Secret)
+  // 2. Verify Secret Header
   if (!authorized && secretHeader) {
     const secBuf = Buffer.from(secretHeader.trim());
     const expSecBuf = Buffer.from(webhookSecret);
@@ -141,13 +90,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let payload: unknown;
-
+  let payload: any;
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    // A body we cannot parse is still a delivery we should acknowledge. Answering
-    // 400/500 here is what turns one bad gateway payload into a retry loop.
     console.warn("[whatsapp/webhook] received a non-JSON body; acknowledged and ignored");
     return NextResponse.json({ success: true, parsed: false }, { status: 200 });
   }
@@ -155,11 +101,113 @@ export async function POST(request: NextRequest) {
   try {
     console.log("[whatsapp/webhook] delivery received", summarize(payload));
   } catch {
-    // Never let logging be the reason a webhook fails.
     console.warn("[whatsapp/webhook] received a payload (could not be summarised)");
   }
 
-  // Always 200: this endpoint is an unconnected intake stub, and a 5xx would
-  // make the gateway redeliver a message we are not acting on anyway.
+  // Inbound Message Processing
+  try {
+    // Extract message fields across WAHA shapes (event message or message.upsert)
+    const msgData = payload?.data || payload?.payload || payload;
+    const fromNumber = msgData?.from || msgData?.sender || msgData?.chatId || "";
+    const rawText = msgData?.body || msgData?.text || msgData?.message?.conversation || msgData?.message?.extendedTextMessage?.text || "";
+    const pushName = msgData?._data?.notifyName || msgData?.pushName || "WhatsApp Listener";
+
+    const cleanSenderPhone = normalizePhone(fromNumber);
+    const trimmedText = String(rawText).trim();
+
+    if (!cleanSenderPhone || !trimmedText) {
+      return NextResponse.json({ success: true, processed: false }, { status: 200 });
+    }
+
+    const upperText = trimmedText.toUpperCase();
+
+    // 1. Opt-Out Command: "STOP" or "UNSUBSCRIBE"
+    if (upperText === "STOP" || upperText === "STOP RADIO" || upperText === "UNSUBSCRIBE") {
+      const phoneHash = hashIdentifier(cleanSenderPhone);
+      await neonQuery(
+        `UPDATE radio_reminders SET is_active = FALSE WHERE phone_hash = $1;`,
+        [phoneHash]
+      );
+      // Optional minimal acknowledgment
+      if (process.env.ENABLE_RADIO_WHATSAPP_ACK === "true") {
+        await radioMessaging.sendMessage({
+          toPhone: cleanSenderPhone,
+          message: "GOODLIFE Radio: You have been unsubscribed from show reminders. Reply START to rejoin.",
+          recipientRole: "listener",
+          messageType: "show_reminder",
+        });
+      }
+      return NextResponse.json({ success: true, action: "unsubscribed" }, { status: 200 });
+    }
+
+    // 2. Radio Inbound: "SHOUT ..." or "REQUEST ..."
+    const isShout = upperText.startsWith("SHOUT");
+    const isRequest = upperText.startsWith("REQUEST");
+
+    if (isShout || isRequest) {
+      let messageContent = trimmedText.replace(/^(SHOUT|REQUEST)[:\s]*/i, "").trim();
+      let trackRequest: string | null = null;
+
+      if (isRequest) {
+        trackRequest = messageContent;
+        messageContent = `Requested: ${messageContent}`;
+      }
+
+      // Check validation
+      const validation = sanitizeShoutoutMessage(messageContent);
+      if (!validation.isValid) {
+        console.warn(`[whatsapp/webhook] Rejected radio message from ${pseudonym(cleanSenderPhone)}: ${validation.error}`);
+        return NextResponse.json({ success: true, rejected: validation.error }, { status: 200 });
+      }
+
+      const senderHash = hashIdentifier(cleanSenderPhone);
+
+      // Attach to live slot if active
+      let currentSlotId: number | null = null;
+      try {
+        const slotRes = await neonQuery(
+          `SELECT id FROM show_slots 
+           WHERE starts_at <= NOW() AND ends_at >= NOW()
+           ORDER BY starts_at DESC LIMIT 1;`
+        );
+        if (slotRes?.rows && slotRes.rows.length > 0) {
+          currentSlotId = slotRes.rows[0].id;
+        }
+      } catch {
+        currentSlotId = null;
+      }
+
+      // Insert shoutout
+      await neonQuery(
+        `INSERT INTO radio_shoutouts 
+          (slot_id, sender_name, sender_phone, sender_hash, message, request_track, source, status, is_featured)
+         VALUES ($1, $2, $3, $4, $5, $6, 'whatsapp', 'pending', FALSE);`,
+        [
+          currentSlotId,
+          sanitizeSenderName(pushName),
+          cleanSenderPhone,
+          senderHash,
+          validation.cleanText,
+          trackRequest,
+        ]
+      );
+
+      // Send minimal short reply (if enabled)
+      if (process.env.ENABLE_RADIO_WHATSAPP_ACK === "true") {
+        await radioMessaging.sendMessage({
+          toPhone: cleanSenderPhone,
+          message: "Asante! Your message was received by GOODLIFE Radio 254 and queued for the DJ.",
+          recipientRole: "listener",
+          messageType: "shoutout_ack",
+        });
+      }
+
+      return NextResponse.json({ success: true, queued: true }, { status: 200 });
+    }
+  } catch (err: any) {
+    console.error("[whatsapp/webhook] Inbound message parsing error:", err.message);
+  }
+
+  // Always return 200 to prevent gateway retries
   return NextResponse.json({ success: true, parsed: true, dispatched: false }, { status: 200 });
 }

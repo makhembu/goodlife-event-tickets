@@ -86,6 +86,14 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/schedule/route.ts:GET", "Public 7-day radio broadcast timetable and schedule slots"],
   ["app/api/radio/shows/[slug]/calendar.ics/route.ts:GET", "Public RFC 5545 iCalendar (.ics) export per show"],
   ["app/api/radio/apply/route.ts:POST", "Public DJ/presenter application form submission with 24h DB rate limiting"],
+  ["app/api/radio/shoutouts/route.ts:GET", "Public approved shoutouts ticker (phone numbers strictly omitted)"],
+  ["app/api/radio/shoutouts/route.ts:POST", "Public listener shoutout submission with DB rate limits & spam filtering"],
+  ["app/api/radio/polls/route.ts:GET", "Public active poll query with anonymous device vote state"],
+  ["app/api/radio/polls/vote/route.ts:POST", "Public poll voting with composite fingerprint rate limits & uniqueness"],
+  ["app/api/radio/contests/route.ts:GET", "Public active ticket giveaway contest query"],
+  ["app/api/radio/contests/enter/route.ts:POST", "Public contest entry with max_winners cap and rate limits"],
+  ["app/api/radio/reminders/route.ts:POST", "Public show reminder opt-in with rate limits"],
+  ["app/api/radio/reminders/route.ts:DELETE", "Public show reminder unsubscribe by secret token"],
 
   // Session login/logout endpoints (unauthenticated by definition)
   ["app/api/scanner/auth/route.ts:POST", "Gate scanner login (authenticates via Gate PIN)"],
@@ -303,6 +311,7 @@ function checkNonAdminRoutes(): { totalMethodsChecked: number; allowlistedCount:
         ((body.includes("timingSafeEqual") || body.includes("verifyCronAuth")) &&
           (body.includes("X-Bridge-Signature") ||
             body.includes("X-Webhook-Hmac") ||
+            body.includes("x-webhook-hmac") ||
             body.includes("PAYHERO_CALLBACK_TOKEN") ||
             body.includes("CRON_SECRET"))) ||
         body.includes("x-paystack-signature");

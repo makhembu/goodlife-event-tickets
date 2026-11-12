@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
 import CatchUpVault from "@/components/radio/CatchUpVault";
+import ShowReminderButton from "@/components/radio/ShowReminderButton";
 import { ArrowLeft, Clock, Calendar, CalendarPlus, Radio, Disc3, ExternalLink } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -194,6 +195,8 @@ export default async function ShowDetailPage({
                   {show.dj_name}
                 </Link>
               </div>
+
+              <ShowReminderButton showId={show.id} showTitle={show.title} />
 
               <a
                 href={`/api/radio/shows/${show.slug}/calendar.ics`}

@@ -23,6 +23,9 @@ import CuratedPlaylists from "@/components/radio/CuratedPlaylists";
 import { resolveCoverArt, resolveFallbackCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
 import UpcomingEventCard from "@/components/radio/UpcomingEventCard";
 import CatchUpVault from "@/components/radio/CatchUpVault";
+import ShoutoutWall from "@/components/radio/ShoutoutWall";
+import LivePollWidget from "@/components/radio/LivePollWidget";
+import LiveContestWidget from "@/components/radio/LiveContestWidget";
 import ShareStationModal from "@/components/radio/ShareStationModal";
 import PwaInstallButton from "@/components/ui/PwaInstallButton";
 import { resolveEventFlyer } from "@/lib/event-flyer";
@@ -919,9 +922,12 @@ export default function RadioPage() {
                   )}
                 </div>
 
-                {/* RIGHT COLUMN: EVENT CARD & SHARE & CATCH UP (5 COLS) */}
+                {/* RIGHT COLUMN: EVENT CARD & SHARE & CATCH UP & INTERACTION (5 COLS) */}
                 <div className="lg:col-span-5 space-y-6">
                   {eventCardNode}
+                  <LiveContestWidget />
+                  <LivePollWidget />
+                  <ShoutoutWall />
                   {shareCardNode}
                   <CatchUpVault />
                 </div>
@@ -930,6 +936,9 @@ export default function RadioPage() {
               /* REFLOW WHEN EMPTY: Single centered column on desktop */
               <div className="max-w-xl mx-auto space-y-6 pt-2">
                 {eventCardNode}
+                <LiveContestWidget />
+                <LivePollWidget />
+                <ShoutoutWall />
                 {shareCardNode}
                 <CatchUpVault />
               </div>
