@@ -254,10 +254,13 @@ async function getTimelineFallback() {
       },
       up_next: nextTracks.map((t: any) => ({
         id: t.id,
+        video_id: `set-${t.id}`,
         title: formatTrackTitle(t.title),
         artist: t.dj_name,
         duration: t.duration_sec || 180,
+        duration_sec: t.duration_sec || 180,
         thumbnail: t.cover_url,
+        audio_url: t.audio_url,
       })),
       history: [],
       live_drop: liveDrop,

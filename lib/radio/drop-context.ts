@@ -180,6 +180,60 @@ function stripRssText(raw: string): string {
     .trim();
 }
 
+export function toSpokenPlace(raw?: string | null): string {
+  if (!raw) return "the grounds";
+  const main = raw.split(",")[0].trim();
+  const letters = main.replace(/[^a-zA-Z]/g, "");
+  // Convert shouting ALL-CAPS venues (e.g. THE HUB GARDEN) to natural Title Case for neural TTS
+  if (letters.length > 3 && main === main.toUpperCase()) {
+    return main
+      .toLowerCase()
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      .replace(/\bCbd\b/g, "CBD");
+  }
+  return main;
+}
+
+function intToEnglishUnder100(n: number): string {
+  const num = Math.max(0, Math.min(99, Math.round(n)));
+  const ones = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+  const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+  if (num < 20) return ones[num];
+  const t = Math.floor(num / 10);
+  const r = num % 10;
+  return r === 0 ? tens[t] : `${tens[t]}-${ones[r]}`;
+}
+
+export function toSpokenDriveTime(minutes: number | null | undefined, venueSpoken: string): string {
+  if (minutes == null || !isFinite(minutes)) return `a smooth cruise out to ${venueSpoken}`;
+  const rounded = Math.max(10, Math.round(minutes / 5) * 5);
+  if (rounded >= 60) {
+    return `around an hour cruise out to ${venueSpoken}`;
+  }
+  return `just a ${intToEnglishUnder100(rounded)}-minute cruise out to ${venueSpoken}`;
+}
+
+export function toSpokenWeatherSummary(condition: string, tempC: number | null): string {
+  const condLower = condition.toLowerCase();
+  if (tempC == null) {
+    return condLower.includes("rain") || condLower.includes("drizzle")
+      ? "cool rainy Nairobi skies"
+      : "clean Nairobi skies";
+  }
+  const rounded = Math.round(tempC);
+  const tempWords = intToEnglishUnder100(rounded);
+  if (condLower.includes("drizzle") || condLower.includes("rain")) {
+    return `cool ${tempWords}-degree rainy Nairobi vibes`;
+  }
+  if (condLower.includes("cloud") || condLower.includes("overcast")) {
+    return `mild ${tempWords}-degree Nairobi skies`;
+  }
+  if (rounded >= 25) {
+    return `warm sunny ${tempWords}-degree Nairobi weather`;
+  }
+  return `crisp ${tempWords}-degree Nairobi skies`;
+}
+
 function parseGoogleRssItems(xml: string, limit = 4): Array<{ title: string; source: string | null }> {
   const items: Array<{ title: string; source: string | null }> = [];
   const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/gi);
@@ -279,10 +333,7 @@ async function getExternalFeeds(forceRefresh = false): Promise<ExternalFeedsCach
       condition: cond,
       wind_kmh: wind,
       precipitation_mm: precip,
-      spoken_summary:
-        temp != null
-          ? `${temp}°C in Nairobi — ${cond}${precip && precip > 0.2 ? " (carry a light jacket)" : ""}`
-          : cond,
+      spoken_summary: toSpokenWeatherSummary(cond, temp),
       source: "open-meteo",
     };
   }
@@ -624,6 +675,7 @@ export async function buildUnifiedDropContext(options?: {
     const lineupArr: string[] = Array.isArray(e.lineup_arr) ? e.lineup_arr.filter(Boolean) : [];
     const lineupConfirmed = Boolean(e.lineup_confirmed);
     const rawVenue = String(e.venue || "Marara Camp").trim();
+    const spokenVenue = toSpokenPlace(promo?.venue_spoken || rawVenue);
 
     return {
       id: eid,
@@ -631,7 +683,7 @@ export async function buildUnifiedDropContext(options?: {
       name_spoken: promo?.name_spoken || normalizeEventTitle(String(e.title || "")),
       subtitle: e.subtitle || null,
       venue: rawVenue,
-      venue_spoken: promo?.venue_spoken || rawVenue.split(",")[0].trim(),
+      venue_spoken: spokenVenue,
       maps_url: e.maps_url || null,
       event_date: e.event_date ? new Date(e.event_date).toISOString() : null,
       custom_schedule_text: e.custom_schedule_text || null,
@@ -774,11 +826,15 @@ export async function buildUnifiedDropContext(options?: {
         value: primaryEvent.countdown_phrase,
       });
     }
+    const cleanTicketTarget =
+      primaryEvent.spoken_ticket_url.includes("smwhr") || primaryEvent.spoken_ticket_url.includes("somewhere")
+        ? "tickets on goodlife dot smwhr dot space"
+        : primaryEvent.spoken_ticket_url;
     tags.push({
       id: "tickets_url",
       category: "tickets",
-      label: `🎟️ URL: ${primaryEvent.spoken_ticket_url}`,
-      value: `tickets on ${primaryEvent.spoken_ticket_url}`,
+      label: "🎟️ URL: goodlife.smwhr.space",
+      value: cleanTicketTarget,
     });
 
     const entryTier = primaryEvent.tiers.find((t) => !t.is_camping_bundle) || primaryEvent.tiers[0];
@@ -880,14 +936,15 @@ export async function buildUnifiedDropContext(options?: {
       id: "weather",
       category: "weather",
       label: `🌤️ Nairobi: ${externalFeeds.weather.temp_c}°C ${externalFeeds.weather.condition}`,
-      value: externalFeeds.weather.spoken_summary,
+      value: `under ${externalFeeds.weather.spoken_summary}`,
     });
   }
+  const spokenDrive = toSpokenDriveTime(traffic.estimated_drive_min, primaryEvent?.venue_spoken || "the venue");
   tags.push({
     id: "traffic",
     category: "traffic",
     label: `🚗 ${traffic.route_label}: ~${traffic.estimated_drive_min} min (${traffic.congestion_level})`,
-    value: `${traffic.distance_km} km route to ${primaryEvent?.venue_spoken || "Marara Camp"}, currently ${traffic.congestion_level} traffic (~${traffic.estimated_drive_min} minutes drive)`,
+    value: spokenDrive,
   });
   if (externalFeeds.newsHeadlines[0]) {
     const hl = externalFeeds.newsHeadlines[0].title;
@@ -962,18 +1019,22 @@ export async function buildUnifiedDropContext(options?: {
  */
 export function formatContextPromptSummary(ctx: UnifiedDropContext): string {
   const lines: string[] = [
-    `Station: ${ctx.station_name} | Nairobi Time: ${ctx.clock.eat_time} (${ctx.clock.coarse_phrase})`,
-    `Nairobi Weather: ${ctx.weather.spoken_summary}`,
-    `Route / Traffic: ${ctx.traffic.route_label} (~${ctx.traffic.distance_km} km, ${ctx.traffic.estimated_drive_min} min drive, ${ctx.traffic.congestion_level} traffic)`,
+    `Station: ${ctx.station_name} | Nairobi Time: ${ctx.clock.coarse_phrase}`,
+    `[OPTIONAL WEATHER COLOR - only mention if asked or relevant]: ${ctx.weather.spoken_summary}`,
+    `[OPTIONAL DRIVE COLOR - only mention if asked or relevant]: ${toSpokenDriveTime(ctx.traffic.estimated_drive_min, ctx.primary_event?.venue_spoken || "the venue")} (${ctx.traffic.congestion_level} traffic)`,
   ];
 
   if (ctx.primary_event) {
     const ev = ctx.primary_event;
     const entryTier = ev.tiers.find((t) => !t.is_camping_bundle) || ev.tiers[0];
+    const spokenSite =
+      ev.spoken_ticket_url.includes("smwhr") || ev.spoken_ticket_url.includes("somewhere")
+        ? "tickets on goodlife dot smwhr dot space (or on the Goodlife website)"
+        : ev.spoken_ticket_url;
     lines.push(
       `Primary Event: ${ev.name_spoken} (${ev.public_state}) at ${ev.venue_spoken}`,
       `Schedule / Countdown: ${ev.countdown_phrase || ev.custom_schedule_text || "Coming up soon"}${ev.gates_open_phrase ? ` · ${ev.gates_open_phrase}` : ""}`,
-      `Tickets Site: ${ev.spoken_ticket_url}${entryTier ? ` · Entry from ${entryTier.price_spoken}` : ""}`
+      `Ticket Purchase Destination: ${spokenSite}${entryTier ? ` · Entry from ${entryTier.price_spoken}` : ""}`
     );
     if (ev.free_rsvp_tiers.length > 0) {
       lines.push(`Free RSVP Tier Available: ${ev.free_rsvp_tiers.join(", ")}`);
@@ -992,7 +1053,7 @@ export function formatContextPromptSummary(ctx: UnifiedDropContext): string {
       lines.push(`Confirmed On-Ground Vendors: ${ev.vendors.slice(0, 6).map((v) => v.name).join(", ")}`);
     }
     if (ev.sales_24h > 0) {
-      lines.push(`Live Ticket Momentum: ${ev.sales_24h} passes booked in last 24h`);
+      lines.push(`Live Ticket Momentum: ${intToEnglishUnder100(Math.min(99, ev.sales_24h))} passes booked recently`);
     }
   }
 
@@ -1002,12 +1063,17 @@ export function formatContextPromptSummary(ctx: UnifiedDropContext): string {
     );
   }
   if (ctx.radio.up_next[0]) {
+    const up = ctx.radio.up_next[0];
+    const isSlowMood =
+      (up.bpm != null && up.bpm < 98) ||
+      /sam smith|soul|r&b|lounge|chill|stay with me|adele|sza|burna/i.test(`${up.title} ${up.artist || ""} ${up.genre || ""}`);
     lines.push(
-      `Up Next Track (TEASE THIS!): ${ctx.radio.up_next[0].title}${ctx.radio.up_next[0].artist ? ` by ${ctx.radio.up_next[0].artist}` : ""}`
+      `Up Next Track (TEASE THIS!): ${up.title}${up.artist ? ` by ${up.artist}` : ""}`,
+      `Recommended Vocal Emotion for Up Next: ${isSlowMood ? "[warm tone] or [confident] (soulful smooth bridge into the track — avoid screaming [hype]!)" : "[hype] or [energetic]"}`
     );
   }
   if (ctx.news.headlines[0]) {
-    lines.push(`Trending Kenya Headline: ${ctx.news.headlines[0].title}`);
+    lines.push(`[OPTIONAL NEWS COLOR - only mention if asked]: ${ctx.news.headlines[0].title}`);
   }
 
   return lines.join("\n");

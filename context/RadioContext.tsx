@@ -428,7 +428,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const fetchRadioLive = useCallback(async () => {
     if (isPollingRef.current) return;
     if (!radioEnabledRef.current) return;
-    if (isDropPlayingRef.current) return;
+    if (isDropPlayingRef.current && !audioRef.current?.ended) return;
     if (!isLiveRef.current) return;
 
     isPollingRef.current = true;
@@ -502,7 +502,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           tracksSinceLastDropRef.current += 1;
 
           // If playing and track advances, update audio src safely without truncating playing song
-          if (audioRef.current && isPlayingRef.current && !isDropPlayingRef.current && track.audio_url) {
+          if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && track.audio_url) {
             if (audioRef.current.src !== track.audio_url) {
               const audio = audioRef.current;
               const remaining = (audio.duration && !isNaN(audio.duration) && audio.currentTime)
@@ -530,6 +530,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   isTransitioningRef.current = true;
                   const targetSeek = track.elapsed || 0;
                   const newAudioSrc = track.audio_url;
+
+                  // Keep audible ducked bed volume if drop is currently finishing over the transition
+                  const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+                  const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
+                  audio.volume = isDropPlayingRef.current ? duckedVol : masterVol;
 
                   // Update audio source directly without calling audio.load() which wipes the background audio session on mobile
                   audio.src = newAudioSrc;
@@ -1265,7 +1270,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       swellIntervalRef.current = null;
     }
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
-    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+    const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
     const startVol = audioRef.current ? audioRef.current.volume : duckedVol;
     const target = isMutedRef.current ? 0 : volumeRef.current;
     if (startVol >= target || target <= 0) {
@@ -1294,7 +1299,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const audio = audioRef.current;
 
       const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
-      const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+      const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
 
       isDropPlayingRef.current = true;
       setIsDropPlaying(true);
@@ -1303,7 +1308,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setActiveMood("live");
       lastDropPlayedTimestampRef.current = Date.now();
 
-      // Duck currently playing music bed immediately mid-song if audio is playing
+      // Duck currently playing music bed to audible low level (-10dB to -12dB) immediately
       if (audio) {
         audio.volume = duckedVol;
       }
@@ -1536,9 +1541,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setActiveMood(drop.mood || "HYPE");
 
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
-    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+    const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
 
-    // Duck the outgoing track's volume to 0.22 so drop plays over outgoing music
+    // Duck outgoing/incoming music bed to an audible low bed (~30%) instead of near-silent mute
     audio.volume = duckedVol;
 
     const cleanupOutroDrop = () => {
@@ -1546,15 +1551,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         dropAudio.removeEventListener("ended", onDropEnded);
         dropAudio.removeEventListener("error", onDropError);
       }
-      swellMusicToFullVolume();
-      if (audio && audio.paused && !audio.ended && isPlayingRef.current) {
-        audio.play().catch(() => {});
-      }
       isDropPlayingRef.current = false;
       setIsDropPlaying(false);
       setActiveDropTitle(null);
       setActivePersona(null);
       setActiveMood(null);
+      swellMusicToFullVolume();
+      if (audio && audio.paused && !audio.ended && isPlayingRef.current) {
+        audio.play().catch(() => {});
+      }
+      if (audio && audio.ended && isPlayingRef.current) {
+        void fetchRadioLive();
+      }
     };
 
     const onDropEnded = () => {
@@ -1630,7 +1638,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
 
     const masterVol = isMutedRef.current ? 0 : volumeRef.current;
-    const duckedVol = masterVol > 0 ? Math.max(0.12, Math.min(0.25, masterVol * 0.22)) : 0;
+    const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
 
     const trackVideoId = activePlaylistRef.current
       ? `pl-${activePlaylistRef.current.id}-${nextTrack.id}`
@@ -1930,7 +1938,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const next = !prev;
       if (audioRef.current) {
         if (isDropPlayingRef.current) {
-          audioRef.current.volume = next ? 0 : volume * 0.22;
+          audioRef.current.volume = next ? 0 : Math.max(0.24, Math.min(0.36, volume * 0.30));
         } else {
           audioRef.current.volume = next ? 0 : volume;
         }
@@ -1948,7 +1956,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setIsMuted(false);
     if (audioRef.current) {
       if (isDropPlayingRef.current) {
-        audioRef.current.volume = clamped * 0.22;
+        audioRef.current.volume = Math.max(0.24, Math.min(0.36, clamped * 0.30));
       } else {
         audioRef.current.volume = clamped;
       }
@@ -2377,11 +2385,28 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onEnded={() => {
           sendPlayBeaconOnce(true);
+          hasFiredOutroDropRef.current = false;
           if (isLiveRef.current) {
-            // Gapless live auto-advance: if upcoming track is known in upNextQueue, start playing IMMEDIATELY without silence!
-            const nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+            // Gapless live auto-advance: start next track immediately even under an active outro drop (audible ducked bed!)
+            let nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+            if (!nextTrackCandidate?.audio_url && backupSetsRef.current.length > 0) {
+              const rawEndedId = currentTrackIdRef.current || "";
+              const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
+              const sets = backupSetsRef.current;
+              const curIdx = sets.findIndex(
+                (s) => String(s.id) === cleanEndedId || (audioRef.current && s.audio_url === audioRef.current.src)
+              );
+              const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
+              if (sets[nIdx]?.audio_url) {
+                nextTrackCandidate = sets[nIdx];
+              }
+            }
+
             if (nextTrackCandidate && nextTrackCandidate.audio_url && audioRef.current) {
               const audio = audioRef.current;
+              const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+              const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
+              audio.volume = isDropPlayingRef.current ? duckedVol : masterVol;
               audio.src = nextTrackCandidate.audio_url;
               audio.currentTime = 0;
               audio.play().catch((e) => console.warn("[RadioContext] gapless advance play error:", e));
@@ -2389,7 +2414,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 ...nextTrackCandidate,
                 title: formatTrackTitle(nextTrackCandidate.title),
                 elapsed: 0,
-                duration: nextTrackCandidate.duration_sec || 180,
+                duration: nextTrackCandidate.duration_sec || nextTrackCandidate.duration || 180,
               });
               currentTrackIdRef.current = nextTrackCandidate.video_id || `set-${nextTrackCandidate.id}`;
               setInterpolatedElapsed(0);

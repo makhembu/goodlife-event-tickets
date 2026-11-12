@@ -623,15 +623,32 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           </button>
         </div>
 
-        {/* Quick prompt suggestions */}
+        {/* Quick prompt suggestions (dynamically grounded in live event & station state) */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           <span className="text-[10px] font-mono text-white/50 mr-1">Quick Prompts:</span>
           {[
-            { label: "⚡ Hype Sunday Park & Chill", prompt: "Hype Sunday Park & Chill at Marara Camp Thika with river vibes" },
-            { label: "🎟️ Push 200 Bob Tickets", prompt: "Urge listeners to grab the 200 bob advance tickets on goodlife.smwhr.space" },
-            { label: "🎵 Introduce Up Next Track", prompt: "Introduce the upcoming song with high energy and hype" },
-            { label: "🔥 Nairobi Sheng Hype Drop", prompt: "Raw energetic Nairobi Sheng DJ drop telling wasee we outside" },
-            { label: "📻 Station ID & Shoutout", prompt: "Station ID shoutout for all listeners tuned in across Nairobi and diaspora" },
+            {
+              label: `⚡ Hype ${broadcastContext?.event_name || "Next Event"}`,
+              prompt: `Hype ${broadcastContext?.event_name || "the next GOODLIFE festival"} at ${broadcastContext?.venue || "the grounds"} with ${broadcastContext?.date || "live vibes"} and ${broadcastContext?.ticket_url || "goodlife dot smwhr dot space"}`,
+            },
+            {
+              label: `🎟️ Push ${broadcastContext?.price ? `${broadcastContext.price} ` : ""}Tickets`,
+              prompt: `Urge wasee to lock in passes${broadcastContext?.price ? ` starting at ${broadcastContext.price}` : ""} on ${broadcastContext?.ticket_url || "the Goodlife website"} for ${broadcastContext?.event_name || "GOODLIFE"}`,
+            },
+            {
+              label: "🎵 Introduce Up Next Track",
+              prompt: broadcastContext?.up_next
+                ? `Smooth Nairobi DJ bridge introducing Up Next track ${broadcastContext.up_next} with matching mood`
+                : "Introduce the upcoming song with authentic Kenyan radio flow",
+            },
+            {
+              label: "🔥 Nairobi Sheng Hype Drop",
+              prompt: "High-pace Nairobi Sheng DJ drop telling wasee we outside across the 254",
+            },
+            {
+              label: "📻 Station ID & Shoutout",
+              prompt: "Station ID shoutout for everyone locked in across Nairobi, Thika, and the diaspora",
+            },
           ].map((item) => (
             <button
               key={item.label}

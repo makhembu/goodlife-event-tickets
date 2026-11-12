@@ -114,7 +114,9 @@ export interface LiveQueueItem {
   title: string;
   artist: string;
   duration?: number;
+  duration_sec?: number;
   thumbnail?: string;
+  audio_url?: string;
   dj_note?: string;
   provenance?: string;
 }

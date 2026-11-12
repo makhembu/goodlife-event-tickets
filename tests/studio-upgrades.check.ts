@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
-import { extractCoordsFromMapsUrl } from "../lib/radio/drop-context";
+import {
+  extractCoordsFromMapsUrl,
+  toSpokenPlace,
+  toSpokenDriveTime,
+  toSpokenWeatherSummary,
+} from "../lib/radio/drop-context";
 import {
   extractPrimaryArtist,
   getGenreBridgeScore,
@@ -165,6 +170,46 @@ check(
   "buildHarmonicSequence modulates harmonically instead of locking in 8A when better relative/adjacent neighbor exists",
   seq.some((t, i) => i > 0 && t.musical_key !== "8A"),
   `Keys: ${seq.map((s) => s.musical_key).join(" -> ")}`
+);
+
+// 7. 9.5/10 Spoken TTS Formatting & Gapless Audible Ducking
+check(
+  "toSpokenPlace converts ALL-CAPS venue names to natural speech casing",
+  toSpokenPlace("THE HUB GARDEN, NAIROBI") === "The Hub Garden"
+);
+const drivePhrase = toSpokenDriveTime(23, "The Hub Garden");
+check(
+  "toSpokenDriveTime speaks conversational cruise without telemetry symbols or decimals",
+  !drivePhrase.includes("km") && !/\d/.test(drivePhrase) && drivePhrase.includes("The Hub Garden")
+);
+const weatherPhrase = toSpokenWeatherSummary("Light drizzle", 16);
+check(
+  "toSpokenWeatherSummary speaks weather without °C or digits",
+  !weatherPhrase.includes("°") && !/\d/.test(weatherPhrase)
+);
+
+const writeScriptCode = fs.readFileSync(
+  path.join(process.cwd(), "app/api/admin/radio/drops/write-script/route.ts"),
+  "utf8"
+);
+check(
+  "write-script enforces sanitizeScriptForTts and rejects telemetry metrics",
+  writeScriptCode.includes("sanitizeScriptForTts") && writeScriptCode.includes("strictTts")
+);
+
+const liveRouteCode = fs.readFileSync(
+  path.join(process.cwd(), "app/api/radio/live/route.ts"),
+  "utf8"
+);
+check(
+  "/api/radio/live includes audio_url on up_next tracks for gapless transition",
+  liveRouteCode.includes("audio_url: t.audio_url")
+);
+check(
+  "RadioContext uses audible low-volume duck bed (~30%) and allows ended tracks to advance during active drops",
+  radioCtxCode.includes("Math.max(0.24, Math.min(0.36,") &&
+    !radioCtxCode.includes("* 0.22") &&
+    radioCtxCode.includes("if (isDropPlayingRef.current && !audioRef.current?.ended) return;")
 );
 
 console.log(`\nChecks: ${passed} passed, ${failed} failed`);
