@@ -141,7 +141,12 @@ export default function GlobalRadioBar() {
         {/* Top line: Art + Meta + Controls + Collapse */}
         <div className="flex items-center justify-between gap-2">
           {/* Track metadata */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Link
+            href="/radio"
+            aria-label="Open Full Boombox"
+            className="flex items-center gap-2 min-w-0 flex-1 hover:opacity-90 transition-opacity"
+            title="Open Full Stage Player"
+          >
             <div
               className={`w-9 h-9 border-2 border-brand-accent shrink-0 overflow-hidden bg-black flex items-center justify-center ${
                 isPlaying && !isLive ? "animate-spin" : ""
@@ -171,10 +176,10 @@ export default function GlobalRadioBar() {
                   : cleanedTrack.artist}
               </p>
             </div>
-          </div>
+          </Link>
 
           {/* Quick Controls */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {!isLive && (
               <button
                 onClick={prevTrack}
@@ -206,6 +211,16 @@ export default function GlobalRadioBar() {
                 <SkipForward className="w-4 h-4 fill-current" />
               </button>
             )}
+
+            {/* Expand to full boombox view */}
+            <Link
+              href="/radio"
+              aria-label="Open Full Boombox"
+              className="w-10 h-10 border border-brand-accent bg-brand-accent text-brand-navy flex items-center justify-center hover:bg-brand-off-white transition-colors cursor-pointer active:scale-95 shadow-(--shadow-brut-xs)"
+              title="Open Full Stage Player"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </Link>
 
             {/* Collapse button back to Box FAB */}
             <button
