@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS radio_contest_entries (
   participant_hash VARCHAR(64) NOT NULL,
   answer_text TEXT,
   is_winner BOOLEAN NOT NULL DEFAULT FALSE,
-  awarded_ticket_id VARCHAR(50) REFERENCES tickets(id) ON DELETE SET NULL,
+  awarded_ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_contest_participant UNIQUE (contest_id, participant_hash)
 );

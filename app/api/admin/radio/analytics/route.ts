@@ -9,29 +9,29 @@ export async function GET(request: NextRequest) {
   try {
     // 1. Listeners per show & presenter
     const { rows: showStats } = await neonQuery(
-      `SELECT s.id, s.title, p.name as presenter_name, 
+      `SELECT s.id, s.title, p.dj_name as presenter_name, 
               COUNT(sl.id) as total_slots,
               COALESCE(SUM(t.amount), 0) as total_tips,
               COUNT(DISTINCT t.id) as tip_count
-       FROM radio_shows s
-       JOIN radio_presenters p ON s.presenter_id = p.id
-       LEFT JOIN radio_show_slots sl ON sl.show_id = s.id
+       FROM shows s
+       JOIN presenters p ON s.primary_presenter_id = p.id
+       LEFT JOIN show_slots sl ON sl.show_id = s.id
        LEFT JOIN radio_tips t ON t.slot_id = sl.id AND t.status = 'completed'
-       GROUP BY s.id, s.title, p.name
+       GROUP BY s.id, s.title, p.dj_name
        ORDER BY total_tips DESC, total_slots DESC
        LIMIT 10`
     );
 
     // 2. Presenter reliability metrics (on-time, late, noshows)
     const { rows: presenterReliability } = await neonQuery(
-      `SELECT p.id, p.name, p.dj_handle,
+      `SELECT p.id, p.dj_name, p.slug,
               COUNT(sl.id) as scheduled_slots,
               COUNT(CASE WHEN sl.status = 'completed' THEN 1 END) as completed_slots,
               COUNT(CASE WHEN sl.status = 'noshow' THEN 1 END) as noshow_slots
-       FROM radio_presenters p
-       LEFT JOIN radio_show_slots sl ON sl.presenter_id = p.id
-       WHERE p.is_active = TRUE
-       GROUP BY p.id, p.name, p.dj_handle
+       FROM presenters p
+       LEFT JOIN show_slots sl ON sl.presenter_id = p.id
+       WHERE p.status = 'active'
+       GROUP BY p.id, p.dj_name, p.slug
        ORDER BY completed_slots DESC`
     );
 

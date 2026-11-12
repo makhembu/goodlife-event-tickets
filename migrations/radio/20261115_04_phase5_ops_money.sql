@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS radio_tips (
     phone_hash VARCHAR(64),                      -- SHA-256 for rate limiting / anonymized lookups
     sender_name VARCHAR(128) NOT NULL,           -- Friendly listener name or "Anonymous"
     message TEXT,                                -- Optional cheer / message to the station / DJ
-    slot_id INTEGER REFERENCES radio_show_slots(id) ON DELETE SET NULL,
-    presenter_id INTEGER REFERENCES radio_presenters(id) ON DELETE SET NULL,
+    slot_id INTEGER REFERENCES show_slots(id) ON DELETE SET NULL,
+    presenter_id INTEGER REFERENCES presenters(id) ON DELETE SET NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending', -- pending, completed, failed, reversed
     payhero_reference VARCHAR(64),               -- PayHero transaction ID
     mpesa_receipt VARCHAR(64),                   -- Safaricom M-Pesa receipt code
@@ -29,8 +29,8 @@ CREATE INDEX IF NOT EXISTS idx_radio_tips_slot ON radio_tips(slot_id);
 CREATE INDEX IF NOT EXISTS idx_radio_tips_created_at ON radio_tips(created_at DESC);
 
 -- 2. Presenters Link to Staff / Operators (Additive)
--- Add nullable staff_id column to radio_presenters
-ALTER TABLE radio_presenters 
+-- Add nullable staff_id column to presenters
+ALTER TABLE presenters 
 ADD COLUMN IF NOT EXISTS staff_id INTEGER;
 
 -- 3. Radio Sponsors Table
@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS radio_sponsors (
     logo_url TEXT,
     link_url TEXT,
     tagline VARCHAR(255),
-    show_id INTEGER REFERENCES radio_shows(id) ON DELETE CASCADE,
-    slot_id INTEGER REFERENCES radio_show_slots(id) ON DELETE CASCADE,
+    show_id INTEGER REFERENCES shows(id) ON DELETE CASCADE,
+    slot_id INTEGER REFERENCES show_slots(id) ON DELETE CASCADE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     starts_at TIMESTAMP WITH TIME ZONE,
     ends_at TIMESTAMP WITH TIME ZONE,

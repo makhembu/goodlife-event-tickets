@@ -182,11 +182,11 @@ export async function getRadioTipsOverview(filters?: {
   const limitClause = filters?.limit ? `LIMIT ${filters.limit}` : "LIMIT 100";
 
   const { rows } = await neonQuery(
-    `SELECT t.*, p.name as presenter_name, s.title as show_title
+    `SELECT t.*, p.dj_name as presenter_name, s.title as show_title
      FROM radio_tips t
-     LEFT JOIN radio_presenters p ON t.presenter_id = p.id
-     LEFT JOIN radio_show_slots sl ON t.slot_id = sl.id
-     LEFT JOIN radio_shows s ON sl.show_id = s.id
+     LEFT JOIN presenters p ON t.presenter_id = p.id
+     LEFT JOIN show_slots sl ON t.slot_id = sl.id
+     LEFT JOIN shows s ON sl.show_id = s.id
      ${whereStr}
      ORDER BY t.created_at DESC
      ${limitClause}`,

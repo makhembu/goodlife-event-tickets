@@ -57,13 +57,13 @@ export async function GET(request: NextRequest) {
   // 2. Check presenter noshows (slot started > 10m ago, state still scheduled/pending)
   try {
     const { rows: noshows } = await neonQuery(
-      `SELECT sl.id, sl.slot_date, sl.start_time, s.title as show_title, p.name as presenter_name, p.phone
-       FROM radio_show_slots sl
-       JOIN radio_shows s ON sl.show_id = s.id
-       JOIN radio_presenters p ON sl.presenter_id = p.id
+      `SELECT sl.id, sl.starts_at, sl.ends_at, s.title as show_title, p.dj_name as presenter_name, p.phone
+       FROM show_slots sl
+       JOIN shows s ON sl.show_id = s.id
+       JOIN presenters p ON sl.presenter_id = p.id
        WHERE sl.status = 'scheduled'
-         AND (sl.slot_date + sl.start_time) < (CURRENT_TIMESTAMP - INTERVAL '10 minutes')
-         AND (sl.slot_date + sl.end_time) > CURRENT_TIMESTAMP
+         AND sl.starts_at < (CURRENT_TIMESTAMP - INTERVAL '10 minutes')
+         AND sl.ends_at > CURRENT_TIMESTAMP
        LIMIT 5`
     );
 
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       if (now - lastNoshowAlert > COOLDOWN_MS) {
         lastNoshowAlert = now;
         const msg = noshows
-          .map((n: any) => `• *${n.show_title}* by ${n.presenter_name} was scheduled at ${n.start_time}`)
+          .map((n: any) => `• *${n.show_title}* by ${n.presenter_name} was scheduled at ${new Date(n.starts_at).toLocaleTimeString()}`)
           .join("\n");
         sendOperatorAlert(`🚨 *GOODLIFE RADIO NOSHOW*:\n${msg}\nAuto-DJ fallback is active.`).catch(() => {});
       }
