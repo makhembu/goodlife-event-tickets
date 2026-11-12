@@ -25,6 +25,12 @@ import {
   Sliders,
   ListPlus,
   Globe,
+  GripVertical,
+  ChevronsUp,
+  ChevronsDown,
+  CheckSquare,
+  Square,
+  FolderInput,
 } from "lucide-react";
 import { RadioSet } from "@/lib/radio/types";
 import HarmonizeModal from "./HarmonizeModal";
@@ -1103,6 +1109,207 @@ export default function PlaylistManagerPanel({
     }
   };
 
+  // Tracklist Sequence search, selection, drag & drop, and bulk actions state
+  const [tracklistSearch, setTracklistSearch] = useState("");
+  const [selectedPlaylistTrackIds, setSelectedPlaylistTrackIds] = useState<Set<number>>(new Set());
+  const [draggedTrackId, setDraggedTrackId] = useState<number | null>(null);
+  const [dragOverTrackId, setDragOverTrackId] = useState<number | null>(null);
+  const [showBulkRemoveTracksModal, setShowBulkRemoveTracksModal] = useState(false);
+  const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
+  const [transferTargetPlaylistId, setTransferTargetPlaylistId] = useState("");
+  const [transferMode, setTransferMode] = useState<"copy" | "move">("copy");
+  const [bulkActionBusy, setBulkActionBusy] = useState(false);
+
+  // Clear tracklist search & selection when active playlist changes
+  useEffect(() => {
+    setSelectedPlaylistTrackIds(new Set());
+    setTracklistSearch("");
+    setDraggedTrackId(null);
+    setDragOverTrackId(null);
+  }, [selectedPlaylistId]);
+
+  // Filtered tracks in the current playlist
+  const filteredPlaylistTracks = useMemo(() => {
+    if (!tracklistSearch.trim()) return selectedPlaylistTracks;
+    const q = tracklistSearch.toLowerCase().trim();
+    return selectedPlaylistTracks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        (t.dj_name && t.dj_name.toLowerCase().includes(q)) ||
+        (t.genre && t.genre.toLowerCase().includes(q)) ||
+        (t.musical_key && t.musical_key.toLowerCase().includes(q)) ||
+        (t.bpm && String(t.bpm).includes(q))
+    );
+  }, [selectedPlaylistTracks, tracklistSearch]);
+
+  const handleToggleSelectPlaylistTrack = (trackId: number) => {
+    setSelectedPlaylistTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) next.delete(trackId);
+      else next.add(trackId);
+      return next;
+    });
+  };
+
+  const handleSelectAllFilteredTracks = () => {
+    const next = new Set(selectedPlaylistTrackIds);
+    const allFilteredSelected =
+      filteredPlaylistTracks.length > 0 &&
+      filteredPlaylistTracks.every((t) => next.has(t.id));
+
+    if (allFilteredSelected) {
+      filteredPlaylistTracks.forEach((t) => next.delete(t.id));
+    } else {
+      filteredPlaylistTracks.forEach((t) => next.add(t.id));
+    }
+    setSelectedPlaylistTrackIds(next);
+  };
+
+  const handleClearPlaylistTrackSelection = () => {
+    setSelectedPlaylistTrackIds(new Set());
+  };
+
+  // Drag and drop reordering
+  const handleTrackDrop = async (sourceTrackId: number, targetTrackId: number) => {
+    if (sourceTrackId === targetTrackId || !selectedPlaylistId) return;
+    const sourceIndex = selectedPlaylistTracks.findIndex((t) => t.id === sourceTrackId);
+    const targetIndex = selectedPlaylistTracks.findIndex((t) => t.id === targetTrackId);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const updated = [...selectedPlaylistTracks];
+    const [moved] = updated.splice(sourceIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    setSelectedPlaylistTracks(updated);
+
+    const reorderPayload = updated.map((t, pos) => ({
+      track_id: t.id,
+      position: pos,
+    }));
+
+    try {
+      await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder: reorderPayload }),
+      });
+      showBanner(`Moved "${moved.title}" to position #${targetIndex + 1}`, "success");
+    } catch (err: any) {
+      showBanner("Failed to save reordered tracks", "error");
+      fetchPlaylistDetails(selectedPlaylistId);
+    }
+  };
+
+  // Bulk Move to Top
+  const handleBulkMoveToTop = async () => {
+    if (!selectedPlaylistId || selectedPlaylistTrackIds.size === 0) return;
+    const selected = selectedPlaylistTracks.filter((t) => selectedPlaylistTrackIds.has(t.id));
+    const unselected = selectedPlaylistTracks.filter((t) => !selectedPlaylistTrackIds.has(t.id));
+    const updated = [...selected, ...unselected];
+    setSelectedPlaylistTracks(updated);
+    const reorderPayload = updated.map((t, pos) => ({ track_id: t.id, position: pos }));
+    try {
+      await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder: reorderPayload }),
+      });
+      showBanner(`Moved ${selected.length} track${selected.length > 1 ? "s" : ""} to top`, "success");
+    } catch {
+      showBanner("Failed to reorder tracks", "error");
+      fetchPlaylistDetails(selectedPlaylistId);
+    }
+  };
+
+  // Bulk Move to Bottom
+  const handleBulkMoveToBottom = async () => {
+    if (!selectedPlaylistId || selectedPlaylistTrackIds.size === 0) return;
+    const selected = selectedPlaylistTracks.filter((t) => selectedPlaylistTrackIds.has(t.id));
+    const unselected = selectedPlaylistTracks.filter((t) => !selectedPlaylistTrackIds.has(t.id));
+    const updated = [...unselected, ...selected];
+    setSelectedPlaylistTracks(updated);
+    const reorderPayload = updated.map((t, pos) => ({ track_id: t.id, position: pos }));
+    try {
+      await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder: reorderPayload }),
+      });
+      showBanner(`Moved ${selected.length} track${selected.length > 1 ? "s" : ""} to bottom`, "success");
+    } catch {
+      showBanner("Failed to reorder tracks", "error");
+      fetchPlaylistDetails(selectedPlaylistId);
+    }
+  };
+
+  // Bulk Remove confirmed
+  const handleConfirmBulkRemove = async () => {
+    if (!selectedPlaylistId || selectedPlaylistTrackIds.size === 0) return;
+    setBulkActionBusy(true);
+    try {
+      const ids = Array.from(selectedPlaylistTrackIds);
+      const res = await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_ids: ids }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showBanner(`Removed ${ids.length} track${ids.length > 1 ? "s" : ""} from playlist`, "success");
+        setSelectedPlaylistTrackIds(new Set());
+        setShowBulkRemoveTracksModal(false);
+        fetchPlaylistDetails(selectedPlaylistId);
+        fetchPlaylists();
+      } else {
+        showBanner(data.error || "Failed to remove tracks", "error");
+      }
+    } catch (err: any) {
+      showBanner(err.message || "Failed to remove tracks", "error");
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  // Bulk Copy / Move to another playlist
+  const handleConfirmBulkTransfer = async () => {
+    const targetId = parseInt(transferTargetPlaylistId, 10);
+    if (!selectedPlaylistId || isNaN(targetId) || selectedPlaylistTrackIds.size === 0) return;
+    setBulkActionBusy(true);
+    try {
+      const ids = Array.from(selectedPlaylistTrackIds);
+      const addRes = await fetch(`/api/admin/radio/playlists/${targetId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_ids: ids }),
+      });
+      const addData = await addRes.json();
+      if (!addRes.ok || !addData.success) {
+        throw new Error(addData.error || "Failed to add tracks to target playlist");
+      }
+
+      if (transferMode === "move") {
+        await fetch(`/api/admin/radio/playlists/${selectedPlaylistId}/tracks`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track_ids: ids }),
+        });
+        showBanner(`Moved ${ids.length} track${ids.length > 1 ? "s" : ""} to target playlist`, "success");
+      } else {
+        showBanner(`Copied ${ids.length} track${ids.length > 1 ? "s" : ""} to target playlist`, "success");
+      }
+
+      setSelectedPlaylistTrackIds(new Set());
+      setShowBulkTransferModal(false);
+      setTransferTargetPlaylistId("");
+      fetchPlaylistDetails(selectedPlaylistId);
+      fetchPlaylists();
+    } catch (err: any) {
+      showBanner(err.message || "Failed to transfer tracks", "error");
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
   const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId);
   const activeBroadcastPlaylist = playlists.find((p) => p.is_broadcast_active);
 
@@ -1876,7 +2083,7 @@ export default function PlaylistManagerPanel({
                 </div>
               )}
 
-              {/* Tracks List with Reordering */}
+              {/* Tracks List with Reordering & Search */}
               {loadingTracks ? (
                 <div className="p-8 text-center text-white/60 text-xs font-mono uppercase tracking-wider">
                   Loading tracklist...
@@ -1896,162 +2103,346 @@ export default function PlaylistManagerPanel({
                   </button>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {selectedPlaylistTracks.map((track, idx) => {
-                    const isPlayingNow =
-                      Boolean(selectedPlaylist.is_broadcast_active) &&
-                      activeOnAirSetId === track.id &&
-                      (!activeOnAirPlaylistId || activeOnAirPlaylistId === selectedPlaylist.id);
-                    return (
-                    <div
-                      key={track.id}
-                      ref={isPlayingNow ? playingTrackRowRef : undefined}
-                      className={`p-2.5 sm:p-3 rounded-xl flex items-center gap-2 sm:gap-3.5 group transition-all ${
-                        isPlayingNow
-                          ? "bg-gradient-to-r from-[#DFBB7D]/25 via-[#222733] to-[#1A1D24] border-2 border-[#DFBB7D] shadow-[0_0_20px_rgba(223,187,125,0.22)] ring-1 ring-[#F5C842]/40"
-                          : "bg-[#1A1D24] border border-white/15 hover:border-[#DFBB7D] hover:bg-[#202530]"
-                      }`}
-                    >
-                      <span
-                        className={`text-xs font-mono font-bold w-7 sm:w-8 text-right shrink-0 ${
-                          isPlayingNow ? "text-[#F5C842] font-black" : "text-[#DFBB7D]"
-                        }`}
-                      >
-                        {isPlayingNow ? `▶ ${idx + 1}` : idx + 1}
-                      </span>
-
-                      <div
-                        className={`w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border ${
-                          isPlayingNow ? "border-[#F5C842] ring-2 ring-[#DFBB7D]/40" : "border-white/20"
-                        }`}
-                      >
-                        {track.cover_url ? (
-                          <img
-                            src={track.cover_url}
-                            alt={track.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-white/40">
-                            <Music2 className="w-4 h-4" />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-mono font-bold text-white truncate flex items-center gap-2">
-                          <span className={isPlayingNow ? "text-[#F5C842] font-black" : ""}>
-                            {track.title}
-                          </span>
-                          {isPlayingNow && (
-                            <span className="px-2 py-0.5 rounded bg-[#E84855] text-white text-[9px] font-mono font-black uppercase tracking-wider flex items-center gap-1 shrink-0 animate-pulse shadow-sm">
-                              <Radio className="w-2.5 h-2.5" />
-                              ON AIR NOW
-                            </span>
-                          )}
-                          {track.is_full_set && (
-                            <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-500/50 text-[9px] font-mono font-black uppercase">
-                              DJ MIX
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs font-mono text-white/80 truncate flex items-center gap-2 mt-0.5">
-                          <span className="text-white/90">{track.dj_name}</span>
-                          <span className="text-white/40">•</span>
-                          <span className="text-[#DFBB7D]">{track.genre}</span>
-                          {track.musical_key && (
-                            <>
-                              <span className="text-white/40">•</span>
-                              <span className="text-emerald-300 font-mono font-bold text-[10px]">
-                                {track.musical_key}
-                              </span>
-                              {track.key_source && (
-                                <span
-                                  className={`px-1 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${
-                                    track.key_source === "tunebat"
-                                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                                      : track.key_source === "analyzed"
-                                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                      : "bg-white/10 text-white/80"
-                                  }`}
-                                  title={`Key Source: ${track.key_source}`}
-                                >
-                                  {track.key_source === "analyzed" ? "auto" : track.key_source}
-                                </span>
-                              )}
-                            </>
-                          )}
-                          {track.bpm && (
-                            <>
-                              <span className="text-white/40">•</span>
-                              <span className="text-[#DFBB7D] font-mono text-[10px]">
-                                {track.bpm} BPM
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="hidden sm:block text-xs text-[#DFBB7D] font-mono font-bold shrink-0">
-                        {track.duration}
-                      </div>
-
-                      {/* Reorder, Edit and Delete controls */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        {onEditTrack && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const libMatch = library.find((l) => l.id === track.id);
-                              onEditTrack(
-                                libMatch || {
-                                  ...track,
-                                  cover_url: track.cover_url || "",
-                                  file_size: 0,
-                                  bitrate: 160,
-                                  processing_status: "ready",
-                                  play_count: 0,
-                                  is_active: true,
-                                  is_full_set: Boolean(track.is_full_set),
-                                  display_order: track.position,
-                                  source_type: "r2",
-                                  created_at: new Date().toISOString(),
-                                }
-                              );
-                            }}
-                            className="p-1.5 rounded-lg bg-white/10 text-[#DFBB7D] hover:bg-[#DFBB7D] hover:text-[#16181D] border border-white/20 transition-all cursor-pointer"
-                            title="Edit track properties"
-                          >
-                            <Sliders className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                <div className="space-y-3">
+                  {/* Tracklist Search & Selection Controls Toolbar */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-[#121316] border border-white/15">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                      <input
+                        type="text"
+                        placeholder="Search playlist tracks (title, artist, genre, key, BPM)..."
+                        value={tracklistSearch}
+                        onChange={(e) => setTracklistSearch(e.target.value)}
+                        className="w-full bg-[#1A1D24] border border-white/20 focus:border-[#DFBB7D] rounded-lg pl-8 pr-8 py-1.5 text-xs font-mono text-white placeholder-white/40 focus:outline-none transition-all"
+                      />
+                      {tracklistSearch && (
                         <button
-                          disabled={idx === 0}
-                          onClick={() => handleMoveTrack(idx, "up")}
-                          className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
-                          title="Move up"
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          disabled={idx === selectedPlaylistTracks.length - 1}
-                          onClick={() => handleMoveTrack(idx, "down")}
-                          className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
-                          title="Move down"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleRemoveTrack(track.id)}
-                          className="p-1.5 rounded-lg bg-white/10 text-white/80 hover:text-white hover:bg-red-500/30 border border-white/20 transition-all ml-1"
-                          title="Remove from playlist"
+                          type="button"
+                          onClick={() => setTracklistSearch("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-0.5"
+                          title="Clear search"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllFilteredTracks}
+                        disabled={filteredPlaylistTracks.length === 0}
+                        className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/90 text-[11px] font-mono font-bold uppercase transition-all flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                        title="Toggle selection for all visible tracks"
+                      >
+                        {filteredPlaylistTracks.length > 0 &&
+                        filteredPlaylistTracks.every((t) => selectedPlaylistTrackIds.has(t.id)) ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-white/50" />
+                        )}
+                        <span>
+                          {filteredPlaylistTracks.length > 0 &&
+                          filteredPlaylistTracks.every((t) => selectedPlaylistTrackIds.has(t.id))
+                            ? "Deselect All"
+                            : `Select All (${filteredPlaylistTracks.length})`}
+                        </span>
+                      </button>
+
+                      {tracklistSearch && (
+                        <span className="text-[11px] font-mono text-[#DFBB7D] px-2 py-1 rounded bg-[#DFBB7D]/10 border border-[#DFBB7D]/20">
+                          {filteredPlaylistTracks.length} / {selectedPlaylistTracks.length} tracks
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bulk Actions Sticky Toolbar */}
+                  {selectedPlaylistTrackIds.size > 0 && (
+                    <div className="p-3 bg-[#DFBB7D]/15 border-2 border-[#DFBB7D] rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-[0_4px_16px_rgba(223,187,125,0.15)] animate-fadeIn">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-[#DFBB7D]" />
+                        <span className="text-xs font-mono font-bold text-white">
+                          <span className="text-[#DFBB7D] font-black">{selectedPlaylistTrackIds.size}</span> tracks selected
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleBulkMoveToTop}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer"
+                          title="Move all selected tracks to top of playlist"
+                        >
+                          <ChevronsUp className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                          <span>Move to Top</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleBulkMoveToBottom}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer"
+                          title="Move all selected tracks to bottom of playlist"
+                        >
+                          <ChevronsDown className="w-3.5 h-3.5 text-[#DFBB7D]" />
+                          <span>Move to Bottom</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkTransferModal(true)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#DFBB7D]/20 hover:bg-[#DFBB7D] text-[#DFBB7D] hover:text-[#16181D] border border-[#DFBB7D]/50 text-[11px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer"
+                          title="Copy or Move selected tracks to another playlist"
+                        >
+                          <FolderInput className="w-3.5 h-3.5" />
+                          <span>Copy / Move to Playlist...</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkRemoveTracksModal(true)}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500 text-red-200 hover:text-white border border-red-500/40 text-[11px] font-mono font-bold uppercase flex items-center gap-1 transition-all cursor-pointer"
+                          title="Remove selected tracks from this playlist"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove ({selectedPlaylistTrackIds.size})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleClearPlaylistTrackSelection}
+                          className="px-2 py-1 text-[11px] font-mono text-white/60 hover:text-white underline cursor-pointer ml-1"
+                        >
+                          Clear
+                        </button>
                       </div>
                     </div>
-                    );
-                  })}
+                  )}
+
+                  {filteredPlaylistTracks.length === 0 ? (
+                    <div className="p-8 text-center rounded-xl bg-[#121316] border border-white/15 text-white/60 font-mono text-xs">
+                      No tracks match &ldquo;{tracklistSearch}&rdquo; in this playlist.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredPlaylistTracks.map((track) => {
+                        const realIdx = selectedPlaylistTracks.findIndex((t) => t.id === track.id);
+                        const isSelected = selectedPlaylistTrackIds.has(track.id);
+                        const isBeingDragged = draggedTrackId === track.id;
+                        const isDragOver = dragOverTrackId === track.id;
+                        const isPlayingNow =
+                          Boolean(selectedPlaylist.is_broadcast_active) &&
+                          activeOnAirSetId === track.id &&
+                          (!activeOnAirPlaylistId || activeOnAirPlaylistId === selectedPlaylist.id);
+
+                        return (
+                          <div
+                            key={track.id}
+                            ref={isPlayingNow ? playingTrackRowRef : undefined}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", String(track.id));
+                              setDraggedTrackId(track.id);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              if (dragOverTrackId !== track.id) {
+                                setDragOverTrackId(track.id);
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverTrackId === track.id) {
+                                setDragOverTrackId(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (draggedTrackId !== null && draggedTrackId !== track.id) {
+                                handleTrackDrop(draggedTrackId, track.id);
+                              }
+                              setDraggedTrackId(null);
+                              setDragOverTrackId(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedTrackId(null);
+                              setDragOverTrackId(null);
+                            }}
+                            className={`p-2.5 sm:p-3 rounded-xl flex items-center gap-2 sm:gap-3 group transition-all select-none ${
+                              isPlayingNow
+                                ? "bg-gradient-to-r from-[#DFBB7D]/25 via-[#222733] to-[#1A1D24] border-2 border-[#DFBB7D] shadow-[0_0_20px_rgba(223,187,125,0.22)] ring-1 ring-[#F5C842]/40"
+                                : isSelected
+                                ? "bg-[#DFBB7D]/15 border-2 border-[#DFBB7D]"
+                                : "bg-[#1A1D24] border border-white/15 hover:border-[#DFBB7D] hover:bg-[#202530]"
+                            } ${
+                              isBeingDragged ? "opacity-30 scale-[0.98] border-dashed border-[#DFBB7D]" : ""
+                            } ${
+                              isDragOver ? "border-t-4 border-t-[#DFBB7D] bg-[#DFBB7D]/10" : ""
+                            }`}
+                          >
+                            {/* Drag handle */}
+                            <div
+                              className="cursor-grab active:cursor-grabbing text-white/30 group-hover:text-white/80 p-1 rounded hover:bg-white/10 shrink-0 transition-colors"
+                              title="Drag up or down to reorder track position"
+                            >
+                              <GripVertical className="w-4 h-4" />
+                            </div>
+
+                            {/* Checkbox for selection */}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectPlaylistTrack(track.id)}
+                              className="w-4 h-4 rounded accent-[#DFBB7D] cursor-pointer shrink-0"
+                              title="Select track for bulk actions"
+                            />
+
+                            {/* Position Number */}
+                            <span
+                              className={`text-xs font-mono font-bold w-6 sm:w-7 text-right shrink-0 ${
+                                isPlayingNow ? "text-[#F5C842] font-black" : "text-[#DFBB7D]"
+                              }`}
+                            >
+                              {isPlayingNow ? `▶ ${realIdx + 1}` : realIdx + 1}
+                            </span>
+
+                            {/* Cover art */}
+                            <div
+                              className={`w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border ${
+                                isPlayingNow ? "border-[#F5C842] ring-2 ring-[#DFBB7D]/40" : "border-white/20"
+                              }`}
+                            >
+                              {track.cover_url ? (
+                                <img
+                                  src={track.cover_url}
+                                  alt={track.title}
+                                  className="w-full h-full object-cover pointer-events-none"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-white/40">
+                                  <Music2 className="w-4 h-4" />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Track Details */}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-mono font-bold text-white truncate flex items-center gap-2">
+                                <span className={isPlayingNow ? "text-[#F5C842] font-black" : ""}>
+                                  {track.title}
+                                </span>
+                                {isPlayingNow && (
+                                  <span className="px-2 py-0.5 rounded bg-[#E84855] text-white text-[9px] font-mono font-black uppercase tracking-wider flex items-center gap-1 shrink-0 animate-pulse shadow-sm">
+                                    <Radio className="w-2.5 h-2.5" />
+                                    ON AIR NOW
+                                  </span>
+                                )}
+                                {track.is_full_set && (
+                                  <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 border border-purple-500/50 text-[9px] font-mono font-black uppercase">
+                                    DJ MIX
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs font-mono text-white/80 truncate flex items-center gap-2 mt-0.5">
+                                <span className="text-white/90">{track.dj_name}</span>
+                                <span className="text-white/40">•</span>
+                                <span className="text-[#DFBB7D]">{track.genre}</span>
+                                {track.musical_key && (
+                                  <>
+                                    <span className="text-white/40">•</span>
+                                    <span className="text-emerald-300 font-mono font-bold text-[10px]">
+                                      {track.musical_key}
+                                    </span>
+                                    {track.key_source && (
+                                      <span
+                                        className={`px-1 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${
+                                          track.key_source === "tunebat"
+                                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                                            : track.key_source === "analyzed"
+                                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                            : "bg-white/10 text-white/80"
+                                        }`}
+                                        title={`Key Source: ${track.key_source}`}
+                                      >
+                                        {track.key_source === "analyzed" ? "auto" : track.key_source}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                                {track.bpm && (
+                                  <>
+                                    <span className="text-white/40">•</span>
+                                    <span className="text-[#DFBB7D] font-mono text-[10px]">
+                                      {track.bpm} BPM
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="hidden sm:block text-xs text-[#DFBB7D] font-mono font-bold shrink-0">
+                              {track.duration}
+                            </div>
+
+                            {/* Reorder, Edit and Delete controls */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {onEditTrack && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const libMatch = library.find((l) => l.id === track.id);
+                                    onEditTrack(
+                                      libMatch || {
+                                        ...track,
+                                        cover_url: track.cover_url || "",
+                                        file_size: 0,
+                                        bitrate: 160,
+                                        processing_status: "ready",
+                                        play_count: 0,
+                                        is_active: true,
+                                        is_full_set: Boolean(track.is_full_set),
+                                        display_order: track.position,
+                                        source_type: "r2",
+                                        created_at: new Date().toISOString(),
+                                      }
+                                    );
+                                  }}
+                                  className="p-1.5 rounded-lg bg-white/10 text-[#DFBB7D] hover:bg-[#DFBB7D] hover:text-[#16181D] border border-white/20 transition-all cursor-pointer"
+                                  title="Edit track properties"
+                                >
+                                  <Sliders className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                disabled={realIdx <= 0}
+                                onClick={() => handleMoveTrack(realIdx, "up")}
+                                className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
+                                title="Move up"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                disabled={realIdx === -1 || realIdx >= selectedPlaylistTracks.length - 1}
+                                onClick={() => handleMoveTrack(realIdx, "down")}
+                                className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:text-[#DFBB7D] border border-white/20 disabled:opacity-20 transition-all"
+                                title="Move down"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRemoveTrack(track.id)}
+                                className="p-1.5 rounded-lg bg-white/10 text-white/80 hover:text-white hover:bg-red-500/30 border border-white/20 transition-all ml-1"
+                                title="Remove from playlist"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2496,6 +2887,171 @@ export default function PlaylistManagerPanel({
                 className="px-4 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer"
               >
                 Start Harmonizing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Bulk Remove Songs Confirmation Modal */}
+      {showBulkRemoveTracksModal && selectedPlaylist && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowBulkRemoveTracksModal(false)}
+        >
+          <div
+            className="bg-[#16181D] border-2 border-red-500/50 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-[6px_6px_0px_#000] font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+              <div className="flex items-center gap-2 text-white font-black text-sm uppercase">
+                <Trash2 className="w-4 h-4 text-red-400" />
+                <span>Remove {selectedPlaylistTrackIds.size} Songs</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBulkRemoveTracksModal(false)}
+                className="p-1 rounded-lg text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-white/80 leading-relaxed">
+              Remove <span className="font-bold text-red-400">{selectedPlaylistTrackIds.size}</span> selected song{selectedPlaylistTrackIds.size > 1 ? "s" : ""} from{" "}
+              <span className="font-bold text-white">&ldquo;{selectedPlaylist.name}&rdquo;</span>?
+            </p>
+            <p className="text-[11px] text-white/50 leading-relaxed">
+              Songs will only be removed from this playlist. They will remain intact in your main music library.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={() => setShowBulkRemoveTracksModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={handleConfirmBulkRemove}
+                className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer flex items-center gap-1.5"
+              >
+                {bulkActionBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{bulkActionBusy ? "Removing..." : "Remove Songs"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Bulk Copy / Move to Another Playlist Modal */}
+      {showBulkTransferModal && selectedPlaylist && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowBulkTransferModal(false)}
+        >
+          <div
+            className="bg-[#16181D] border-2 border-[#DFBB7D] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-[6px_6px_0px_#000] font-mono"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+              <div className="flex items-center gap-2 text-white font-black text-sm uppercase">
+                <FolderInput className="w-4 h-4 text-[#DFBB7D]" />
+                <span>Transfer {selectedPlaylistTrackIds.size} Songs</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBulkTransferModal(false)}
+                className="p-1 rounded-lg text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-white/70 uppercase block mb-1.5">
+                  Action Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferMode("copy")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold uppercase transition-all cursor-pointer ${
+                      transferMode === "copy"
+                        ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] shadow-[2px_2px_0px_#000]"
+                        : "bg-white/5 border-white/20 text-white/70 hover:bg-white/10"
+                    }`}
+                  >
+                    Copy to Playlist
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferMode("move")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold uppercase transition-all cursor-pointer ${
+                      transferMode === "move"
+                        ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D] shadow-[2px_2px_0px_#000]"
+                        : "bg-white/5 border-white/20 text-white/70 hover:bg-white/10"
+                    }`}
+                  >
+                    Move to Playlist
+                  </button>
+                </div>
+                <p className="text-[10px] text-white/50 mt-1">
+                  {transferMode === "copy"
+                    ? "Keeps songs in this playlist and also copies them to destination."
+                    : "Moves songs to destination and removes them from this playlist."}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-white/70 uppercase block mb-1.5">
+                  Destination Playlist
+                </label>
+                <select
+                  value={transferTargetPlaylistId}
+                  onChange={(e) => setTransferTargetPlaylistId(e.target.value)}
+                  className="w-full bg-[#121316] border-2 border-white/20 focus:border-[#DFBB7D] rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none"
+                >
+                  <option value="">Choose destination playlist...</option>
+                  {playlists
+                    .filter((p) => p.id !== selectedPlaylist.id)
+                    .map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.name} ({p.track_count} tracks)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={() => setShowBulkTransferModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionBusy || !transferTargetPlaylistId}
+                onClick={handleConfirmBulkTransfer}
+                className="px-4 py-2 rounded-xl bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] text-xs font-black uppercase shadow-[2px_2px_0px_#000] cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+              >
+                {bulkActionBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>
+                  {bulkActionBusy
+                    ? "Transferring..."
+                    : transferMode === "move"
+                    ? "Move Tracks"
+                    : "Copy Tracks"}
+                </span>
               </button>
             </div>
           </div>

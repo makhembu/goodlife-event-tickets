@@ -27,6 +27,12 @@ import {
   Image as ImageIcon,
   Phone,
   HelpCircle,
+  CheckSquare,
+  Square,
+  Filter,
+  Search,
+  SlidersHorizontal,
+  Layers,
 } from "lucide-react";
 
 interface Presenter {
@@ -123,6 +129,16 @@ export default function ScheduleManager() {
   const [promptDialog, setPromptDialog] = useState<PromptDialogState | null>(null);
   const [promptValue, setPromptValue] = useState("");
   const [dialogLoading, setDialogLoading] = useState(false);
+
+  // Bulk Slot Selection & Filtering
+  const [selectedSlotIds, setSelectedSlotIds] = useState<number[]>([]);
+  const [filterShowId, setFilterShowId] = useState<string>("all");
+  const [filterPresenterId, setFilterPresenterId] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [slotSearch, setSlotSearch] = useState<string>("");
+  const [showBulkReassignModal, setShowBulkReassignModal] = useState(false);
+  const [bulkReassignDjId, setBulkReassignDjId] = useState<number | "">("");
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Credentials Issued / Show-Once Modal
   const [tempCredentialsShow, setTempCredentialsShow] = useState<{
@@ -284,6 +300,191 @@ export default function ScheduleManager() {
       setMsg({ type: "error", text: err.message });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // CLEAR ALL FUTURE SLOTS
+  const handleClearAllFutureSlots = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Wipe All Future Broadcast Slots",
+      message: "Are you sure you want to delete ALL future scheduled slots (starting from now onwards)? This clears the calendar cleanly so you can re-run 'Generate Next 30 Days' without old duplicates.",
+      confirmText: "Wipe All Future Slots",
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/admin/radio/schedule/bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "clear_future" }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to wipe future slots");
+
+          setSelectedSlotIds([]);
+          setMsg({ type: "success", text: data.message || "Future slots cleared." });
+          setConfirmDialog(null);
+          await loadData();
+        } catch (err: any) {
+          setMsg({ type: "error", text: err.message });
+          setConfirmDialog(null);
+        }
+      },
+    });
+  };
+
+  // FILTERED SLOTS
+  const filteredSlots = slots.filter((s) => {
+    if (filterShowId !== "all" && String(s.show_id) !== filterShowId) return false;
+    if (
+      filterPresenterId !== "all" &&
+      String(s.presenter_id) !== filterPresenterId &&
+      String(s.substitute_presenter_id) !== filterPresenterId
+    ) {
+      return false;
+    }
+    if (filterStatus !== "all" && s.status !== filterStatus) return false;
+    if (slotSearch.trim()) {
+      const q = slotSearch.toLowerCase();
+      const matchTitle = (s.show_title || "").toLowerCase().includes(q);
+      const matchDj = (s.presenter_dj_name || "").toLowerCase().includes(q);
+      const matchSub = (s.substitute_dj_name || "").toLowerCase().includes(q);
+      if (!matchTitle && !matchDj && !matchSub) return false;
+    }
+    return true;
+  });
+
+  const allFilteredSelected =
+    filteredSlots.length > 0 &&
+    filteredSlots.every((s) => selectedSlotIds.includes(s.id));
+
+  const handleToggleSelectAll = () => {
+    if (allFilteredSelected) {
+      const filteredIdSet = new Set(filteredSlots.map((s) => s.id));
+      setSelectedSlotIds((prev) => prev.filter((id) => !filteredIdSet.has(id)));
+    } else {
+      const newIds = Array.from(
+        new Set([...selectedSlotIds, ...filteredSlots.map((s) => s.id)])
+      );
+      setSelectedSlotIds(newIds);
+    }
+  };
+
+  const handleToggleSelectSlot = (id: number) => {
+    setSelectedSlotIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // BULK ACTIONS
+  const handleBulkCancel = () => {
+    if (selectedSlotIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: `Bulk Cancel ${selectedSlotIds.length} Slots`,
+      message: `Cancel ${selectedSlotIds.length} selected broadcast slot(s)? They will remain in history as 'cancelled' and will not air.`,
+      confirmText: `Cancel ${selectedSlotIds.length} Slots`,
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/admin/radio/schedule/bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "cancel", slot_ids: selectedSlotIds }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Bulk cancel failed");
+
+          setSelectedSlotIds([]);
+          setMsg({ type: "success", text: data.message });
+          setConfirmDialog(null);
+          await loadData();
+        } catch (err: any) {
+          setMsg({ type: "error", text: err.message });
+          setConfirmDialog(null);
+        }
+      },
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedSlotIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: `Permanently Delete ${selectedSlotIds.length} Slots`,
+      message: `Are you sure you want to permanently DELETE ${selectedSlotIds.length} selected slot(s) from the database? This cannot be undone.`,
+      confirmText: `Delete ${selectedSlotIds.length} Slots Permanently`,
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/admin/radio/schedule/bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", slot_ids: selectedSlotIds }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Bulk delete failed");
+
+          setSelectedSlotIds([]);
+          setMsg({ type: "success", text: data.message });
+          setConfirmDialog(null);
+          await loadData();
+        } catch (err: any) {
+          setMsg({ type: "error", text: err.message });
+          setConfirmDialog(null);
+        }
+      },
+    });
+  };
+
+  const handleBulkReassignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedSlotIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await fetch("/api/admin/radio/schedule/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reassign",
+          slot_ids: selectedSlotIds,
+          substitute_presenter_id: bulkReassignDjId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Bulk reassign failed");
+
+      setShowBulkReassignModal(false);
+      setSelectedSlotIds([]);
+      setMsg({ type: "success", text: data.message });
+      await loadData();
+    } catch (err: any) {
+      setMsg({ type: "error", text: err.message });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selectedSlotIds.length === 0) return;
+    try {
+      const res = await fetch("/api/admin/radio/schedule/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "status",
+          slot_ids: selectedSlotIds,
+          status: newStatus,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Bulk status change failed");
+
+      setSelectedSlotIds([]);
+      setMsg({ type: "success", text: data.message });
+      await loadData();
+    } catch (err: any) {
+      setMsg({ type: "error", text: err.message });
     }
   };
 
@@ -715,7 +916,7 @@ export default function ScheduleManager() {
 
   return (
     <div className="space-y-6 font-mono text-brand-navy">
-      {/* Header & Quick Action */}
+      {/* Header & Quick Actions */}
       <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent block">
@@ -729,14 +930,25 @@ export default function ScheduleManager() {
           </p>
         </div>
 
-        <button
-          onClick={handleGenerate30Days}
-          disabled={generating}
-          className="px-4 py-2.5 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-base uppercase tracking-wider hover:bg-brand-navy hover:text-white transition-all shadow-[2px_2px_0px_#142B4C] flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
-        >
-          <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
-          {generating ? "Generating..." : "Generate Next 30 Days"}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <button
+            onClick={handleClearAllFutureSlots}
+            className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border-2 border-red-300 font-display text-sm uppercase tracking-wider transition-all shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 cursor-pointer"
+            title="Wipe upcoming broadcast slots from today onwards"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Wipe Future Slots</span>
+          </button>
+
+          <button
+            onClick={handleGenerate30Days}
+            disabled={generating}
+            className="px-4 py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-sm uppercase tracking-wider hover:bg-brand-navy hover:text-white transition-all shadow-[2px_2px_0px_#142B4C] flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
+            {generating ? "Generating..." : "Generate Next 30 Days"}
+          </button>
+        </div>
       </div>
 
       {msg && (
@@ -814,20 +1026,173 @@ export default function ScheduleManager() {
       {/* 1. SLOTS TAB */}
       {activeSubTab === "slots" && (
         <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
-          <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
-            <h3 className="font-display text-lg uppercase text-brand-navy">Upcoming Broadcast Schedule</h3>
-            <span className="text-xs text-neutral-500">{slots.length} upcoming slots</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-brand-navy pb-3 gap-2">
+            <div>
+              <h3 className="font-display text-lg uppercase text-brand-navy">Upcoming Broadcast Schedule</h3>
+              <p className="text-xs text-neutral-500">
+                Showing {filteredSlots.length} of {slots.length} total scheduled slots.
+              </p>
+            </div>
+
+            {/* Quick Filter Controls */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {/* Show filter */}
+              <select
+                value={filterShowId}
+                onChange={(e) => setFilterShowId(e.target.value)}
+                className="border-2 border-brand-navy p-1.5 bg-white text-xs font-bold"
+              >
+                <option value="all">All Shows ({shows.length})</option>
+                {shows.map((sh) => (
+                  <option key={sh.id} value={sh.id}>
+                    {sh.title}
+                  </option>
+                ))}
+              </select>
+
+              {/* DJ filter */}
+              <select
+                value={filterPresenterId}
+                onChange={(e) => setFilterPresenterId(e.target.value)}
+                className="border-2 border-brand-navy p-1.5 bg-white text-xs font-bold"
+              >
+                <option value="all">All DJs ({presenters.length})</option>
+                {presenters.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.dj_name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Status filter */}
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="border-2 border-brand-navy p-1.5 bg-white text-xs font-bold"
+              >
+                <option value="all">All Statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="live">Live</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+
+              {/* Search text */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search slots..."
+                  value={slotSearch}
+                  onChange={(e) => setSlotSearch(e.target.value)}
+                  className="border-2 border-brand-navy py-1.5 pl-6 pr-2 text-xs w-36 sm:w-44"
+                />
+                <Search className="w-3 h-3 text-neutral-400 absolute left-2 top-2.5" />
+              </div>
+
+              {(filterShowId !== "all" || filterPresenterId !== "all" || filterStatus !== "all" || slotSearch) && (
+                <button
+                  onClick={() => {
+                    setFilterShowId("all");
+                    setFilterPresenterId("all");
+                    setFilterStatus("all");
+                    setSlotSearch("");
+                  }}
+                  className="p-1 text-xs text-neutral-500 hover:text-brand-navy underline cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* FLOATING BULK ACTIONS TOOLBAR */}
+          {selectedSlotIds.length > 0 && (
+            <div className="bg-brand-navy text-white p-3 border-2 border-brand-accent shadow-[4px_4px_0px_#C8A54A] flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <span className="bg-brand-accent text-brand-navy font-black text-xs px-2.5 py-1 uppercase tracking-wider border border-brand-navy flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" />
+                  {selectedSlotIds.length} SLOTS SELECTED
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSlotIds([])}
+                  className="text-xs text-neutral-300 hover:text-white underline cursor-pointer"
+                >
+                  Clear Selection
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap text-xs font-bold">
+                {/* Reassign DJ */}
+                <button
+                  type="button"
+                  onClick={() => setShowBulkReassignModal(true)}
+                  className="px-3 py-1.5 bg-white text-brand-navy uppercase hover:bg-brand-accent cursor-pointer flex items-center gap-1 border border-brand-navy shadow-xs"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Reassign DJ</span>
+                </button>
+
+                {/* Mark as Completed */}
+                <button
+                  type="button"
+                  onClick={() => handleBulkStatusChange("completed")}
+                  className="px-3 py-1.5 bg-neutral-200 text-neutral-800 uppercase hover:bg-neutral-300 cursor-pointer flex items-center gap-1 border border-brand-navy shadow-xs"
+                >
+                  <CheckCircle className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>Mark Completed</span>
+                </button>
+
+                {/* Bulk Cancel */}
+                <button
+                  type="button"
+                  onClick={handleBulkCancel}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-brand-navy font-black uppercase cursor-pointer flex items-center gap-1 border border-amber-700 shadow-xs"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Cancel Slots</span>
+                </button>
+
+                {/* Bulk Delete */}
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-black uppercase cursor-pointer flex items-center gap-1 border border-red-900 shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Permanently</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {slots.length === 0 ? (
             <div className="py-12 text-center text-neutral-500 text-xs">
               No schedule slots generated yet. Click "Generate Next 30 Days" above to build the broadcast timetable.
+            </div>
+          ) : filteredSlots.length === 0 ? (
+            <div className="py-8 text-center text-neutral-500 text-xs">
+              No schedule slots match the current filter criteria.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border border-brand-navy">
                 <thead className="bg-brand-navy text-brand-off-white font-display uppercase tracking-wider text-[11px]">
                   <tr>
+                    <th className="p-2.5 w-10 text-center">
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAll}
+                        className="cursor-pointer inline-flex items-center justify-center p-0.5 text-brand-accent hover:text-white"
+                        title={allFilteredSelected ? "Deselect All" : "Select All Visible"}
+                      >
+                        {allFilteredSelected ? (
+                          <CheckSquare className="w-4 h-4" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
                     <th className="p-2.5">Date & Time (EAT)</th>
                     <th className="p-2.5">Show Title</th>
                     <th className="p-2.5">Scheduled Host</th>
@@ -837,7 +1202,7 @@ export default function ScheduleManager() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-brand-navy/20">
-                  {slots.map((s) => {
+                  {filteredSlots.map((s) => {
                     const start = new Date(s.starts_at);
                     const end = new Date(s.ends_at);
                     const dateStr = start.toLocaleDateString("en-KE", {
@@ -858,8 +1223,28 @@ export default function ScheduleManager() {
                       timeZone: "Africa/Nairobi",
                     })}`;
 
+                    const isSelected = selectedSlotIds.includes(s.id);
+
                     return (
-                      <tr key={s.id} className="hover:bg-neutral-50 transition-colors">
+                      <tr
+                        key={s.id}
+                        className={`transition-colors ${
+                          isSelected ? "bg-amber-50/80 font-semibold" : "hover:bg-neutral-50"
+                        }`}
+                      >
+                        <td className="p-2.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSelectSlot(s.id)}
+                            className="cursor-pointer inline-flex items-center justify-center text-brand-navy hover:text-brand-accent"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-brand-accent fill-brand-navy" />
+                            ) : (
+                              <Square className="w-4 h-4 text-neutral-400" />
+                            )}
+                          </button>
+                        </td>
                         <td className="p-2.5 whitespace-nowrap">
                           <span className="font-bold text-brand-navy block">{dateStr}</span>
                           <span className="text-[10px] text-neutral-500">{timeStr}</span>
@@ -1242,6 +1627,64 @@ export default function ScheduleManager() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* BULK REASSIGN MODAL                                            */}
+      {/* ============================================================== */}
+      {showBulkReassignModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="border-4 border-brand-navy bg-white p-6 max-w-md w-full shadow-[8px_8px_0px_#142B4C] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-2">
+              <h3 className="font-display text-xl font-black uppercase text-brand-navy flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-brand-accent" />
+                Bulk Reassign {selectedSlotIds.length} Slots
+              </h3>
+              <button onClick={() => setShowBulkReassignModal(false)} className="cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkReassignSubmit} className="space-y-3 text-xs">
+              <p className="text-neutral-700 font-mono">
+                Select a substitute / cover DJ to assign across all {selectedSlotIds.length} selected broadcast slots:
+              </p>
+
+              <div>
+                <label className="block font-bold uppercase mb-1">Substitute / Cover DJ</label>
+                <select
+                  value={bulkReassignDjId}
+                  onChange={(e) => setBulkReassignDjId(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full border-2 border-brand-navy p-2 bg-white font-bold"
+                >
+                  <option value="">Clear Substitute (Revert to Primary Host)</option>
+                  {presenters.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.dj_name} ({p.full_name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-brand-navy/15 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkReassignModal(false)}
+                  className="px-4 py-2 border font-bold uppercase text-neutral-600 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={bulkLoading}
+                  className="px-5 py-2 bg-brand-navy text-white font-display text-base uppercase border-2 border-brand-navy hover:bg-brand-accent hover:text-brand-navy cursor-pointer disabled:opacity-50"
+                >
+                  {bulkLoading ? "Updating..." : `Reassign ${selectedSlotIds.length} Slots`}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

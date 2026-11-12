@@ -78,3 +78,53 @@ export async function POST(
     return NextResponse.json({ error: err.message || "Failed to add track(s)" }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authErr = await requireAdmin();
+  if (authErr) return authErr;
+
+  const resolvedParams = await params;
+  const playlistId = parseInt(resolvedParams.id, 10);
+  if (isNaN(playlistId)) {
+    return NextResponse.json({ error: "Invalid playlist ID" }, { status: 400 });
+  }
+
+  try {
+    const body = await req.json();
+    const trackIds = Array.isArray(body.track_ids)
+      ? body.track_ids.filter((id: any) => typeof id === "number")
+      : [];
+
+    if (trackIds.length === 0) {
+      return NextResponse.json({ error: "track_ids array required" }, { status: 400 });
+    }
+
+    await neonQuery(
+      `DELETE FROM radio_playlist_tracks
+       WHERE playlist_id = $1 AND track_id = ANY($2::int[])`,
+      [playlistId, trackIds]
+    );
+
+    // Resequence remaining tracks positions
+    const remaining = await neonQuery(
+      `SELECT track_id FROM radio_playlist_tracks WHERE playlist_id = $1 ORDER BY position ASC`,
+      [playlistId]
+    );
+    for (let i = 0; i < remaining.rows.length; i++) {
+      await neonQuery(
+        `UPDATE radio_playlist_tracks SET position = $3 WHERE playlist_id = $1 AND track_id = $2`,
+        [playlistId, remaining.rows[i].track_id, i]
+      );
+    }
+
+    await neonQuery("UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1", [playlistId]);
+
+    return NextResponse.json({ success: true, removed: trackIds.length });
+  } catch (err: any) {
+    console.error("[api/admin/radio/playlists/[id]/tracks] DELETE error:", err);
+    return NextResponse.json({ error: err.message || "Failed to remove tracks" }, { status: 500 });
+  }
+}
