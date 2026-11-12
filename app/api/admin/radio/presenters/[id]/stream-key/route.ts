@@ -61,7 +61,7 @@ export async function POST(
            stream_key_created_at = NOW(),
            updated_at = NOW()
        WHERE id = $3
-       RETURNING id, dj_name, slug;`,
+       RETURNING id, dj_name, slug, email, phone;`,
       [hash, prefix, presenterId]
     );
 
@@ -70,6 +70,37 @@ export async function POST(
     }
 
     const presenter = updateRes.rows[0];
+
+    const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
+    const whatsappMessage = `🎙️ *GOODLIFE Radio 254 - New Live Stream Key*\n\n` +
+      `Hey *${presenter.dj_name}*, your new encoder credentials for GOODLIFE Radio are ready:\n\n` +
+      `🔑 *Stream Key / Password:* \`${fullKey}\`\n\n` +
+      `*Encoder Settings (VirtualDJ / Mixxx / BUTT / OBS):*\n` +
+      `• Host / Server: ${streamHost}\n` +
+      `• Port: 8005\n` +
+      `• Mount: /live\n` +
+      `• Username: dj_${presenter.slug}\n` +
+      `• Password: \`${fullKey}\`\n\n` +
+      `_Connect 15 minutes before your scheduled slot for soundcheck._`;
+
+    let cleanPhone = (presenter.phone || "").replace(/[^0-9]/g, "");
+    if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
+      cleanPhone = `254${cleanPhone.slice(1)}`;
+    }
+    const whatsappUrl = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`
+      : `https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`;
+
+    let wahaSent = false;
+    if (body.send_whatsapp && cleanPhone) {
+      try {
+        const { sendWahaText } = await import("@/lib/waha");
+        const wahaRes = await sendWahaText(`${cleanPhone}@c.us`, whatsappMessage);
+        wahaSent = wahaRes.success;
+      } catch (wErr) {
+        console.warn("[admin stream-key] WAHA direct send skipped:", wErr);
+      }
+    }
 
     const { recordRadioAuditLog } = await import("@/lib/radio/ops-service");
     await recordRadioAuditLog({
@@ -88,6 +119,9 @@ export async function POST(
       slug: presenter.slug,
       fullKey,
       prefix,
+      whatsapp_message: whatsappMessage,
+      whatsapp_url: whatsappUrl,
+      waha_sent: wahaSent,
       message: "Stream key generated. Display to presenter once; it is not stored in plaintext.",
     });
   } catch (err: any) {

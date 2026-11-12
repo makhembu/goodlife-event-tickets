@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   try {
     const res = await neonQuery(
       `SELECT id, full_name, dj_name, slug, email, phone, bio, avatar_url,
-              social_links, status, must_change_password, failed_login_count,
+              social_links, status, stream_key_prefix, must_change_password, failed_login_count,
               locked_until, created_at, updated_at
        FROM presenters
        ORDER BY id ASC;`
@@ -77,11 +77,47 @@ export async function POST(req: NextRequest) {
       streamKeyPrefix,
     ]);
 
+    const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
+    const loginUrl = `${process.env.APP_URL || "https://goodlife.smwhr.space"}/presenter/login`;
+    const whatsappMessage = `🎙️ *WELCOME TO GOODLIFE RADIO 254!*\n\n` +
+      `Hey *${rows[0].dj_name}*, your resident presenter account is set up:\n\n` +
+      `🔗 *Studio Portal:* ${loginUrl}\n` +
+      `👤 *Login Email:* ${rows[0].email}\n` +
+      `🔑 *Temporary Password:* \`${temporaryPassword}\`\n\n` +
+      `📻 *Live Encoder Stream Key:* \`${fullKey}\`\n` +
+      `• Host / Server: ${streamHost}\n` +
+      `• Port: 8005\n` +
+      `• Mount: /live\n` +
+      `• Username: dj_${rows[0].slug}\n\n` +
+      `_Please save your credentials and log in to update your password._`;
+
+    let cleanPhone = (rows[0].phone || "").replace(/[^0-9]/g, "");
+    if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
+      cleanPhone = `254${cleanPhone.slice(1)}`;
+    }
+    const whatsappUrl = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`
+      : `https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`;
+
+    let wahaSent = false;
+    if (cleanPhone) {
+      try {
+        const { sendWahaText } = await import("@/lib/waha");
+        const wahaRes = await sendWahaText(`${cleanPhone}@c.us`, whatsappMessage);
+        wahaSent = wahaRes.success;
+      } catch (wErr) {
+        console.warn("[admin presenters] WAHA direct send skipped:", wErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       presenter: rows[0],
       temporary_password: temporaryPassword, // Handled show-once in admin UI
       stream_key: fullKey,                   // Handled show-once in admin UI
+      whatsapp_message: whatsappMessage,
+      whatsapp_url: whatsappUrl,
+      waha_sent: wahaSent,
     });
   } catch (err: any) {
     console.error("[api/admin/radio/presenters] Create error:", err);
