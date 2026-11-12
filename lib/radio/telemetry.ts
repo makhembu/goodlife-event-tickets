@@ -1,4 +1,5 @@
 import { neonQuery } from "@/lib/supabase-db";
+import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
 
 export interface RadioTelemetry {
   listenersCount: number;
@@ -104,14 +105,8 @@ export async function getRadioTelemetry(targetAirTimeMs?: number): Promise<Radio
   let listenersCount = 0;
   let activeCities = ["Nairobi", "Thika", "Mombasa", "Eldoret"];
   try {
-    const res = await neonQuery(
-      `SELECT COUNT(DISTINCT session_hash)::int as active_listeners 
-       FROM radio_plays 
-       WHERE created_at >= NOW() - INTERVAL '30 minutes'`
-    );
-    const dbCount = parseInt(res.rows?.[0]?.active_listeners || "0", 10);
     // Honest count only — never simulate or inflate listeners
-    listenersCount = dbCount;
+    listenersCount = await getActiveListenersCount();
 
     const cityRes = await neonQuery(
       `SELECT listener_city, COUNT(*)::int as c

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
 import { resolveCoverArt } from "@/lib/radio/media-helpers";
+import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
 
 export const revalidate = 5;
 
@@ -274,10 +275,12 @@ export async function GET() {
         console.warn("[api/radio/state] Error loading active drops:", dbErr.message);
       }
 
+    const activeListeners = await getActiveListenersCount();
+
     const payload = {
       enabled: settings.radio_enabled !== false,
       mode: settings.broadcast_mode || "live",
-      listeners_count: 0,
+      listeners_count: activeListeners,
       live: {
         title: settings.live_title || "GOODLIFE RADIO LIVE",
         stream_url: settings.live_stream_url || "",

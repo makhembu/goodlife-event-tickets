@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
+import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
 
 export const dynamic = "force-dynamic";
 
@@ -236,12 +237,15 @@ async function getTimelineFallback() {
 
     if (!currentTrack) return null;
 
+    const activeListeners = await getActiveListenersCount();
+
     return {
       offline: false,
       stale: false,
       mode: activeMode,
       playlist_id: activePlaylistId,
       playlist_name: activePlaylistName,
+      listeners_count: activeListeners,
       now_playing: {
         id: currentTrack.id,
         title: formatTrackTitle(currentTrack.title),
@@ -251,6 +255,10 @@ async function getTimelineFallback() {
         duration: currentTrack.duration_sec || 180,
         audio_url: currentTrack.audio_url,
         video_id: `set-${currentTrack.id}`,
+        listeners: {
+          total: activeListeners,
+          unique: activeListeners,
+        },
       },
       up_next: nextTracks.map((t: any) => ({
         id: t.id,
@@ -312,6 +320,7 @@ export async function GET() {
       {
         offline: true,
         reason: "No active radio sets available",
+        listeners_count: 0,
         now_playing: null,
         up_next: [],
         history: [],
@@ -365,10 +374,19 @@ export async function GET() {
 
     _cachedLiveState = liveData;
 
+    const activeListeners = await getActiveListenersCount();
+    if (liveData.nowPlaying && !liveData.nowPlaying.listeners) {
+      liveData.nowPlaying.listeners = {
+        total: activeListeners,
+        unique: activeListeners,
+      };
+    }
+
     return NextResponse.json(
       {
         offline: false,
         stale: false,
+        listeners_count: activeListeners,
         now_playing: liveData.nowPlaying,
         up_next: liveData.upNext,
         history: liveData.history,
@@ -385,12 +403,15 @@ export async function GET() {
   } catch (err: any) {
     console.warn("[api/radio/live] Upstream fetch failed or timed out:", err?.message || err);
 
+    const activeListeners = await getActiveListenersCount();
+
     // If we have fresh cached data (< 15s), serve it with stale: true; otherwise advance timeline via fallback
     if (_cachedLiveState && Date.now() - _cachedLiveState.ts < 15000) {
       return NextResponse.json(
         {
           offline: false,
           stale: true,
+          listeners_count: activeListeners,
           now_playing: _cachedLiveState.nowPlaying,
           up_next: _cachedLiveState.upNext,
           history: _cachedLiveState.history,

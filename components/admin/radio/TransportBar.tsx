@@ -51,6 +51,49 @@ export default function TransportBar({
   const isPlayingRef = useRef<boolean>(false);
   isPlayingRef.current = isPlaying;
 
+  const studioSessionIdRef = useRef<string>("");
+  useEffect(() => {
+    try {
+      let sid = sessionStorage.getItem("gl_studio_session_id");
+      if (!sid) {
+        sid = "studio_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+        sessionStorage.setItem("gl_studio_session_id", sid);
+      }
+      studioSessionIdRef.current = sid;
+    } catch {
+      studioSessionIdRef.current = "studio_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+    }
+  }, []);
+
+  // Studio Monitor Heartbeat: registers active ear presence immediately when headphone monitor is ON
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const ping = () => {
+      const sid = studioSessionIdRef.current;
+      if (!sid) return;
+      fetch("/api/radio/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sid, action: "ping", client: "studio" }),
+      }).catch(() => {});
+    };
+
+    ping();
+    const interval = setInterval(ping, 18000);
+
+    return () => {
+      clearInterval(interval);
+      const sid = studioSessionIdRef.current;
+      if (sid && typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/radio/heartbeat",
+          JSON.stringify({ sessionId: sid, action: "leave", client: "studio" })
+        );
+      }
+    };
+  }, [isPlaying]);
+
   // Meter levels for stereo VU
   const [meterLeft, setMeterLeft] = useState(14);
   const [meterRight, setMeterRight] = useState(12);
@@ -145,6 +188,9 @@ export default function TransportBar({
             currentTrackIdRef.current = track.id;
           }
 
+          const rawListeners = liveData.listeners_count ?? liveData.now_playing?.listeners?.total ?? 0;
+          const displayListeners = Math.max(isPlayingRef.current ? 1 : 0, rawListeners);
+
           setNowPlaying({
             now_playing: {
               id: track.id,
@@ -158,7 +204,7 @@ export default function TransportBar({
               audio_url: track.audio_url,
               is_live: liveData.mode === "live",
             },
-            listeners: { total: liveData.listeners_count ?? 0, unique: liveData.listeners_count ?? 0 },
+            listeners: { total: displayListeners, unique: displayListeners },
             live: { is_live: liveData.mode === "live" },
           });
           setStatusState("live");
@@ -200,7 +246,10 @@ export default function TransportBar({
               audio_url: activeSet.audio_url,
               is_live: false,
             },
-            listeners: { total: 0, unique: 0 },
+            listeners: {
+              total: Math.max(isPlayingRef.current ? 1 : 0, stateData.listeners_count ?? 0),
+              unique: Math.max(isPlayingRef.current ? 1 : 0, stateData.listeners_count ?? 0),
+            },
             live: { is_live: false },
           });
           setStatusState("live");
@@ -286,7 +335,7 @@ export default function TransportBar({
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
-  const totalListeners = nowPlaying?.listeners?.total ?? 0;
+  const totalListeners = Math.max(isPlaying ? 1 : 0, nowPlaying?.listeners?.total ?? 0);
   const uniqueListeners = nowPlaying?.listeners?.unique ?? totalListeners;
 
   return (

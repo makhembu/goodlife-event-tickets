@@ -34,6 +34,28 @@ export default function RadioHeader({ streamUrl = "", onRefresh }: RadioHeaderPr
       if (res.ok) {
         const data = await res.json();
         if (data.online === false) {
+          try {
+            const liveRes = await fetch("/api/radio/live");
+            if (liveRes.ok) {
+              const liveData = await liveRes.json();
+              setNowPlaying({
+                now_playing: {
+                  song: {
+                    title: liveData.now_playing?.title || "Station Playout Active",
+                    artist: liveData.now_playing?.artist || "GOODLIFE Resident",
+                    art: liveData.now_playing?.thumbnail || "/flyer.png",
+                  },
+                  elapsed: liveData.now_playing?.elapsed || 0,
+                  duration: liveData.now_playing?.duration || 180,
+                },
+                listeners: { total: liveData.listeners_count ?? liveData.now_playing?.listeners?.total ?? 0 },
+                live: { is_live: liveData.mode === "live" },
+              });
+              setErrorMsg(null);
+              backoffRef.current = 4000;
+              return;
+            }
+          } catch {}
           setErrorMsg("AzuraCast Daemon Offline (Internal 24/7 Timeline Active)");
           backoffRef.current = Math.min(30000, backoffRef.current * 1.5);
           return;

@@ -106,6 +106,10 @@ export interface LiveNowPlayingTrack {
   daypart?: string;
   provenance?: string;
   state?: string;
+  listeners?: {
+    total: number;
+    unique?: number;
+  };
 }
 
 export interface LiveQueueItem {
@@ -149,4 +153,5 @@ export interface RadioLiveBffResponse {
     age_seconds?: number;
   } | null;
   target_duration_sec?: number;
+  listeners_count?: number;
 }

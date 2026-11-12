@@ -253,6 +253,51 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLive, setIsLive] = useState(true);
 
+  // Real-time listener session ID for active playout telemetry
+  const listenerSessionIdRef = useRef<string>("");
+  useEffect(() => {
+    try {
+      let sid = sessionStorage.getItem("gl_radio_session_id");
+      if (!sid) {
+        sid = "gl_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+        sessionStorage.setItem("gl_radio_session_id", sid);
+      }
+      listenerSessionIdRef.current = sid;
+    } catch {
+      listenerSessionIdRef.current = "gl_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 9);
+    }
+  }, []);
+
+  // Heartbeat loop while user is actively streaming
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const ping = () => {
+      const sid = listenerSessionIdRef.current;
+      if (!sid) return;
+      fetch("/api/radio/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sid, action: "ping", client: "listener" }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    ping();
+    const interval = setInterval(ping, 18000);
+
+    return () => {
+      clearInterval(interval);
+      const sid = listenerSessionIdRef.current;
+      if (sid && typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/radio/heartbeat",
+          JSON.stringify({ sessionId: sid, action: "leave", client: "listener" })
+        );
+      }
+    };
+  }, [isPlaying]);
+
   // Real stream metadata
   const [nowPlayingTrack, setNowPlayingTrack] = useState<LiveNowPlayingTrack | null>(null);
   const [upNextQueue, setUpNextQueue] = useState<LiveQueueItem[]>([]);
