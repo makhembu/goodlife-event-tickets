@@ -587,8 +587,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           tracksSinceLastDropRef.current += 1;
 
           // If playing and track advances, update audio src safely without truncating playing song
-          if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && track.audio_url) {
-            if (audioRef.current.src !== track.audio_url) {
+          const targetTrackSrc = track.playback_url || track.audio_url;
+          if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && targetTrackSrc) {
+            if (audioRef.current.src !== targetTrackSrc) {
               const audio = audioRef.current;
               const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
               const effectiveTrackDur = (targetDur && targetDur > 10)
@@ -1080,7 +1081,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const timeSinceLastPoll = lastPollTimestampRef.current > 0
         ? Math.max(0, (Date.now() - lastPollTimestampRef.current) / 1000)
         : 0;
-      const isTrackStaleOrFinished = !track || !track.audio_url || (
+      const isTrackStaleOrFinished = !track || (!track.playback_url && !track.audio_url) || (
         Boolean(track.duration && track.duration > 0 && ((track.elapsed || 0) + timeSinceLastPoll) >= track.duration)
       );
 
@@ -1090,7 +1091,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           const res = await fetch("/api/radio/live");
           if (res.ok) {
             const data = await res.json();
-            if (data.now_playing?.audio_url) {
+            if (data.now_playing?.playback_url || data.now_playing?.audio_url) {
               track = {
                 ...data.now_playing,
                 title: formatTrackTitle(data.now_playing.title),
@@ -2205,13 +2206,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     } else {
       primeAudioPipeline();
       setIsMinimized(false);
-      // Ensure state and live track are fresh before playing
-      if (backupSetsRef.current.length === 0 || !nowPlayingTrackRef.current) {
-        await Promise.all([fetchRadioState(), fetchRadioLive()]);
-      } else {
-        fetchRadioState();
-        fetchRadioLive();
-      }
+      // Always fetch fresh state and live track synchronously before playing on first start
+      await Promise.all([fetchRadioState(), fetchRadioLive()]);
       attachAndPlayLiveStream();
     }
   }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive, primeAudioPipeline]);
