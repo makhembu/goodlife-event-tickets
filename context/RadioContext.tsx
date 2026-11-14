@@ -474,7 +474,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (Array.isArray(data.sets) && data.sets.length > 0) {
         setBackupSets(data.sets);
       if (Array.isArray(data.drops) && data.drops.length > 0) {
-        availableDropsRef.current = data.drops;
+        availableDropsRef.current = data.drops.map((d: any) => ({
+          ...d,
+          audio_url: d.playback_url || d.audio_url,
+        }));
       }
 
       // Ingest authoritative upcoming drop prepared by Home Server daemon
@@ -676,9 +679,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         const ageSec = typeof data.live_drop.age_seconds === "number"
           ? data.live_drop.age_seconds
           : Math.abs(Math.floor((Date.now() - dropFiredTime) / 1000));
-        if (ageSec <= 90 && isPlayingRef.current && audioRef.current && data.live_drop.audio_url) {
+        const dropSrc = data.live_drop.playback_url || data.live_drop.audio_url;
+        if (ageSec <= 90 && isPlayingRef.current && audioRef.current && dropSrc) {
           console.log(`[RadioContext] 🔴 Stream live drop detected: "${data.live_drop.title}" (${data.live_drop.persona})`);
-          triggerLiveInjectedDrop(data.live_drop);
+          triggerLiveInjectedDrop({
+            ...data.live_drop,
+            audio_url: dropSrc,
+            playback_url: dropSrc,
+          });
         }
       }
 

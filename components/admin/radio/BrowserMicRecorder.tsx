@@ -51,6 +51,7 @@ export default function BrowserMicRecorder({
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const localBlobUrlRef = useRef<string | null>(null);
   const talkoverStreamRef = useRef<MediaStream | null>(null);
   const talkoverAudioCtxRef = useRef<AudioContext | null>(null);
   const talkoverRecorderRef = useRef<MediaRecorder | null>(null);
@@ -277,6 +278,7 @@ export default function BrowserMicRecorder({
     }
 
     const localBlobUrl = URL.createObjectURL(blob);
+    localBlobUrlRef.current = localBlobUrl;
     setMasteredUrl(localBlobUrl);
     setMastering(true);
     setStatusMsg(null);
@@ -299,6 +301,11 @@ export default function BrowserMicRecorder({
           finalUrl = data.drop_url || data.url || data.mastered_file || localBlobUrl;
         }
       }
+
+      if (finalUrl && !finalUrl.startsWith("http") && !finalUrl.startsWith("blob:") && !finalUrl.startsWith("data:")) {
+        finalUrl = `https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/${finalUrl.replace(/^\/+/, "")}`;
+      }
+
       setMasteredUrl(finalUrl);
       setStatusMsg({
         text: "✓ Mic drop mastered to -14 LUFS!",
@@ -330,12 +337,20 @@ export default function BrowserMicRecorder({
   };
 
   const togglePlayback = () => {
-    const urlToPlay = masteredUrl || audioUrl;
+    let urlToPlay = localBlobUrlRef.current || masteredUrl || audioUrl;
     if (!urlToPlay) return;
+
+    if (urlToPlay && !urlToPlay.startsWith("http") && !urlToPlay.startsWith("blob:") && !urlToPlay.startsWith("data:")) {
+      urlToPlay = `https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/${urlToPlay.replace(/^\/+/, "")}`;
+    }
 
     if (!audioRef.current) {
       audioRef.current = new Audio(urlToPlay);
       audioRef.current.onended = () => setIsPlaying(false);
+      audioRef.current.onerror = (e) => {
+        console.warn("[BrowserMicRecorder] Audio preview error:", e);
+        setIsPlaying(false);
+      };
     }
 
     if (isPlaying) {
@@ -343,7 +358,14 @@ export default function BrowserMicRecorder({
       setIsPlaying(false);
     } else {
       audioRef.current.src = urlToPlay;
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      audioRef.current.currentTime = 0;
+      audioRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.warn("[BrowserMicRecorder] Play error:", err);
+          setIsPlaying(false);
+        });
     }
   };
 
@@ -473,7 +495,11 @@ export default function BrowserMicRecorder({
           <div className="flex items-center space-x-2">
             <button
               onClick={() => {
-                const targetUrl = masteredUrl || audioUrl;
+                let targetUrl = masteredUrl || audioUrl;
+                if (targetUrl && !targetUrl.startsWith("http") && !targetUrl.startsWith("blob:") && !targetUrl.startsWith("data:")) {
+                  const base = "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev";
+                  targetUrl = `${base}/${targetUrl.replace(/^\/+/, "")}`;
+                }
                 if (onSendToCue && targetUrl) {
                   onSendToCue({
                     id: `mic_${Date.now()}`,
@@ -492,7 +518,11 @@ export default function BrowserMicRecorder({
             </button>
             <button
               onClick={() => {
-                const targetUrl = masteredUrl || audioUrl;
+                let targetUrl = masteredUrl || audioUrl;
+                if (targetUrl && !targetUrl.startsWith("http") && !targetUrl.startsWith("blob:") && !targetUrl.startsWith("data:")) {
+                  const base = "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev";
+                  targetUrl = `${base}/${targetUrl.replace(/^\/+/, "")}`;
+                }
                 if (targetUrl) {
                   openAssignModal(targetUrl, dropName);
                 }
@@ -504,8 +534,25 @@ export default function BrowserMicRecorder({
             </button>
             <button
               onClick={async () => {
-                const targetUrl = masteredUrl || audioUrl;
+                let targetUrl = masteredUrl || audioUrl;
+                if ((!targetUrl || targetUrl.startsWith("blob:")) && localBlobUrlRef.current) {
+                  try {
+                    setStatusMsg({ text: "Uploading mic audio to station cloud...", type: "success" });
+                    const blob = await fetch(localBlobUrlRef.current).then((r) => r.blob());
+                    const uploaded = await uploadAudioBlob(blob, dropName.trim() || "Live Mic Shoutout");
+                    if (uploaded) {
+                      targetUrl = uploaded;
+                    }
+                  } catch (e) {
+                    console.error("[BrowserMicRecorder] Upload before AIR failed:", e);
+                  }
+                }
+                if (targetUrl && !targetUrl.startsWith("http") && !targetUrl.startsWith("data:")) {
+                  const base = "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev";
+                  targetUrl = `${base}/${targetUrl.replace(/^\/+/, "")}`;
+                }
                 if (onAirLive && targetUrl) {
+                  setStatusMsg({ text: "Airing to live stream...", type: "success" });
                   const success = await onAirLive(targetUrl, dropName, "Live Host DJ", "Live Mic Shoutout");
                   if (success) {
                     setStatusMsg({ text: "✓ Aired mic shoutout to live stream!", type: "success" });

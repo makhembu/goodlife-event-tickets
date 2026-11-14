@@ -439,7 +439,7 @@ export async function GET() {
         now_playing: liveData.nowPlaying,
         up_next: liveData.upNext,
         history: liveData.history,
-        live_drop: liveDrop,
+        live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
         target_duration_sec: 2.0,
       },
       {

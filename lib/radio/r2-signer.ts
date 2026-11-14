@@ -207,15 +207,14 @@ export async function uploadDropBufferToR2(params: {
   buffer: Buffer | Uint8Array;
   filename: string;
 }): Promise<string | null> {
-  const radioR2 = getRadioR2();
-  const r2 = radioR2 || getR2();
+  const r2 = getR2() || getRadioR2();
   if (!r2) return null;
 
   const buf = Buffer.isBuffer(params.buffer) ? params.buffer : Buffer.from(params.buffer);
   const isWav = buf.length > 4 && buf.subarray(0, 4).toString() === "RIFF";
   const contentType = isWav ? "audio/wav" : "audio/mpeg";
   const ext = isWav ? "wav" : "mp3";
-  const baseName = params.filename.replace(/\.(mp3|wav)$/i, "");
+  const baseName = params.filename.replace(/\.(mp3|wav|webm|ogg)$/i, "");
   const key = `radio/drops/${Date.now()}-${baseName}.${ext}`;
 
   await r2.s3.send(
@@ -226,8 +225,12 @@ export async function uploadDropBufferToR2(params: {
       ContentType: contentType,
     })
   );
-  if ("publicDomain" in r2 && (r2 as any).publicDomain) {
-    return `${(r2 as any).publicDomain}/${key}`;
-  }
-  return key;
+
+  const publicDomain =
+    ("publicDomain" in r2 && (r2 as any).publicDomain) ||
+    cleanEnv(readEnvLocal("R2_PUBLIC_DOMAIN")) ||
+    cleanEnv(process.env.R2_PUBLIC_DOMAIN) ||
+    "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev";
+
+  return `${publicDomain.replace(/\/+$/, "")}/${key}`;
 }

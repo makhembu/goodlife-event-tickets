@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
       } catch (uploadErr) {
         console.warn("[live-inject] Base64 R2 upload fallback:", uploadErr);
       }
+    } else if (!cleanAudioUrl.startsWith("http://") && !cleanAudioUrl.startsWith("https://")) {
+      // If it's a relative key or path, prepend public R2 domain
+      const publicBase = (
+        process.env.R2_PUBLIC_DOMAIN ||
+        process.env.RADIO_R2_PUBLIC_DOMAIN ||
+        "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev"
+      ).replace(/\/+$/, "");
+      cleanAudioUrl = `${publicBase}/${cleanAudioUrl.replace(/^\/+/, "")}`;
     }
 
     const cleanTitle = (title || "Live Air Drop").toString().slice(0, 150);

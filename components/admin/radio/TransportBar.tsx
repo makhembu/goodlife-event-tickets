@@ -34,13 +34,14 @@ export default function TransportBar({
   onSkip,
   onMasterFade,
 }: TransportBarProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const { isPlaying: radioPlaying, togglePlay: radioTogglePlay, fetchRadioLive } = useRadio();
+  const [localIsPlaying, setLocalIsPlaying] = useState(false);
+  const isPlaying = streamUrl ? localIsPlaying : radioPlaying;
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [masterGain, setMasterGain] = useState(1.0);
   const [nowPlaying, setNowPlaying] = useState<any>(null);
   const [isSkipping, setIsSkipping] = useState(false);
-  const { fetchRadioLive } = useRadio();
   const [statusState, setStatusState] = useState<"connecting" | "live" | "offline">("connecting");
   const [eatTime, setEatTime] = useState<string>("");
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
@@ -173,14 +174,15 @@ export default function TransportBar({
         const liveData = await liveRes.json();
         if (liveData && liveData.now_playing && liveData.now_playing.title && liveData.now_playing.title !== "Updating...") {
           const track = liveData.now_playing;
-          currentAudioUrlRef.current = track.audio_url || "";
+          const trackAudio = track.playback_url || track.audio_url || "";
+          currentAudioUrlRef.current = trackAudio;
           currentElapsedRef.current = track.elapsed || 0;
 
           // If local headphone monitor is active, sync audio src seamlessly if track changed
-          if (audioEl && isPlayingRef.current && track.audio_url) {
+          if (audioEl && isPlayingRef.current && trackAudio) {
             if (track.id !== currentTrackIdRef.current) {
               currentTrackIdRef.current = track.id;
-              audioEl.src = track.audio_url;
+              audioEl.src = trackAudio;
               audioEl.currentTime = track.elapsed || 0;
               audioEl.play().catch(() => {});
             }
@@ -201,7 +203,8 @@ export default function TransportBar({
               },
               elapsed: track.elapsed || 0,
               duration: track.duration || 180,
-              audio_url: track.audio_url,
+              audio_url: trackAudio,
+              playback_url: track.playback_url || trackAudio,
               is_live: liveData.mode === "live",
             },
             listeners: { total: displayListeners, unique: displayListeners },
@@ -266,33 +269,25 @@ export default function TransportBar({
     };
   }, [audioEl]);
 
-  const handleTogglePlay = () => {
-    if (!audioEl) return;
-    if (isPlaying) {
-      audioEl.pause();
-      setIsPlaying(false);
-    } else {
-      const targetSrc = streamUrl || currentAudioUrlRef.current;
-
-      if (!targetSrc) {
-        console.warn("[TransportBar] No audio stream available to monitor");
-        return;
+  const handleTogglePlay = async () => {
+    if (streamUrl && audioEl) {
+      if (localIsPlaying) {
+        audioEl.pause();
+        setLocalIsPlaying(false);
+      } else {
+        audioEl.src = streamUrl;
+        audioEl
+          .play()
+          .then(() => setLocalIsPlaying(true))
+          .catch((err) => console.warn("[TransportBar] Monitor playback blocked:", err));
       }
+      return;
+    }
 
-      if (audioEl.src !== targetSrc) {
-        audioEl.src = targetSrc;
-        if (!streamUrl && currentElapsedRef.current > 0) {
-          try {
-            audioEl.currentTime = currentElapsedRef.current;
-          } catch {}
-        }
-      }
-      audioEl
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch((err) => {
-          console.warn("[TransportBar] Monitor playback blocked or failed:", err);
-        });
+    try {
+      await radioTogglePlay();
+    } catch (err) {
+      console.warn("[TransportBar] RadioContext togglePlay error:", err);
     }
   };
 
