@@ -189,6 +189,7 @@ export default function ScheduleManager() {
   const [newShowTime, setNewShowTime] = useState("20:00:00");
   const [newShowDuration, setNewShowDuration] = useState("120");
   const [newShowCover, setNewShowCover] = useState("");
+  const [newShowAutoGenerate, setNewShowAutoGenerate] = useState(true);
   const [uploadingShowCover, setUploadingShowCover] = useState(false);
   const showCoverInputRef = useRef<HTMLInputElement>(null);
 
@@ -215,6 +216,7 @@ export default function ScheduleManager() {
 
   // Generating 30 Days State
   const [generating, setGenerating] = useState(false);
+  const [generatingShowId, setGeneratingShowId] = useState<number | null>(null);
 
   const loadData = async () => {
     try {
@@ -300,6 +302,30 @@ export default function ScheduleManager() {
       setMsg({ type: "error", text: err.message });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateForShow = async (sh: Show) => {
+    setGeneratingShowId(sh.id);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/radio/schedule/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 30, show_id: sh.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Generation failed");
+
+      setMsg({
+        type: "success",
+        text: `Generated ${data.totalGenerated} slots for "${sh.title}" across next 30 days (${data.totalSkipped} existing slots preserved).`,
+      });
+      await loadData();
+    } catch (err: any) {
+      setMsg({ type: "error", text: err.message });
+    } finally {
+      setGeneratingShowId(null);
     }
   };
 
@@ -701,7 +727,14 @@ export default function ScheduleManager() {
           cover_image_url: newShowCover || null,
           primary_presenter_id: newShowDjId,
           recurrence_pattern: newShowPattern,
-          recurrence_days: newShowPattern === "daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : [newShowDay],
+          recurrence_days:
+            newShowPattern === "daily"
+              ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+              : newShowPattern === "weekdays"
+              ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+              : newShowPattern === "weekends"
+              ? ["Saturday", "Sunday"]
+              : [newShowDay],
           default_start_time: newShowTime,
           default_duration_min: parseInt(newShowDuration, 10),
         }),
@@ -709,11 +742,26 @@ export default function ScheduleManager() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create show");
 
+      let autoGenMsg = "";
+      if (newShowAutoGenerate && data.show?.id) {
+        try {
+          const genRes = await fetch("/api/admin/radio/schedule/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ days: 30, show_id: data.show.id }),
+          });
+          const genData = await genRes.json();
+          if (genData.totalGenerated > 0) {
+            autoGenMsg = ` & ${genData.totalGenerated} upcoming broadcast slots added to roster`;
+          }
+        } catch {}
+      }
+
       setShowShowModal(false);
       setNewShowTitle("");
       setNewShowDescription("");
       setNewShowCover("");
-      setMsg({ type: "success", text: `Show "${data.show.title}" successfully created.` });
+      setMsg({ type: "success", text: `Show "${data.show.title}" successfully created${autoGenMsg}.` });
       await loadData();
     } catch (err: any) {
       setMsg({ type: "error", text: err.message });
@@ -755,7 +803,14 @@ export default function ScheduleManager() {
           cover_image_url: editShowCover || null,
           primary_presenter_id: editShowDjId,
           recurrence_pattern: editShowPattern,
-          recurrence_days: editShowPattern === "daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : [editShowDay],
+          recurrence_days:
+            editShowPattern === "daily"
+              ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+              : editShowPattern === "weekdays"
+              ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+              : editShowPattern === "weekends"
+              ? ["Saturday", "Sunday"]
+              : [editShowDay],
           default_start_time: editShowTime,
           default_duration_min: parseInt(editShowDuration, 10),
           is_active: editShowActive,
@@ -1364,7 +1419,17 @@ export default function ScheduleManager() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateForShow(sh)}
+                        disabled={generatingShowId === sh.id}
+                        className="px-2 py-1 bg-brand-accent text-brand-navy border border-brand-navy hover:bg-brand-navy hover:text-white cursor-pointer font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors disabled:opacity-50"
+                        title="Generate next 30 days of upcoming broadcast slots in the timetable roster"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${generatingShowId === sh.id ? "animate-spin" : ""}`} />
+                        <span>Populate Roster</span>
+                      </button>
                       <button
                         onClick={() => openEditShow(sh)}
                         className="p-1.5 bg-white border border-brand-navy text-brand-navy hover:bg-brand-accent cursor-pointer"
@@ -1402,6 +1467,10 @@ export default function ScheduleManager() {
                     <p className="text-[11px] text-neutral-500 font-bold">
                       {sh.recurrence_pattern === "daily"
                         ? "Broadcasts Daily (Mon–Sun)"
+                        : sh.recurrence_pattern === "weekdays"
+                        ? "Broadcasts Weekdays (Mon–Fri)"
+                        : sh.recurrence_pattern === "weekends"
+                        ? "Broadcasts Weekends (Sat–Sun)"
                         : `Airs ${sh.recurrence_pattern}: ${Array.isArray(sh.recurrence_days) ? sh.recurrence_days.join(", ") : "Weekly"}`}
                     </p>
                   </div>
@@ -2363,6 +2432,8 @@ export default function ScheduleManager() {
                       <option value="weekly">Weekly</option>
                       <option value="biweekly">Biweekly</option>
                       <option value="daily">Daily</option>
+                      <option value="weekdays">Weekdays Only (Mon–Fri)</option>
+                      <option value="weekends">Weekends Only (Sat–Sun)</option>
                     </select>
                   </div>
 
@@ -2371,6 +2442,20 @@ export default function ScheduleManager() {
                       <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
                       <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
                         All Days (Mon–Sun)
+                      </div>
+                    </div>
+                  ) : newShowPattern === "weekdays" ? (
+                    <div className="flex flex-col justify-center">
+                      <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
+                      <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
+                        Weekdays (Mon–Fri)
+                      </div>
+                    </div>
+                  ) : newShowPattern === "weekends" ? (
+                    <div className="flex flex-col justify-center">
+                      <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
+                      <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
+                        Weekends (Sat–Sun)
                       </div>
                     </div>
                   ) : (
@@ -2397,6 +2482,12 @@ export default function ScheduleManager() {
                 <div className="text-[11px] font-bold text-brand-navy bg-white p-2 border border-brand-navy/30">
                   {newShowPattern === "daily" && (
                     <span>📅 <strong>Daily Programming:</strong> Broadcasts every single day (Monday to Sunday) at designated air time.</span>
+                  )}
+                  {newShowPattern === "weekdays" && (
+                    <span>📅 <strong>Weekdays Programming:</strong> Broadcasts Monday through Friday at designated air time.</span>
+                  )}
+                  {newShowPattern === "weekends" && (
+                    <span>📅 <strong>Weekends Programming:</strong> Broadcasts Saturday and Sunday at designated air time.</span>
                   )}
                   {newShowPattern === "weekly" && (
                     <span>📅 <strong>Weekly Programming:</strong> Broadcasts every <strong>{newShowDay}</strong>.</span>
@@ -2439,6 +2530,19 @@ export default function ScheduleManager() {
                   placeholder="Show synopsis..."
                   className="w-full border-2 border-brand-navy p-2"
                 />
+              </div>
+
+              <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="autoGenSlots"
+                  checked={newShowAutoGenerate}
+                  onChange={(e) => setNewShowAutoGenerate(e.target.checked)}
+                  className="w-4 h-4 accent-brand-navy cursor-pointer"
+                />
+                <label htmlFor="autoGenSlots" className="text-[11px] font-bold text-brand-navy cursor-pointer select-none">
+                  ⚡ Auto-populate timetable roster with next 30 days of upcoming broadcast slots
+                </label>
               </div>
 
               <div className="pt-2 flex justify-end gap-2">
@@ -2584,6 +2688,8 @@ export default function ScheduleManager() {
                       <option value="weekly">Weekly</option>
                       <option value="biweekly">Biweekly</option>
                       <option value="daily">Daily</option>
+                      <option value="weekdays">Weekdays Only (Mon–Fri)</option>
+                      <option value="weekends">Weekends Only (Sat–Sun)</option>
                     </select>
                   </div>
 
@@ -2592,6 +2698,20 @@ export default function ScheduleManager() {
                       <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
                       <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
                         All Days (Mon–Sun)
+                      </div>
+                    </div>
+                  ) : editShowPattern === "weekdays" ? (
+                    <div className="flex flex-col justify-center">
+                      <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
+                      <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
+                        Weekdays (Mon–Fri)
+                      </div>
+                    </div>
+                  ) : editShowPattern === "weekends" ? (
+                    <div className="flex flex-col justify-center">
+                      <span className="block font-bold uppercase mb-1 text-neutral-400">Weekday</span>
+                      <div className="p-2 bg-neutral-200 border-2 border-neutral-300 text-neutral-600 font-bold text-center">
+                        Weekends (Sat–Sun)
                       </div>
                     </div>
                   ) : (
@@ -2618,6 +2738,12 @@ export default function ScheduleManager() {
                 <div className="text-[11px] font-bold text-brand-navy bg-white p-2 border border-brand-navy/30">
                   {editShowPattern === "daily" && (
                     <span>📅 <strong>Daily Programming:</strong> Broadcasts every single day (Monday to Sunday) at designated air time.</span>
+                  )}
+                  {editShowPattern === "weekdays" && (
+                    <span>📅 <strong>Weekdays Programming:</strong> Broadcasts Monday through Friday at designated air time.</span>
+                  )}
+                  {editShowPattern === "weekends" && (
+                    <span>📅 <strong>Weekends Programming:</strong> Broadcasts Saturday and Sunday at designated air time.</span>
                   )}
                   {editShowPattern === "weekly" && (
                     <span>📅 <strong>Weekly Programming:</strong> Broadcasts every <strong>{editShowDay}</strong>.</span>

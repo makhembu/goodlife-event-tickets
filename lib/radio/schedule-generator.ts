@@ -75,7 +75,8 @@ export interface GeneratedSlotResult {
  */
 export async function generateScheduleSlots(
   daysAhead = 30,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  showId?: number
 ): Promise<GeneratedSlotResult> {
   const result: GeneratedSlotResult = {
     totalGenerated: 0,
@@ -84,13 +85,15 @@ export async function generateScheduleSlots(
     skipped: [],
   };
 
-  // 1. Fetch all active recurring shows
+  // 1. Fetch active recurring shows (or single target show)
   const showsRes = await neonQuery(
     `SELECT id, title, slug, primary_presenter_id, default_duration_min,
             recurrence_pattern, recurrence_days, default_start_time, is_active, created_at
      FROM shows
      WHERE is_active = true AND recurrence_pattern != 'none'
-     ORDER BY id ASC;`
+       ${showId ? "AND id = $1" : ""}
+     ORDER BY id ASC;`,
+    showId ? [showId] : []
   );
 
   const shows: Show[] = (showsRes.rows || []).map((r: any) => ({
@@ -128,6 +131,10 @@ export async function generateScheduleSlots(
 
       if (show.recurrence_pattern === "daily") {
         isMatch = true;
+      } else if (show.recurrence_pattern === "weekdays") {
+        isMatch = ["monday", "tuesday", "wednesday", "thursday", "friday"].includes(dayOfWeek);
+      } else if (show.recurrence_pattern === "weekends") {
+        isMatch = ["saturday", "sunday"].includes(dayOfWeek);
       } else if (show.recurrence_pattern === "weekly") {
         const targetDays = show.recurrence_days.map((d) => d.trim().toLowerCase());
         isMatch = targetDays.includes(dayOfWeek);

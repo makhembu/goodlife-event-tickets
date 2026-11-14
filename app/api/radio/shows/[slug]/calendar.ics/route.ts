@@ -63,6 +63,10 @@ export async function GET(
       rruleLine = "RRULE:FREQ=WEEKLY\r\n";
     } else if (show.recurrence_pattern === "daily") {
       rruleLine = "RRULE:FREQ=DAILY\r\n";
+    } else if (show.recurrence_pattern === "weekdays") {
+      rruleLine = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR\r\n";
+    } else if (show.recurrence_pattern === "weekends") {
+      rruleLine = "RRULE:FREQ=WEEKLY;BYDAY=SA,SU\r\n";
     }
 
     const host = req.headers.get("host") || "tickets.goodlife";

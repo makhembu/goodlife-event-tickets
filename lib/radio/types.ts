@@ -186,7 +186,7 @@ export interface Presenter {
   updated_at: string;
 }
 
-export type ShowRecurrencePattern = 'none' | 'daily' | 'weekly' | 'biweekly';
+export type ShowRecurrencePattern = 'none' | 'daily' | 'weekly' | 'biweekly' | 'weekdays' | 'weekends';
 
 export interface Show {
   id: number;
