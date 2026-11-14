@@ -34,7 +34,7 @@ export default function TransportBar({
   onSkip,
   onMasterFade,
 }: TransportBarProps) {
-  const { isPlaying: radioPlaying, togglePlay: radioTogglePlay, fetchRadioLive } = useRadio();
+  const { isPlaying: radioPlaying, togglePlay: radioTogglePlay, fetchRadioLive, setVolume: setRadioVolume } = useRadio();
   const [localIsPlaying, setLocalIsPlaying] = useState(false);
   const hasStreamUrl = Boolean(streamUrl && streamUrl.trim().length > 0 && streamUrl.startsWith("http"));
   const isPlaying = hasStreamUrl ? localIsPlaying : radioPlaying;
@@ -142,10 +142,14 @@ export default function TransportBar({
 
   // Adjust volume
   useEffect(() => {
+    const targetVol = isMuted ? 0 : volume * masterGain;
     if (audioEl) {
-      audioEl.volume = isMuted ? 0 : volume * masterGain;
+      audioEl.volume = targetVol;
     }
-  }, [volume, masterGain, isMuted, audioEl]);
+    if (setRadioVolume) {
+      setRadioVolume(targetVol);
+    }
+  }, [volume, masterGain, isMuted, audioEl, setRadioVolume]);
 
   // VU Meter animation
   useEffect(() => {
@@ -274,7 +278,7 @@ export default function TransportBar({
     };
   }, [audioEl]);
 
-  const handleTogglePlay = async () => {
+  const handleTogglePlay = () => {
     if (hasStreamUrl && audioEl) {
       if (localIsPlaying) {
         audioEl.pause();
@@ -284,16 +288,16 @@ export default function TransportBar({
         audioEl
           .play()
           .then(() => setLocalIsPlaying(true))
-          .catch(async (err) => {
+          .catch((err) => {
             console.warn("[TransportBar] External stream monitor failed, falling back to RadioContext playout:", err);
-            await radioTogglePlay();
+            radioTogglePlay();
           });
       }
       return;
     }
 
     try {
-      await radioTogglePlay();
+      radioTogglePlay();
     } catch (err) {
       console.warn("[TransportBar] RadioContext togglePlay error:", err);
     }

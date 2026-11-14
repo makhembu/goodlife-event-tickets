@@ -216,9 +216,14 @@ function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number) {
     if (seekApplied) return;
     try {
       const dur = audio.duration;
-      const maxSeek = dur && !isNaN(dur) && dur > 2 ? Math.min(targetOffset, dur - 1) : targetOffset;
-      if (maxSeek > 0) {
-        audio.currentTime = maxSeek;
+      if (dur && !isNaN(dur) && dur > 2) {
+        if (targetOffset >= dur - 2) {
+          // If target offset is at or past the end of the file, wrap around so track does not instantly end
+          audio.currentTime = targetOffset % Math.floor(dur);
+          seekApplied = true;
+          return;
+        }
+        audio.currentTime = Math.max(0, targetOffset);
         seekApplied = true;
       }
     } catch (e) {
@@ -1093,38 +1098,56 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         Boolean(track.duration && track.duration > 0 && ((track.elapsed || 0) + timeSinceLastPoll) >= track.duration)
       );
 
-      // If track is missing, or the song in memory finished while sitting on the page:
+      let activeAudioUrl = track?.playback_url || track?.audio_url || backupSetsRef.current[0]?.playback_url || backupSetsRef.current[0]?.audio_url;
+      if (!activeAudioUrl) {
+        activeAudioUrl = "/api/radio/audio/track/20";
+      }
+
+      // If track is missing or stale, background refresh live track without blocking immediate audio start
       if (isTrackStaleOrFinished) {
-        try {
-          const res = await fetch("/api/radio/live");
-          if (res.ok) {
-            const data = await res.json();
-            if (data.now_playing?.playback_url || data.now_playing?.audio_url) {
-              track = {
+        fetch("/api/radio/live")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.now_playing?.playback_url || data?.now_playing?.audio_url) {
+              const freshTrack = {
                 ...data.now_playing,
                 title: formatTrackTitle(data.now_playing.title),
               };
-              setNowPlayingTrack(track);
-              if (track) {
-                lastPollElapsedRef.current = track.elapsed || 0;
-                lastPollTimestampRef.current = Date.now();
-                setInterpolatedElapsed(track.elapsed || 0);
+              setNowPlayingTrack(freshTrack);
+              lastPollElapsedRef.current = freshTrack.elapsed || 0;
+              lastPollTimestampRef.current = Date.now();
+              setInterpolatedElapsed(freshTrack.elapsed || 0);
+
+              const freshAudioUrl = freshTrack.playback_url || freshTrack.audio_url;
+              if (audioRef.current && isPlayingRef.current && freshAudioUrl && audioRef.current.src !== freshAudioUrl) {
+                audioRef.current.src = freshAudioUrl;
+                safeSeekAudio(audioRef.current, freshTrack.elapsed || 0);
+                audioRef.current.play().catch(() => {});
               }
             }
-          }
-        } catch (e) {
-          console.warn("[RadioContext] Failed to fetch fresh live track for play:", e);
-        }
+          })
+          .catch(() => {});
       }
 
-      const activeAudioUrl = track?.playback_url || track?.audio_url || backupSetsRef.current[0]?.playback_url || backupSetsRef.current[0]?.audio_url;
-      if (!activeAudioUrl) {
-        setEngineState("offline");
-        setIsPlaying(false);
-        return;
+      // Clean up previous HLS and crossfader timers without wiping audio elements
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.stopLoad();
+          hlsRef.current.detachMedia();
+          hlsRef.current.destroy();
+        } catch {}
+        hlsRef.current = null;
       }
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
+      if (crossfadeTimerRef.current) {
+        clearInterval(crossfadeTimerRef.current);
+        crossfadeTimerRef.current = null;
+      }
+      isCrossfadingRef.current = false;
 
-      teardownPlayback();
       setEngineState("live");
       setIsLive(true);
       notifyOtherTabsPlay();
@@ -1162,6 +1185,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }, 250);
         }
       } catch (err: any) {
+        console.warn("[RadioContext] audio.play() error:", err);
         if (err?.name === "NotAllowedError") {
           setEngineState("idle");
           setIsPlaying(false);
@@ -2176,24 +2200,51 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // User gesture drop audio unlocking for mobile Safari/Chrome autoplay policy
   const primeAudioPipeline = useCallback(() => {
+    // 1. Prime drop audio element
     if (dropAudioRef.current && !dropUnlockedRef.current) {
-      dropAudioRef.current.src = SILENT_WAV_DATA_URI;
-      dropAudioRef.current.volume = 0.001;
-      const playPromise = dropAudioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            if (dropAudioRef.current && dropAudioRef.current.src.startsWith("data:")) {
-              dropAudioRef.current.pause();
-              dropAudioRef.current.currentTime = 0;
-            }
-            dropUnlockedRef.current = true;
-            setIsDropUnlocked(true);
-          })
-          .catch((err) => {
-            console.warn("[RadioContext] Station voice audio prime failed:", err);
-          });
-      }
+      try {
+        dropAudioRef.current.src = SILENT_WAV_DATA_URI;
+        dropAudioRef.current.volume = 0.001;
+        const playPromise = dropAudioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              if (dropAudioRef.current && dropAudioRef.current.src.startsWith("data:")) {
+                dropAudioRef.current.pause();
+                dropAudioRef.current.currentTime = 0;
+              }
+              dropUnlockedRef.current = true;
+              setIsDropUnlocked(true);
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
+
+    // 2. Prime Deck A (audioRef) and Deck B (preloadAudioRef) inside user gesture
+    if (audioRef.current && (!audioRef.current.src || audioRef.current.src === "" || audioRef.current.src.startsWith("data:"))) {
+      try {
+        audioRef.current.src = SILENT_WAV_DATA_URI;
+        audioRef.current.volume = 0.001;
+        audioRef.current.play().then(() => {
+          if (audioRef.current && audioRef.current.src.startsWith("data:")) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+          }
+        }).catch(() => {});
+      } catch {}
+    }
+    if (preloadAudioRef.current && (!preloadAudioRef.current.src || preloadAudioRef.current.src === "" || preloadAudioRef.current.src.startsWith("data:"))) {
+      try {
+        preloadAudioRef.current.src = SILENT_WAV_DATA_URI;
+        preloadAudioRef.current.volume = 0.001;
+        preloadAudioRef.current.play().then(() => {
+          if (preloadAudioRef.current && preloadAudioRef.current.src.startsWith("data:")) {
+            preloadAudioRef.current.pause();
+            preloadAudioRef.current.currentTime = 0;
+          }
+        }).catch(() => {});
+      } catch {}
     }
   }, []);
 
@@ -2214,17 +2265,24 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 13. Public Control Actions
-  const togglePlay = useCallback(async () => {
+  const togglePlay = useCallback(() => {
     if (isPlaying) {
       teardownPlayback();
       setIsPlaying(false);
       setEngineState("paused");
     } else {
-      primeAudioPipeline();
       setIsMinimized(false);
-      // Always fetch fresh state and live track synchronously before playing on first start
-      await Promise.all([fetchRadioState(), fetchRadioLive()]);
+      setIsPlaying(true);
+      setEngineState("live");
+
+      // Prime the audio elements synchronously inside the user click gesture
+      primeAudioPipeline();
+
+      // Trigger attachAndPlayLiveStream immediately within the click turn
       attachAndPlayLiveStream();
+
+      // Background-refresh fresh state and live track without blocking audio start
+      Promise.all([fetchRadioState(), fetchRadioLive()]).catch(() => {});
     }
   }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive, primeAudioPipeline]);
 
@@ -2824,6 +2882,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onError={() => {
+          if (!audioRef.current?.src || audioRef.current.src === "" || audioRef.current.src.startsWith("data:") || (typeof window !== "undefined" && audioRef.current.src === window.location.href)) {
+            return;
+          }
           if (activeDeckRef.current === "A" && !isCrossfadingRef.current) {
             if (currentTrackIdRef.current) {
               const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
@@ -2866,6 +2927,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onError={() => {
+          if (!preloadAudioRef.current?.src || preloadAudioRef.current.src === "" || preloadAudioRef.current.src.startsWith("data:") || (typeof window !== "undefined" && preloadAudioRef.current.src === window.location.href)) {
+            return;
+          }
           if (activeDeckRef.current === "B" && !isCrossfadingRef.current) {
             if (currentTrackIdRef.current) {
               const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
