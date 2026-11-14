@@ -16,7 +16,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { broadcast_mode, live_stream_url, live_title, live_fallback_set_id } = body;
+    const { broadcast_mode, live_stream_url, live_title, live_fallback_set_id, ai_drops_enabled } = body;
 
     const query = `
       UPDATE radio_settings
@@ -25,17 +25,18 @@ export async function PUT(req: NextRequest) {
         live_stream_url = COALESCE($2, live_stream_url),
         live_title = COALESCE($3, live_title),
         live_fallback_set_id = $4,
-        last_heartbeat = NOW(),
+        ai_drops_enabled = COALESCE($5, ai_drops_enabled),
         updated_at = NOW()
       WHERE id = 1
       RETURNING *;
     `;
 
     const params = [
-      broadcast_mode || "curated",
-      live_stream_url !== undefined ? live_stream_url : "",
-      live_title || "GOODLIFE MAIN STAGE LIVE",
+      broadcast_mode || null,
+      live_stream_url !== undefined ? live_stream_url : null,
+      live_title || null,
       live_fallback_set_id ? parseInt(String(live_fallback_set_id), 10) : null,
+      typeof ai_drops_enabled === "boolean" ? ai_drops_enabled : null,
     ];
 
     const { rows } = await neonQuery(query, params);

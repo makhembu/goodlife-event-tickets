@@ -36,7 +36,8 @@ export default function TransportBar({
 }: TransportBarProps) {
   const { isPlaying: radioPlaying, togglePlay: radioTogglePlay, fetchRadioLive } = useRadio();
   const [localIsPlaying, setLocalIsPlaying] = useState(false);
-  const isPlaying = streamUrl ? localIsPlaying : radioPlaying;
+  const hasStreamUrl = Boolean(streamUrl && streamUrl.trim().length > 0 && streamUrl.startsWith("http"));
+  const isPlaying = hasStreamUrl ? localIsPlaying : radioPlaying;
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [masterGain, setMasterGain] = useState(1.0);
@@ -120,8 +121,12 @@ export default function TransportBar({
     return () => clearInterval(interval);
   }, []);
 
-  // Monitor Audio Element initialization
+  // Monitor Audio Element initialization (only for external live stream monitoring)
   useEffect(() => {
+    if (!hasStreamUrl) {
+      setAudioEl(null);
+      return;
+    }
     const audio = new Audio(streamUrl || "");
     audio.volume = isMuted ? 0 : volume * masterGain;
     audio.onended = () => {
@@ -133,7 +138,7 @@ export default function TransportBar({
       audio.pause();
       audio.src = "";
     };
-  }, [streamUrl]);
+  }, [hasStreamUrl, streamUrl]);
 
   // Adjust volume
   useEffect(() => {
@@ -178,8 +183,8 @@ export default function TransportBar({
           currentAudioUrlRef.current = trackAudio;
           currentElapsedRef.current = track.elapsed || 0;
 
-          // If local headphone monitor is active, sync audio src seamlessly if track changed
-          if (audioEl && isPlayingRef.current && trackAudio) {
+          // If external live monitor stream is active, sync audio src if track changed
+          if (hasStreamUrl && audioEl && isPlayingRef.current && trackAudio) {
             if (track.id !== currentTrackIdRef.current) {
               currentTrackIdRef.current = track.id;
               audioEl.src = trackAudio;
@@ -270,7 +275,7 @@ export default function TransportBar({
   }, [audioEl]);
 
   const handleTogglePlay = async () => {
-    if (streamUrl && audioEl) {
+    if (hasStreamUrl && audioEl) {
       if (localIsPlaying) {
         audioEl.pause();
         setLocalIsPlaying(false);
@@ -279,7 +284,10 @@ export default function TransportBar({
         audioEl
           .play()
           .then(() => setLocalIsPlaying(true))
-          .catch((err) => console.warn("[TransportBar] Monitor playback blocked:", err));
+          .catch(async (err) => {
+            console.warn("[TransportBar] External stream monitor failed, falling back to RadioContext playout:", err);
+            await radioTogglePlay();
+          });
       }
       return;
     }

@@ -211,10 +211,25 @@ export async function uploadDropBufferToR2(params: {
   if (!r2) return null;
 
   const buf = Buffer.isBuffer(params.buffer) ? params.buffer : Buffer.from(params.buffer);
-  const isWav = buf.length > 4 && buf.subarray(0, 4).toString() === "RIFF";
-  const contentType = isWav ? "audio/wav" : "audio/mpeg";
-  const ext = isWav ? "wav" : "mp3";
-  const baseName = params.filename.replace(/\.(mp3|wav|webm|ogg)$/i, "");
+  
+  // Detect container & codec from magic bytes
+  let contentType = "audio/mpeg";
+  let ext = "mp3";
+  if (buf.length > 4) {
+    if (buf.subarray(0, 4).toString() === "RIFF") {
+      contentType = "audio/wav";
+      ext = "wav";
+    } else if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+      // EBML header (WebM)
+      contentType = "audio/webm";
+      ext = "webm";
+    } else if (buf.length > 8 && (buf.subarray(4, 8).toString() === "ftyp" || buf.subarray(4, 8).toString() === "moov")) {
+      contentType = "audio/mp4";
+      ext = "mp4";
+    }
+  }
+
+  const baseName = params.filename.replace(/\.(mp3|wav|webm|ogg|mp4|m4a)$/i, "");
   const key = `radio/drops/${Date.now()}-${baseName}.${ext}`;
 
   await r2.s3.send(

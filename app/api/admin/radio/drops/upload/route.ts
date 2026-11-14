@@ -24,19 +24,20 @@ export async function POST(req: NextRequest) {
       const arrayBuffer = await audioFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      // Attempt Cloudflare R2 Upload
+      // Detect container & codec
+      const fileMime = audioFile.type || "audio/webm";
       const cleanName = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
       let r2Url: string | null = null;
       try {
         r2Url = await uploadDropBufferToR2({
           buffer,
-          filename: `${cleanName}.mp3`,
+          filename: `${cleanName}.${fileMime.includes("mp4") ? "mp4" : fileMime.includes("wav") ? "wav" : fileMime.includes("mpeg") ? "mp3" : "webm"}`,
         });
       } catch (r2Err: any) {
         console.warn("[drops/upload] R2 upload failed, falling back to data URI:", r2Err?.message);
       }
 
-      const finalUrl = r2Url || `data:audio/mp3;base64,${buffer.toString("base64")}`;
+      const finalUrl = r2Url || `data:${fileMime};base64,${buffer.toString("base64")}`;
 
       return NextResponse.json({
         success: true,

@@ -165,13 +165,32 @@ export async function generateScheduleSlots(
       const startsAtIso = startsAt.toISOString();
       const endsAtIso = endsAt.toISOString();
 
-      // 4. Check for existing slot for this exact show & time (Idempotency)
+      // 4. Check for existing slot for this exact show & time (Idempotency / Reactivation)
       const existingRes = await neonQuery(
-        `SELECT id FROM show_slots WHERE show_id = $1 AND starts_at = $2 LIMIT 1;`,
+        `SELECT id, status FROM show_slots WHERE show_id = $1 AND starts_at = $2 LIMIT 1;`,
         [show.id, startsAtIso]
       );
 
       if (existingRes.rows && existingRes.rows.length > 0) {
+        const existing = existingRes.rows[0];
+        if (existing.status === "cancelled") {
+          // Reactivate previously cancelled recurrence slot with fresh presenter and duration
+          await neonQuery(
+            `UPDATE show_slots 
+             SET presenter_id = $2, ends_at = $3, status = 'scheduled', updated_at = NOW() 
+             WHERE id = $1`,
+            [existing.id, show.primary_presenter_id, endsAtIso]
+          );
+          result.createdSlots.push({
+            show_id: show.id,
+            show_title: show.title,
+            starts_at: startsAtIso,
+            ends_at: endsAtIso,
+          });
+          result.totalGenerated++;
+          continue;
+        }
+
         result.skipped.push({
           show_id: show.id,
           show_title: show.title,
@@ -196,14 +215,25 @@ export async function generateScheduleSlots(
 
       if (overlapRes.rows && overlapRes.rows.length > 0) {
         const conflict = overlapRes.rows[0];
-        result.skipped.push({
-          show_id: show.id,
-          show_title: show.title,
-          starts_at: startsAtIso,
-          reason: `overlap_with_slot_${conflict.id}`,
-        });
-        result.totalSkipped++;
-        continue;
+        // Check if the conflicting slot belongs to an inactive show
+        const conflictShowRes = await neonQuery(
+          `SELECT is_active FROM shows WHERE id = $1 LIMIT 1`,
+          [conflict.show_id]
+        );
+        const conflictIsActive = conflictShowRes.rows[0]?.is_active ?? false;
+        if (!conflictIsActive) {
+          // Cancel stale slot from deactivated show to yield to this active scheduled show
+          await neonQuery(`UPDATE show_slots SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [conflict.id]);
+        } else {
+          result.skipped.push({
+            show_id: show.id,
+            show_title: show.title,
+            starts_at: startsAtIso,
+            reason: `overlap_with_slot_${conflict.id}`,
+          });
+          result.totalSkipped++;
+          continue;
+        }
       }
 
       // 6. Insert new slot

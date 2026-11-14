@@ -130,10 +130,47 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   const [writingScript, setWritingScript] = useState(false);
   const [broadcastContext, setBroadcastContext] = useState<any>(null);
   const [loadingTags, setLoadingTags] = useState(false);
+  const [aiDropsEnabled, setAiDropsEnabled] = useState(false);
+  const [togglingAiDrops, setTogglingAiDrops] = useState(false);
   const [contextTags, setContextTags] = useState<Array<{ id: string; category?: string; label: string; value: string }>>([
     { id: "tickets_url", category: "tickets", label: "🎟️ Tickets: goodlife.smwhr.space", value: "tickets on goodlife.smwhr.space" },
     { id: "station", category: "radio", label: "📻 Station: GOODLIFE Radio 254", value: "GOODLIFE Radio 254" },
   ]);
+
+  const fetchAiDropsStatus = async () => {
+    try {
+      const res = await fetch("/api/admin/radio/drops/toggle");
+      if (res.ok) {
+        const d = await res.json();
+        setAiDropsEnabled(Boolean(d.ai_drops_enabled));
+      }
+    } catch {}
+  };
+
+  const handleToggleAiDrops = async () => {
+    if (togglingAiDrops) return;
+    setTogglingAiDrops(true);
+    try {
+      const next = !aiDropsEnabled;
+      const res = await fetch("/api/admin/radio/drops/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiDropsEnabled(Boolean(data.ai_drops_enabled));
+        setSuccessMsg(data.message || (next ? "AI station drops turned ON" : "AI station drops turned OFF"));
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        setError(data.error || "Failed to toggle AI drops");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to toggle AI drops");
+    } finally {
+      setTogglingAiDrops(false);
+    }
+  };
 
   const fetchUnifiedBroadcastContext = async (refreshExternal = false) => {
     setLoadingTags(true);
@@ -173,9 +210,10 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
     }
   };
 
-  // Prepopulate live broadcast tags from unified context endpoint
+  // Prepopulate live broadcast tags from unified context endpoint & check AI drops toggle
   useEffect(() => {
     fetchUnifiedBroadcastContext(false);
+    fetchAiDropsStatus();
   }, []);
 
   const handleInsertTag = (tagValue: string) => {
@@ -415,7 +453,7 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   return (
     <div className="bg-[#16181D] text-[#FBF9F6] border-2 border-[#16181D] p-4 shadow-[4px_4px_0px_#DFBB7D] space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-3 gap-3">
         <div className="flex items-center space-x-2">
           <div className="p-1.5 bg-[#F5C842] text-[#16181D] font-bold">
             <Sparkles className="w-4 h-4" />
@@ -430,10 +468,45 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center space-x-1.5 px-2 py-0.5 bg-[#10B981]/20 border border-[#10B981] text-[#10B981] font-mono text-[10px] font-bold">
-          <span>● FREE API TIER</span>
+        <div className="flex items-center space-x-2 self-start sm:self-auto">
+          {/* AI Drops Master Toggle */}
+          <button
+            type="button"
+            onClick={handleToggleAiDrops}
+            disabled={togglingAiDrops}
+            title={aiDropsEnabled ? "Click to turn OFF automated AI drops" : "Click to turn ON automated AI drops"}
+            className={`px-3 py-1 font-mono text-xs font-bold border transition-colors flex items-center space-x-1.5 cursor-pointer ${
+              aiDropsEnabled
+                ? "bg-[#10B981] text-[#16181D] border-[#10B981] hover:bg-emerald-400"
+                : "bg-red-500/20 text-red-300 border-red-500/60 hover:bg-red-500/30"
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${aiDropsEnabled ? "bg-[#16181D] animate-ping" : "bg-red-400"}`} />
+            <span>{togglingAiDrops ? "UPDATING..." : aiDropsEnabled ? "AI DROPS: ON" : "AI DROPS: OFF"}</span>
+          </button>
+
+          <div className="hidden sm:flex items-center space-x-1.5 px-2 py-0.5 bg-[#10B981]/20 border border-[#10B981] text-[#10B981] font-mono text-[10px] font-bold">
+            <span>● FREE API TIER</span>
+          </div>
         </div>
       </div>
+
+      {!aiDropsEnabled && (
+        <div className="p-2.5 bg-red-900/30 border border-red-500/40 text-red-200 font-mono text-xs flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="font-bold text-red-400">⚠️ AI DROPS ARE CURRENTLY OFF:</span>
+            <span>Automated cron generation and on-air live injection are paused.</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleToggleAiDrops}
+            disabled={togglingAiDrops}
+            className="text-[11px] text-[#DFBB7D] underline hover:text-white font-bold ml-2 shrink-0 cursor-pointer"
+          >
+            Turn ON
+          </button>
+        </div>
+      )}
 
       {/* Preset Selector Pills */}
       <div>

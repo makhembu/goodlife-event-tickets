@@ -21,6 +21,7 @@ interface RadioPlayoutDbCache {
     broadcast_mode?: string;
     active_set_id?: string | number | null;
     active_started_at?: string | null;
+    ai_drops_enabled?: boolean;
   };
   sets: any[];
   activatedAt: string | null;
@@ -128,7 +129,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
       ORDER BY pt.position ASC, pt.id ASC
     `).catch(() => ({ rows: [] })),
     neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, active_set_id, active_started_at, ai_drops_enabled FROM radio_settings WHERE id = 1"
     ).catch(() => ({ rows: [] })),
   ]);
 
@@ -312,7 +313,7 @@ async function getTimelineFallback() {
         )
       ),
       history: [],
-      live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
+      live_drop: settings.ai_drops_enabled === false ? null : (liveDrop ? withPlayback(liveDrop, "drop") : null),
       target_duration_sec: 2.0,
     };
   } catch (err: any) {

@@ -1551,7 +1551,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           if (data.drop) {
             // Aired to live stream broadcast for all listeners!
-            // Do NOT trigger local playback on the DJ/admin browser to prevent double-play echo.
+            // If the DJ/admin is actively listening to monitor audio, hear it live with ducking
+            if (isPlayingRef.current && audioRef.current) {
+              triggerLiveInjectedDrop({
+                id: data.drop.id,
+                title: data.drop.title,
+                persona: data.drop.persona,
+                audio_url: data.drop.audio_url,
+              });
+            }
             return true;
           }
         }
@@ -1560,7 +1568,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
       return false;
     },
-    []
+    [triggerLiveInjectedDrop]
   );
 
   const setManualDucking = useCallback(

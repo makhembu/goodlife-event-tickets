@@ -337,19 +337,24 @@ export default function BrowserMicRecorder({
   };
 
   const togglePlayback = () => {
-    let urlToPlay = localBlobUrlRef.current || masteredUrl || audioUrl;
-    if (!urlToPlay) return;
+    // For local preview, ALWAYS prefer local blob URL first for instant reliable audio playback
+    let urlToPlay = localBlobUrlRef.current || audioUrl || masteredUrl;
+    if (!urlToPlay) {
+      setStatusMsg({ text: "No audio recording available to preview.", type: "error" });
+      return;
+    }
 
     if (urlToPlay && !urlToPlay.startsWith("http") && !urlToPlay.startsWith("blob:") && !urlToPlay.startsWith("data:")) {
       urlToPlay = `https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev/${urlToPlay.replace(/^\/+/, "")}`;
     }
 
     if (!audioRef.current) {
-      audioRef.current = new Audio(urlToPlay);
+      audioRef.current = new Audio();
       audioRef.current.onended = () => setIsPlaying(false);
       audioRef.current.onerror = (e) => {
         console.warn("[BrowserMicRecorder] Audio preview error:", e);
         setIsPlaying(false);
+        setStatusMsg({ text: "Could not preview audio in this browser.", type: "error" });
       };
     }
 
@@ -357,7 +362,10 @@ export default function BrowserMicRecorder({
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.src = urlToPlay;
+      if (audioRef.current.src !== urlToPlay) {
+        audioRef.current.src = urlToPlay;
+        audioRef.current.load();
+      }
       audioRef.current.currentTime = 0;
       audioRef.current
         .play()
@@ -365,6 +373,7 @@ export default function BrowserMicRecorder({
         .catch((err) => {
           console.warn("[BrowserMicRecorder] Play error:", err);
           setIsPlaying(false);
+          setStatusMsg({ text: "Preview blocked: tap play again to allow audio.", type: "error" });
         });
     }
   };
@@ -542,20 +551,27 @@ export default function BrowserMicRecorder({
                     const uploaded = await uploadAudioBlob(blob, dropName.trim() || "Live Mic Shoutout");
                     if (uploaded) {
                       targetUrl = uploaded;
+                      setMasteredUrl(uploaded);
                     }
-                  } catch (e) {
+                  } catch (e: any) {
                     console.error("[BrowserMicRecorder] Upload before AIR failed:", e);
+                    setStatusMsg({ text: "Failed to upload audio to cloud: " + (e?.message || "network error"), type: "error" });
+                    return;
                   }
                 }
                 if (targetUrl && !targetUrl.startsWith("http") && !targetUrl.startsWith("data:")) {
                   const base = "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev";
                   targetUrl = `${base}/${targetUrl.replace(/^\/+/, "")}`;
                 }
+                if (!targetUrl || targetUrl.startsWith("blob:")) {
+                  setStatusMsg({ text: "Cannot air local audio: upload to cloud did not complete.", type: "error" });
+                  return;
+                }
                 if (onAirLive && targetUrl) {
-                  setStatusMsg({ text: "Airing to live stream...", type: "success" });
+                  setStatusMsg({ text: "📡 Airing mic drop live to broadcast...", type: "success" });
                   const success = await onAirLive(targetUrl, dropName, "Live Host DJ", "Live Mic Shoutout");
                   if (success) {
-                    setStatusMsg({ text: "✓ Aired mic shoutout to live stream!", type: "success" });
+                    setStatusMsg({ text: "🔴 AIRED LIVE ON AIR TO ALL LISTENERS!", type: "success" });
                   } else {
                     setStatusMsg({ text: "Failed to air mic drop to stream.", type: "error" });
                   }

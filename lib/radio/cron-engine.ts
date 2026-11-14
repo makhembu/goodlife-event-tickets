@@ -84,20 +84,39 @@ export async function executeCronRadioDrops(
     };
   }
 
-  // 1. Skip when station mode is live
+  // 1. Skip when station mode is live or AI drops are disabled
   let broadcastMode = "autodj";
+  let aiDropsEnabled = true;
   try {
     const settingsRes = await deps.queryDb(
-      "SELECT broadcast_mode FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, ai_drops_enabled FROM radio_settings WHERE id = 1"
     );
     if (settingsRes.rows && settingsRes.rows[0]) {
       broadcastMode = settingsRes.rows[0].broadcast_mode || "autodj";
+      aiDropsEnabled = settingsRes.rows[0].ai_drops_enabled !== false;
     }
   } catch (err: any) {
-    console.error("[cron-engine] Failed to check broadcast_mode:", err?.message);
+    console.error("[cron-engine] Failed to check settings:", err?.message);
     return {
       statusCode: 503,
-      body: { error: "Database unavailable for broadcast_mode check" },
+      body: { error: "Database unavailable for settings check" },
+    };
+  }
+
+  if (!aiDropsEnabled) {
+    const record: LastDropGeneration = {
+      timestamp: new Date().toISOString(),
+      status: "skipped",
+      reason: "ai_drops_disabled",
+    };
+    deps.recordTelemetry?.(record);
+    return {
+      statusCode: 200,
+      body: {
+        status: "skipped",
+        reason: "ai_drops_disabled",
+        message: "AI station drops are toggled OFF in radio settings",
+      },
     };
   }
 

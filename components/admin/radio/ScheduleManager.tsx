@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { nairobiToUtcDate } from "@/lib/radio/schedule-generator";
 import {
   Calendar,
   UserPlus,
@@ -205,8 +206,19 @@ export default function ScheduleManager() {
   const [editShowDuration, setEditShowDuration] = useState("120");
   const [editShowCover, setEditShowCover] = useState("");
   const [editShowActive, setEditShowActive] = useState(true);
+  const [editShowAutoGenerate, setEditShowAutoGenerate] = useState(true);
   const [uploadingEditShowCover, setUploadingEditShowCover] = useState(false);
   const editShowCoverInputRef = useRef<HTMLInputElement>(null);
+
+  // Manual Slot Creation Modal
+  const [showManualSlotModal, setShowManualSlotModal] = useState(false);
+  const [manualSlotShowId, setManualSlotShowId] = useState<number | "">("");
+  const [manualSlotDjId, setManualSlotDjId] = useState<number | "">("");
+  const [manualSlotDate, setManualSlotDate] = useState("");
+  const [manualSlotTime, setManualSlotTime] = useState("20:00");
+  const [manualSlotDuration, setManualSlotDuration] = useState("120");
+  const [manualSlotNotes, setManualSlotNotes] = useState("");
+  const [savingManualSlot, setSavingManualSlot] = useState(false);
 
   // Reassign / Edit Slot Modal
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
@@ -326,6 +338,87 @@ export default function ScheduleManager() {
       setMsg({ type: "error", text: err.message });
     } finally {
       setGeneratingShowId(null);
+    }
+  };
+
+  const handleSelectManualShow = (showId: number | "") => {
+    setManualSlotShowId(showId);
+    if (showId) {
+      const sh = shows.find((s) => s.id === showId);
+      if (sh) {
+        setManualSlotDjId(sh.primary_presenter_id);
+        if (sh.default_start_time) {
+          setManualSlotTime(sh.default_start_time.slice(0, 5));
+        }
+        if (sh.default_duration_min) {
+          setManualSlotDuration(String(sh.default_duration_min));
+        }
+      }
+    }
+  };
+
+  const handleCreateManualSlot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualSlotShowId || !manualSlotDjId || !manualSlotDate || !manualSlotTime) {
+      setMsg({ type: "error", text: "Please select a show, DJ, start date, and start time." });
+      return;
+    }
+    setSavingManualSlot(true);
+    setMsg(null);
+    try {
+      const startsAt = nairobiToUtcDate(manualSlotDate, manualSlotTime);
+      const durMin = parseInt(String(manualSlotDuration || 120), 10);
+      const endsAt = new Date(startsAt.getTime() + durMin * 60 * 1000);
+
+      const res = await fetch("/api/admin/radio/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          show_id: manualSlotShowId,
+          presenter_id: manualSlotDjId,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          notes: manualSlotNotes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create slot");
+
+      setShowManualSlotModal(false);
+      setManualSlotNotes("");
+      setMsg({ type: "success", text: "Broadcast slot successfully added to timetable roster." });
+      await loadData();
+    } catch (err: any) {
+      setMsg({ type: "error", text: err.message || "Failed to create slot" });
+    } finally {
+      setSavingManualSlot(false);
+    }
+  };
+
+  const handlePopulateForPresenter = async (presenter: Presenter) => {
+    const pShows = shows.filter((s) => s.primary_presenter_id === presenter.id);
+    if (pShows.length === 0) {
+      setMsg({ type: "error", text: `No shows assigned to ${presenter.dj_name} yet. Click "+ Add Show" first.` });
+      return;
+    }
+    setGenerating(true);
+    try {
+      let total = 0;
+      for (const sh of pShows) {
+        const res = await fetch("/api/admin/radio/schedule/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ days: 30, show_id: sh.id }),
+        });
+        const data = await res.json();
+        total += (data.totalGenerated || 0);
+      }
+      setMsg({ type: "success", text: `Generated ${total} roster slots for ${presenter.dj_name}'s shows across the next 30 days.` });
+      await loadData();
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message || "Failed to generate slots" });
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -819,8 +912,23 @@ export default function ScheduleManager() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update show");
 
+      let autoGenMsg = "";
+      if (editShowAutoGenerate && editingShow.id) {
+        try {
+          const genRes = await fetch("/api/admin/radio/schedule/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ days: 30, show_id: editingShow.id }),
+          });
+          const genData = await genRes.json();
+          if (genData.totalGenerated > 0) {
+            autoGenMsg = ` & ${genData.totalGenerated} upcoming slots synchronized to roster`;
+          }
+        } catch {}
+      }
+
       setEditingShow(null);
-      setMsg({ type: "success", text: `Show "${data.show.title}" updated successfully.` });
+      setMsg({ type: "success", text: `Show "${data.show.title}" updated successfully${autoGenMsg}.` });
       await loadData();
     } catch (err: any) {
       setMsg({ type: "error", text: err.message });
@@ -993,6 +1101,23 @@ export default function ScheduleManager() {
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Wipe Future Slots</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const now = new Date();
+              const nairobiDate = new Date(now.getTime() + 3 * 3600 * 1000);
+              setManualSlotDate(nairobiDate.toISOString().slice(0, 10));
+              if (shows[0]) {
+                handleSelectManualShow(shows[0].id);
+              }
+              setShowManualSlotModal(true);
+            }}
+            className="px-3.5 py-2 bg-brand-navy text-white border-2 border-brand-navy font-display text-sm uppercase tracking-wider hover:bg-brand-accent hover:text-brand-navy transition-all shadow-[2px_2px_0px_#142B4C] flex items-center gap-1.5 cursor-pointer shrink-0"
+            title="Manually schedule a single broadcast slot into the timetable"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Slot</span>
           </button>
 
           <button
@@ -1555,6 +1680,75 @@ export default function ScheduleManager() {
                     <span className="font-bold text-brand-navy bg-white px-1.5 py-0.5 border font-mono">
                       {p.stream_key_prefix ? `${p.stream_key_prefix}...` : "None"}
                     </span>
+                  </div>
+
+                  {/* Shows Hosted by this Presenter */}
+                  <div className="pt-2 border-t border-brand-navy/15 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-neutral-600">Shows Hosted:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewShowDjId(p.id);
+                          setShowShowModal(true);
+                        }}
+                        className="text-[10px] text-brand-navy font-bold uppercase underline hover:text-brand-accent flex items-center gap-0.5 cursor-pointer"
+                        title={`Add a new radio show hosted by ${p.dj_name}`}
+                      >
+                        <Plus className="w-3 h-3" /> Add Show
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const pShows = shows.filter((s) => s.primary_presenter_id === p.id);
+                      if (pShows.length === 0) {
+                        return (
+                          <div className="p-2 bg-neutral-100 border border-neutral-200 text-center text-[10px] text-neutral-500 italic">
+                            No shows assigned. Click "+ Add Show" to schedule this presenter.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5">
+                          {pShows.map((sh) => (
+                            <div key={sh.id} className="p-1.5 bg-white border border-brand-navy/30 flex items-center justify-between text-[11px]">
+                              <div className="min-w-0 pr-1">
+                                <span className="font-bold text-brand-navy block truncate">{sh.title}</span>
+                                <span className="text-[10px] text-neutral-500 block">
+                                  {sh.recurrence_pattern === "weekdays"
+                                    ? "Mon–Fri"
+                                    : sh.recurrence_pattern === "weekends"
+                                    ? "Sat–Sun"
+                                    : sh.recurrence_pattern === "daily"
+                                    ? "Daily"
+                                    : Array.isArray(sh.recurrence_days) ? sh.recurrence_days.join(", ") : "Weekly"} · {sh.default_start_time} EAT
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateForShow(sh)}
+                                disabled={generatingShowId === sh.id}
+                                className="px-1.5 py-0.5 bg-brand-navy text-white text-[9px] font-bold uppercase hover:bg-brand-accent hover:text-brand-navy flex items-center gap-0.5 shrink-0 cursor-pointer"
+                                title="Populate next 30 days of broadcast slots into timetable roster"
+                              >
+                                <RefreshCw className={`w-2.5 h-2.5 ${generatingShowId === sh.id ? "animate-spin" : ""}`} />
+                                <span>Roster</span>
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => handlePopulateForPresenter(p)}
+                            disabled={generating}
+                            className="w-full py-1 bg-brand-accent/20 hover:bg-brand-accent text-brand-navy border border-brand-navy/30 text-[10px] font-bold uppercase flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                            title={`Generate timetable slots for all of ${p.dj_name}'s shows`}
+                          >
+                            <Calendar className="w-3 h-3" />
+                            <span>Populate All ({pShows.length}) Into Roster</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -2799,6 +2993,19 @@ export default function ScheduleManager() {
                 </select>
               </div>
 
+              <div className="p-2.5 bg-brand-off-white border-2 border-brand-navy flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="autoGenSlotsEdit"
+                  checked={editShowAutoGenerate}
+                  onChange={(e) => setEditShowAutoGenerate(e.target.checked)}
+                  className="w-4 h-4 accent-brand-navy cursor-pointer"
+                />
+                <label htmlFor="autoGenSlotsEdit" className="text-[11px] font-bold text-brand-navy cursor-pointer select-none">
+                  ⚡ Re-sync / populate timetable roster with next 30 days of upcoming broadcast slots
+                </label>
+              </div>
+
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
@@ -2903,6 +3110,134 @@ export default function ScheduleManager() {
                   className="px-5 py-2 bg-brand-navy text-white font-display text-base uppercase border-2 border-brand-navy hover:bg-brand-accent hover:text-brand-navy cursor-pointer"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MANUAL BROADCAST SLOT CREATION MODAL                           */}
+      {/* ============================================================== */}
+      {showManualSlotModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white border-4 border-brand-navy max-w-lg w-full p-6 space-y-4 shadow-[8px_8px_0px_#142B4C] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
+              <div>
+                <h3 className="font-display text-xl uppercase text-brand-navy">
+                  Add Broadcast Slot
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  Manually schedule an individual broadcast into the station timetable roster.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualSlotModal(false)}
+                className="p-1 hover:bg-neutral-100 cursor-pointer"
+              >
+                <X className="w-5 h-5 text-brand-navy" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateManualSlot} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold uppercase mb-1">Select Show</label>
+                <select
+                  value={manualSlotShowId}
+                  onChange={(e) => handleSelectManualShow(e.target.value ? parseInt(e.target.value, 10) : "")}
+                  required
+                  className="w-full border-2 border-brand-navy p-2 bg-white font-bold"
+                >
+                  <option value="">-- Choose a Radio Show --</option>
+                  {shows.map((sh) => (
+                    <option key={sh.id} value={sh.id}>
+                      {sh.title} ({sh.dj_name || "DJ"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase mb-1">Host DJ / Presenter</label>
+                <select
+                  value={manualSlotDjId}
+                  onChange={(e) => setManualSlotDjId(e.target.value ? parseInt(e.target.value, 10) : "")}
+                  required
+                  className="w-full border-2 border-brand-navy p-2 bg-white font-bold"
+                >
+                  <option value="">-- Choose Presenter --</option>
+                  {presenters.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.dj_name} ({p.full_name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold uppercase mb-1">Broadcast Date (EAT)</label>
+                  <input
+                    type="date"
+                    required
+                    value={manualSlotDate}
+                    onChange={(e) => setManualSlotDate(e.target.value)}
+                    className="w-full border-2 border-brand-navy p-2 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold uppercase mb-1">Air Time (EAT)</label>
+                  <input
+                    type="time"
+                    required
+                    value={manualSlotTime}
+                    onChange={(e) => setManualSlotTime(e.target.value)}
+                    className="w-full border-2 border-brand-navy p-2 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase mb-1">Duration (Minutes)</label>
+                <input
+                  type="number"
+                  required
+                  min="15"
+                  step="15"
+                  value={manualSlotDuration}
+                  onChange={(e) => setManualSlotDuration(e.target.value)}
+                  className="w-full border-2 border-brand-navy p-2 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase mb-1">Broadcast Notes / Cue</label>
+                <textarea
+                  rows={2}
+                  value={manualSlotNotes}
+                  onChange={(e) => setManualSlotNotes(e.target.value)}
+                  placeholder="Special episode topic, guest artists, or lineup notes..."
+                  className="w-full border-2 border-brand-navy p-2"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualSlotModal(false)}
+                  className="px-4 py-2 border font-bold uppercase text-neutral-600 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingManualSlot}
+                  className="px-5 py-2 bg-brand-navy text-white font-display text-base uppercase border-2 border-brand-navy hover:bg-brand-accent hover:text-brand-navy cursor-pointer disabled:opacity-50"
+                >
+                  {savingManualSlot ? "Saving..." : "Add to Timetable"}
                 </button>
               </div>
             </form>

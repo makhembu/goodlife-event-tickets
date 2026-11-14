@@ -183,6 +183,8 @@ export default function AdminRadioPage() {
   const [liveTitle, setLiveTitle] = useState("GOODLIFE MAIN STAGE LIVE");
   const [fallbackSetId, setFallbackSetId] = useState<number | null>(null);
   const [savingLive, setSavingLive] = useState(false);
+  const [aiDropsEnabled, setAiDropsEnabled] = useState(false);
+  const [togglingAiDrops, setTogglingAiDrops] = useState(false);
 
   // Inline audio preview player
   const [previewTrackUrl, setPreviewTrackUrl] = useState<string | null>(null);
@@ -235,8 +237,45 @@ export default function AdminRadioPage() {
         setLiveStreamUrl(data.live_stream_url || "");
         setLiveTitle(data.live_title || "GOODLIFE MAIN STAGE LIVE");
         setFallbackSetId(data.live_fallback_set_id || null);
+        if (typeof (data as any).ai_drops_enabled === "boolean") {
+          setAiDropsEnabled((data as any).ai_drops_enabled);
+        }
       }
     } catch {}
+  };
+
+  const fetchAiDropsStatus = async () => {
+    try {
+      const res = await fetch("/api/admin/radio/drops/toggle");
+      if (res.ok) {
+        const d = await res.json();
+        setAiDropsEnabled(Boolean(d.ai_drops_enabled));
+      }
+    } catch {}
+  };
+
+  const toggleAiDrops = async () => {
+    if (togglingAiDrops) return;
+    setTogglingAiDrops(true);
+    try {
+      const next = !aiDropsEnabled;
+      const res = await fetch("/api/admin/radio/drops/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setAiDropsEnabled(Boolean(d.ai_drops_enabled));
+        showMsg(d.message || (next ? "AI station drops turned ON" : "AI station drops turned OFF"), "success");
+      } else {
+        showMsg(d.error || "Failed to toggle AI drops", "error");
+      }
+    } catch {
+      showMsg("Failed to toggle AI drops", "error");
+    } finally {
+      setTogglingAiDrops(false);
+    }
   };
 
   const fetchAvailablePlaylists = async () => {
@@ -278,6 +317,7 @@ export default function AdminRadioPage() {
       fetchLibrary();
       fetchBroadcastSettings();
       fetchAvailablePlaylists();
+      fetchAiDropsStatus();
       checkBridgeHealth();
     }, 0);
     const hInterval = setInterval(checkBridgeHealth, 30000);
@@ -605,6 +645,31 @@ export default function AdminRadioPage() {
       {/* VIEW 1: STUDIO COCKPIT (DUAL DECK ON DESKTOP, SUB-DECK SWITCHER ON MOBILE) */}
       {activeTab === "studio" && (
         <div className="space-y-4">
+          {/* Cockpit Status Bar with AI Drops Master Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-[#16181D] border-2 border-white/10 shadow-[2px_2px_0px_#16181D] font-mono text-xs">
+            <div className="flex items-center space-x-3">
+              <span className="text-[#DFBB7D] font-bold uppercase tracking-wider">STUDIO BROADCAST COCKPIT</span>
+              <span className="text-white/40 hidden sm:inline">|</span>
+              <span className="text-white/70 hidden sm:inline">Playout: {broadcastMode.toUpperCase()}</span>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={toggleAiDrops}
+                disabled={togglingAiDrops}
+                title={aiDropsEnabled ? "Click to turn OFF automated AI drops" : "Click to turn ON automated AI drops"}
+                className={`px-3 py-1 font-bold border transition-colors flex items-center space-x-1.5 cursor-pointer ${
+                  aiDropsEnabled
+                    ? "bg-[#10B981] text-[#16181D] border-[#10B981] hover:bg-emerald-400"
+                    : "bg-red-500/20 text-red-300 border-red-500/60 hover:bg-red-500/30"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${aiDropsEnabled ? "bg-[#16181D] animate-ping" : "bg-red-400"}`} />
+                <span>{togglingAiDrops ? "UPDATING..." : aiDropsEnabled ? "AI DROPS: ON" : "AI DROPS: OFF"}</span>
+              </button>
+            </div>
+          </div>
           {/* Live Ingest Alert: Notifies admin when presenter/admin is live on air and cockpit playout is overridden */}
           {liveOnAirStatus.isConnected && (
             <div className="bg-amber-500/15 border-2 border-amber-400 p-3 shadow-[3px_3px_0px_#000] font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">

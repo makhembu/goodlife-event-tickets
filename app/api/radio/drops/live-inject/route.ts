@@ -29,12 +29,15 @@ export async function POST(req: NextRequest) {
     // If audio is a base64 data URI, upload to R2 to get a persistent lightweight URL for listeners
     if (cleanAudioUrl.startsWith("data:audio")) {
       try {
+        const mimeMatch = cleanAudioUrl.match(/^data:(audio\/[^;]+);base64,/);
+        const mime = mimeMatch ? mimeMatch[1] : "audio/webm";
         const rawBase64 = cleanAudioUrl.replace(/^data:audio\/[^;]+;base64,/, "");
         const buffer = Buffer.from(rawBase64, "base64");
         const cleanName = (title || "live_drop").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30);
+        const ext = mime.includes("mp4") ? "mp4" : mime.includes("wav") ? "wav" : mime.includes("mpeg") ? "mp3" : "webm";
         const r2Url = await uploadDropBufferToR2({
           buffer,
-          filename: `${cleanName}.mp3`,
+          filename: `${cleanName}.${ext}`,
         });
         if (r2Url) {
           cleanAudioUrl = r2Url;
