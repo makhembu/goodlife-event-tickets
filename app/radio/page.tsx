@@ -218,7 +218,7 @@ export default function RadioPage() {
   );
 
   return (
-    <div className="min-h-screen bg-brand-bg py-4 sm:py-6 px-3 sm:px-6 md:px-10 text-brand-navy font-sans relative selection:bg-brand-accent selection:text-brand-navy">
+    <div className="min-h-screen bg-brand-bg py-4 sm:py-6 px-3 sm:px-6 md:px-10 text-brand-navy font-sans relative selection:bg-brand-accent selection:text-brand-navy overflow-x-hidden w-full max-w-full">
       {/* Background Subtle Atmosphere Texture */}
       <div
         className="absolute inset-0 z-0 pointer-events-none opacity-25"
@@ -230,40 +230,40 @@ export default function RadioPage() {
         }}
       />
 
-      <div className="relative z-10 max-w-6xl mx-auto space-y-4 sm:space-y-6">
+      <div className="relative z-10 max-w-6xl mx-auto space-y-4 sm:space-y-6 w-full min-w-0">
         {/* ========================================================================= */}
         {/* STATION HEADER BAR                                                        */}
         {/* ========================================================================= */}
-        <header className="w-full flex flex-wrap items-center justify-between gap-3 border-b-4 border-brand-navy pb-3">
-          <div className="flex items-center gap-3">
+        <header className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-4 border-brand-navy pb-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/"
-              className="p-2 sm:p-2.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent hover:translate-x-0.5 hover:-translate-y-0.5 transition-all shadow-(--shadow-brut-xs) flex items-center justify-center cursor-pointer"
+              className="p-2 sm:p-2.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent hover:translate-x-0.5 hover:-translate-y-0.5 transition-all shadow-(--shadow-brut-xs) flex items-center justify-center cursor-pointer shrink-0"
               title="Return to Festival Gate"
               aria-label="Return to Festival Gate"
             >
               <ArrowLeft className="w-5 h-5 text-brand-navy" />
             </Link>
 
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="font-display text-2xl sm:text-3xl tracking-wide uppercase text-brand-navy leading-none">
+                <h1 className="font-display text-2xl sm:text-3xl tracking-wide uppercase text-brand-navy leading-none truncate">
                   GOODLIFE RADIO
                 </h1>
               </div>
-              <p className="font-mono text-xs sm:text-sm font-semibold text-brand-navy/80 tracking-wider uppercase mt-0.5">
+              <p className="font-mono text-[11px] sm:text-sm font-semibold text-brand-navy/80 tracking-wider uppercase mt-0.5 truncate">
                 NAIROBI LIVE FESTIVAL AIRWAVE
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* View Switcher: Live vs Playlists vs Vault vs Catch Up */}
-            <div className="flex border-2 border-brand-navy bg-brand-off-white rounded overflow-hidden shadow-(--shadow-brut-xs)">
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
+            {/* View Switcher: Live vs Playlists vs Vault */}
+            <div className="w-full sm:w-auto flex border-2 border-brand-navy bg-brand-off-white rounded overflow-hidden shadow-(--shadow-brut-xs)">
               <button
                 type="button"
                 onClick={() => setActiveView("live")}
-                className={`px-3 py-1 font-mono text-xs font-bold uppercase transition-colors cursor-pointer ${
+                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center ${
                   activeView === "live"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -274,7 +274,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("playlists")}
-                className={`px-3 py-1 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                   activeView === "playlists"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -288,7 +288,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("vault")}
-                className={`px-3 py-1 font-mono text-xs font-bold uppercase transition-colors cursor-pointer ${
+                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center ${
                   activeView === "vault"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -298,54 +298,57 @@ export default function RadioPage() {
               </button>
             </div>
 
-            {/* Broadcast Timetable Link */}
-            <Link
-              href="/radio/schedule"
-              className="px-2.5 sm:px-3 py-1 font-mono text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs) flex items-center gap-1.5 text-brand-navy"
-              title="View full broadcast timetable"
-            >
-              <Calendar className="w-3.5 h-3.5 text-brand-navy" />
-              <span>TIMETABLE</span>
-            </Link>
+            {/* Action Bar: Timetable Link, PWA Install & Engine Status */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              {/* Broadcast Timetable Link */}
+              <Link
+                href="/radio/schedule"
+                className="flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 font-mono text-xs font-bold uppercase border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-colors shadow-(--shadow-brut-xs) flex items-center gap-1.5 text-brand-navy"
+                title="View full broadcast timetable"
+              >
+                <Calendar className="w-3.5 h-3.5 text-brand-navy" />
+                <span>TIMETABLE</span>
+              </Link>
 
-            {/* PWA App Install Button */}
-            <PwaInstallButton appName="GOODLIFE Radio" />
+              {/* PWA App Install Button */}
+              <PwaInstallButton appName="GOODLIFE Radio" />
 
-            {/* Engine Status Badge (Derived strictly from engineState) */}
-            {engineState === "live" && (
-              <span className="bg-red-600 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                <span>24/7 ON AIR</span>
-              </span>
-            )}
-            {engineState === "connecting" && (
-              <span className="bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
-                <span>CONNECTING</span>
-              </span>
-            )}
-            {engineState === "reconnecting" && (
-              <span className="bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
-                <span>RECONNECTING</span>
-              </span>
-            )}
-            {engineState === "backup-mix" && (
-              <span className="bg-purple-700 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
-                <span>BACKUP MIX</span>
-              </span>
-            )}
-            {engineState === "offline" && (
-              <span className="bg-neutral-700 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span>OFFLINE</span>
-              </span>
-            )}
-            {(engineState === "idle" || !engineState) && (
-              <span className="bg-brand-off-white text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
-                <span>READY TO TUNE IN</span>
-              </span>
-            )}
+              {/* Engine Status Badge (Hidden on mobile <sm since console deck below has primary status) */}
+              {engineState === "live" && (
+                <span className="hidden sm:flex bg-red-600 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                  <span>24/7 ON AIR</span>
+                </span>
+              )}
+              {engineState === "connecting" && (
+                <span className="hidden sm:flex bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
+                  <span>CONNECTING</span>
+                </span>
+              )}
+              {engineState === "reconnecting" && (
+                <span className="hidden sm:flex bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
+                  <span>RECONNECTING</span>
+                </span>
+              )}
+              {engineState === "backup-mix" && (
+                <span className="hidden sm:flex bg-purple-700 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
+                  <span>BACKUP MIX</span>
+                </span>
+              )}
+              {engineState === "offline" && (
+                <span className="hidden sm:flex bg-neutral-700 text-white font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span>OFFLINE</span>
+                </span>
+              )}
+              {(engineState === "idle" || !engineState) && (
+                <span className="hidden sm:flex bg-brand-off-white text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span>READY TO TUNE IN</span>
+                </span>
+              )}
+            </div>
           </div>
         </header>
 
@@ -385,7 +388,7 @@ export default function RadioPage() {
             )}
 
             {/* HERO DECK CONSOLE (THE CENTERPIECE) */}
-            <div className="relative border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl) rounded-2xl p-4 sm:p-6 lg:p-8 overflow-hidden">
+            <div className="relative border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xl) rounded-2xl p-3.5 sm:p-6 lg:p-8 overflow-hidden w-full max-w-full">
               {/* Subtle ambient glow */}
               <div className="absolute -top-16 -left-16 w-80 h-80 bg-brand-accent/15 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute -bottom-16 -right-16 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -525,9 +528,9 @@ export default function RadioPage() {
                   {/* MOBILE COMPACT DECK VIEW (<768px)                                */}
                   {/* Guaranteed: Play button bottom <= 460px from top at 360x640px    */}
                   {/* ================================================================= */}
-                  <div className="flex md:hidden items-center gap-3">
+                  <div className="flex md:hidden items-center gap-2.5 sm:gap-3 w-full min-w-0">
                     {/* Compact Sleeve Art */}
-                    <div className="relative w-20 h-20 shrink-0 rounded-lg border-2 border-brand-navy-light bg-neutral-900 overflow-hidden shadow-md flex items-center justify-center">
+                    <div className="relative w-18 h-18 sm:w-20 sm:h-20 shrink-0 rounded-lg border-2 border-brand-navy-light bg-neutral-900 overflow-hidden shadow-md flex items-center justify-center">
                       {!coverUrl || coverError ? (
                         <div className="w-full h-full bg-linear-to-br from-neutral-900 via-brand-navy to-black flex items-center justify-center select-none">
                           <Disc3 className="w-8 h-8 text-brand-accent/80" />
@@ -569,29 +572,29 @@ export default function RadioPage() {
                           <span>STATION DROP · {activePersona || "DJ"}</span>
                         </div>
                       )}
-                      <h2 className="font-display text-2xl uppercase tracking-wide text-brand-off-white leading-tight line-clamp-2">
+                      <h2 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-off-white leading-tight line-clamp-2 break-words">
                         {displayTitle}
                       </h2>
                       {artist && (
-                        <p className="font-mono text-sm font-bold tracking-wider uppercase text-brand-accent mt-0.5 truncate">
+                        <p className="font-mono text-xs sm:text-sm font-bold tracking-wider uppercase text-brand-accent mt-0.5 truncate">
                           BY {artist}
                         </p>
                       )}
                     </div>
 
-                    {/* Mobile Master Play/Pause Button (56px touch target) */}
+                    {/* Mobile Master Play/Pause Button (52-56px touch target) */}
                     <button
                       type="button"
                       id="mobile-play-button"
                       onClick={togglePlay}
-                      className="w-14 h-14 shrink-0 rounded-xl bg-brand-accent text-brand-navy border-2 border-brand-navy shadow-(--shadow-brut-xs) active:scale-95 flex items-center justify-center cursor-pointer transition-transform"
+                      className="w-13 h-13 sm:w-14 sm:h-14 shrink-0 rounded-xl bg-brand-accent text-brand-navy border-2 border-brand-navy shadow-(--shadow-brut-xs) active:scale-95 flex items-center justify-center cursor-pointer transition-transform"
                       title={isPlaying ? "Pause Radio" : "Play Radio"}
                       aria-label={isPlaying ? "Pause Radio" : "Play Radio"}
                     >
                       {isPlaying ? (
-                        <Pause className="w-7 h-7 fill-brand-navy" />
+                        <Pause className="w-6 h-6 sm:w-7 sm:h-7 fill-brand-navy" />
                       ) : (
-                        <Play className="w-7 h-7 fill-brand-navy ml-0.5" />
+                        <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-brand-navy ml-0.5" />
                       )}
                     </button>
                   </div>
@@ -802,8 +805,8 @@ export default function RadioPage() {
 
                       <div className="divide-y divide-brand-navy/10">
                         {upNext.slice(0, 3).map((item, index) => (
-                          <div key={item.video_id || index} className="py-2.5 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
+                          <div key={item.video_id || index} className="py-2.5 flex items-center justify-between gap-2 sm:gap-3 min-w-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                               {/* Queue Index Badge */}
                               <span className="w-5 font-mono text-xs font-bold text-brand-navy/60 shrink-0">
                                 #{index + 1}
@@ -834,7 +837,7 @@ export default function RadioPage() {
                               </div>
 
                               {/* Title & Artist */}
-                              <div className="min-w-0 truncate">
+                              <div className="min-w-0 flex-1">
                                 <p className="font-bold text-xs sm:text-sm uppercase text-brand-navy truncate leading-tight">
                                   {formatTrackTitle(item.title)}
                                 </p>

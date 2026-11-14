@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { SoundboardBankItem, SoundboardPadItem, DropVaultOption } from "@/lib/radio/soundboard-helpers";
 import { useSoundboard } from "@/context/SoundboardContext";
+import { useRadio } from "@/context/RadioContext";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 
 export interface SoundPad {
@@ -104,6 +105,9 @@ export default function PerformanceSoundboard({
   const [volume, setVolume] = useState<number>(0.85);
   const [muted, setMuted] = useState<boolean>(false);
   const [broadcastMode, setBroadcastMode] = useState<"local" | "on_air">("on_air");
+
+  // Radio monitor state to coordinate local audition vs live monitor ducking
+  const { isPlaying } = useRadio();
 
   // Shared Soundboard State from Context
   const {
@@ -317,8 +321,8 @@ export default function PerformanceSoundboard({
 
     try {
       const audio = new Audio(pad.audioUrl);
-      // In on_air mode: mute local element so countdown timer works without playing sound locally!
-      const isMutedLocal = broadcastMode === "on_air" || muted;
+      // In on_air mode: if the radio monitor is actively playing, mute local element so the monitor's ducked stream playout handles it without echo. If the monitor is NOT playing (or local mode), play locally so the DJ hears the sound!
+      const isMutedLocal = muted || (broadcastMode === "on_air" && isPlaying);
       audio.volume = isMutedLocal ? 0 : volume;
       audio.muted = isMutedLocal;
 

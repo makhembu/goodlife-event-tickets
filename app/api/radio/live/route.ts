@@ -313,7 +313,7 @@ async function getTimelineFallback() {
         )
       ),
       history: [],
-      live_drop: settings.ai_drops_enabled === false ? null : (liveDrop ? withPlayback(liveDrop, "drop") : null),
+      live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
       target_duration_sec: 2.0,
     };
   } catch (err: any) {
