@@ -73,6 +73,8 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
 
   // Public radio listener streams & telemetry
   ["app/api/radio/live/route.ts:GET", "Public Icecast live audio stream redirect"],
+  ["app/api/radio/audio/[kind]/[id]/route.ts:GET", "Public radio playback redirect; signs only validated track/recording/drop ids, never arbitrary keys"],
+  ["app/api/radio/audio/[kind]/[id]/route.ts:HEAD", "Public radio playback redirect HEAD handler"],
   ["app/api/radio/play-event/route.ts:POST", "Public radio play telemetry (read/stats increment)"],
   ["app/api/radio/heartbeat/route.ts:POST", "Public radio listener heartbeat registration"],
   ["app/api/radio/heartbeat/route.ts:GET", "Public active radio listener count query"],

@@ -1163,7 +1163,7 @@ export default function AdminRadioPage() {
 
                         {/* Play Preview */}
                         <button
-                          onClick={() => togglePreview(set.audio_url)}
+                          onClick={() => set.audio_url && togglePreview(set.audio_url)}
                           className={`p-2 border cursor-pointer transition-all ${
                             previewTrackUrl === set.audio_url && isPreviewPlaying
                               ? "bg-red-600 text-white border-red-500 font-bold"

@@ -1,5 +1,6 @@
 import {
   S3Client,
+  GetObjectCommand,
   PutObjectCommand,
   DeleteObjectCommand,
   CreateMultipartUploadCommand,
@@ -19,7 +20,7 @@ import fs from "fs";
 import path from "path";
 
 function readEnvLocal(key: string): string {
-  if (process.env[key]) return process.env[key]!;
+  if (process.env[key] !== undefined) return process.env[key]!;
   try {
     const envPath = path.resolve(process.cwd(), ".env.local");
     if (fs.existsSync(envPath)) {
@@ -51,6 +52,41 @@ function getR2() {
   });
 
   return { s3, bucket, publicDomain };
+}
+
+export function getRadioR2() {
+  const accountId = cleanEnv(readEnvLocal("R2_ACCOUNT_ID"));
+  const accessKeyId = cleanEnv(readEnvLocal("R2_ACCESS_KEY_ID"));
+  const secretAccessKey = cleanEnv(readEnvLocal("R2_SECRET_ACCESS_KEY"));
+  const bucket = cleanEnv(readEnvLocal("RADIO_R2_BUCKET"));
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+    return null;
+  }
+
+  const s3 = new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true,
+  });
+
+  return { s3, bucket };
+}
+
+export async function signRadioPlaybackUrl(
+  key: string,
+  ttlSeconds: number
+): Promise<string | null> {
+  const r2 = getRadioR2();
+  if (!r2) return null; // fail closed, never a public URL
+  const cleanKey = key.replace(/^\/+/, "");
+  const cmd = new GetObjectCommand({
+    Bucket: r2.bucket,
+    Key: cleanKey,
+    ResponseContentDisposition: "inline",
+  });
+  return getSignedUrl(r2.s3, cmd, { expiresIn: ttlSeconds });
 }
 
 export async function createRadioPresignedUpload(params: {
@@ -171,7 +207,8 @@ export async function uploadDropBufferToR2(params: {
   buffer: Buffer | Uint8Array;
   filename: string;
 }): Promise<string | null> {
-  const r2 = getR2();
+  const radioR2 = getRadioR2();
+  const r2 = radioR2 || getR2();
   if (!r2) return null;
 
   const buf = Buffer.isBuffer(params.buffer) ? params.buffer : Buffer.from(params.buffer);
@@ -189,5 +226,8 @@ export async function uploadDropBufferToR2(params: {
       ContentType: contentType,
     })
   );
-  return `${r2.publicDomain}/${key}`;
+  if ("publicDomain" in r2 && (r2 as any).publicDomain) {
+    return `${(r2 as any).publicDomain}/${key}`;
+  }
+  return key;
 }

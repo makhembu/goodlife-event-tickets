@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Play, Pause, Disc3, Calendar, Clock, Volume2, VolumeX, Sparkles, Download, Radio } from "lucide-react";
+import { Play, Pause, Disc3, Calendar, Clock, Volume2, VolumeX, Sparkles, Radio } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 
 export interface ArchivedSet {
   id: number;
   title: string;
   dj_name: string;
-  audio_url: string;
+  audio_url?: string;
+  playback_url?: string;
   duration: number;
   duration_formatted: string;
   genre: string;
@@ -139,7 +140,7 @@ export default function FestivalSetVault() {
                 {activeSet.title}
               </h4>
               <p className="font-mono text-xs text-white/70">
-                {activeSet.dj_name} • {activeSet.genre} • 320kbps Master
+                {activeSet.dj_name} • {activeSet.genre} • Live Recording
               </p>
             </div>
 
@@ -224,16 +225,6 @@ export default function FestivalSetVault() {
                   <span className="px-2 py-0.5 border border-brand-navy/40 bg-white font-mono text-[10px] font-bold uppercase text-brand-navy">
                     {rec.genre}
                   </span>
-                  <a
-                    href={rec.audio_url}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 border border-brand-navy bg-brand-off-white hover:bg-brand-accent text-brand-navy transition-colors"
-                    title="Download Master MP3"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </a>
                 </div>
               </div>
             );

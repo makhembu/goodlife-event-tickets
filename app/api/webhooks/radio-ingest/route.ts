@@ -3,6 +3,8 @@ import crypto from "crypto";
 import { neonQuery } from "@/lib/supabase-db";
 import { slotTrackAsPlaylistUpNext } from "@/lib/radio/playlist-slotter";
 import { probeAudioMetadata, formatAudioDuration } from "@/lib/radio/audio-prober";
+import { signRadioPlaybackUrl } from "@/lib/radio/r2-signer";
+import { extractR2Key } from "@/lib/r2-storage";
 
 const rawSecret = process.env.RADIO_BRIDGE_SECRET?.replace(/^["']|["']$/g, "").trim();
 
@@ -63,7 +65,13 @@ export async function POST(req: NextRequest) {
 
     // Probe the real audio stream to detect and eliminate any trailing silence (e.g. YouTube lyric outro)
     try {
-      const probed = await probeAudioMetadata(audio_url, file_size);
+      let probeUrl = audio_url.trim();
+      const key = r2_key || extractR2Key(probeUrl);
+      if (key) {
+        const signed = await signRadioPlaybackUrl(key, 300);
+        if (signed) probeUrl = signed;
+      }
+      const probed = await probeAudioMetadata(probeUrl, file_size);
       if (probed && probed.durationSec > 0) {
         finalDurationSec = probed.durationSec;
         if (probed.bitrateKbps > 0) finalBitrate = probed.bitrateKbps;

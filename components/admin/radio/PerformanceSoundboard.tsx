@@ -171,7 +171,7 @@ export default function PerformanceSoundboard({
     name: p.label,
     emoji: p.emoji || "🔥",
     soundType: "audio",
-    audioUrl: p.audio_url || undefined,
+    audioUrl: p.drop_id ? `/api/radio/audio/drop/${p.drop_id}` : (p.audio_url || undefined),
     category: p.audio_url?.includes("sample") ? "VOICE" : "CUSTOM",
     color: p.color || "#DFBB7D",
     drop_id: p.drop_id,
@@ -531,8 +531,9 @@ export default function PerformanceSoundboard({
 
   // Private Cue Headphone Audition (Local only, never on-air, never ducking)
   const togglePreviewAudio = (url: string) => {
+    if (!url) return;
     if (!previewAudioRef.current) {
-      previewAudioRef.current = new Audio(url);
+      previewAudioRef.current = new Audio();
       previewAudioRef.current.onended = () => setPreviewingUrl(null);
     }
 
@@ -540,7 +541,9 @@ export default function PerformanceSoundboard({
       previewAudioRef.current.pause();
       setPreviewingUrl(null);
     } else {
-      previewAudioRef.current.src = url;
+      if (previewAudioRef.current.src !== url) {
+        previewAudioRef.current.src = url;
+      }
       previewAudioRef.current.play().then(() => setPreviewingUrl(url)).catch(() => {});
     }
   };
@@ -1583,11 +1586,18 @@ export default function PerformanceSoundboard({
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => togglePreviewAudio(d.audio_url)}
+                                onClick={() => {
+                                  const previewTarget = (d as any).playback_url || (d.id ? `/api/radio/audio/drop/${d.id}` : d.audio_url);
+                                  togglePreviewAudio(previewTarget);
+                                }}
                                 title="Audition in headphones"
                                 className="p-2 bg-black/50 text-[#DFBB7D] hover:text-white rounded border border-white/10 cursor-pointer"
                               >
-                                {previewingUrl === d.audio_url ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                                {previewingUrl && (previewingUrl === d.audio_url || previewingUrl === (d as any).playback_url || previewingUrl.includes(`/drop/${d.id}`)) ? (
+                                  <Pause className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                )}
                               </button>
                               <button
                                 type="button"

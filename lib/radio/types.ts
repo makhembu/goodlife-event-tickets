@@ -7,7 +7,8 @@ export interface RadioSet {
   event_id?: number | null;
   title: string;
   dj_name: string;
-  audio_url: string;
+  audio_url?: string;
+  playback_url?: string;
   audio_high_url?: string;
   r2_key?: string | null;
   r2_high_key?: string | null;
@@ -61,6 +62,7 @@ export interface RadioDrop {
   id: string;
   title: string;
   audio_url: string;
+  playback_url?: string;
   theme?: string;
   persona?: string;
   mood?: string;
@@ -98,6 +100,7 @@ export interface LiveNowPlayingTrack {
   genre?: string;
   thumbnail?: string;
   audio_url?: string;
+  playback_url?: string;
   duration?: number;
   duration_sec?: number;
   elapsed?: number;
@@ -122,6 +125,7 @@ export interface LiveQueueItem {
   duration_sec?: number;
   thumbnail?: string;
   audio_url?: string;
+  playback_url?: string;
   dj_note?: string;
   provenance?: string;
 }
@@ -150,6 +154,7 @@ export interface RadioLiveBffResponse {
     title?: string;
     script?: string;
     audio_url: string;
+    playback_url?: string;
     fired_at?: string;
     age_seconds?: number;
   } | null;

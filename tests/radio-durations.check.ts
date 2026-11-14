@@ -101,6 +101,15 @@ async function run() {
           assert(sawa.duration_sec === 191, `SAWA SAWA duration_sec is 191s (3:11) (actual: ${sawa.duration_sec})`);
           assert(sawa.duration === "3:11", `SAWA SAWA formatted duration is '3:11' (actual: '${sawa.duration}')`);
         }
+
+        // Check The Anth - Pitbull ft Lil Jon (id = 500) - previously had 18s silence outro!
+        const anthRes = await pool.query(`SELECT id, title, duration_sec, duration, bitrate FROM radio_sets WHERE id = 500`);
+        const anth = anthRes.rows[0];
+        assert(anth !== undefined, "The Anth (id=500) exists in database");
+        if (anth) {
+          assert(anth.duration_sec === 261, `The Anth duration_sec is 261s (4:21) (actual: ${anth.duration_sec})`);
+          assert(anth.duration === "4:21", `The Anth formatted duration is '4:21' (actual: '${anth.duration}')`);
+        }
       } catch (err: any) {
         assert(false, "Database query succeeded", err.message);
       } finally {

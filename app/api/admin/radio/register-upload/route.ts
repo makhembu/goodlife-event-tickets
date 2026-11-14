@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
 import { probeAudioMetadata, formatAudioDuration } from "@/lib/radio/audio-prober";
+import { signRadioPlaybackUrl } from "@/lib/radio/r2-signer";
+import { extractR2Key } from "@/lib/r2-storage";
 
 export async function POST(req: NextRequest) {
   const authErr = await requireAdmin(req);
@@ -38,7 +40,13 @@ export async function POST(req: NextRequest) {
     // If duration was not provided or defaulted to generic 180s, probe stream metadata
     if (durSec <= 0 || durSec === 180) {
       try {
-        const probed = await probeAudioMetadata(audio_url.trim(), file_size);
+        let probeUrl = audio_url.trim();
+        const key = extractR2Key(probeUrl) || r2_key;
+        if (key) {
+          const signed = await signRadioPlaybackUrl(key, 300);
+          if (signed) probeUrl = signed;
+        }
+        const probed = await probeAudioMetadata(probeUrl, file_size);
         if (probed && probed.durationSec > 0) {
           durSec = probed.durationSec;
           if (probed.bitrateKbps > 0) targetBitrate = probed.bitrateKbps;

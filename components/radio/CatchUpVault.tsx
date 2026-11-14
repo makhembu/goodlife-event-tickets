@@ -8,7 +8,8 @@ interface RecordingItem {
   id: number;
   title: string;
   dj_name: string;
-  audio_url: string;
+  audio_url?: string;
+  playback_url?: string;
   duration: number;
   duration_formatted: string;
   genre: string;
@@ -149,14 +150,15 @@ export default function CatchUpVault({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {showRecordings.map((rec) => {
-                const isThisPlaying = isPlaying && currentSet?.audio_url === rec.audio_url;
+                const isThisPlaying = isPlaying && currentSet?.id === rec.id;
 
                 const handleTogglePlay = () => {
                   playSet({
                     id: rec.id,
                     title: rec.title,
                     dj_name: rec.dj_name,
-                    audio_url: rec.audio_url,
+                    audio_url: rec.audio_url || rec.playback_url || "",
+                    playback_url: rec.playback_url,
                     cover_url: "/flyer.png",
                     genre: rec.genre || "Festival Live Set",
                     duration_sec: rec.duration || 0,

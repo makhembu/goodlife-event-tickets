@@ -190,8 +190,8 @@ class SessionArchiver:
                 ExtraArgs={"ContentType": "audio/mpeg"},
             )
 
-        public_url = f"{self.r2_public_domain}/{r2_key}"
-        logger.info(f"R2 upload confirmed: {public_url}")
+        public_url = f"r2://{self.r2_bucket}/{r2_key}"
+        logger.info(f"R2 upload confirmed: {r2_key}")
         return public_url
 
     def insert_recording_record(

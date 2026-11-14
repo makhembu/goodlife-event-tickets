@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
 import { resolveCoverArt } from "@/lib/radio/media-helpers";
 import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
+import { withPlayback } from "@/lib/radio/playback";
 
 export const revalidate = 5;
 
@@ -122,7 +123,7 @@ export async function GET() {
       // 2. Fetch tracks: from active broadcast playlist, or fallback to ready catalog
       const playlistRes = await neonQuery(`
         SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
-               s.id, s.event_id, s.title, s.dj_name, s.audio_url, s.audio_high_url, s.cover_url, 
+               s.id, s.event_id, s.title, s.dj_name, s.audio_url, s.audio_high_url, s.r2_key, s.cover_url, 
                s.duration, s.duration_sec, s.genre, s.file_size, s.bitrate, s.play_count, s.created_at, pt.position
         FROM radio_playlists p
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
@@ -144,7 +145,7 @@ export async function GET() {
       } else {
         const setsRes = await neonQuery(`
           SELECT 
-            id, event_id, title, dj_name, audio_url, audio_high_url, cover_url, 
+            id, event_id, title, dj_name, audio_url, audio_high_url, r2_key, cover_url, 
             duration, duration_sec, genre, file_size, bitrate, play_count, created_at
           FROM radio_sets
           WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
@@ -161,10 +162,13 @@ export async function GET() {
             cover = `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
           }
         }
-        return {
-          ...s,
-          cover_url: cover,
-        };
+        return withPlayback(
+          {
+            ...s,
+            cover_url: cover,
+          },
+          "track"
+        );
       });
 
       let fallbackSet = null;
@@ -292,7 +296,7 @@ export async function GET() {
       if (nextTrack) {
         try {
           const dropRes = await neonQuery(
-            `SELECT persona, mood, title, script, audio_url as drop_url, target_track_id
+            `SELECT id, persona, mood, title, script, audio_url as drop_url, target_track_id
              FROM radio_drops
              WHERE target_track_id = $1 
                AND status = 'READY'
@@ -304,7 +308,19 @@ export async function GET() {
             [nextTrack.id]
           );
           if (dropRes.rows.length > 0) {
-            upcomingDrop = dropRes.rows[0];
+            const d = dropRes.rows[0];
+            upcomingDrop = withPlayback(
+              {
+                id: d.id,
+                persona: d.persona,
+                mood: d.mood,
+                title: d.title,
+                script: d.script,
+                audio_url: d.drop_url,
+                target_track_id: d.target_track_id,
+              },
+              "drop"
+            );
           }
         } catch {}
       }
@@ -322,16 +338,21 @@ export async function GET() {
            ORDER BY created_at DESC
            LIMIT 50`
         );
-        activeDrops = (dropsRes.rows || []).map((r: any) => ({
-          id: `db-drop-${r.id}`,
-          title: r.title,
-          script: r.script,
-          audio_url: r.audio_url,
-          persona: r.persona,
-          mood: r.mood,
-          target_track_id: r.target_track_id,
-          target_track_title: r.target_track_title,
-        }));
+        activeDrops = (dropsRes.rows || []).map((r: any) =>
+          withPlayback(
+            {
+              id: `db-drop-${r.id}`,
+              title: r.title,
+              script: r.script,
+              audio_url: r.audio_url,
+              persona: r.persona,
+              mood: r.mood,
+              target_track_id: r.target_track_id,
+              target_track_title: r.target_track_title,
+            },
+            "drop"
+          )
+        );
       } catch (dbErr: any) {
         console.warn("[api/radio/state] Error loading active drops:", dbErr.message);
       }

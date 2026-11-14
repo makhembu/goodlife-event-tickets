@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
+import { withPlayback } from "@/lib/radio/playback";
 
 export const dynamic = "force-dynamic";
 
@@ -119,7 +120,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
   const [playlistRes, settingsRes] = await Promise.all([
     neonQuery(`
       SELECT p.id as playlist_id, p.name as playlist_name, p.activated_at,
-             s.id, s.title, s.dj_name, s.audio_url, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
+             s.id, s.title, s.dj_name, s.audio_url, s.r2_key, s.cover_url, s.duration, s.duration_sec, s.genre, pt.position
       FROM radio_playlists p
       JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
       JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
@@ -144,7 +145,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
   } else {
     // Full Catalog AutoDJ rotation across all library tracks (no playlist locked)
     const setsRes = await neonQuery(`
-      SELECT id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre, display_order
+      SELECT id, title, dj_name, audio_url, r2_key, cover_url, duration, duration_sec, genre, display_order
       FROM radio_sets
       WHERE deleted_at IS NULL AND (is_active = true OR is_active IS NULL) AND processing_status = 'ready'
       ORDER BY display_order ASC, id ASC
@@ -276,32 +277,42 @@ async function getTimelineFallback() {
       playlist_id: activePlaylistId,
       playlist_name: activePlaylistName,
       listeners_count: activeListeners,
-      now_playing: {
-        id: currentTrack.id,
-        title: formatTrackTitle(currentTrack.title),
-        artist: currentTrack.dj_name,
-        thumbnail: currentTrack.cover_url,
-        elapsed: offsetSec,
-        duration: currentTrack.duration_sec || 180,
-        audio_url: currentTrack.audio_url,
-        video_id: `set-${currentTrack.id}`,
-        listeners: {
-          total: activeListeners,
-          unique: activeListeners,
+      now_playing: withPlayback(
+        {
+          id: currentTrack.id,
+          title: formatTrackTitle(currentTrack.title),
+          artist: currentTrack.dj_name,
+          thumbnail: currentTrack.cover_url,
+          elapsed: offsetSec,
+          duration: currentTrack.duration_sec || 180,
+          audio_url: currentTrack.audio_url,
+          r2_key: currentTrack.r2_key,
+          video_id: `set-${currentTrack.id}`,
+          listeners: {
+            total: activeListeners,
+            unique: activeListeners,
+          },
         },
-      },
-      up_next: nextTracks.map((t: any) => ({
-        id: t.id,
-        video_id: `set-${t.id}`,
-        title: formatTrackTitle(t.title),
-        artist: t.dj_name,
-        duration: t.duration_sec || 180,
-        duration_sec: t.duration_sec || 180,
-        thumbnail: t.cover_url,
-        audio_url: t.audio_url,
-      })),
+        "track"
+      ),
+      up_next: nextTracks.map((t: any) =>
+        withPlayback(
+          {
+            id: t.id,
+            video_id: `set-${t.id}`,
+            title: formatTrackTitle(t.title),
+            artist: t.dj_name,
+            duration: t.duration_sec || 180,
+            duration_sec: t.duration_sec || 180,
+            thumbnail: t.cover_url,
+            audio_url: t.audio_url,
+            r2_key: t.r2_key,
+          },
+          "track"
+        )
+      ),
       history: [],
-      live_drop: liveDrop,
+      live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
       target_duration_sec: 2.0,
     };
   } catch (err: any) {

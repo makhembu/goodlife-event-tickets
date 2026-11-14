@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { neonQuery } from "@/lib/supabase-db";
 import { SITE_NAME, TWITTER_HANDLE, siteUrl } from "@/lib/seo";
+import { withPlayback } from "@/lib/radio/playback";
 import CatchUpVault from "@/components/radio/CatchUpVault";
 import ShowReminderButton from "@/components/radio/ShowReminderButton";
 import PresenterTipButton from "@/components/radio/PresenterTipButton";
@@ -98,7 +99,7 @@ export default async function ShowDetailPage({
      LIMIT 6;`,
     [show.id]
   ).catch(() => ({ rows: [] }));
-  const recordings = recordingsRes.rows || [];
+  const recordings = (recordingsRes.rows || []).map((rec: any) => withPlayback(rec, "recording"));
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -314,7 +315,7 @@ export default async function ShowDetailPage({
                   <p className="text-[10px] text-neutral-500 mt-1">
                     Recorded: {new Date(rec.recorded_at).toLocaleDateString()}
                   </p>
-                  <audio controls src={rec.audio_url} className="w-full mt-2 h-8" preload="none" />
+                  <audio controls controlsList="nodownload" src={rec.playback_url || rec.audio_url} className="w-full mt-2 h-8" preload="none" />
                 </div>
               ))}
             </div>

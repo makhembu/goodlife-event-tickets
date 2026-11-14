@@ -618,7 +618,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 if (!isTransitioningRef.current) {
                   isTransitioningRef.current = true;
                   const targetSeek = track.elapsed || 0;
-                  const newAudioSrc = track.audio_url;
+                  const newAudioSrc = track.playback_url || track.audio_url;
 
                   // Keep audible ducked bed volume if drop is currently finishing over the transition
                   const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
@@ -626,8 +626,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   audio.volume = isDropPlayingRef.current ? duckedVol : masterVol;
 
                   // Update audio source directly without calling audio.load() which wipes the background audio session on mobile
-                  audio.src = newAudioSrc;
-                  safeSeekAudio(audio, targetSeek);
+                  if (newAudioSrc && audio.src !== newAudioSrc) {
+                    audio.src = newAudioSrc;
+                    safeSeekAudio(audio, targetSeek);
+                  }
                   audio.play().then(() => {
                     isTransitioningRef.current = false;
                     setIsPlaying(true);
@@ -820,7 +822,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           const rawId = currentTrackIdRef.current || "";
           const cleanId = rawId.replace(/^set-/, "");
           let cIdx = sets.findIndex(
-            (s) => String(s.id) === cleanId || (audioRef.current && s.audio_url === audioRef.current.src)
+            (s) => String(s.id) === cleanId
           );
           if (cIdx === -1) cIdx = 0;
           const nIdx = (cIdx + 1) % sets.length;
@@ -838,10 +840,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               (d.target_track_id && String(d.target_track_id) === targetId) ||
               (d.target_track_title && targetTitle.includes(d.target_track_title.toLowerCase().trim()))
             );
-            if (matchedDrop?.audio_url && typeof Audio !== "undefined") {
+            const dropSrc = matchedDrop?.playback_url || matchedDrop?.audio_url;
+            if (dropSrc && typeof Audio !== "undefined") {
               const pre = new Audio();
               pre.preload = "auto";
-              pre.src = matchedDrop.audio_url;
+              if (pre.src !== dropSrc) pre.src = dropSrc;
             }
             isPrefetchingDropRef.current = false;
           }
@@ -1018,7 +1021,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }));
       setUpNextQueue(upcoming);
 
-      audioRef.current.src = backupTrack.audio_url;
+      const backupSrc = backupTrack.playback_url || backupTrack.audio_url;
+      if (backupSrc && audioRef.current.src !== backupSrc) {
+        audioRef.current.src = backupSrc;
+      }
       audioRef.current
         .play()
         .then(() => setIsPlaying(true))
@@ -1102,7 +1108,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const activeAudioUrl = track?.audio_url || backupSetsRef.current[0]?.audio_url;
+      const activeAudioUrl = track?.playback_url || track?.audio_url || backupSetsRef.current[0]?.playback_url || backupSetsRef.current[0]?.audio_url;
       if (!activeAudioUrl) {
         setEngineState("offline");
         setIsPlaying(false);
@@ -1127,7 +1133,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         seekOffset = Math.max(0, seekOffset);
       }
 
-      audio.src = activeAudioUrl;
+      if (audio.src !== activeAudioUrl) {
+        audio.src = activeAudioUrl;
+      }
       audio.volume = isMutedRef.current ? 0 : volumeRef.current;
 
       safeSeekAudio(audio, seekOffset);
@@ -1173,7 +1181,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // Direct MP3 Icecast Stream (Standard 64k Data Saver / High 192k Hi-Fi)
     if (streamUrl && !streamUrl.includes(".m3u8")) {
-      audio.src = streamUrl;
+      if (audio.src !== streamUrl) {
+        audio.src = streamUrl;
+      }
       try {
         await audio.play();
         setEngineState("live");
@@ -1191,7 +1201,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // A. Native Safari / iOS HLS
     if (audio.canPlayType("application/vnd.apple.mpegurl")) {
-      audio.src = streamUrl;
+      if (audio.src !== streamUrl) {
+        audio.src = streamUrl;
+      }
       try {
         await audio.play();
         setEngineState("live");
@@ -1293,19 +1305,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         if (remaining <= 3.5 && remaining > -1.0 && !hasFiredAutoDjCrossfadeRef.current) {
           hasFiredAutoDjCrossfadeRef.current = true;
           let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
-          if (!nextCandidate?.audio_url && backupSetsRef.current.length > 0) {
+          if (!(nextCandidate?.playback_url || nextCandidate?.audio_url) && backupSetsRef.current.length > 0) {
             const rawEndedId = currentTrackIdRef.current || "";
             const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
             const sets = backupSetsRef.current;
             const curIdx = sets.findIndex(
-              (s) => String(s.id) === cleanEndedId || (audio && s.audio_url === audio.src)
+              (s) => String(s.id) === cleanEndedId
             );
             const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
-            if (sets[nIdx]?.audio_url) {
+            if (sets[nIdx]?.playback_url || sets[nIdx]?.audio_url) {
               nextCandidate = sets[nIdx];
             }
           }
-          if (nextCandidate?.audio_url && executeCrossfadeRef.current) {
+          if ((nextCandidate?.playback_url || nextCandidate?.audio_url) && executeCrossfadeRef.current) {
             console.log(`[RadioContext] 🎚️ AutoDJ natural crossfade blending into "${nextCandidate.title}"`);
             executeCrossfadeRef.current(nextCandidate, { fast: false });
             setNowPlayingTrack({
@@ -1460,8 +1472,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // Live Drop Injection Engine: ducks current track mid-song, plays voice drop for all listeners, then swells back
   const triggerLiveInjectedDrop = useCallback(
-    (liveDrop: { id: string | number; title?: string; persona?: string; audio_url: string }) => {
-      if (!dropAudioRef.current || !liveDrop.audio_url) return;
+    (liveDrop: { id: string | number; title?: string; persona?: string; audio_url: string; playback_url?: string }) => {
+      const dropSrc = liveDrop.playback_url || liveDrop.audio_url;
+      if (!dropAudioRef.current || !dropSrc) return;
       const dropAudio = dropAudioRef.current;
       const audio = audioRef.current;
 
@@ -1495,7 +1508,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       dropAudio.addEventListener("ended", onDropDone);
       dropAudio.addEventListener("error", onDropDone);
-      dropAudio.src = liveDrop.audio_url;
+      if (dropSrc && dropAudio.src !== dropSrc) {
+        dropAudio.src = dropSrc;
+      }
       dropAudio.volume = masterVol;
       dropAudio.currentTime = 0;
       dropAudio.play().catch((playErr: any) => {
@@ -1564,10 +1579,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Seamlessly mixes from outgoing deck to incoming deck with zero gap, zero cutoff, and full ducking support
   const executeCrossfade = useCallback(
     (
-      track: { id?: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string; [key: string]: any },
+      track: { id?: number; title: string; dj_name?: string; audio_url?: string; playback_url?: string; duration_sec?: number; cover_url?: string; [key: string]: any },
       options: { fast?: boolean; targetSeek?: number } = {}
     ) => {
-      if (!track || !track.audio_url) return;
+      const targetTrackUrl = track?.playback_url || track?.audio_url;
+      if (!track || !targetTrackUrl) return;
       const outgoing = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
       const incoming = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
 
@@ -1577,7 +1593,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       if (!incoming) {
         if (outgoing) {
-          outgoing.src = track.audio_url;
+          if (outgoing.src !== targetTrackUrl) {
+            outgoing.src = targetTrackUrl;
+          }
           outgoing.currentTime = options.targetSeek || 0;
           outgoing.volume = targetVol;
           outgoing.play().catch(() => {});
@@ -1592,8 +1610,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       isCrossfadingRef.current = true;
       incoming.volume = 0;
-      if (incoming.src !== track.audio_url) {
-        incoming.src = track.audio_url;
+      if (incoming.src !== targetTrackUrl) {
+        incoming.src = targetTrackUrl;
       }
       incoming.currentTime = options.targetSeek || 0;
 
@@ -1722,7 +1740,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const rawId = currentTrackIdRef.current || "";
       const cleanId = rawId.replace(/^(set-|vault-|pl-\d+-)/, "");
       let cIdx = sets.findIndex(
-        (s) => String(s.id) === cleanId || (audio && s.audio_url === audio.src)
+        (s) => String(s.id) === cleanId
       );
       if (cIdx === -1) cIdx = 0;
       const nIdx = (cIdx + 1) % sets.length;
@@ -1830,7 +1848,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     try {
-      dropAudio.src = drop.audio_url;
+      const dropSrc = drop.playback_url || drop.audio_url;
+      if (dropSrc && dropAudio.src !== dropSrc) {
+        dropAudio.src = dropSrc;
+      }
       dropAudio.volume = masterVol;
       dropAudio.addEventListener("ended", onDropEnded);
       dropAudio.addEventListener("error", onDropError);
@@ -1872,7 +1893,6 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       currentIdx = sets.findIndex(
         (s) =>
           String(s.id) === cleanEndedId ||
-          (audio && s.audio_url === audio.src) ||
           (s.external_id && (s.external_id === rawEndedId || s.external_id === cleanEndedId))
       );
       if (currentIdx === -1) currentIdx = 0;
@@ -1880,7 +1900,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const nextIdx = sets.length > 0 ? (currentIdx + 1) % sets.length : 0;
     const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
 
-    if (!nextTrack || !nextTrack.audio_url || !audio) {
+    if (!nextTrack || !(nextTrack.playback_url || nextTrack.audio_url) || !audio) {
       isTransitioningRef.current = false;
       if (activePlaylistRef.current) return;
       attachAndPlayLiveStream();
@@ -1933,7 +1953,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     // Seamless Crossover: If drop is ALREADY speaking across boundary from the 15s outro mark:
     if (isDropPlayingRef.current) {
       console.log(`[RadioContext] 🔀 Seamless crossover: advancing music under active drop -> "${nextTrack.title}"`);
-      audio.src = nextTrack.audio_url;
+      const nextSrc = nextTrack.playback_url || nextTrack.audio_url;
+      if (nextSrc && audio.src !== nextSrc) {
+        audio.src = nextSrc;
+      }
       audio.currentTime = 0;
       audio.volume = duckedVol; // Keep new track ducked while drop finishes!
       try {
@@ -2031,10 +2054,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Prepare incoming music track
-    audio.src = nextTrack.audio_url;
+    const incomingSrc = nextTrack.playback_url || nextTrack.audio_url;
+    if (incomingSrc && audio.src !== incomingSrc) {
+      audio.src = incomingSrc;
+    }
     audio.currentTime = 0;
 
-    const hasDrop = Boolean(dropAudio && drop?.audio_url);
+    const hasDrop = Boolean(dropAudio && (drop?.playback_url || drop?.audio_url));
 
     const cleanupDropPlayout = () => {
       if (dropAudio) {
@@ -2057,7 +2083,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setActiveDropTitle(nextInQueue.title);
         setActivePersona(nextInQueue.persona || "GOODLIFE DJ");
         setActiveMood(nextInQueue.mood || "HYPE");
-        dropAudio.src = nextInQueue.audio_url;
+        const nextDropSrc = nextInQueue.playback_url || nextInQueue.audio_url;
+        if (nextDropSrc && dropAudio.src !== nextDropSrc) {
+          dropAudio.src = nextDropSrc;
+        }
         dropAudio.play().catch((err) => {
           console.warn("[RadioContext] Chained drop error, finishing queue:", err);
           cleanupDropPlayout();
@@ -2098,7 +2127,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       // Start voice drop simultaneously over the ducked music bed
       try {
-        dropAudio.src = drop.audio_url;
+        const dropSrc = drop.playback_url || drop.audio_url;
+        if (dropSrc && dropAudio.src !== dropSrc) {
+          dropAudio.src = dropSrc;
+        }
         dropAudio.volume = masterVol;
         dropAudio.addEventListener("ended", onDropEnded);
         dropAudio.addEventListener("error", onDropError);
@@ -2271,21 +2303,25 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(true);
       notifyOtherTabsPlay();
 
+      const playUrl = (set as any).playback_url || set.audio_url;
       setNowPlayingTrack({
         title: formatTrackTitle(set.title),
         artist: set.dj_name,
         thumbnail: set.cover_url || "/flyer.png",
         elapsed: 0,
         duration: set.duration_sec || 0,
-        audio_url: set.audio_url,
+        audio_url: playUrl,
+        playback_url: (set as any).playback_url,
         video_id: `vault-${set.id}`,
       });
       setInterpolatedElapsed(0);
       lastPollElapsedRef.current = 0;
       lastPollTimestampRef.current = Date.now();
 
-      if (audioRef.current) {
-        audioRef.current.src = set.audio_url;
+      if (audioRef.current && playUrl) {
+        if (audioRef.current.src !== playUrl) {
+          audioRef.current.src = playUrl;
+        }
         audioRef.current.play().catch(() => setEngineState("error"));
       }
     },
@@ -2345,13 +2381,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         notifyOtherTabsPlay();
 
         const trackVideoId = `pl-${data.playlist.id}-${selectedTrack.id}`;
+        const selectedSrc = selectedTrack.playback_url || selectedTrack.audio_url;
         setNowPlayingTrack({
           title: formatTrackTitle(selectedTrack.title),
           artist: selectedTrack.dj_name,
           thumbnail: selectedTrack.cover_url,
           elapsed: 0,
           duration: selectedTrack.duration_sec || 180,
-          audio_url: selectedTrack.audio_url,
+          audio_url: selectedSrc,
+          playback_url: selectedTrack.playback_url,
           video_id: trackVideoId,
         });
         currentTrackIdRef.current = trackVideoId;
@@ -2376,8 +2414,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }));
         setUpNextQueue(upcomingQueue);
 
-        if (audioRef.current) {
-          audioRef.current.src = selectedTrack.audio_url;
+        if (audioRef.current && selectedSrc) {
+          if (audioRef.current.src !== selectedSrc) {
+            audioRef.current.src = selectedSrc;
+          }
           audioRef.current.currentTime = 0;
           audioRef.current.volume = isMutedRef.current ? 0 : volumeRef.current;
           await audioRef.current.play();
@@ -2405,8 +2445,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (!nextTrack) return;
     if (!preloadAudioRef.current) preloadAudioRef.current = new Audio();
     preloadAudioRef.current.preload = "auto";
-    if (preloadAudioRef.current.src !== nextTrack.audio_url) {
-      preloadAudioRef.current.src = nextTrack.audio_url;
+    const nextTrackSrc = nextTrack.playback_url || nextTrack.audio_url;
+    if (nextTrackSrc && preloadAudioRef.current.src !== nextTrackSrc) {
+      preloadAudioRef.current.src = nextTrackSrc;
       preloadAudioRef.current.load();
     }
   }, [isPlaying, interpolatedElapsed, currentBackupIndex, backupSets]);
@@ -2451,13 +2492,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         ? `pl-${activePlaylistRef.current.id}-${track.id}`
         : `set-${track.id}`;
 
+      const trackSrc = track.playback_url || track.audio_url;
       setNowPlayingTrack({
         title: formatTrackTitle(track.title),
         artist: track.dj_name,
         thumbnail: track.cover_url,
         elapsed: 0,
         duration: track.duration_sec || 180,
-        audio_url: track.audio_url,
+        audio_url: trackSrc,
+        playback_url: track.playback_url,
         video_id: trackVideoId,
       });
       currentTrackIdRef.current = trackVideoId;
@@ -2480,7 +2523,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }));
       setUpNextQueue(upcomingQueue);
 
-      audio.src = track.audio_url;
+      if (trackSrc && audio.src !== trackSrc) {
+        audio.src = trackSrc;
+      }
       audio.currentTime = 0;
       audio.volume = isMutedRef.current ? 0 : volumeRef.current;
       audio.play().catch(() => {});
@@ -2504,13 +2549,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         ? `pl-${activePlaylistRef.current.id}-${track.id}`
         : `set-${track.id}`;
 
+      const prevTrackSrc = track.playback_url || track.audio_url;
       setNowPlayingTrack({
         title: formatTrackTitle(track.title),
         artist: track.dj_name,
         thumbnail: track.cover_url,
         elapsed: 0,
         duration: track.duration_sec || 180,
-        audio_url: track.audio_url,
+        audio_url: prevTrackSrc,
+        playback_url: track.playback_url,
         video_id: trackVideoId,
       });
       currentTrackIdRef.current = trackVideoId;
@@ -2518,7 +2565,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       lastPollElapsedRef.current = 0;
       lastPollTimestampRef.current = Date.now();
 
-      audioRef.current.src = track.audio_url;
+      if (prevTrackSrc && audioRef.current.src !== prevTrackSrc) {
+        audioRef.current.src = prevTrackSrc;
+      }
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }
@@ -2590,21 +2639,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (isLiveRef.current) {
         // Gapless live auto-advance: start next track immediately even under an active outro drop (audible ducked bed!)
         let nextTrackCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
-        if (!nextTrackCandidate?.audio_url && backupSetsRef.current.length > 0) {
+        if (!(nextTrackCandidate?.playback_url || nextTrackCandidate?.audio_url) && backupSetsRef.current.length > 0) {
           const rawEndedId = currentTrackIdRef.current || "";
           const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
           const sets = backupSetsRef.current;
-          const curAudio = deck === "A" ? audioRef.current : preloadAudioRef.current;
           const curIdx = sets.findIndex(
-            (s) => String(s.id) === cleanEndedId || (curAudio && s.audio_url === curAudio.src)
+            (s) => String(s.id) === cleanEndedId
           );
           const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
-          if (sets[nIdx]?.audio_url) {
+          if (sets[nIdx]?.playback_url || sets[nIdx]?.audio_url) {
             nextTrackCandidate = sets[nIdx];
           }
         }
 
-        if (nextTrackCandidate && nextTrackCandidate.audio_url && executeCrossfadeRef.current) {
+        if (nextTrackCandidate && (nextTrackCandidate.playback_url || nextTrackCandidate.audio_url) && executeCrossfadeRef.current) {
           executeCrossfadeRef.current(nextTrackCandidate, { fast: false });
           setNowPlayingTrack({
             ...nextTrackCandidate,
@@ -2635,8 +2683,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (Array.isArray(upNextQueue) && upNextQueue.length > 0) {
       for (let i = 0; i < Math.min(3, upNextQueue.length); i++) {
         const item = upNextQueue[i] as any;
-        if (item?.audio_url && !urlsToPreload.includes(item.audio_url)) {
-          urlsToPreload.push(item.audio_url);
+        const src = item?.playback_url || item?.audio_url;
+        if (src && !urlsToPreload.includes(src)) {
+          urlsToPreload.push(src);
         }
       }
     }
@@ -2649,8 +2698,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (curIdx === -1) curIdx = 0;
       for (let i = 1; i <= 3 && urlsToPreload.length < 3; i++) {
         const track = backupSets[(curIdx + i) % backupSets.length];
-        if (track?.audio_url && !urlsToPreload.includes(track.audio_url)) {
-          urlsToPreload.push(track.audio_url);
+        const src = track?.playback_url || track?.audio_url;
+        if (src && !urlsToPreload.includes(src)) {
+          urlsToPreload.push(src);
         }
       }
     }
@@ -2763,6 +2813,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onError={() => {
           if (activeDeckRef.current === "A" && !isCrossfadingRef.current) {
+            if (currentTrackIdRef.current) {
+              const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
+              const candidate = backupSetsRef.current.find((s) => String(s.id) === cleanId);
+              if (candidate && audioRef.current) {
+                const retrySrc = `/api/radio/audio/track/${encodeURIComponent(cleanId)}`;
+                if (audioRef.current.src !== retrySrc) {
+                  audioRef.current.src = retrySrc;
+                  audioRef.current.play().catch(() => {
+                    setIsPlaying(false);
+                    setEngineState("error");
+                  });
+                  return;
+                }
+              }
+            }
             setIsPlaying(false);
             setEngineState("error");
           }
@@ -2790,6 +2855,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onError={() => {
           if (activeDeckRef.current === "B" && !isCrossfadingRef.current) {
+            if (currentTrackIdRef.current) {
+              const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
+              const candidate = backupSetsRef.current.find((s) => String(s.id) === cleanId);
+              if (candidate && preloadAudioRef.current) {
+                const retrySrc = `/api/radio/audio/track/${encodeURIComponent(cleanId)}`;
+                if (preloadAudioRef.current.src !== retrySrc) {
+                  preloadAudioRef.current.src = retrySrc;
+                  preloadAudioRef.current.play().catch(() => {
+                    setIsPlaying(false);
+                    setEngineState("error");
+                  });
+                  return;
+                }
+              }
+            }
             setIsPlaying(false);
             setEngineState("error");
           }

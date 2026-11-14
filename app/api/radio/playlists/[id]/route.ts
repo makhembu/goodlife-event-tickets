@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
+import { withPlayback } from "@/lib/radio/playback";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function GET(
         s.dj_name,
         s.audio_url,
         s.audio_high_url,
+        s.r2_key,
         s.cover_url,
         s.duration,
         s.duration_sec,
@@ -46,11 +48,13 @@ export async function GET(
       [playlistId]
     );
 
+    const tracks = (tracksRes.rows || []).map((t: any) => withPlayback(t, "track"));
+
     return NextResponse.json(
       {
         success: true,
         playlist: playlistRes.rows[0],
-        tracks: tracksRes.rows || [],
+        tracks,
       },
       { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } }
     );

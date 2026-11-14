@@ -112,6 +112,30 @@ async function runTests() {
   check("[Source-Check] Play-event verifies set exists in database", playEventCode.includes("SELECT id FROM radio_sets"));
   check("[Source-Check] Play-event enforces rate limiting check", playEventCode.includes("isRateLimited"));
 
+  // 10. Signed Temporary Playback & Audio Security Invariants
+  const r2SignerCode = fs.readFileSync(path.join(process.cwd(), "lib/radio/r2-signer.ts"), "utf8");
+  check("[Source-Check] GetObjectCommand is imported in lib/radio/r2-signer.ts", r2SignerCode.includes("GetObjectCommand"));
+  check("[Source-Check] signRadioPlaybackUrl is exported in lib/radio/r2-signer.ts", r2SignerCode.includes("export async function signRadioPlaybackUrl"));
+
+  const audioRouteCode = fs.readFileSync(path.join(process.cwd(), "app/api/radio/audio/[kind]/[id]/route.ts"), "utf8");
+  check("[Source-Check] Audio route enforces private, no-store Cache-Control", audioRouteCode.includes("no-store"));
+  check("[Source-Check] Audio route refuses arbitrary key= or url= parameter injection", audioRouteCode.includes('searchParams.has("key")'));
+
+  const vaultCode = fs.readFileSync(path.join(process.cwd(), "components/radio/FestivalSetVault.tsx"), "utf8");
+  check("[Source-Check] FestivalSetVault has no download attribute", !vaultCode.includes("download"));
+  check("[Source-Check] FestivalSetVault has no '320kbps Master' copy", !vaultCode.includes("320kbps Master"));
+
+  const catchUpCode = fs.readFileSync(path.join(process.cwd(), "components/radio/CatchUpVault.tsx"), "utf8");
+  check("[Source-Check] CatchUpVault has no audio_url === comparison", !catchUpCode.includes("audio_url ==="));
+
+  check("[Source-Check] RadioContext has no === audio.src comparisons", !radioContextCode.includes("=== audio.src") && !radioContextCode.includes("=== audioRef.current.src"));
+
+  const guardedCheckCode = fs.readFileSync(path.join(process.cwd(), "tests/admin-routes-guarded.check.ts"), "utf8");
+  check("[Source-Check] Audio route is registered in NON_ADMIN_PUBLIC_ALLOWLIST", guardedCheckCode.includes("app/api/radio/audio/[kind]/[id]/route.ts:GET"));
+
+  const recordingsCode = fs.readFileSync(path.join(process.cwd(), "app/api/radio/recordings/route.ts"), "utf8");
+  check("[Source-Check] Recordings route does not expose raw r2_key in response mapping", !recordingsCode.includes("r2_key: row.r2_key"));
+
   console.log(`\n================================`);
   console.log(`Total checks: ${pass + failures.length}`);
   console.log(`Passed: ${pass}`);

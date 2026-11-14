@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neonQuery } from "@/lib/supabase-db";
+import { withPlayback } from "@/lib/radio/playback";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,6 @@ export async function GET(req: NextRequest) {
         r.title, 
         COALESCE(r.dj_name, p.dj_name, 'GOODLIFE Resident') as dj_name,
         r.audio_url, 
-        r.r2_key, 
         r.duration, 
         r.file_size, 
         r.bitrate, 
@@ -58,24 +58,28 @@ export async function GET(req: NextRequest) {
 
     const res = await neonQuery(query, values);
 
-    const recordings = (res?.rows || []).map((row: any) => ({
-      id: row.id,
-      title: row.title,
-      dj_name: row.dj_name,
-      audio_url: row.audio_url,
-      r2_key: row.r2_key,
-      duration: row.duration,
-      duration_formatted: formatDuration(row.duration),
-      file_size: row.file_size,
-      bitrate: row.bitrate,
-      genre: row.genre || "Festival Live Set",
-      recorded_at: row.recorded_at,
-      show_id: row.show_id,
-      show_title: row.show_title || null,
-      show_slug: row.show_slug || null,
-      presenter_id: row.presenter_id || null,
-      presenter_slug: row.presenter_slug || null,
-    }));
+    const recordings = (res?.rows || []).map((row: any) =>
+      withPlayback(
+        {
+          id: row.id,
+          title: row.title,
+          dj_name: row.dj_name,
+          audio_url: row.audio_url,
+          duration: row.duration,
+          duration_formatted: formatDuration(row.duration),
+          file_size: row.file_size,
+          bitrate: row.bitrate,
+          genre: row.genre || "Festival Live Set",
+          recorded_at: row.recorded_at,
+          show_id: row.show_id,
+          show_title: row.show_title || null,
+          show_slug: row.show_slug || null,
+          presenter_id: row.presenter_id || null,
+          presenter_slug: row.presenter_slug || null,
+        },
+        "recording"
+      )
+    );
 
     return NextResponse.json(recordings, {
       headers: {
