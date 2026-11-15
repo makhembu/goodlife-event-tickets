@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const host = process.env.STREAM_HOST || process.env.ICECAST_HOST || "live-dj.goodlife.co.ke";
+    const host = process.env.STREAM_HOST || process.env.ICECAST_HOST || "live.darajadigital.com";
     const port = parseInt(process.env.HARBOR_PORT || "8005", 10);
     const mount = process.env.HARBOR_MOUNT || "/live";
 

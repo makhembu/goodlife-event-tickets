@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       username: "admin",
       mount: "/live",
       port: 8005,
-      host: process.env.RADIO_STREAM_HOST || "live-dj.darajadigital.com",
+      host: process.env.RADIO_STREAM_HOST || "live.darajadigital.com",
       broadcast_mode: row.broadcast_mode || "autodj",
       live_title: row.live_title || "GOODLIFE RADIO LIVE",
     });
