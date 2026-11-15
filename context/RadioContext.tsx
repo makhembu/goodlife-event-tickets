@@ -2866,9 +2866,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Derived display values: while a station drop airs, display the drop metadata
   const displayTitle = isDropPlaying && activeDropTitle
     ? activeDropTitle
+    : broadcastMode === "live"
+    ? (nowPlayingTrack?.title || (nowPlayingTrack as any)?.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER")
     : formatTrackTitle(nowPlayingTrack?.title || backupSets[0]?.title);
   const displayArtist = isDropPlaying && activePersona
     ? activePersona
+    : broadcastMode === "live"
+    ? (nowPlayingTrack?.artist || "ADMIN MASTER HARBOR / LIVE DJ")
     : (nowPlayingTrack?.artist || backupSets[0]?.dj_name || null);
   const displayCover = resolveCoverArt(nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url);
   const displayThought = nowPlayingTrack?.thought && nowPlayingTrack.thought.trim() !== "" ? nowPlayingTrack.thought.trim() : null;

@@ -702,31 +702,32 @@ export default function AdminRadioPage() {
               </button>
             </div>
           </div>
-          {/* Live Ingest Alert: Notifies admin when presenter/admin is live on air and cockpit playout is overridden */}
+          {/* Live Ingest Alert: Broadcast-Grade On-Air Status Strip */}
           {liveOnAirStatus.isConnected && (
-            <div className="bg-amber-500/15 border-2 border-amber-400 p-3 shadow-[3px_3px_0px_#000] font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
-              <div className="flex items-start sm:items-center gap-2.5">
-                <div className="p-1.5 bg-amber-400 text-black font-black shrink-0 mt-0.5 sm:mt-0">
-                  <RadioTower className="w-4 h-4 animate-pulse" />
+            <div className="bg-[#16181D] border-2 border-amber-400 p-3 sm:p-3.5 shadow-[4px_4px_0px_#000] font-mono text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                <div className="p-2 bg-amber-400 text-black font-black shrink-0 mt-0.5 sm:mt-0 shadow-sm">
+                  <RadioTower className="w-5 h-5 animate-pulse" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-amber-300 uppercase tracking-wider">
-                      LIVE BROADCAST IN PROGRESS:
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-red-600 text-white font-black text-[10px] tracking-wider uppercase border border-white/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      ON AIR TAKEOVER
                     </span>
-                    <span className="px-2 py-0.5 bg-black/60 border border-amber-400/50 text-white font-bold">
+                    <span className="px-2 py-0.5 bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold text-[11px] uppercase">
                       {liveOnAirStatus.type === "admin"
-                        ? "ADMIN MASTER TAKEOVER"
-                        : `DJ ${liveOnAirStatus.name || "LIVE PRESENTER"}`}
+                        ? "ADMIN MASTER HARBOR · HARDWARE / CDJ / TRAKTOR"
+                        : `PRESENTER · ${liveOnAirStatus.name || "LIVE DJ"}`}
                     </span>
                     {liveOnAirStatus.showTitle && (
-                      <span className="text-white/70 text-[11px]">
+                      <span className="text-white/60 text-[11px] truncate">
                         ({liveOnAirStatus.showTitle})
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-amber-200/90 mt-1">
-                    ⚠️ The station feed is currently locked to direct hardware/Icecast ingest. Cockpit playlist skips and live cueing will <strong>not affect the live stream</strong> until the live session concludes or you release the harbor.
+                  <p className="text-[11px] text-zinc-300 mt-1.5 leading-relaxed">
+                    <strong className="text-amber-400">FEED ACTIVE:</strong> Station output is locked to live hardware/encoder stream. AutoDJ playlist skips and rundown changes remain on standby until the broadcast is released.
                   </p>
                 </div>
               </div>
@@ -734,8 +735,8 @@ export default function AdminRadioPage() {
                 <button
                   type="button"
                   onClick={() => setShowStopLiveModal(true)}
-                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
-                  title="Stop Live Broadcast & Return to AutoDJ"
+                  className="px-3.5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold uppercase shrink-0 border border-black shadow-[2px_2px_0px_#000] cursor-pointer flex items-center justify-center gap-1.5 transition-all active:translate-x-0.5 active:translate-y-0.5"
+                  title="Stop Live Broadcast & Return Station to 24/7 AutoDJ"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
                   <span>STOP LIVE (SWITCH TO AUTODJ)</span>
@@ -743,7 +744,7 @@ export default function AdminRadioPage() {
                 <button
                   type="button"
                   onClick={() => setActiveTab("live")}
-                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase shrink-0 border border-black shadow-[2px_2px_0px_#000] cursor-pointer flex items-center justify-center gap-1.5 transition-all active:translate-x-0.5 active:translate-y-0.5"
                 >
                   <span>VIEW HARBOR / ENCODER</span>
                   <ExternalLink className="w-3.5 h-3.5" />

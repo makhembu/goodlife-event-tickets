@@ -115,7 +115,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
       ORDER BY pt.position ASC, pt.id ASC
     `).catch(() => ({ rows: [] })),
     neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id, ai_drops_enabled FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id, ai_drops_enabled, live_title, live_stream_url FROM radio_settings WHERE id = 1"
     ).catch(() => ({ rows: [] })),
   ]);
 
@@ -435,13 +435,23 @@ export async function GET() {
     }
 
     const onAirSlot = await getLiveSlotOnAir();
-    if (onAirSlot && liveData.nowPlaying) {
-      liveData.nowPlaying.on_air_slot = onAirSlot;
-      liveData.nowPlaying.title = onAirSlot.show.title;
-      liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
-    }
-
     const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
+    const liveTitle = cachedPlayout.settings.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER";
+
+    if (liveData.nowPlaying) {
+      if (onAirSlot) {
+        liveData.nowPlaying.on_air_slot = onAirSlot;
+        liveData.nowPlaying.title = onAirSlot.show.title;
+        liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
+      } else {
+        // Admin Master Live Takeover / Direct Hardware Ingest
+        liveData.nowPlaying.title = liveTitle;
+        liveData.nowPlaying.artist = "ADMIN MASTER HARBOR / LIVE DJ";
+      }
+      liveData.nowPlaying.is_live = true;
+      liveData.nowPlaying.audio_url = streamUrl;
+      liveData.nowPlaying.playback_url = streamUrl;
+    }
 
     return NextResponse.json(
       {
@@ -455,7 +465,8 @@ export async function GET() {
         history: liveData.history,
         live: {
           stream_url: streamUrl,
-          title: "GOODLIFE RADIO LIVE - ON AIR",
+          title: onAirSlot ? onAirSlot.show.title : liveTitle,
+          is_live: true,
         },
         stream_url: streamUrl,
         live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,

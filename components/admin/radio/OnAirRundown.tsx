@@ -155,10 +155,10 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
         );
         fetchPlaylist();
       } else {
-        alert("Failed to switch radio mode.");
+        notify("❌ Failed to switch radio mode.");
       }
     } catch {
-      alert("Network timeout switching radio mode.");
+      notify("❌ Network timeout switching radio mode.");
     } finally {
       setModeSwitching(false);
     }

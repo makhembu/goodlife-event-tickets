@@ -173,15 +173,19 @@ export default function RadioHeader({ streamUrl = "", onRefresh }: RadioHeaderPr
         <div className="flex-1 w-full max-w-2xl bg-zinc-900 border-2 border-zinc-700 p-3">
           <div className="flex items-center justify-between text-xs font-mono mb-1">
             <span className="text-zinc-400 uppercase tracking-wider truncate max-w-[280px]">
-              {currentSong.artist || "GOODLIFE RESIDENTS"}
+              {isLive
+                ? ((nowPlaying as any)?.on_air_slot?.presenter?.dj_name || "LIVE DJ / ENCODER INGEST")
+                : (currentSong.artist || "GOODLIFE RESIDENTS")}
             </span>
             <span className="text-red-400 font-bold">
-              {formatSecs(currentElapsed)} / {formatSecs(currentDuration)}
+              {isLive ? "LIVE BROADCAST" : `${formatSecs(currentElapsed)} / ${formatSecs(currentDuration)}`}
             </span>
           </div>
 
           <div className="font-bold text-sm text-white truncate mb-2">
-            {currentSong.title || "Loading stream telemetry..."}
+            {isLive
+              ? ((nowPlaying as any)?.on_air_slot?.show?.title || (nowPlaying as any)?.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER")
+              : (currentSong.title || "Loading stream telemetry...")}
           </div>
 
           {/* Progress Bar */}
