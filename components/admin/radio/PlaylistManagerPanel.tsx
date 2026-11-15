@@ -168,7 +168,23 @@ export default function PlaylistManagerPanel({
   }, []);
 
   const allAvailableGenres = useMemo(() => {
-    const defaults = ["Amapiano", "Afro House", "3-Step", "Festival Anthems", "Lounge"];
+    const defaults = [
+      "Amapiano",
+      "Afro House",
+      "Afrobeats",
+      "Gengetone",
+      "Arbantone",
+      "Hip Hop",
+      "Pop",
+      "R&B / Soul",
+      "Rock",
+      "Reggae",
+      "Dancehall",
+      "Electronic",
+      "3-Step",
+      "Festival Anthems",
+      "Lounge",
+    ];
     const fromPlaylists = playlists.map((p) => p.genre).filter(Boolean);
     return Array.from(new Set([...defaults, ...customGenres, ...fromPlaylists]));
   }, [playlists, customGenres]);
@@ -338,6 +354,20 @@ export default function PlaylistManagerPanel({
     }
   };
 
+  const handleSelectPlaylist = (id: number | null) => {
+    setSelectedPlaylistId(id);
+    if (id !== null) {
+      fetchPlaylistDetails(id);
+    }
+    try {
+      if (id !== null) {
+        localStorage.setItem("goodlife_admin_selected_playlist_id", String(id));
+      } else {
+        localStorage.removeItem("goodlife_admin_selected_playlist_id");
+      }
+    } catch {}
+  };
+
   const fetchPlaylists = async () => {
     try {
       setLoading(true);
@@ -345,8 +375,27 @@ export default function PlaylistManagerPanel({
       const data = await res.json();
       if (data.success && Array.isArray(data.playlists)) {
         setPlaylists(data.playlists);
-        if (selectedPlaylistId === null && data.playlists.length > 0) {
-          setSelectedPlaylistId(data.playlists[0].id);
+        let targetId = selectedPlaylistId;
+        if (targetId === null) {
+          try {
+            const saved = localStorage.getItem("goodlife_admin_selected_playlist_id");
+            if (saved) {
+              const parsed = Number(saved);
+              if (data.playlists.some((p: any) => p.id === parsed)) {
+                targetId = parsed;
+              }
+            }
+          } catch {}
+        }
+        if (targetId === null && data.playlists.length > 0) {
+          targetId = data.playlists[0].id;
+        }
+        if (targetId !== null) {
+          setSelectedPlaylistId(targetId);
+          fetchPlaylistDetails(targetId);
+          try {
+            localStorage.setItem("goodlife_admin_selected_playlist_id", String(targetId));
+          } catch {}
         }
         // Recover any persistent ingest_job_id tracked in Neon DB across refreshes / devices
         const dbTracked: Record<string, PlaylistIngestJob> = {};
@@ -515,9 +564,12 @@ export default function PlaylistManagerPanel({
       const data = await res.json();
       if (data.success && Array.isArray(data.tracks)) {
         setSelectedPlaylistTracks(data.tracks);
+      } else if (!res.ok) {
+        showBanner(data.error || `Failed to load playlist (${res.status})`, "error");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to fetch playlist tracks:", e);
+      showBanner("Network error fetching playlist tracks", "error");
     } finally {
       setLoadingTracks(false);
     }
@@ -752,7 +804,7 @@ export default function PlaylistManagerPanel({
           const exists = prev.some((p) => p.id === createdSummary.id);
           return exists ? prev : [createdSummary, ...prev];
         });
-        setSelectedPlaylistId(createdSummary.id);
+        handleSelectPlaylist(createdSummary.id);
       }
       await fetchPlaylists();
       if (onPlaylistsChanged) onPlaylistsChanged();
@@ -817,7 +869,7 @@ export default function PlaylistManagerPanel({
       setDeleteModalTarget(null);
       showBanner(`Playlist "${name}" deleted`, "success");
       if (selectedPlaylistId === id) {
-        setSelectedPlaylistId(null);
+        handleSelectPlaylist(null);
       }
       await fetchPlaylists();
     } catch (err: any) {
@@ -1632,7 +1684,7 @@ export default function PlaylistManagerPanel({
                 return (
                   <div
                     key={pl.id}
-                    onClick={() => setSelectedPlaylistId(pl.id)}
+                    onClick={() => handleSelectPlaylist(pl.id)}
                     className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
                       isSelected
                         ? "bg-[#1E222B] border-[#DFBB7D] shadow-[3px_3px_0px_#DFBB7D]"
@@ -2170,16 +2222,33 @@ export default function PlaylistManagerPanel({
               ) : selectedPlaylistTracks.length === 0 ? (
                 <div className="p-12 text-center rounded-2xl bg-[#121316] border-2 border-dashed border-white/20">
                   <Music2 className="w-8 h-8 text-white/40 mx-auto mb-2" />
-                  <div className="text-sm font-bold text-white">Playlist is empty</div>
+                  <div className="text-sm font-bold text-white">
+                    {selectedPlaylist.track_count > 0 ? "Tracks Loading or Syncing..." : "Playlist is empty"}
+                  </div>
                   <p className="text-xs text-white/60 mt-1 mb-4">
-                    Click "Add Tracks" above to add songs to this playlist.
+                    {selectedPlaylist.track_count > 0
+                      ? `${selectedPlaylist.track_count} tracks registered in database. Click Reload to refresh sequence.`
+                      : 'Click "Add Tracks" above to add songs to this playlist.'}
                   </p>
-                  <button
-                    onClick={() => setShowAddTracks(true)}
-                    className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#000]"
-                  >
-                    Add Songs
-                  </button>
+                  <div className="flex items-center justify-center gap-3">
+                    {selectedPlaylist.track_count > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => fetchPlaylistDetails(selectedPlaylist.id)}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs font-mono uppercase rounded-xl border border-white/20 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Reload Tracklist
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTracks(true)}
+                      className="px-4 py-2 bg-[#DFBB7D] text-[#16181D] font-black text-xs font-mono uppercase rounded-xl shadow-[2px_2px_0px_#000]"
+                    >
+                      Add Songs
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2921,15 +2990,17 @@ export default function PlaylistManagerPanel({
       )}
 
       {/* Harmonize Unindexed Progress Modal */}
-      <HarmonizeProgressModal
-        isOpen={showHarmonizeProgressModal}
-        onClose={() => setShowHarmonizeProgressModal(false)}
-        initialUnindexedCount={unindexedCount}
-        onComplete={() => {
-          fetchPlaylists();
-          if (onRefreshLive) onRefreshLive();
-        }}
-      />
+      {showHarmonizeProgressModal && (
+        <HarmonizeProgressModal
+          isOpen={showHarmonizeProgressModal}
+          onClose={() => setShowHarmonizeProgressModal(false)}
+          initialUnindexedCount={unindexedCount}
+          onComplete={() => {
+            fetchPlaylists();
+            if (onRefreshLive) onRefreshLive();
+          }}
+        />
+      )}
 
       {/* Auto-Playlist Vibe Creator Modal */}
       <AutoPlaylistModal

@@ -47,18 +47,14 @@ export default function AssignToPadSheet() {
 
   const existingClipUrl = selectedPad?.audio_url;
   const hasExistingClip = Boolean(existingClipUrl);
-  const existingClipName = existingClipUrl ? existingClipUrl.split("/").pop() : null;
+  const existingClipName = existingClipUrl
+    ? (selectedPad?.label || existingClipUrl.split("/").pop()?.replace(/^\d+[-_]/, "").replace(/[_-]/g, " ").replace(/\.(mp3|wav|webm|m4a)$/i, ""))
+    : null;
 
   if (!assignModalState?.open) return null;
 
   const handleConfirmAssign = async () => {
     if (!selectedPadId || !assignModalState.audioUrl) return;
-
-    // If pad already has a clip and user hasn't explicitly confirmed overwrite
-    if (hasExistingClip && !confirmedOverwrite) {
-      setConfirmedOverwrite(true);
-      return;
-    }
 
     setSaving(true);
     try {
@@ -207,15 +203,15 @@ export default function AssignToPadSheet() {
           <button
             type="button"
             onClick={handleConfirmAssign}
-            disabled={saving || !selectedPadId || (hasExistingClip && !confirmedOverwrite)}
+            disabled={saving || !selectedPadId}
             className={`min-h-[44px] px-5 py-2.5 font-mono text-xs font-bold rounded flex items-center space-x-1.5 transition-all shadow-md cursor-pointer ${
-              saving || !selectedPadId || (hasExistingClip && !confirmedOverwrite)
+              saving || !selectedPadId
                 ? "bg-white/20 text-white/40 cursor-not-allowed"
                 : "bg-[#DFBB7D] hover:bg-[#F5C842] text-[#16181D]"
             }`}
           >
             <Check className="w-4 h-4 stroke-[3]" />
-            <span>{saving ? "Saving..." : hasExistingClip && !confirmedOverwrite ? "Confirm Overwrite First" : "Assign to Pad"}</span>
+            <span>{saving ? "Saving..." : "Assign to Pad"}</span>
           </button>
         </div>
       </div>

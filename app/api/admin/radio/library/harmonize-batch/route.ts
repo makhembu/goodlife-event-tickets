@@ -5,6 +5,31 @@ import { bridgeAnalyzeAudio } from "@/lib/radio/bridge-client";
 
 export const dynamic = "force-dynamic";
 
+export async function GET(req: NextRequest) {
+  const unauthorized = await requireAdmin(req);
+  if (unauthorized) return unauthorized;
+
+  try {
+    const { rows } = await neonQuery(
+      `SELECT count(*)::int as remaining,
+              (SELECT count(*)::int FROM radio_sets WHERE deleted_at IS NULL) as total
+       FROM radio_sets 
+       WHERE deleted_at IS NULL 
+         AND (bpm IS NULL OR musical_key IS NULL OR musical_key = '')`
+    );
+    const remaining = rows[0]?.remaining || 0;
+    const total = rows[0]?.total || 0;
+    return NextResponse.json({
+      success: true,
+      remaining,
+      total,
+      indexed: Math.max(0, total - remaining),
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   const unauthorized = await requireAdmin(req);
   if (unauthorized) return unauthorized;

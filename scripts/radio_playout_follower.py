@@ -147,8 +147,14 @@ async def check_last_drop_cadence_allowed() -> bool:
     except Exception as e:
         print(f"[Cadence Warning] Error reading drop ledger: {e}")
 
-    # Fallback check on Postgres
+    # Check if AI drops are toggled OFF in radio_settings
     if DATABASE_URL:
+        settings_rows = await async_db("""
+            SELECT ai_drops_enabled FROM radio_settings WHERE id = 1
+        """)
+        if settings_rows and settings_rows[0].get("ai_drops_enabled") is False:
+            return False
+
         rows = await async_db("""
             SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) as diff_sec 
             FROM radio_drops 
@@ -337,6 +343,11 @@ async def run_follower_loop():
                 playout = resp.json()
                 if not playout or playout.get("offline"):
                     await asyncio.sleep(8)
+                    continue
+
+                # If AI drops are toggled OFF in radio settings, suspend automatic drop generation
+                if playout.get("ai_drops_enabled") is False:
+                    await asyncio.sleep(6)
                     continue
 
                 current_track = playout.get("current_track", {})

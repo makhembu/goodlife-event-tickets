@@ -1,29 +1,33 @@
 # GOODLIFE Event Tickets
 
-Next.js 15 App Router + TypeScript + Tailwind v4. Single **Neon Postgres** database. Live M-Pesa payments via **PayHero STK push**. `CLAUDE.md`, `DESIGN.md`, and `PRODUCT.md` also exist — they drift; this file is the verified one. Last full re-verification: **2026-10-02**.
+Next.js 15 App Router + TypeScript + Tailwind v4. One repo, two products:
+
+- **Ticketing** — Supabase PostgreSQL (`DATABASE_URL`), live M-Pesa via **PayHero STK push**, PDF/WhatsApp tickets, QR gate scanning, vendor POS + customer tabs, event budgets/settlements.
+- **GOODLIFE Radio 254** — a full radio station: home-server playout (AzuraCast/Liquidsoap + a Python daemon) with this Next.js app as the BFF/console and public player. ~40 modules under `lib/radio/`, 24 test files.
+
+`CLAUDE.md`, `README.md`, `DESIGN.md`, `PRODUCT.md` drift badly (they still describe Neon + Paystack + Netlify). This file is the verified one. Re-verified against the working tree on **2026-11-15**.
 
 ## Commands
 
 ```sh
-npm run dev     # next dev
-npm run build   # next build  (this is the ONLY typecheck)
-npm run start   # next start
-npm run lint    # eslint .
-npm run clean   # removes .next/ and tsconfig.tsbuildinfo
-npx tsx tests/<name>.check.ts   # the only verification suite (see below)
+npm run dev            # next dev
+npm run build          # next build — runs `npm run clean` first (prebuild), so it self-heals a stale .next/
+npm run start          # next start
+npm run lint           # eslint .   ← CURRENTLY BROKEN, see below
+npm run clean          # rm -rf .next tsconfig.tsbuildinfo
+npm run migrate:radio  # runs migrations/radio/*.sql via scripts/migrate.js (see Database)
+npx tsx tests/<name>.check.ts   # the verification suite (see below)
 ```
 
-- `next.config.ts` sets `typescript.ignoreBuildErrors: false` + `eslint.ignoreDuringBuilds: true` — so **`npm run build` is the typechecker** (a red build = a TS error, not a lint error) and `npm run lint` must be run by hand. Build was **green** on 2026-10-02.
-- **A stale `.next/` crashes the build** with `TypeError: Cannot read properties of undefined (reading 'length')` and no stack trace, partway through "Creating an optimized production build". It is not a code error — bisect with `git stash` before debugging. `npm run clean` then `npm run build` fixes it.
-- `tsconfig.json` sets `incremental: true`, and `tsconfig.tsbuildinfo` was **tracked in git while also being gitignored** (gitignore does not apply to tracked files). It is now untracked — don't re-add it, a stale committed copy reintroduces the crash above.
-- There is no `typecheck` script; use `npx tsc --noEmit` for a fast check that skips the Next build.
-- HMR is only disabled when `DISABLE_HMR=true` is present in the environment (checked in `next.config.ts` `webpack()`). It is **not** in `.env.local`; export it yourself (`$env:DISABLE_HMR="true"; npm run dev`).
-- No CI, no test framework, no `test` npm script. Verification is the `tests/*.check.ts` scripts plus manual clicking; the rest of `scripts/*.js` hits the **live** database.
-- `npm run lint` is currently **red**: **37 problems (24 errors, 13 warnings)** across 15 files, all pre-existing. `react/no-unescaped-entities` and `react-hooks/set-state-in-effect` dominate, over `CheckoutClientPage`, `ClosedEventClientPage`, `components/StoryDeckHero.tsx`, `components/admin/VendorDetailDrawer.tsx`, `components/ui/PwaInstallButton.tsx`, `admin/dashboard`, `admin/gallery`, `admin/settlements`, `admin/whatsapp`, `login`, `pay/tab/[id]`, `scanner`, `vendor/login`, `vendor/sales`, `vendor/sell`. Read the count against this baseline before blaming your change. `eslint.config.mjs` ignores `.netlify/**`, `replace.js` and `check.js` (all non-source), and the ignores **must** live in their own config object to act globally in flat config.
+- `next.config.ts`: `typescript.ignoreBuildErrors: false` + `eslint.ignoreDuringBuilds: true`. So **`npm run build` is the typechecker** (a red build = a TS error). Because `build` cleans first, the old "stale `.next/` crashes with `Cannot read properties of undefined (reading 'length')`" failure is auto-mitigated; if it still happens, run `npm run clean` by hand.
+- **`npm run lint` currently crashes** before linting anything: `Failed to patch ESLint because the calling module was not recognized` from `@rushstack/eslint-patch` (ESLint 9.39.1 + eslint-config-next 15.5.29). Don't read it as "my change broke lint". `eslint.config.mjs` ignores `.netlify/**`, `replace.js`, `check.js`; the ignores **must** live in their own config object to act globally in flat config.
+- `tsconfig.json` **excludes `tests` and `scripts`**, so `npx tsc --noEmit` does NOT typecheck the test suite. `tsconfig.tsbuildinfo` is gitignored — keep it untracked.
+- HMR is disabled only when `DISABLE_HMR=true` is exported (`next.config.ts` `webpack()`); it is not in `.env.local`.
+- No CI, no test framework, no `test` script. `scripts/` (~250 files) is gitignored and hits the **live** DB; don't run it casually.
 
-## Verification suite (`tests/`, tracked)
+## Verification suite (`tests/`)
 
-Each file is a standalone `tsx` script that prints `PASS`/`FAIL` lines and exits non-zero on failure. Run them all:
+64 `*.check.ts` files (plus 2 `*.e2e.ts` the runner below skips). Each is a standalone `tsx` script that prints PASS/FAIL and exits non-zero on failure. Run them all:
 
 ```powershell
 Get-ChildItem tests -Filter *.check.ts | ForEach-Object {
@@ -34,172 +38,180 @@ Get-ChildItem tests -Filter *.check.ts | ForEach-Object {
 }
 ```
 
-Use the **local** `tsx.cmd`, not `npx tsx`: inside a `ForEach-Object` block `npx` fails with `could not determine executable to run` (npm 11 on this machine) and every suite looks broken when none of them are.
+Use the **local** `tsx.cmd`, not `npx tsx` — inside a `ForEach-Object` block `npx` fails with `could not determine executable to run` on this machine (npm 11) and every suite looks broken.
 
-| File | Locks down |
-|---|---|
-| `public-state.check.ts` | every `publicState` / `getEventAvailability` routing rule + the routing↔payment agreement invariant (**47 passing**) |
-| `never-invent-prices.check.ts` | no fallback tier ladder, no `\|\| 1` event fallback, till/paystack reject a missing tier (11) |
-| `phone.check.ts` | `lib/phone.ts` normalization across every shape the codebase stores (35) |
-| `scanner-vendor-auth.check.ts` | signed-cookie tampering / wrong-secret / wrong-role rejection (14) |
-| `customer-audit-unification.check.ts` | types + queries that join tickets, POS splits and tabs into one customer |
-| `manifests.check.ts` | the three scoped PWA manifests, `public/sw.js`, and that **no root `app/manifest.ts` exists** |
-| `event-media.check.ts` | `resolveEventFlyer` / `resolveEventVideo` defaults and custom-URL precedence |
-| `story-deck.check.ts` | `components/StoryDeckHero.tsx` contract (poster + teaser, `playsInline`, tap-to-enlarge) |
-| `og-social.check.ts` | the social/SEO contract: 1200x630 banner **generated per event** from its own poster, no hardcoded `og-*.jpg`, canonical/site_name/locale/twitter/apple-icon/manifest present, JSON-LD emitted |
-| `video-upload.check.ts` | video teaser upload pipeline with Catbox tier 1, Pomf2 fallback 1, and Uguu fallback 2 (11) |
-| `settlements.check.ts` | vendor settlement reconciliation: digital vs cash custody, 10% commission, net payout formula (19) |
-| `budget.check.ts` | event budget & expense P&L engine, category breakdown, utilization & break-even math (24) |
-| `mpesa-qr.check.ts` | M-Pesa Buy Goods QR (EMVCo TLV + CRC-16) and Universal Web Quick-Pay URLs (15) |
+Groups (not exhaustive):
+- Ticketing core: `public-state` (`--live` re-runs the same routing decisions read-only against the real DB), `never-invent-prices`, `phone`, `event-media`, `story-deck`, `og-social`, `manifests`, `settlements`, `budget`, `mpesa-qr`, `customer-audit-unification`.
+- Auth/security: `scanner-vendor-auth`, `admin-vendor-auth`, `admin-security-hardening`, `admin-roles`, `admin-delete`, `admin-routes-guarded` (statically scans every `app/api/**/route.ts` for an in-handler auth guard or an explicit public allowlist).
+- DB/ops: `db-backup`.
+- Radio: 24 files (`radio*.check.ts`) — sequencer, schedule, playlists, playback, signed playback, drops, ingest signature, harmonizer, listeners, tips, shoutouts, contests, etc.
 
-All 13 passed on 2026-10-21. `public-state.check.ts --live` re-runs the same decisions read-only against the real database. **Add a case before changing routing, pricing, phone matching, session auth, PWA scope, or social metadata.**
+`tests/` lives outside `scripts/` on purpose: `.gitignore` excludes `scripts/` (its ad-hoc scripts hardcode the production DB password), so anything the codebase depends on must not live there. **Add a case before changing routing, pricing, phone matching, session auth, PWA scope, social metadata, or radio playout.**
 
-`tests/` is deliberately *outside* `scripts/`: `.gitignore` excludes `scripts/` because the ad-hoc DB scripts there hardcode the production Neon password, so a verification tool the codebase depends on must not live there. The one-off data repair (`scripts/repair-event-status.js`, writes to prod, dry-run by default) stays untracked in `scripts/` alongside its peers — recreate it from this file's description if you ever need it again.
+Caveat: `admin-routes-guarded.check.ts` only greps for the *presence* of a guard token, so it accepts a decode-only `getSession()` as valid auth (see Auth).
 
 ## Environment gotchas
 
-- `.env.local` contains **only**: `DATABASE_URL`, `APP_URL`, legacy `DARAJA_CONSUMER_KEY`/`DARAJA_CONSUMER_SECRET`, `WHATSAPP_GATEWAY_URL`/`WHATSAPP_API_KEY`/`WHATSAPP_SESSION_ID`, `PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY`. Production values live only in the Vercel dashboard, never in a file.
-- **Absent locally, and each one fails or degrades differently — do not assume a local env is "just missing keys":**
+- `.env.local` holds only local values; production secrets live in the Vercel dashboard. It currently contains `DATABASE_URL`, `APP_URL`, legacy `DARAJA_*`, `WHATSAPP_GATEWAY_*`, `PAYSTACK_*`.
+- **Secrets are now fail-closed.** The old hardcoded fallback salts (`goodlife_scanner_secret_salt` etc.) were removed. Resolution order is `SCANNER_SESSION_SECRET` / `VENDOR_SESSION_SECRET` / (`ADMIN_SESSION_SECRET` or `ADMIN_PASSWORD`) / `PRESENTER_SESSION_SECRET` → `TAB_SELF_PAY_SECRET` → `PAYHERO_CALLBACK_TOKEN`; if the resolved secret is empty the verifier returns null/false. A missing secret means nobody can log in — **not** forgeable cookies. (The salts survive only as fixtures in `tests/`.)
+- Absent locally, each fails differently:
   - `PAYHERO_*` → checkout returns "PayHero not configured".
-  - `ADMIN_PASSWORD` → `POST /api/admin/login` returns **500 "Server misconfiguration"** (fail-closed, not a bypass). `/login` is therefore untestable locally without adding it.
-  - `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN` → those toggles/PINs simply never match.
-  - `SCANNER_SESSION_SECRET` / `VENDOR_SESSION_SECRET` → **fall through to a hardcoded literal salt** (`"goodlife_scanner_secret_salt"` / `"goodlife_vendor_secret_salt"` in `middleware.ts`, `app/api/scanner/auth`, `app/api/scanner/session`, `app/api/vendor/auth`). With those unset, vendor/scanner session cookies are **forgeable by anyone who reads this repo**. Never let them be unset in production.
-  - `TAB_SELF_PAY_SECRET` falls back to `PAYHERO_CALLBACK_TOKEN`, then `DATABASE_URL` (`lib/self-pay-token.ts`) — links keep working, but set it explicitly.
-- `.env.example` documents only `GEMINI_API_KEY`, `APP_URL`, `DATABASE_URL`, `PAYHERO_*`, `TAB_SELF_PAY_SECRET`, `PAYSTACK_*`, `NEXT_PUBLIC_ENABLE_PAYSTACK`, `WHATSAPP_GATEWAY_*`, `VERCEL_TOKEN`. It does **not** mention `ADMIN_PASSWORD`, `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN`, `SCANNER_SESSION_SECRET`, `VENDOR_SESSION_SECRET`, `WAHA_*`, or `OPERATOR_WHATSAPP_NUMBERS` — add them there if you touch auth.
-- `/api/mpesa/*` is dead Daraja code (superseded by PayHero, and `README.md`/`CLAUDE.md` still describe it). Don't wire new work to it — note `lib/supabase-db.ts`'s *client* branch of `createPendingPayment` still posts to `/api/mpesa/stkpush`; the live PayHero routes call the server branch instead. `app/api/vendor/mpesa/stk` is a *misnomer*: it drives PayHero.
-- ~110 files in `scripts/` hardcode the production Neon URL **including the password**. `scripts/`, `backups/`, `scan-qr.html`, `SECURITY-AUDIT.md`, `/research/`, root `*.png`, and root debug files (`check.js`, `fix.js`, `test-checkout-cli.js`, `audit-shots/`) are untracked and excluded in `.gitignore` so credentials, DB dumps and audit findings don't leak. Assume the credential is already burned; don't add more, and treat DB-touching scripts as dangerous.
-- `scripts/test-e2e-suite.js` is not a unit test: it connects to the live DB, INSERTs/UPDATEs tickets + waitlist rows for hardcoded event `2`, then deletes them. Don't run it casually.
+  - `ADMIN_PASSWORD` → `POST /api/admin/login` returns **500 "Server misconfiguration"** (fail-closed). `/login` is untestable locally without it.
+  - `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN` → those toggles/PINs never match.
+  - `PRESENTER_SESSION_SECRET` unset → the whole `/presenter` portal refuses every session.
+- `.env.example` documents the ticketing + radio keys (`ADMIN_*`, `PRESENTER/SCANNER/VENDOR_SESSION_SECRET`, `CRON_SECRET`, `PAYHERO_*`, `TAB_SELF_PAY_SECRET`, R2 + radio playback/bridge keys, `IMGBB_API_KEY`, `OPERATOR_WHATSAPP_NUMBERS`). It still omits `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN`, `WAHA_*` — add them if you touch auth.
+- `/api/mpesa/*` is dead Daraja code. `lib/supabase-db.ts`'s *client* branch of `createPendingPayment` still posts to `/api/mpesa/stkpush`; the live PayHero routes call the server branch instead. `app/api/vendor/mpesa/stk` is a *misnomer*: it drives PayHero.
+- `scripts/`, `backups/`, `scan-qr.html`, `SECURITY-AUDIT.md`, `/research/`, root `*.png`, and root debug files are untracked/gitignored so credentials, DB dumps, and audit findings don't leak. Assume the DB credential is already burned. `scripts/test-e2e-suite.js` INSERTs/UPDATEs/DELETEs rows for event `2` in the live DB — not a unit test.
 
-## Data model (the thing most likely to be got wrong)
+## Database
 
-Two overlapping "event" models — mixing them breaks checkout, tiers, and gate scans:
+PostgreSQL via `pg.Pool` + SSL.
+
+| Role | Key | Host |
+|---|---|---|
+| Primary (production) | `DATABASE_URL` | `aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres` (Supabase, Sydney pooler) |
+| Secondary / home server | `BACKUP_DATABASE_URL` | `0.tcp.in.ngrok.io:24142/goodlife` |
+| Legacy | — | `schema-neon.sql` / README / CLAUDE say Neon; live is Supabase |
+
+- **50 public tables** (23 are `radio*`). Ticketing: `events`, `event_details`, `event_expenses`, `event_gallery`, `event_waitlist`, `ticket_tiers`, `tickets`, `payment_logs`, `pending_payments`, `payhero_webhook_outbox`, `db_backup_logs`, `pos_sales`, `pos_sale_items`, `pos_split_payments`, `customer_tabs`, `tab_transactions`, `till_sessions`, `vendors`, `vendor_items`, `vendor_operators`, `vendor_event_assignments`. Radio: `presenters`, `presenter_applications`, `shows`, `show_slots`, `radio_playlists`, `radio_playlist_tracks`, `radio_drops`, `radio_plays`, `radio_recordings`, `radio_sets`, `radio_settings`, `radio_polls`, `radio_shoutouts`, `radio_sponsors`, `radio_tips`, `radio_reminders`, `soundboard_banks`, `soundboard_pads`, `radio_audit_logs`, plus `radio_*` telemetry/log tables.
+- `lib/supabase-db.ts` (~172 KB) **is** the data layer. Every function branches on `typeof window === "undefined"`: server → SQL via `neonQuery()` (connects to `DATABASE_URL`), client → `fetch` to its own `/api/*`. Adding a field means editing `lib/supabase-db-types.ts`, the function's server branch, and its client fallback.
+- Some modules (`lib/payhero-fulfill.ts`, several API routes) build a **new `Pool` per call** and `pool.end()` it — that's the existing pattern.
+- **Migrations:** only the radio subsystem has a runner — `npm run migrate:radio` applies `migrations/radio/*.sql` in filename order, each in a transaction, tracking applied files in a `schema_migrations` ledger (`scripts/migrate.js`; supports `--dry-run`). Everything else is ad-hoc `scripts/*.js|ts` that parse `DATABASE_URL` from `.env.local`. Always check the live schema before assuming a column exists.
+
+## Automated 12-hour DB backups
+
+- **Why a home-server cron, not Vercel Cron:** Vercel Hobby allows 1 cron/day, so `0 */12 * * *` runs on the user's home server against Supabase.
+- `lib/db-backup.ts` → `executeDatabaseBackup()` dumps all 50 public tables to SQL, gzips (`level: 9`) to `backups/db/goodlife-db-<timestamp>.sql.gz`, streams it to Cloudflare R2 (`goodlife` bucket, `backups/db/`), prunes both locations at 30 days, and logs to `db_backup_logs`.
+- Runners: `scripts/run-backup.sh` (Linux cron) / `scripts/run-backup.bat` (Windows Task Scheduler) / `scripts/server-cron-backup.ts`.
+- Triggers: `POST /api/admin/backup` (admin session) and `POST /api/cron/db-backup` (`Authorization: Bearer <CRON_SECRET>`). Guarded by `tests/db-backup.check.ts`. (These backup files are currently untracked in git.)
+
+## Data model — events vs event_details
+
+Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 
 | Source | Scope |
 |---|---|
-| `events` (many rows, `event_id` everywhere) | Real events: checkout, ticket tiers, tickets, vendors, gallery, radio, waitlist, gate scans |
-| `event_details` (singleton `id = 1`) | Site-wide settings only: WhatsApp templates, `gate_pin`, `simulators_enabled`, `operator_notifications_enabled`, footer, `payment_contact`. Also the source for `app/layout.tsx` `generateMetadata` (page title/OG image) |
-
-- `lib/supabase-db.ts` (~150 KB) *is* the data layer. Every function branches on `typeof window === "undefined"`: server → Neon SQL, client → `fetch` to its own `/api/*` route. Adding a field means editing `lib/supabase-db-types.ts`, the function's server branch, and its client fallback.
-- `lib/supabase-db.ts` module-loads a single `pg.Pool`. `lib/payhero-fulfill.ts` and several API routes build a **new `Pool` per call** and `pool.end()` it — that's the existing pattern. `lib/neon-client.ts` (`getDbPool`) is the cached singleton but is imported by only 2 files.
-- **Supabase is vestigial.** `utils/` is empty and nothing in `app/`, `lib/`, or `components/` imports `@supabase/*`, despite `README.md`/`CLAUDE.md` describing a Supabase+Neon split and the deps still being installed. It's Neon-only. (`.agents/skills/supabase-*` are just vendored skill docs.)
-- **No migration runner.** `schema.sql` / `schema-neon.sql` (76 lines) define 4 tables — `events`, `tickets`, `event_details`, `pending_payments` — and are stale even on those (the `events` DDL predates `flyer_url` edits, and has no `video_url`, `sales_open_date`, recurrence or POS/hub columns). The live DB has ~23 tables including `pos_sales`, `pos_sale_items`, `pos_split_payments`, `customer_tabs`, `tab_transactions`, `vendor_event_assignments`, `vendor_items`, `vendor_operators`, `vendors`, `event_gallery`, `event_waitlist`, `radio_sets`. Schema changes are one-off `scripts/*.js` that hand-parse `DATABASE_URL` from `.env.local` (there is no `dotenv` dependency). Grep `lib/supabase-db.ts` for the column before assuming it exists; add a new script rather than editing the old ones.
+| `events` (many rows, `event_id` everywhere) | real events: checkout, tiers, tickets, vendors, gallery, radio events, waitlist, gate scans |
+| `event_details` (singleton `id = 1`) | site-wide settings only: WhatsApp templates, `gate_pin`, `simulators_enabled`, `operator_notifications_enabled`, footer, `payment_contact`; also the source for `app/layout.tsx` `generateMetadata` |
 
 ## Payments
 
-1. **PayHero STK push (live, primary)** — `POST /api/payhero/initialize` → customer enters PIN → checkout polls `GET /api/payhero/verify` → ticket issued. The webhook `POST /api/payhero/callback` performs the same fulfillment, so both paths must stay idempotent through `lib/payhero-fulfill.ts`, keyed on `pending_payments.checkout_request_id` (our `GL-XXXX` external reference, not PayHero's own reference).
-   - **Fee float (critical):** PayHero deducts collection fees from its *service wallet*, not from the incoming payment (the till settles separately). At zero balance, collections fail. `initialize` hard-blocks at 0 (503) and WhatsApp-alerts operators below `PAYHERO_MIN_BALANCE` (default 50). Monitoring failures must never block sales — that fail-open branch is deliberate.
-2. **Manual till** — `POST /api/payments/till-submit` writes a `till_pending` row; an admin approves it in the dashboard (`/api/admin/pending-payments/approve`) before any ticket exists. The endpoint currently has **no UI caller**.
+1. **PayHero STK push (primary)** — `POST /api/payhero/initialize` → customer PIN → checkout polls `GET /api/payhero/verify` → ticket issued. `POST /api/payhero/callback` does the same fulfillment, so both paths must stay idempotent through `lib/payhero-fulfill.ts`, keyed on `pending_payments.checkout_request_id` (our `GL-XXXX` ref, not PayHero's own).
+   - **Fee float:** PayHero bills collection fees from its *service wallet*; at zero balance collections fail. `initialize` hard-blocks at 0 (503) and WhatsApp-alerts below `PAYHERO_MIN_BALANCE` (default 50). Monitoring failure must never block sales (fail-open on purpose).
+2. **Manual till** — `POST /api/payments/till-submit` writes a `till_pending` row; an admin approves it (`/api/admin/pending-payments/approve`) before any ticket exists. The endpoint currently has **no UI caller**.
 3. **Vendor tab self-pay** — public `/pay/tab/[id]?t=<hmac>`; the token is HMAC-SHA256 verified with `timingSafeEqual`. Never add an unauthenticated tab route (tab IDs are enumerable). Vendor-initiated tab STK is `/api/vendor/mpesa/stk` (PayHero under the hood).
-4. **Paystack** — code fully kept, hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true`. `NEXT_PUBLIC_*` is baked at build time, so toggling requires a redeploy.
+4. **Paystack** — code kept, hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true`. `NEXT_PUBLIC_*` is baked at build time, so toggling needs a redeploy.
 5. `/api/mpesa/*` (Daraja) is legacy and unused by the UI.
 
-## Event lifecycle (read this before touching routing or status)
+## Event lifecycle (read before touching routing or status)
 
-There is **one** function that decides which public page an event gets: `publicState()` in `lib/event-availability.ts`, returning `recap | coming_soon | checkout | unavailable`. `app/page.tsx` calls it and nothing else. The rule order is:
+`publicState()` in `lib/event-availability.ts` is the **only** function that decides which public page an event gets (`recap | coming_soon | checkout | unavailable`). `app/page.tsx` calls it and nothing else. Rule order:
 
-1. `status === 'closed'` → `recap`
+1. `canonicalStatus(status) === 'closed'` → `recap`
 2. `status === 'archived'` or `archived_at` set → `unavailable` (404)
 3. `getEventAvailability().reason === 'not_live'` → `coming_soon`
-4. `reason === 'not_open_yet'` → `coming_soon`
-5. `category === 'mini'` → `checkout`
+4. `category === 'mini'` → `reason === 'not_open_yet' ? 'coming_soon' : 'checkout'`
+5. `reason === 'not_open_yet'` → `coming_soon`
 6. `reason === 'event_finished'` → `recap`
 7. otherwise → `checkout`
 
 - **`status` is a hand-set label; the recurrence engine is the truth for minis.** A mini festival parked on `scheduled` is sellable today, so gating its page on `status` would show a countdown while the payment API took its money. Never re-derive page choice from `status` anywhere else.
-- **Anything that advertises "on sale" must use `isEventSellable(e)`** (`lib/event-availability.ts`, wraps `getEventAvailability().sellable`), not a `status` comparison. `app/page.tsx` uses it for `liveMiniEvents`; the payment routes use the same predicate. A banner that disagrees with checkout is a dead end.
-- **`recurrence_pattern` supports only `daily | weekly | biweekly | none`.** Anything else (e.g. `monthly`) logs `[event-availability] recurrence_pattern="monthly" is not supported yet` and is treated as **non-recurring**, so availability silently falls back to the one-shot `event_date`. If you're adding a cadence, add it to `cadenceFor()` *and* a `public-state.check.ts` case.
-- **The `active` → `live` legacy value.** The old event-editor `<select>` and the old "re-open event" button both wrote `status = 'active'`, which `getEventAvailability` rejects — so those events rendered a working checkout page and refused **every** payment. `canonicalStatus()` now folds `active` to `live`, and every status read goes through it. If you add a status comparison anywhere, use `canonicalStatus`, not `e.status`. Once `scripts/repair-event-status.js` has been run against prod, the fold is no longer load-bearing.
-- **Never invent prices.** There is *no* fallback tier ladder anywhere, and that is deliberate: `CheckoutClientPage` used to fall back to eight hardcoded flagship tiers for any event with zero DB tiers, and `fetchTicketTiers` used to INSERT them from an unauthenticated `GET /api/ticket-tiers`. Both are gone. Zero tiers means zero tiers — `app/page.tsx` downgrades a tierless checkout to `coming_soon` (with `tiersPending` for distinct copy), and `CheckoutClientPage` refuses submit before anything else and shows an empty-state panel. Do not reintroduce a default ladder, and do not make a read function write.
-- **`sales_open_date` / `sales_close_date` are editable** ("Tickets Open" / "Tickets Close", `datetime-local`, entered as Kenya time — the column is a naive EAT string). They gate both the page and payment. Do not add a second hand-rolled auto-open rule.
-- **Closing ≠ archiving.** `POST /api/events/[id]/archive` takes an explicit `mode`: `activate` | `close` | `archive`. `closeEvent()` sets `status='closed'` and keeps the recap page; `archiveEvent()` stamps `archived_at` and 404s it. The old boolean `activate` flag made the dashboard's END/CLOSE button *archive* as well as close. For backward compat `activate: true` still works; absent a `mode`, it archives.
-- `isHiddenFromSite()` shares `publicState`'s rule for "may this be linked" (the editions switcher, the mini promo). Use it rather than re-checking `archived_at`.
+- Anything advertising "on sale" must use `isEventSellable(e)` (wraps `getEventAvailability().sellable`), not a `status` comparison — a banner that disagrees with checkout is a dead end.
+- `recurrence_pattern` supports only `daily | weekly | biweekly | none`. Anything else logs `[event-availability] recurrence_pattern="monthly" is not supported yet` and is treated as **non-recurring**, so availability silently falls back to the one-shot `event_date`. Add a new cadence to `cadenceFor()` **and** a `public-state.check.ts` case.
+- **Legacy `active` → `live`:** old UI wrote `status = 'active'`, which `getEventAvailability` rejects (working page, refused every payment). `canonicalStatus()` folds `active` to `live`; use `canonicalStatus`, not `e.status`, in any status comparison.
+- **Never invent prices.** There is no fallback tier ladder anywhere. Zero tiers means zero tiers: `app/page.tsx` downgrades a tierless checkout to `coming_soon` (with `tiersPending` for distinct copy), and `CheckoutClientPage` guards the empty ladder *first* (line ~754) and shows an empty-state panel. Don't reintroduce a default ladder, and don't make a read function write.
+- `sales_open_date` / `sales_close_date` are editable ("Tickets Open" / "Tickets Close", `datetime-local`, entered as Kenya time — the column is a naive EAT string). They gate both page and payment. Don't add a second hand-rolled auto-open rule.
+- **Closing ≠ archiving.** `POST /api/events/[id]/archive` takes `mode: activate | close | archive`; `closeEvent()` sets `status='closed'` and keeps the recap page, `archiveEvent()` stamps `archived_at` and 404s it. For backward compat `activate: true` still works; absent a `mode`, it archives.
+- `isHiddenFromSite()` shares `publicState`'s "may this be linked" rule — use it rather than re-checking `archived_at`.
 
-## Media: posters, teaser video, and the hero
+## Media: posters, teaser video, hero
 
-- `lib/event-flyer.ts` is the only place media URLs are decided: `resolveEventFlyer(event)` → `/flyer.png`, or `/flyer-park-chill.png` when `category === 'mini'` or the title/subtitle mentions chill/park & chill/sunday (a custom `flyer_url` other than `/flyer.png` always wins). `resolveEventVideo(event)` → Cloudflare R2 bucket URLs (`${R2_DOMAIN}/videos/goodlife-hype.mp4` or `${R2_DOMAIN}/videos/park-chill-speakers.mp4`) by the same rule, with `events.video_url` winning. Both are wired in `app/page.tsx`'s `eventDetails` object, so adding an event column means adding it there too.
-- **`components/admin/PosterUploader.tsx` uploads straight from the browser to ImgBB with a hardcoded API key** (`api.imgbb.com/1/upload?key=…`). There is no server route and no auth in front of it. That is also why `i.ibb.co` is one of only two whitelisted `images.remotePatterns` hosts in `next.config.ts`. Don't assume posters land in the repo — they land in a third-party bucket.
-- `components/StoryDeckHero.tsx` is the Instagram-story-style hero on **both** checkout and coming-soon pages: 5s poster countdown → teaser autoplay, with poster/video expand lightboxes. Tapping the media expands whatever is on screen (it is the only path to the lightbox — there are no invisible tap zones), and the POSTER/TEASER pill is the sole slide switcher. `tests/story-deck.check.ts` guards that contract.
-- `public/` holds real production assets (`BebasNeue.ttf`, `flyer*.png`, `promo.mp4`). Heavy teaser videos (`goodlife-hype.mp4`, `park-chill-speakers.mp4`) are hosted on Cloudflare R2 (`goodlife` bucket) to keep app bundle and deploy times lean. They are not build artifacts — don't gitignore or "clean" them.
+- `lib/event-flyer.ts` is the only place media URLs are decided: `resolveEventFlyer(event)` → `/flyer.png`, or `/flyer-park-chill.png` when `category === 'mini'` or the title/subtitle mentions chill / park & chill / sunday (a custom `flyer_url` other than `/flyer.png` always wins). `resolveEventVideo(event)` → R2 bucket URLs (`${R2_DOMAIN}/videos/goodlife-hype.mp4` or `park-chill-speakers.mp4`) by the same rule, with `events.video_url` winning. Both are wired in `app/page.tsx`'s `eventDetails`, so adding an event column means adding it there too.
+- **`components/admin/PosterUploader.tsx` uploads straight from the browser to ImgBB with a hardcoded API key** — no server route, no auth. That's why `i.ibb.co` is a whitelisted image host. Posters land in a third-party bucket, not the repo.
+- `components/StoryDeckHero.tsx` is the story-style hero on **both** checkout and coming-soon pages: 5s poster countdown → teaser autoplay, poster/video expand lightboxes. Tapping the media expands whatever is on screen (the only path to the lightbox — no invisible tap zones), and the POSTER/TEASER pill is the sole slide switcher. `tests/story-deck.check.ts` guards that contract.
+- `public/` holds real production assets (`BebasNeue.ttf`, `flyer*.png`, `promo.mp4`); heavy teasers live on Cloudflare R2 to keep the bundle lean. Not build artifacts — don't gitignore or "clean" them.
 
-## Social cards (og:image) — generated, never a checked-in image
+## Social cards (og:image) — generated, never checked in
 
-- **Every og:image is a 1200x630 PNG rendered per event by `next/og`**, from that event's own poster via `resolveEventFlyer`. There is deliberately **no** `og-*.jpg` in `public/` and no `resolveEventOgImage`: the flyers are portrait (896x1200) and 2.8–3.3 MB, which LinkedIn rejects (too small a landscape), WhatsApp rejects (>500 KB) and every platform letterboxes. `tests/og-social.check.ts` fails if a static banner filename or an `openGraph.images` block creeps back in.
-  - `lib/og-image.tsx` — `renderEventOgImage(event)`: 1200x630, poster cropped to a 300x400 card, Bebas Neue from `public/BebasNeue.ttf`, ~350 KB output. Poster loading is guarded (bad `flyer_url`, missing file, dead ImgBB URL → text-only card, never a 500), and reads only inside `public/` so a `../../.env.local` value can't be leaked.
-  - `app/opengraph-image.tsx` — site-wide default, **file convention**, `revalidate = 3600`. Serves every route that doesn't declare its own image.
-  - `app/events/[id]/opengraph-image.tsx` — the same renderer for one edition, one segment deeper.
-  - `app/og/route.tsx` — `GET /og?event=<id>`, the only way to get a banner for `/?event=<id>` (a metadata file cannot read the query string). `s-maxage=3600`. Public by design; not in the middleware matcher.
-- **The rule that keeps them consistent:** a page must not declare `openGraph.images`/`twitter.images` unless it means to *override* the generated banner. Config beats file convention, so adding a portrait `images` entry silently undoes the whole fix.
-- **Canonical URLs are per route, never in `app/layout.tsx`.** A layout-level `alternates.canonical` is inherited by every route and would point `/events/3`, `/gallery` and `/radio` at the homepage.
-- Titles use `title: { absolute }` on any page overriding the layout, otherwise the layout template (`%s | <featured event>`) renders "GOODLIFE 4 - MARARA CAMP, THIKA | GOODLIFE 4".
-- `lib/seo.ts` owns the copy split: `description` (~150 chars, Google) vs `ogDescription` (≤124, previews truncate past ~125 without an ellipsis). `siteUrl()` **refuses** a localhost/ngrok `APP_URL` as a canonical identity — `.env.local` here points at an ngrok tunnel, which would otherwise publish itself as the canonical URL.
-- `components/SeoStructuredData.tsx` emits Event + WebSite JSON-LD, `cache()`-deduped against `generateMetadata`'s fetch. It carries no `price` on purpose: tiers live in the database and are chosen at checkout, so a hardcoded figure would be a lie in a rich result.
+- Every og:image is a 1200x630 PNG rendered per event by `next/og` from that event's own poster (`resolveEventFlyer`). There is deliberately **no** `og-*.jpg` and no `resolveEventOgImage`: the flyers are portrait (896x1200) and 2.8–3.3 MB, which platforms reject or letterbox. `tests/og-social.check.ts` fails if a static banner filename or an `openGraph.images` block creeps back in.
+  - `lib/og-image.tsx` `renderEventOgImage(event)` — 1200x630, poster cropped to a 300x400 card, Bebas Neue from `public/BebasNeue.ttf`, ~350 KB. Poster loading is guarded (bad `flyer_url`, missing file, dead ImgBB URL → text-only card, never a 500) and reads only inside `public/` (no `../../.env.local` leak).
+  - `app/opengraph-image.tsx` (site-wide default, file convention, `revalidate = 3600`), `app/events/[id]/opengraph-image.tsx`, `app/radio/opengraph-image.tsx`, and `app/og/route.tsx` (`GET /og?event=<id>`, the only banner source for `/?event=<id>`; public by design, `s-maxage=3600`).
+- **A page must not declare `openGraph.images`/`twitter.images` unless it means to override the generated banner** — config beats file convention, so a portrait `images` entry silently undoes the whole fix.
+- Canonical URLs are per route, never in `app/layout.tsx` (a layout-level canonical is inherited by every route). Titles overriding the layout use `title: { absolute }`.
+- `lib/seo.ts` owns the copy split: `description` (~150 chars) vs `ogDescription` (≤124). `siteUrl()` **refuses** a localhost/ngrok `APP_URL` as a canonical identity. `components/SeoStructuredData.tsx` emits Event + WebSite JSON-LD with no `price` on purpose (tiers live in the DB).
 
-## Progressive Web Apps (scoped, deliberately)
+## PWA (scoped, deliberately)
 
-- There are **three operational** manifests — `public/manifests/{vendor,scanner,admin}.json` — referenced from `metadata.manifest` in `app/{vendor,scanner,admin}/layout.tsx`, each with its own `scope` and `start_url`. **There must be no root `app/manifest.ts`**; it would bleed the Vendor POS install prompt onto every public visitor's phone. `tests/manifests.check.ts` fails if one appears.
-- The public site has a **fourth, non-operational** manifest, `public/site.webmanifest` (`display: minimal-ui`, start_url `/`), declared in `app/layout.tsx`. It exists for SEO/"Add to Home Screen" and uses public icons only, so it does **not** leak the POS. Consequence to know: the public checkout is now installable on Android, which it previously was not. To restore that, delete the `manifest:` line from `app/layout.tsx` and the file — nothing else depends on it.
-- `public/sw.js` is hand-written (no `serwist`/`next-pwa`): precaches only icons, serves network-first, and **skips every `/api/` request** — so it can never serve stale money or ticket state. It also returns a plain-text 503 "Terminal Offline - Reconnecting..." instead of failing the fetch.
-- `components/ui/PwaInstallButton.tsx` registers `/sw.js` in a `useEffect` and is the only registration site. It renders `null` unless Chrome fired `beforeinstallprompt` or the UA is iOS (which gets a manual Add-to-Home-Screen guide).
-- Icons are per-surface (`public/icons/{vendor,scanner,admin}-*.png` plus maskable variants). Adding a surface means a new manifest, a layout `metadata` entry, and its icons.
+- **Five operational manifests** — `public/manifests/{vendor,scanner,radio,presenter,admin}.json` — referenced from `metadata.manifest` in `app/{vendor,scanner,radio,presenter,admin}/layout.tsx`, each with its own `scope`/`start_url`. **There must be no root `app/manifest.ts`** (it would bleed the POS prompt onto every public visitor); `tests/manifests.check.ts` fails if one appears.
+- The public site has a separate, non-operational `public/site.webmanifest` (`display: minimal-ui`, start_url `/`), declared in `app/layout.tsx` for SEO / "Add to Home Screen". Consequence: the public checkout is installable on Android. To revert, delete the `manifest:` line and the file — nothing else depends on it.
+- `public/sw.js` is hand-written (no serwist/next-pwa): precaches only icons, network-first, and **skips every `/api/` request** (so it can never serve stale money/ticket state). It returns a plain-text 503 "Terminal Offline - Reconnecting..." instead of failing the fetch.
+- `components/ui/PwaInstallButton.tsx` registers `/sw.js` (the only registration site) and renders `null` unless `beforeinstallprompt` fired or the UA is iOS.
+- Icons: `public/icons/{vendor,scanner,admin}-*` plus maskable variants; radio/presenter reuse the generic `icon-*`/`maskable-*`. A new surface = new manifest + layout `metadata` entry + icons.
 
 ## Auth & middleware
 
-- Admin: `admin@goodlife.com` / `<set in env: ADMIN_PASSWORD>` → signed HMAC session cookie `goodlife_admin_session=<timestamp>.<payload>.<sig>` (1 day, httpOnly, secure, sameSite=strict). No Supabase Auth. Verified via `verifyAdminSession()` in `lib/admin-session.ts` and `requireAdmin()` in `lib/admin-auth.ts`. Dual-accepts legacy `"true"` cookie only during cutover while `ALLOW_LEGACY_ADMIN_COOKIE` is unset or not `"false"`. The same password is re-typed to confirm permanent deletes in the dashboard trash, and doubles as the gate-scanner superuser bypass.
-- Simulator/dev-panel toggle has its own password, `<set in env: SIMULATOR_PASSWORD>` (`/api/admin/verify-simulator-password`), stored per event as `simulators_enabled`.
-- **Scanner and vendor sessions are HMAC-SHA256 signed**, cookie value `base64url(payload).base64url(sig)`, verified with Web Crypto in `middleware.ts` (Edge runtime) and `createHmac` in the issuing routes. Secrets: `SCANNER_SESSION_SECRET` / `VENDOR_SESSION_SECRET` → `TAB_SELF_PAY_SECRET` → `PAYHERO_CALLBACK_TOKEN` → **hardcoded salt** (see Environment gotchas). Scanner payload requires `role === "scanner"`; vendor payload requires a `vendorId`. Gate PIN is `event_details.gate_pin` → `GATE_SCANNER_PIN` → admin password (each a plain `===` compare, not `timingSafeEqual`, unlike the admin password).
-- **`middleware.ts` verifies the signature, but route handlers decode the payload without it** (e.g. `app/api/vendor/mpesa/stk`, `lib/vendor-tab-auth.ts`). So a `vendorId` from a request *body* is always untrusted — that guard is the edge middleware, not the handler. Keep it that way: don't add a `/api/vendor/*` route outside `config.matcher`.
-- `lib/vendor-tab-auth.ts` accepts the admin cookie as a **superuser** on customer tabs (`getTabActor` / `tabOwnershipGuard`), so the admin customer-audit drawer can record payments and settle balances. Vendor operators only pass for their own tabs; tabs with a NULL `vendor_id` are legacy and stay open to all vendors.
-- `/admin/vendors/[id]/login-as` lets an admin impersonate a vendor, **creating an operator row with a random PIN** if the vendor has none. Changes `vendor_operators` in production.
-- `/scanner` + `/scanner/login` are their own route pair with `goodlife_scanner_session`; middleware redirects `/admin/scanner` → `/scanner` when a scanner session exists. Don't assume "protected by middleware" means "admin cookie".
-- **`config.matcher` is an explicit allowlist**: `/admin/:path*`, `/scanner*`, `/login`, `/vendor/*`, `/api/admin/*`, `/api/scanner/*`, `/api/vendor/*`, `/api/event-details`, `/api/ticket-tiers/*`, `/api/events/*`. A brand-new `/api/*` route is **public** until you add it there. Public carve-outs: `GET /api/events/active`, `GET /api/ticket-tiers`, `GET /api/admin/me`, `/api/admin/{login,logout}`, `/api/scanner/{auth,logout,session}`, `/api/vendor/{auth,logout,mpesa/status}`, admin cookie on `/api/vendor/tabs/*`.
-- `/api/hub/*` is **not** in the matcher, so those handlers must self-guard: `hub/gallery` POST and `hub/radio` POST call `requireAdmin()`; `hub/waitlist` POST is intentionally public (it is the public waitlist signup). There are 81 API routes total — check yours.
-- `lib/rate-limit.ts` is per-instance in-memory: it resets on cold start and is useless across replicas. It is already wired onto admin login, scanner auth, vendor login, tab self-pay, rsvp-free, till-submit, vendor STK, Paystack init and PayHero init — follow that pattern for new sensitive routes.
+- **Admin:** `admin@goodlife.com` / `ADMIN_PASSWORD` → signed HMAC cookie `goodlife_admin_session=<payload>.<sig>` (1 day, httpOnly, secure, sameSite=strict), verified by `verifyAdminSession()` (`lib/admin-session.ts`) / `requireAdmin(request?, allowedRoles?)` (`lib/admin-auth.ts`). No Supabase Auth. Legacy `"true"` cookies are now **strictly rejected** (`ALLOW_LEGACY_ADMIN_COOKIE` is gone). The same password is re-typed to confirm permanent deletes and doubles as the gate-scanner superuser bypass.
+- **Admin roles (RBAC):** `superadmin | station_manager | ticketing_admin` (default `superadmin`). `middleware.ts` enforces: `station_manager` may reach only `/admin/radio` + `/api/admin/radio/*`; `ticketing_admin` is blocked from all `/admin/radio*`. `requireAdmin(req, ["ticketing_admin"])` gates inside handlers.
+- **Presenter portal:** `/presenter` + `/api/presenter/*` with its own signed cookie `goodlife_presenter_session` (`lib/presenter-session.ts`, `PRESENTER_SESSION_SECRET`, fail-closed). `requirePresenter()` (`lib/presenter-auth.ts`) loads the `presenters` row (bcrypt `password_hash`) and rejects non-`active` accounts. Admin cookies are **not** accepted as presenter.
+- **Scanner/vendor sessions:** HMAC-SHA256 signed, `base64url(payload).base64url(sig)`. Scanner payload requires `role === "scanner"`; vendor payload requires a `vendorId`. Gate PIN is `event_details.gate_pin` → `GATE_SCANNER_PIN` → admin password (each a plain `===`, not `timingSafeEqual`).
+- **`config.matcher` (explicit allowlist):** `/admin/:path*`, `/scanner/:path*`, `/vendor/:path*`, `/presenter/:path*`, `/api/admin/:path*`, `/api/scanner/:path*`, `/api/presenter/:path*`, `/api/event-details`. **A new `/api/*` route is public until you add it here** — or guard it in-handler; `tests/admin-routes-guarded.check.ts` requires one or the other.
+- **⚠️ `/api/vendor/*` is NOT in the matcher** (unlike the `/vendor/*` pages). Vendor API handlers decode `goodlife_vendor_session` themselves, and several define a local `getSession`/`getVendorSession` that only base64-decodes the payload **without verifying the HMAC** (e.g. `vendor/sales`, `vendor/tabs`, `vendor/items`, `vendor/mpesa/stk`). `lib/vendor-tab-auth.ts` `verifyVendorSession`/`getTabActor` **do** verify — prefer them. Never treat a `vendorId` from a request body as trusted. `admin-routes-guarded.check.ts` counts a bare `getSession()` as a valid guard, so it won't catch this.
+- `lib/vendor-tab-auth.ts` accepts the admin cookie as a **superuser** on customer tabs (`getTabActor`/`tabOwnershipGuard`). Operators pass only for their own tabs; tabs with NULL `vendor_id` are legacy and open to all vendors.
+- `/admin/vendors/[id]/login-as` impersonates a vendor, creating an operator row with a random PIN if the vendor has none (writes `vendor_operators` in prod).
+- `/scanner` + `/scanner/login` are their own route pair with `goodlife_scanner_session`; middleware redirects `/admin/scanner` → `/scanner` when a scanner session exists. "Protected by middleware" ≠ "admin cookie".
+- `/api/hub/*` is **not** in the matcher: `hub/gallery` POST and `hub/radio` POST call `requireAdmin()`; `hub/waitlist` POST is intentionally public.
+- `lib/rate-limit.ts` is per-instance in-memory (resets on cold start, useless across replicas) and is already wired onto admin/scanner/vendor/presenter login, tab self-pay, rsvp-free, till-submit, vendor STK, Paystack init, and PayHero init — follow that pattern for new sensitive routes.
 
 ## Phone numbers (the customer-audit join)
 
-`lib/phone.ts` exists because the same human was recorded four ways — `tickets.phone_number` `"0712345678"`, `pos_split_payments.payer_phone` `"+254 712 345 678"`, `customer_tabs.customer_phone` `"254712345678"`, `tickets.whatsapp_number` `"0712 345 678"` — so a customer's tab balance didn't join to their ticket spend and "BALANCE DUE" read KES 0 for someone with an open tab.
+`lib/phone.ts` exists because the same human was recorded four ways (`tickets.phone_number` `"0712345678"`, `pos_split_payments.payer_phone` `"+254 712 345 678"`, `customer_tabs.customer_phone` `"254712345678"`, `tickets.whatsapp_number` `"0712 345 678"`), so a customer's tab didn't join to their ticket spend and "BALANCE DUE" read KES 0.
 
-- **Never compare raw phone strings across tables.** Use `phoneMatchKey` / `phonesMatch` / `normalizePhone`, which collapse everything to national `07XXXXXXXX`, and `toWhatsAppNumber` for `wa.me` links.
-- `normalizePhone` returns `""` for anything it can't confidently read (letters, wrong length, landlines) and `phonesMatch` is **false** whenever either side is empty — two blanks must never match, or every anonymous walk-in collapses into one phantom customer.
+- **Never compare raw phone strings across tables.** Use `phoneMatchKey` / `phonesMatch` / `normalizePhone` (collapse everything to national `07XXXXXXXX`) and `toWhatsAppNumber` for `wa.me` links.
+- `normalizePhone` returns `""` for anything it can't confidently read; `phonesMatch` is **false** whenever either side is empty — two blanks must never match, or every anonymous walk-in collapses into one phantom customer.
 
 ## WhatsApp gateway console (WAHA)
 
-- **Admin:** `/admin/whatsapp` — pairing QR + test-message console for the WAHA engine. Polling is **event-driven, not timer-based**: fetch on mount, then `setInterval` at 5s for `SCAN_QR_CODE`/`STARTING`, 10s for `OFFLINE`, and **stop entirely at `CONNECTED`** (the interval is rebuilt from `status`, so teardown is automatic). Polling is also skipped while `document.hidden`.
-- **`lib/waha.ts` is the only egress point to WAHA and is server-only** (it throws if imported in the browser). Everything WAHA returns is parsed, then discarded — the base URL, `X-Api-Key`, engine version payloads and WAHA's own prose errors (e.g. *"The headless Chromium session is booting up"*) never reach a client. Callers get only `WahaStatus` (`STARTING | SCAN_QR_CODE | CONNECTED | OFFLINE`), a normalized `me`, and short allow-listed messages.
-- `app/api/admin/whatsapp/{qr,status,test}/route.ts` all call `requireAdmin()` and **always answer HTTP 200** for a reachable gateway (401 when unauthenticated), so the client never has to interpret an error body. `/qr` returns `{ status, me, qrRaw, qrDataUrl, sessionId, checkedAt }` — `qrRaw` is the pairing payload the page renders with the `qrcode` package, `qrDataUrl` is an inlined PNG fallback for WAHA builds that ignore `?format=raw`.
-- **Never add a route that forwards a WAHA body, or the gateway URL/credentials, to the client.** An earlier version of this page printed the WAHA dashboard URL *and* its admin password in the UI; that card is now a sanitized "Gateway health" readout.
-- Env: `WAHA_BASE_URL` / `WAHA_API_KEY` / `WAHA_SESSION_ID`, falling back to `WHATSAPP_GATEWAY_URL` / `WHATSAPP_API_KEY` / `WHATSAPP_SESSION_ID`, then hardcoded defaults (`https://waha.darajadigital.com`, session `default`). The `WAHA_*` names take priority so the console can be pointed at a different engine without disturbing the ticket dispatcher in `lib/whatsapp.ts`, which keeps using `WHATSAPP_GATEWAY_*` (plus a `WHATSAPP_GATEWAY_TYPE` switch).
-- `app/api/whatsapp/webhook` logs only a redacted shape summary — it must never write raw inbound bodies/phone numbers to a file (`webhook-logs.txt` is gitignored for that reason).
+- `/admin/whatsapp` — pairing QR + test console. Polling is event-driven: fetch on mount, then 5s for `SCAN_QR_CODE`/`STARTING`, 10s for `OFFLINE`, and **stop entirely at `CONNECTED`**; also skipped while `document.hidden`.
+- `lib/waha.ts` is the only egress to WAHA and is server-only (throws if imported in the browser). The base URL, `X-Api-Key`, version payloads, and WAHA's prose errors never reach a client — callers get only a `WahaStatus` (`STARTING | SCAN_QR_CODE | CONNECTED | OFFLINE`), a normalized `me`, and allow-listed messages.
+- `app/api/admin/whatsapp/{qr,status,test,restart}` call `requireAdmin()` and **always answer HTTP 200** for a reachable gateway (401 when unauthenticated). `/qr` returns `{ status, me, qrRaw, qrDataUrl, sessionId, checkedAt }`.
+- **Never add a route that forwards a WAHA body, or the gateway URL/credentials, to the client.** (An earlier version of this page printed the WAHA dashboard URL *and* its admin password.)
+- Env: `WAHA_*` → `WHATSAPP_GATEWAY_*` → hardcoded defaults. `WAHA_*` takes priority so the console can point at a different engine while `lib/whatsapp.ts` (the ticket dispatcher) keeps using `WHATSAPP_GATEWAY_*` (+ `WHATSAPP_GATEWAY_TYPE`).
+- `app/api/whatsapp/webhook` logs only a redacted shape summary; never write raw inbound bodies/phone numbers to a file (`webhook-logs.txt` is gitignored for that reason).
+
+## Radio subsystem (GOODLIFE Radio 254)
+
+- **A second, large product.** Home-server playout: AzuraCast + Liquidsoap + a Python FastAPI daemon (NVIDIA NIM for DJ copy, Fish Audio/Edge-TTS for Swahili voice, ffmpeg ducking/mastering); this Next.js app is the BFF/console and the public player. Read `docs/RADIO-SPECIFICATION.md` (architecture) and `docs/RADIO-PLAN.md` before touching it.
+- **`radio.darajadigital.com` is a SEPARATE PROJECT — never route Goodlife streams, APIs, or metadata through it.** Public delivery is Cloudflare R2 (`goodlife` bucket) + Goodlife edge domains. `live-dj.darajadigital.com` is only an Icecast/harbor TCP-8005 ingest host for DJ decks (BUTT/Rekordbox), not a listener domain.
+- Code: `lib/radio/*` (~40 modules: `sequencer`, `schedule-generator`, `playlist-slotter`/`-resolver`, `drop-engine`, `broadcast-state`, `r2-signer`, `ops-service`, `ai-drops`, `listener-tracker`, …), `context/RadioContext.tsx` + `context/SoundboardContext.tsx` (client state), `components/radio/*` and `components/admin/radio/*`.
+- Pages: public `/radio`, `/radio/shows/[slug]`, `/radio/presenters/[slug]`, `/radio/schedule`, `/radio/apply`, `/radio/embed` (frame-embeddable via a CSP `frame-ancestors *` carve-out in `next.config.ts`); console `/admin/radio` (station managers only); `/presenter/{login,dashboard}`.
+- APIs: `/api/radio/*` (mostly public listener reads/telemetry, allow-listed in the guard test), `/api/admin/radio/*`, `/api/presenter/*`, `/api/internal/radio-{auth,tick}` (machine HMAC), `/api/cron/radio-{schedule,reminders,drops,health-monitor}`, `/api/webhooks/radio-ingest` (HMAC `X-Bridge-Signature`).
+- Env: `RADIO_UPSTREAM_URL` (server-only BFF upstream; unset → station shows offline), `RADIO_STREAM_URL` / `RADIO_STREAM_HIFI_URL` (+ `NEXT_PUBLIC_*`), `R2_RADIO_*`, `RADIO_R2_BUCKET`, `RADIO_USE_SIGNED_PLAYBACK` / `RADIO_PLAYBACK_TTL_SEC` / `RADIO_PLAYBACK_WINDOW_SEC`, `GOODLIFE_RADIO_SECRET_KEY`, `RADIO_BRIDGE_URL`/`RADIO_BRIDGE_SECRET`, `RADIO_DAEMON_SECRET`, `HARBOR_PASSWORD`, `ICECAST_SOURCE_PASSWORD`.
+- 24 `tests/radio*.check.ts` cover playout, schedule, playlists, playback, signed playback, drops, ingest, sequencer, listeners, tips, shoutouts, contests.
 
 ## Tickets & gate scanning
 
-- Ticket id **is** the merchant reference: `GL-XXXX`, and for multi-ticket orders `GL-XXXX-1`, `-2`, … (see `lib/payhero-fulfill.ts`). The PDF QR encodes `${APP_URL}/admin/scanner?ticket=<id>`; the scanner also accepts a raw id and `/admin/scan/<id>`.
-- Scans are **partial admission**: `tickets.guest_count` vs `admitted_count`, with `is_scanned` flipping only once everyone is in. `processTicketScan` rejects a scan when the scanner passes an `event_id` that doesn't match the ticket's (cross-event gate defense). Multi-ticket amounts are `amountPaid / quantity` per ticket.
+- Ticket id **is** the merchant reference: `GL-XXXX`, and multi-ticket `GL-XXXX-1`, `-2`, … (`lib/payhero-fulfill.ts`). The PDF QR encodes `${APP_URL}/admin/scanner?ticket=<id>`; the scanner also accepts a raw id and `/admin/scan/<id>`.
+- Scans are **partial admission**: `tickets.guest_count` vs `admitted_count`, with `is_scanned` flipping only once everyone is in. `processTicketScan` rejects a scan whose `event_id` doesn't match the ticket's (cross-event gate defense). Multi-ticket amounts are `amountPaid / quantity` per ticket.
 - PDF generation reads `public/BebasNeue.ttf` from `process.cwd()` at runtime — the file must exist or every WhatsApp ticket send fails.
 
-## Radio & Audio Playout
+## Route map (non-obvious parts)
 
-- **`radio.darajadigital.com` is a SEPARATE PROJECT — NEVER USE IT FOR GOODLIFE RADIO.** Do not route public streams, APIs, or metadata through `radio.darajadigital.com`. Goodlife Radio public delivery is powered by Cloudflare R2 (`goodlife` bucket) and Goodlife edge domains (`goodlife.co.ke`).
-- `live-dj.darajadigital.com` is strictly an Icecast/harbor TCP port 8005 ingest host for external DJ equipment (BUTT/Rekordbox), NOT a public listener streaming domain.
-
-## Route map (non-obvious parts only)
-
-- Public: `/` (checkout), `/events`, `/events/[id]`, `/gallery`, `/radio`, `/pay/tab/[id]`, `/login`.
-  - `publicState` picks the component: `checkout` → `CheckoutClientPage`, `coming_soon` → `ScheduledEventClientPage`, `recap` → `ClosedEventClientPage`, `unavailable` → `notFound()`. The three client pages all render `LiveMiniEventBanner` so sellable mini festivals are advertised even when the flagship isn't selling.
-- Event switching is **client-side**: `EventSelector` / `LiveMiniEventBanner` call `handleSwitchEvent`, which refetches tiers, rewrites the whole `eventDetails` object in state (re-running `resolveEventFlyer`/`resolveEventVideo`), and then `window.history.pushState('…', '?event=<id>')` so the URL stays shareable **without a server round-trip**. `app/page.tsx` only reads `?event=` for the initial server render and for `generateMetadata`. The root page always anchors to the flagship when the param is absent.
-- Gate scanner: `/scanner`, `/scanner/login` — its own session, reached from the ticket QR via `/admin/scanner`.
-- Admin: `/admin/dashboard` (a ~262 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/scanner`, `/admin/vendors`, `/admin/gallery`, `/admin/settlements`, `/admin/whatsapp` (WAHA pairing console).
-- Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell` (~135 KB), `/vendor/sales`, `/vendor/tabs` (~75 KB) — per-event vendor assignments with commission, split payments, and customer tabs. `components/admin/VendorDetailDrawer.tsx` (~186 KB) is the admin-side customer audit for the same data.
+- Public: `/` (checkout), `/events`, `/events/[id]`, `/events/[id]/tickets/[tier]`, `/tickets/[tier]`, `/gallery`, `/radio*`, `/pay/tab/[id]`, `/pay/till`, `/login`, `/privacy`, `/terms`, `/refunds`.
+  - `publicState` picks the component: `checkout` → `CheckoutClientPage`, `coming_soon` → `ScheduledEventClientPage`, `recap` → `ClosedEventClientPage`, `unavailable` → `notFound()`. All three client pages render `LiveMiniEventBanner`, so sellable minis are advertised even when the flagship isn't selling.
+- Event switching is **client-side**: `handleSwitchEvent` inside `app/CheckoutClientPage.tsx` refetches tiers, rewrites the whole `eventDetails` object in state (re-running `resolveEventFlyer`/`resolveEventVideo`), then `window.history.pushState('…', '?event=<id>')` — no server round-trip. `app/page.tsx` reads `?event=` only for the initial render and `generateMetadata`. `EventSelector` is the admin-dashboard control.
+- Gate scanner: `/scanner`, `/scanner/login` (own session, reached from the ticket QR via `/admin/scanner`).
+- Admin: `/admin/dashboard` (~233 KB monolith: tickets, tiers, trash, events, vendors, settlements), `/admin/events/[id]/edit`, `/admin/scanner`, `/admin/vendors` (+`/[id]/qr`), `/admin/gallery`, `/admin/settlements`, `/admin/budget`, `/admin/radio`, `/admin/whatsapp`.
+- Vendor POS: `/vendor/login`, `/vendor/menu`, `/vendor/sell` (~178 KB), `/vendor/sales`, `/vendor/tabs` (~73 KB) — per-event assignments, commission, split payments, customer tabs. `components/admin/VendorDetailDrawer.tsx` (~205 KB) is the admin-side customer audit for the same data.
 
 ## Half-removed payment code (do not resurrect blindly)
 
-- `app/api/tickets/rsvp-free/route.ts` still exists and issues a ticket for **no payment**, but the checkout's free-RSVP pipeline was deleted — and the UI still contains `totalPrice === 0` branches ("KES 0 (FREE)", "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP"). `CheckoutClientPage` guards the empty-ladder case *before anything else* (line ~643), because a zero-ladder page computes `totalPrice === 0` and would otherwise hand out a pass that doesn't exist. KES 0 is meant to be a *discount*, never a giveaway.
+- `app/api/tickets/rsvp-free/route.ts` still issues a ticket for **no payment**, but the checkout's free-RSVP pipeline was deleted while the UI keeps `totalPrice === 0` branches ("KES 0 (FREE)", "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP"). `CheckoutClientPage` guards the empty-ladder case *before anything else*, so a zero-ladder page can't hand out a pass that doesn't exist. KES 0 is a *discount*, never a giveaway.
 
 ## Conventions
 
-- Tailwind v4, **no `tailwind.config.js`** — tokens live in `@theme` in `app/globals.css`. Type: `text-caption` / `text-footnote` / `text-body` (never `text-[Npx]`). Shadows: `shadow-(--shadow-brut-*)` (never inline `shadow-[...]`). Haptics via `HapticFeedback.trigger()` in `components/ui/haptic-feedback.ts`. No daisyUI or shadcn.
-- `tsconfig` alias is `@/*` → **project root**, not `src/` (`@/lib/…`, `@/components/…`).
-- `motion` is in `transpilePackages`; `next.config.ts` also sets global security headers and allows only `picsum.photos` / `i.ibb.co` as remote image hosts. It sets `outputFileTracingRoot: process.cwd()` and **no** `output: "standalone"` — `CLAUDE.md`'s "output: standalone" claim is wrong.
+- Tailwind v4, **no `tailwind.config.js`** — tokens live in `@theme` in `app/globals.css`. Type: `text-caption` / `text-footnote` / `text-body` (never `text-[Npx]`). Shadows: `shadow-(--shadow-brut-*)`. Haptics via `HapticFeedback.trigger()` (`components/ui/haptic-feedback.ts`). No daisyUI or shadcn.
+- `tsconfig` alias is `@/*` → **project root**, not `src/`.
+- `next.config.ts`: global security headers (with a `frame-ancestors *` carve-out for `/radio/embed`), `transpilePackages: ['motion']`, `outputFileTracingRoot: process.cwd()`, and **no** `output: "standalone"` (CLAUDE.md is wrong). Whitelisted remote image hosts: `picsum.photos`, `i.ibb.co`, `**.r2.dev`, `**.cloudflarestorage.com`, `**.hearthis.at`.
 - `.eslintrc.json` is dead — ESLint 9 uses the flat `eslint.config.mjs`.
-- `.netlify/`, `deno.lock`, `metadata.json`, `docs/root.bolt`, and `schema*.sql` are Google AI Studio / Netlify CLI leftovers, not source of truth. `hooks/` holds three plain React hooks (`use-eat-today`, `use-mobile`, `useCountdown`).
-- Deploy: Vercel project `goodlife-event-tickets` (`.vercel/project.json`) via `vercel --prod --token=$env:VERCEL_TOKEN`. `.netlify/netlify.toml` is an AI Studio export with a hardcoded absolute Windows `publish` path — not a real deploy config.
+- `.netlify/`, `deno.lock`, `metadata.json`, `docs/root.bolt`, `schema*.sql` are Google AI Studio / Netlify CLI leftovers, not source of truth. `hooks/` has five plain React hooks (`use-eat-today`, `use-mobile`, `useCountdown`, `useOnlineStatus`, `use-audio-recorder`).
+- Deploy: Vercel project `goodlife-event-tickets` (`.vercel/project.json`) via `vercel --prod --token=$env:VERCEL_TOKEN`. `vercel.json` is an empty schema stub — crons moved to the home-server daemon.

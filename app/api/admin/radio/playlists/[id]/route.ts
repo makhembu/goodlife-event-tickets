@@ -5,10 +5,10 @@ import { neonQuery } from "@/lib/supabase-db";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authErr = await requireAdmin();
+  const authErr = await requireAdmin(req);
   if (authErr) return authErr;
 
   const resolvedParams = await params;
@@ -53,11 +53,18 @@ export async function GET(
       [playlistId]
     );
 
-    return NextResponse.json({
-      success: true,
-      playlist: playlistRes.rows[0],
-      tracks: tracksRes.rows || [],
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        playlist: playlistRes.rows[0],
+        tracks: tracksRes.rows || [],
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("[api/admin/radio/playlists/[id]] GET error:", err);
     return NextResponse.json({ error: err.message || "Failed to load playlist" }, { status: 500 });
@@ -68,7 +75,7 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authErr = await requireAdmin();
+  const authErr = await requireAdmin(req);
   if (authErr) return authErr;
 
   const resolvedParams = await params;

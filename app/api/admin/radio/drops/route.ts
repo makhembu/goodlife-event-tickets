@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
     const db = getPool();
     const result = await db.query(`
       SELECT id, persona, mood, title, script, audio_url, 
-             target_track_id, target_track_title, target_artist, 
-             timing_type, play_count, created_at
+             target_track_id, target_track_title, 
+             timing_type, created_at
       FROM radio_drops
       ORDER BY created_at DESC
       LIMIT 50

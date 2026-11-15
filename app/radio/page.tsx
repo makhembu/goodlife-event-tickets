@@ -263,7 +263,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("live")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center ${
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1.5 font-mono text-[11px] sm:text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap ${
                   activeView === "live"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -274,7 +274,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("playlists")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1.5 font-mono text-[11px] sm:text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                   activeView === "playlists"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -288,7 +288,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("vault")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center ${
+                className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1.5 font-mono text-[11px] sm:text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap ${
                   activeView === "vault"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -443,7 +443,7 @@ export default function RadioPage() {
               </div>
 
               {/* Deck Interior */}
-              <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 md:gap-8 items-center">
+              <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-4 sm:gap-6 md:gap-8 items-center w-full min-w-0 max-w-full">
                 {/* 1. Desktop Left Side: Vinyl Turntable & Sleeve Motif (md:flex only) */}
                 <div className="hidden md:flex md:col-span-5 justify-center">
                   <div className="relative w-64 h-64 sm:w-72 sm:h-72 group">
@@ -523,7 +523,7 @@ export default function RadioPage() {
                 </div>
 
                 {/* 2. Controls & Metadata Column (7 Cols on desktop, Full width on mobile) */}
-                <div className="md:col-span-7 flex flex-col justify-between space-y-4 sm:space-y-5">
+                <div className="md:col-span-7 flex flex-col justify-between space-y-4 sm:space-y-5 w-full min-w-0 max-w-full">
                   {/* ================================================================= */}
                   {/* MOBILE COMPACT DECK VIEW (<768px)                                */}
                   {/* Guaranteed: Play button bottom <= 460px from top at 360x640px    */}

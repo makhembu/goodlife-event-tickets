@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { neonQuery } from "@/lib/supabase-db";
 import { resolveCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
 import { computeLiveTimeline } from "@/lib/radio/timeline";
+import { invalidateLivePlayoutCache, invalidateRadioStateCache } from "@/lib/radio/playout-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -188,6 +189,25 @@ export async function POST(req: NextRequest) {
            WHERE id = $2`,
           [cumSec, playlist_id]
         );
+      } else {
+        // Track not in active broadcast playlist: insert it into playlist
+        const activePl = await neonQuery(
+          `SELECT id FROM radio_playlists WHERE is_broadcast_active = true AND deleted_at IS NULL LIMIT 1`
+        );
+        if (activePl.rows.length > 0) {
+          const playlistId = activePl.rows[0].id;
+          const posRes = await neonQuery(
+            `SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM radio_playlist_tracks WHERE playlist_id = $1`,
+            [playlistId]
+          );
+          const nextPos = posRes.rows[0]?.next_pos || 1;
+          await neonQuery(
+            `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position, created_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT DO NOTHING`,
+            [playlistId, setId, nextPos]
+          );
+        }
       }
 
       // Immediately switch into MANIA mode and lock this track on air!
@@ -196,10 +216,13 @@ export async function POST(req: NextRequest) {
          SET broadcast_mode = 'mania',
              active_set_id = $1,
              active_started_at = NOW(),
+             queued_next_set_id = NULL,
              updated_at = NOW()
          WHERE id = 1`,
         [setId]
       );
+      invalidateLivePlayoutCache();
+      invalidateRadioStateCache();
 
       return NextResponse.json({
         success: true,
@@ -215,43 +238,128 @@ export async function POST(req: NextRequest) {
 
       // Check for active broadcast playlist first
       const activePlRes = await neonQuery(`
-        SELECT p.id as playlist_id
+        SELECT p.id as playlist_id, p.activated_at
         FROM radio_playlists p
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
         LIMIT 1
       `);
 
-      // Determine active track ID from settings
-      const settingsRes = await neonQuery("SELECT active_set_id FROM radio_settings WHERE id = 1");
-      const activeSetId = settingsRes.rows[0]?.active_set_id ? Number(settingsRes.rows[0].active_set_id) : null;
+      // Determine active track ID from settings or client request
+      const settingsRes = await neonQuery(
+        "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id FROM radio_settings WHERE id = 1"
+      );
+      const settings = settingsRes.rows[0] || {};
+      const isMania = settings.broadcast_mode === "mania" && settings.active_set_id;
+      let activeSetId = isMania
+        ? Number(settings.active_set_id)
+        : (settings.active_set_id ? Number(settings.active_set_id) : null);
+
+      const reqCurrentTrackId = body.currentTrackId ? Number(body.currentTrackId) : null;
+      if (reqCurrentTrackId && !isNaN(reqCurrentTrackId)) {
+        activeSetId = reqCurrentTrackId;
+      }
 
       if (activePlRes.rows.length > 0) {
         const playlistId = activePlRes.rows[0].playlist_id;
+        const activatedAt = activePlRes.rows[0].activated_at;
         const tracksRes = await neonQuery(
-          `SELECT track_id, position FROM radio_playlist_tracks WHERE playlist_id = $1 ORDER BY position ASC, id ASC`,
+          `SELECT pt.track_id, pt.position, s.duration_sec 
+           FROM radio_playlist_tracks pt 
+           JOIN radio_sets s ON s.id = pt.track_id 
+           WHERE pt.playlist_id = $1 
+           ORDER BY pt.position ASC, pt.id ASC`,
           [playlistId]
         );
-        const list = tracksRes.rows.map((r: any) => Number(r.track_id));
+        const tracks = tracksRes.rows || [];
+        const list = tracks.map((r: any) => Number(r.track_id));
         const fromIdx = list.indexOf(Number(setId));
-        const activeIdx = activeSetId ? list.indexOf(Number(activeSetId)) : -1;
+
+        // Find currently playing track index in active playlist
+        let activeIdx = -1;
+        if (activeSetId) {
+          activeIdx = list.indexOf(activeSetId);
+        }
+
+        // If in AutoDJ or activeSetId not found in playlist, calculate from virtual timeline
+        if (activeIdx === -1 && tracks.length > 0) {
+          const totalDurationSec = tracks.reduce((acc: number, t: any) => acc + (t.duration_sec || 180), 0);
+          const nowSec = Math.floor(Date.now() / 1000);
+          const activatedAtSec = activatedAt ? Math.floor(new Date(activatedAt).getTime() / 1000) : nowSec;
+          const elapsed = Math.max(0, nowSec - activatedAtSec);
+          const cycleSec = totalDurationSec > 0 ? (elapsed % totalDurationSec) : 0;
+
+          let cumulative = 0;
+          for (let i = 0; i < tracks.length; i++) {
+            const dur = tracks[i].duration_sec || 180;
+            if (cumulative + dur > cycleSec) {
+              activeIdx = i;
+              break;
+            }
+            cumulative += dur;
+          }
+          if (activeIdx === -1) activeIdx = 0;
+        }
+
+        // Target insertion slot is directly after the currently playing song
+        const targetInsertIdx = activeIdx + 1;
 
         if (fromIdx !== -1) {
+          // Track is already in this playlist: remove and reinsert at targetInsertIdx
           const [item] = list.splice(fromIdx, 1);
-          // Insert immediately after active track (or at index 1 / 0 if not active)
-          const insertIdx = activeIdx !== -1
-            ? (fromIdx > activeIdx ? activeIdx + 1 : activeIdx)
-            : 0;
-          list.splice(insertIdx, 0, item);
+          const finalInsertIdx = fromIdx < targetInsertIdx ? targetInsertIdx - 1 : targetInsertIdx;
+          list.splice(finalInsertIdx, 0, item);
 
-          for (let i = 0; i < list.length; i++) {
-            await neonQuery(
-              `UPDATE radio_playlist_tracks SET position = $3 WHERE playlist_id = $1 AND track_id = $2`,
-              [playlistId, list[i], i]
-            );
-          }
-          await neonQuery("UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1", [playlistId]);
-          return NextResponse.json({ success: true, message: "Queued as next track" });
+          // Update positions in DB
+          await neonQuery(
+            `UPDATE radio_playlist_tracks AS pt
+             SET position = v.new_pos
+             FROM (
+               SELECT unnest($2::int[]) AS track_id,
+                      (generate_subscripts($2::int[], 1) - 1)::int AS new_pos
+             ) AS v
+             WHERE pt.playlist_id = $1 AND pt.track_id = v.track_id`,
+            [playlistId, list]
+          );
+        } else {
+          // Track is NOT in playlist yet: shift subsequent tracks and insert at activeIdx + 1
+          const activePos = tracks[activeIdx]?.position ?? 0;
+          await neonQuery(
+            `UPDATE radio_playlist_tracks 
+             SET position = position + 1 
+             WHERE playlist_id = $1 AND position > $2`,
+            [playlistId, activePos]
+          );
+          await neonQuery(
+            `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position, created_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT DO NOTHING`,
+            [playlistId, setId, activePos + 1]
+          );
         }
+
+        // Anchor virtual timeline to activeIdx so AutoDJ cycle aligns seamlessly
+        let cumulativeUpToActive = 0;
+        for (let i = 0; i < activeIdx; i++) {
+          cumulativeUpToActive += (tracks[i]?.duration_sec || 180);
+        }
+        await neonQuery(
+          `UPDATE radio_playlists 
+           SET activated_at = NOW() - INTERVAL '1 second' * $2, updated_at = NOW() 
+           WHERE id = $1`,
+          [playlistId, cumulativeUpToActive]
+        );
+
+        // Store queued_next_set_id in radio_settings
+        await neonQuery(
+          `UPDATE radio_settings 
+           SET queued_next_set_id = $1, updated_at = NOW() 
+           WHERE id = 1`,
+          [setId]
+        );
+
+        invalidateLivePlayoutCache();
+        invalidateRadioStateCache();
+        return NextResponse.json({ success: true, message: "Queued as next track", queued_next_set_id: setId });
       }
 
       // Fallback: general radio_sets catalog
@@ -269,10 +377,27 @@ export async function POST(req: NextRequest) {
           : 0;
         list.splice(insertIdx, 0, item);
 
-        for (let i = 0; i < list.length; i++) {
-          await neonQuery("UPDATE radio_sets SET display_order = $1 WHERE id = $2", [i, list[i]]);
-        }
-        return NextResponse.json({ success: true, message: "Queued as next track" });
+        await neonQuery(
+          `UPDATE radio_sets AS s
+           SET display_order = v.new_order
+           FROM (
+             SELECT unnest($1::int[]) AS id,
+                    (generate_subscripts($1::int[], 1) - 1)::int AS new_order
+           ) AS v
+           WHERE s.id = v.id`,
+          [list]
+        );
+
+        await neonQuery(
+          `UPDATE radio_settings 
+           SET queued_next_set_id = $1, updated_at = NOW() 
+           WHERE id = 1`,
+          [setId]
+        );
+
+        invalidateLivePlayoutCache();
+        invalidateRadioStateCache();
+        return NextResponse.json({ success: true, message: "Queued as next track", queued_next_set_id: setId });
       }
 
       return NextResponse.json({ error: "Track not found in rotation" }, { status: 404 });
@@ -305,12 +430,17 @@ export async function POST(req: NextRequest) {
             const temp = list[idx];
             list[idx] = list[swapIdx];
             list[swapIdx] = temp;
-            for (let i = 0; i < list.length; i++) {
-              await neonQuery(
-                `UPDATE radio_playlist_tracks SET position = $3 WHERE playlist_id = $1 AND track_id = $2`,
-                [playlistId, list[i], i]
-              );
-            }
+            
+            await neonQuery(
+              `UPDATE radio_playlist_tracks AS pt
+               SET position = v.new_pos
+               FROM (
+                 SELECT unnest($2::int[]) AS track_id,
+                        (generate_subscripts($2::int[], 1) - 1)::int AS new_pos
+               ) AS v
+               WHERE pt.playlist_id = $1 AND pt.track_id = v.track_id`,
+              [playlistId, list]
+            );
             await neonQuery("UPDATE radio_playlists SET updated_at = NOW() WHERE id = $1", [playlistId]);
             return NextResponse.json({ success: true });
           }

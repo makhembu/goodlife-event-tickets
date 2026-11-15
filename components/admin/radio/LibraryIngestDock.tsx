@@ -59,10 +59,14 @@ interface PlaylistPreviewData {
 const GENRE_OPTIONS = [
   "Amapiano",
   "Afro House",
-  "Arbantone",
+  "Afrobeats",
   "Gengetone",
+  "Arbantone",
   "Hip Hop",
+  "Pop",
   "R&B / Soul",
+  "Rock",
+  "Reggae",
   "Dancehall",
   "Electronic",
 ];

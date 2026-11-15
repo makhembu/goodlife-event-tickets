@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Sparkles,
   X,
@@ -45,6 +45,29 @@ export default function HarmonizeProgressModal({
   const pauseRef = useRef(false);
   const runningRef = useRef(false);
 
+  // Synchronize count on open and fetch live truth from server
+  useEffect(() => {
+    if (isOpen) {
+      setIsDone(false);
+      setIsRunning(false);
+      setIsPaused(false);
+      setProcessedCount(0);
+      setRemainingCount(initialUnindexedCount > 0 ? initialUnindexedCount : 0);
+
+      fetch("/api/admin/radio/library/harmonize-batch")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && typeof data.remaining === "number") {
+            setRemainingCount(data.remaining);
+            if (data.remaining === 0) {
+              setIsDone(true);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isOpen, initialUnindexedCount]);
+
   if (!isOpen) return null;
 
   const total = processedCount + remainingCount;
@@ -56,7 +79,7 @@ export default function HarmonizeProgressModal({
     setIsRunning(true);
     setIsPaused(false);
 
-    let currentRemaining = remainingCount;
+    let currentRemaining = remainingCount > 0 ? remainingCount : (initialUnindexedCount > 0 ? initialUnindexedCount : 9999);
     let localProcessed = processedCount;
 
     while (runningRef.current && !pauseRef.current && currentRemaining > 0) {
@@ -238,7 +261,7 @@ export default function HarmonizeProgressModal({
               <button
                 type="button"
                 onClick={startOrResumeHarmonizing}
-                disabled={remainingCount === 0}
+                disabled={isDone && remainingCount === 0}
                 className="px-5 py-2.5 bg-[#DFBB7D] hover:bg-[#F2CE8A] text-[#16181D] rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-[2px_2px_0px_#000] transition-all disabled:opacity-50"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />

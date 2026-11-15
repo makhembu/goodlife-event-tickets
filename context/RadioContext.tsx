@@ -250,7 +250,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Runtime kill switch & configuration
   const [radioEnabled, setRadioEnabled] = useState(true);
   const [liveStreamUrl, setLiveStreamUrl] = useState<string>(
-    process.env.NEXT_PUBLIC_RADIO_STREAM_URL || ""
+    process.env.NEXT_PUBLIC_RADIO_STREAM_URL || "https://dj.darajadigital.com/hls/stream.m3u8"
   );
   const [broadcastMode, setBroadcastMode] = useState<BroadcastMode>("autodj");
   const broadcastModeRef = useRef<BroadcastMode>("autodj");
@@ -338,9 +338,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const [activePersona, setActivePersona] = useState<string | null>(null);
   const [activeMood, setActiveMood] = useState<string | null>(null);
   const availableDropsRef = useRef<RadioDrop[]>([]);
+  const aiDropsEnabledRef = useRef<boolean>(true);
   const dropUnlockedRef = useRef<boolean>(false);
   const [isDropUnlocked, setIsDropUnlocked] = useState<boolean>(true);
   const firedDropIdsRef = useRef<Set<string | number>>(new Set());
+  const firedLiveDropIdsRef = useRef<Set<string | number>>(new Set());
   const currentDropIndexRef = useRef<number>(0);
   const isDropPlayingRef = useRef(false);
   useEffect(() => {
@@ -385,6 +387,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Stale-stream and stall detection refs
   const timingConfigRef = useRef(RADIO_TIMING);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const stallWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const backupProbeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastBufferTimeRef = useRef<number>(0);
   const lastPlaybackTimeRef = useRef<number>(0);
@@ -440,6 +443,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(savedSets);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setBackupSets(parsed);
+          // Instant 0ms Stream Start: pre-warm Deck A with the first track buffer
+          const firstTrackUrl = parsed[0]?.playback_url || parsed[0]?.audio_url;
+          if (firstTrackUrl && audioRef.current && !audioRef.current.src) {
+            audioRef.current.preload = "auto";
+            audioRef.current.src = firstTrackUrl;
+            audioRef.current.load();
+          }
         }
       }
     } catch {}
@@ -476,32 +486,41 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setLiveStreamUrl(data.live.stream_url.trim());
       }
 
-      if (Array.isArray(data.sets) && data.sets.length > 0) {
-        setBackupSets(data.sets);
-      if (Array.isArray(data.drops) && data.drops.length > 0) {
-        availableDropsRef.current = data.drops.map((d: any) => ({
-          ...d,
-          audio_url: d.playback_url || d.audio_url,
-        }));
+      if (data.ai_drops_enabled !== undefined) {
+        aiDropsEnabledRef.current = data.ai_drops_enabled === true;
       }
 
-      // Ingest authoritative upcoming drop prepared by Home Server daemon
-      if (data.upcoming_drop && data.upcoming_drop.drop_url) {
-        const u = data.upcoming_drop;
-        const upcomingId = `upcoming-${u.id}`;
-        if (!firedDropIdsRef.current.has(upcomingId) && !availableDropsRef.current.some((d) => d.id === upcomingId)) {
-          const freshUpcomingDrop: RadioDrop = {
-            id: upcomingId,
-            title: u.title || `${u.persona} · Upcoming`,
-            audio_url: u.drop_url,
-            persona: u.persona,
-            mood: u.mood,
-            target_track_id: String(u.target_track_id),
-            script: u.script,
-          };
-          availableDropsRef.current = [freshUpcomingDrop, ...availableDropsRef.current];
+      if (Array.isArray(data.sets) && data.sets.length > 0) {
+        setBackupSets(data.sets);
+
+        if (!aiDropsEnabledRef.current) {
+          availableDropsRef.current = [];
+        } else {
+          if (Array.isArray(data.drops) && data.drops.length > 0) {
+            availableDropsRef.current = data.drops.map((d: any) => ({
+              ...d,
+              audio_url: d.playback_url || d.audio_url,
+            }));
+          }
+
+          // Ingest authoritative upcoming drop prepared by Home Server daemon (only if AI drops enabled)
+          if (data.upcoming_drop && data.upcoming_drop.drop_url && aiDropsEnabledRef.current) {
+            const u = data.upcoming_drop;
+            const upcomingId = `upcoming-${u.id}`;
+            if (!firedDropIdsRef.current.has(upcomingId) && !availableDropsRef.current.some((d) => d.id === upcomingId)) {
+              const freshUpcomingDrop: RadioDrop = {
+                id: upcomingId,
+                title: u.title || `${u.persona} · Upcoming`,
+                audio_url: u.drop_url,
+                persona: u.persona,
+                mood: u.mood,
+                target_track_id: String(u.target_track_id),
+                script: u.script,
+              };
+              availableDropsRef.current = [freshUpcomingDrop, ...availableDropsRef.current];
+            }
+          }
         }
-      }
 
         try {
           localStorage.setItem(CACHED_SETS_KEY, JSON.stringify(data.sets.slice(0, 50)));
@@ -534,8 +553,25 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       const data: RadioLiveBffResponse = await res.json();
 
-      if ((data as any).mode) {
-        setBroadcastMode((data as any).mode);
+      const newMode = (data as any).mode;
+      if (newMode) {
+        const prevMode = broadcastModeRef.current;
+        setBroadcastMode(newMode);
+        if (prevMode !== newMode) {
+          if (newMode === "live") {
+            const stream = (data as any).stream_url || (data as any)?.live?.stream_url;
+            if (typeof stream === "string" && stream.trim()) {
+              setLiveStreamUrl(stream.trim());
+            }
+            if (isPlayingRef.current) {
+              attachAndPlayLiveStream();
+            }
+          } else if (prevMode === "live") {
+            if (isPlayingRef.current) {
+              attachAndPlayLiveStream();
+            }
+          }
+        }
       }
 
       if (data.offline) {
@@ -676,16 +712,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         data.live_drop &&
         data.live_drop.id &&
         data.live_drop.id !== lastLiveDropIdRef.current &&
-        !firedDropIdsRef.current.has(data.live_drop.id)
+        !firedLiveDropIdsRef.current.has(data.live_drop.id)
       ) {
         lastLiveDropIdRef.current = data.live_drop.id;
+        firedLiveDropIdsRef.current.add(data.live_drop.id);
         firedDropIdsRef.current.add(data.live_drop.id);
         const dropFiredTime = data.live_drop.fired_at ? new Date(data.live_drop.fired_at).getTime() : Date.now();
         const ageSec = typeof data.live_drop.age_seconds === "number"
           ? data.live_drop.age_seconds
           : Math.abs(Math.floor((Date.now() - dropFiredTime) / 1000));
         const dropSrc = data.live_drop.playback_url || data.live_drop.audio_url;
-        if (ageSec <= 90 && isPlayingRef.current && audioRef.current && dropSrc) {
+        if (ageSec <= 90 && isPlayingRef.current && (audioRef.current || preloadAudioRef.current) && dropSrc) {
           console.log(`[RadioContext] 🔴 Stream live drop detected: "${data.live_drop.title}" (${data.live_drop.persona})`);
           triggerLiveInjectedDrop({
             ...data.live_drop,
@@ -824,12 +861,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       // 15s Outro Crossover Trigger: Drop starts 15 seconds before the track ends, continuing across next track start
       const remainingSec = trackDuration - clamped;
-      if (remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
+      if (aiDropsEnabledRef.current && availableDropsRef.current.length > 0 && remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
         triggerOutroDropCrossoverRef.current();
       }
 
       // Preload next matching drop if available from station pool (pre-mastered on Home Server)
-      if (clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
+      if (aiDropsEnabledRef.current && clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
         let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
         if (!nextCandidate && backupSetsRef.current.length > 0) {
           const sets = backupSetsRef.current;
@@ -881,6 +918,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         teardownPlayback();
         setIsPlaying(false);
         setEngineState("paused");
+      } else if (event.data?.type === "QUEUE_NEXT") {
+        fetchRadioLive();
       }
     };
 
@@ -1081,7 +1120,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const rawStreamUrl = liveStreamUrlRef.current;
+    const rawStreamUrl = liveStreamUrlRef.current || "https://dj.darajadigital.com/hls/stream.m3u8";
     const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
@@ -1363,6 +1402,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             setInterpolatedElapsed(0);
             lastPollElapsedRef.current = 0;
             lastPollTimestampRef.current = Date.now();
+            setUpNextQueue((prev) => (prev.length > 0 && prev[0].id === nextCandidate.id ? prev.slice(1) : prev));
+            fetchRadioLive();
           }
         }
       }
@@ -1509,7 +1550,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const dropSrc = liveDrop.playback_url || liveDrop.audio_url;
       if (!dropAudioRef.current || !dropSrc) return;
       const dropAudio = dropAudioRef.current;
-      const audio = audioRef.current;
+      const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
 
       const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
       const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
@@ -1522,11 +1563,38 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       lastDropPlayedTimestampRef.current = Date.now();
 
       // Duck currently playing music bed to audible low level (-10dB to -12dB) immediately
-      if (audio) {
-        audio.volume = duckedVol;
+      if (activeAudio && isPlayingRef.current) {
+        activeAudio.volume = duckedVol;
       }
 
+      // Safety watchdog: initialized generously (90s) so long voice drops never cut out early
+      let dropWatchdog: NodeJS.Timeout | null = setTimeout(() => {
+        if (isDropPlayingRef.current) {
+          console.warn("[RadioContext] Live drop safety watchdog timeout (90s), releasing duck");
+          onDropDone();
+        }
+      }, 90000);
+
+      const onMetadataLoaded = () => {
+        if (Number.isFinite(dropAudio.duration) && dropAudio.duration > 0) {
+          if (dropWatchdog) clearTimeout(dropWatchdog);
+          // Set watchdog to exact drop duration + 10s grace period (minimum 30s)
+          const timeoutMs = Math.max(30000, Math.round((dropAudio.duration + 10) * 1000));
+          dropWatchdog = setTimeout(() => {
+            if (isDropPlayingRef.current) {
+              console.warn(`[RadioContext] Live drop watchdog timeout (${Math.round(timeoutMs / 1000)}s), releasing duck`);
+              onDropDone();
+            }
+          }, timeoutMs);
+        }
+      };
+
       const onDropDone = () => {
+        if (dropWatchdog) {
+          clearTimeout(dropWatchdog);
+          dropWatchdog = null;
+        }
+        dropAudio.removeEventListener("loadedmetadata", onMetadataLoaded);
         dropAudio.removeEventListener("ended", onDropDone);
         dropAudio.removeEventListener("error", onDropDone);
         isDropPlayingRef.current = false;
@@ -1534,18 +1602,38 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         setActiveDropTitle(null);
         setActivePersona(null);
         setActiveMood(null);
-        if (audio) {
+        if (activeAudio) {
           swellMusicToFullVolume();
+          if (activeAudio.ended && isPlayingRef.current) {
+            let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+            if (!nextCandidate && backupSetsRef.current.length > 0) {
+              const rawEndedId = currentTrackIdRef.current || "";
+              const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
+              const sets = backupSetsRef.current;
+              const curIdx = sets.findIndex((s) => String(s.id) === cleanEndedId);
+              const nIdx = curIdx !== -1 ? (curIdx + 1) % sets.length : 0;
+              nextCandidate = sets[nIdx];
+            }
+            if (nextCandidate && executeCrossfadeRef.current) {
+              executeCrossfadeRef.current(nextCandidate, { fast: true });
+            }
+          }
         }
       };
 
+      dropAudio.addEventListener("loadedmetadata", onMetadataLoaded);
       dropAudio.addEventListener("ended", onDropDone);
-      dropAudio.addEventListener("error", onDropDone);
+      dropAudio.addEventListener("error", (e) => {
+        console.warn("[RadioContext] Live drop audio error:", dropAudio.error, e);
+        onDropDone();
+      });
       if (dropSrc && dropAudio.src !== dropSrc) {
         dropAudio.src = dropSrc;
       }
       dropAudio.volume = masterVol;
-      dropAudio.currentTime = 0;
+      try {
+        dropAudio.currentTime = 0;
+      } catch {}
       dropAudio.play().catch((playErr: any) => {
         console.warn("[RadioContext] Live drop play error:", playErr);
         if (playErr?.name === "NotAllowedError") {
@@ -1557,7 +1645,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     [swellMusicToFullVolume]
   );
 
-  // Method exposed to admin and DJ soundboard: broadcast drop to live stream only (no local echo)
+  // Method exposed to admin and DJ soundboard: broadcast drop to live stream and play on active monitor
   const airLiveDrop = useCallback(
     async (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => {
       try {
@@ -1575,15 +1663,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           if (data.drop) {
             // Aired to live stream broadcast for all listeners!
-            // If the DJ/admin is actively listening to monitor audio, hear it live with ducking
-            if (isPlayingRef.current && audioRef.current) {
-              triggerLiveInjectedDrop({
-                id: data.drop.id,
-                title: data.drop.title,
-                persona: data.drop.persona,
-                audio_url: data.drop.audio_url,
-              });
-            }
+            firedLiveDropIdsRef.current.add(data.drop.id);
+            firedDropIdsRef.current.add(data.drop.id);
+            lastLiveDropIdRef.current = data.drop.id;
+
+            // Immediately air on DJ's broadcast stream monitor with smooth ducking
+            triggerLiveInjectedDrop({
+              id: data.drop.id,
+              title: data.drop.title || dropData.title,
+              persona: data.drop.persona || dropData.persona,
+              audio_url: data.drop.audio_url || dropData.audioUrl,
+              playback_url: data.drop.audio_url || dropData.audioUrl,
+            });
             return true;
           }
         }
@@ -1606,8 +1697,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
         // On mobile devices, mute local speaker to 0 to eliminate mic feedback/bleed into the phone microphone
         const duckedVol = isMobileDevice ? 0 : (masterVol > 0 ? Math.max(0.08, Math.min(0.20, masterVol * 0.18)) : 0);
-        if (audioRef.current) {
-          audioRef.current.volume = duckedVol;
+        const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+        if (activeAudio) {
+          activeAudio.volume = duckedVol;
         }
       } else {
         swellMusicToFullVolume();
@@ -1653,6 +1745,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       incoming.volume = 0;
       if (incoming.src !== targetTrackUrl) {
         incoming.src = targetTrackUrl;
+        incoming.load();
       }
       incoming.currentTime = options.targetSeek || 0;
 
@@ -1664,53 +1757,96 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         outgoing.src
       );
       const durationMs = options.fast ? 850 : 1300;
-      const startTime = performance.now();
       const startOutVol = outgoing ? outgoing.volume : 0;
+
+      // Zero-Silence Guarantee: Outgoing keeps playing until incoming is confirmed playing
+      let hasBegunMixing = false;
+      const beginCrossfadeMixing = () => {
+        if (hasBegunMixing) return;
+        hasBegunMixing = true;
+
+        setIsPlaying(true);
+        setEngineState("live");
+
+        if (!isOutPlaying || startOutVol <= 0) {
+          incoming.volume = targetVol;
+          isCrossfadingRef.current = false;
+          activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
+          return;
+        }
+
+        const startTime = performance.now();
+        crossfadeTimerRef.current = setInterval(() => {
+          const elapsed = performance.now() - startTime;
+          const progress = Math.min(1, elapsed / durationMs);
+
+          // Equal-power sinusoidal curve for professional seamless radio broadcast mixing
+          const outGain = Math.cos(progress * 0.5 * Math.PI);
+          const inGain = Math.sin(progress * 0.5 * Math.PI);
+
+          if (outgoing) outgoing.volume = Math.max(0, startOutVol * outGain);
+          if (incoming) incoming.volume = Math.min(targetVol, targetVol * inGain);
+
+          if (progress >= 1) {
+            if (crossfadeTimerRef.current) {
+              clearInterval(crossfadeTimerRef.current);
+              crossfadeTimerRef.current = null;
+            }
+            isCrossfadingRef.current = false;
+            if (outgoing) {
+              try {
+                outgoing.pause();
+                outgoing.currentTime = 0;
+                outgoing.volume = targetVol;
+              } catch {}
+            }
+            if (incoming) incoming.volume = targetVol;
+            activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
+          }
+        }, 30);
+      };
+
+      // Watchdog: If incoming takes > 3.5s to start, force begin crossfade or attempt recovery
+      const bufferWatchdog = setTimeout(() => {
+        if (!hasBegunMixing) {
+          console.warn("[RadioContext] Incoming deck slow to buffer, triggering mix");
+          beginCrossfadeMixing();
+        }
+      }, 3500);
+
+      const onIncomingPlaying = () => {
+        clearTimeout(bufferWatchdog);
+        incoming.removeEventListener("playing", onIncomingPlaying);
+        beginCrossfadeMixing();
+      };
+      incoming.addEventListener("playing", onIncomingPlaying, { once: true });
 
       const playPromise = incoming.play();
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            setIsPlaying(true);
-            setEngineState("live");
-            if (!isOutPlaying || startOutVol <= 0) {
-              incoming.volume = targetVol;
-              isCrossfadingRef.current = false;
-              activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
-              return;
+            if (incoming.readyState >= 3) {
+              clearTimeout(bufferWatchdog);
+              incoming.removeEventListener("playing", onIncomingPlaying);
+              beginCrossfadeMixing();
             }
-
-            crossfadeTimerRef.current = setInterval(() => {
-              const elapsed = performance.now() - startTime;
-              const progress = Math.min(1, elapsed / durationMs);
-
-              // Equal-power sinusoidal curve for professional seamless radio broadcast mixing
-              const outGain = Math.cos(progress * 0.5 * Math.PI);
-              const inGain = Math.sin(progress * 0.5 * Math.PI);
-
-              if (outgoing) outgoing.volume = Math.max(0, startOutVol * outGain);
-              if (incoming) incoming.volume = Math.min(targetVol, targetVol * inGain);
-
-              if (progress >= 1) {
-                if (crossfadeTimerRef.current) {
-                  clearInterval(crossfadeTimerRef.current);
-                  crossfadeTimerRef.current = null;
-                }
-                isCrossfadingRef.current = false;
-                if (outgoing) {
-                  try {
-                    outgoing.pause();
-                    outgoing.currentTime = 0;
-                    outgoing.volume = targetVol;
-                  } catch {}
-                }
-                if (incoming) incoming.volume = targetVol;
-                activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
-              }
-            }, 30);
           })
           .catch((err) => {
+            clearTimeout(bufferWatchdog);
+            incoming.removeEventListener("playing", onIncomingPlaying);
             console.warn("[RadioContext] crossfade incoming play error:", err);
+            // If proxy recovery is possible, try proxy URL
+            if (track?.id) {
+              const proxyUrl = `/api/radio/audio/track/${encodeURIComponent(track.id)}`;
+              if (incoming.src !== proxyUrl) {
+                incoming.src = proxyUrl;
+                incoming.play().then(() => beginCrossfadeMixing()).catch(() => {
+                  isCrossfadingRef.current = false;
+                  if (outgoing && isOutPlaying) outgoing.volume = targetVol;
+                });
+                return;
+              }
+            }
             isCrossfadingRef.current = false;
             if (outgoing && isOutPlaying) {
               outgoing.volume = targetVol;
@@ -1756,6 +1892,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // 12A. Outro Drop Crossover Trigger (Starts at 15s before track ends, bridges into next song)
   const triggerOutroDropCrossover = useCallback(() => {
     if (
+      !aiDropsEnabledRef.current ||
+      availableDropsRef.current.length === 0 ||
       hasFiredOutroDropRef.current ||
       isDropPlayingRef.current ||
       engineStateRef.current === "paused" ||
@@ -1875,6 +2013,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         audio.play().catch(() => {});
       }
       if (audio && audio.ended && isPlayingRef.current) {
+        if (nextTrack && executeCrossfadeRef.current) {
+          executeCrossfadeRef.current(nextTrack, { fast: true });
+          setNowPlayingTrack({
+            ...nextTrack,
+            title: formatTrackTitle(nextTrack.title),
+            elapsed: 0,
+            duration: nextTrack.duration_sec || nextTrack.duration || 180,
+          });
+          currentTrackIdRef.current = nextTrack.video_id || `set-${nextTrack.id}`;
+          setInterpolatedElapsed(0);
+          lastPollElapsedRef.current = 0;
+          lastPollTimestampRef.current = Date.now();
+        }
         void fetchRadioLive();
       }
     };
@@ -1925,7 +2076,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const drops = availableDropsRef.current.filter((d) => d.id.startsWith("dyn-") || d.audio_url);
     const audio = audioRef.current;
 
-    // Determine upcoming track cleanly from backupSetsRef
+    // Determine upcoming track: prioritize explicitly queued upNextQueue track first!
     const rawEndedId = currentTrackIdRef.current || "";
     const cleanEndedId = rawEndedId.replace(/^(set-|vault-|pl-\d+-)/, "");
     const sets = backupSetsRef.current;
@@ -1938,8 +2089,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       );
       if (currentIdx === -1) currentIdx = 0;
     }
-    const nextIdx = sets.length > 0 ? (currentIdx + 1) % sets.length : 0;
-    const nextTrack = sets.length > 0 ? sets[nextIdx] : null;
+
+    let nextTrack: any = null;
+    let nextIdx = 0;
+    if (upNextQueue && upNextQueue.length > 0 && (upNextQueue[0].playback_url || upNextQueue[0].audio_url)) {
+      nextTrack = upNextQueue[0];
+      const foundIdx = sets.findIndex((s) => String(s.id) === String(nextTrack.id));
+      nextIdx = foundIdx !== -1 ? foundIdx : 0;
+      setUpNextQueue((prev) => prev.slice(1));
+    } else {
+      nextIdx = sets.length > 0 ? (currentIdx + 1) % sets.length : 0;
+      nextTrack = sets.length > 0 ? sets[nextIdx] : null;
+    }
 
     if (!nextTrack || !(nextTrack.playback_url || nextTrack.audio_url) || !audio) {
       isTransitioningRef.current = false;
@@ -2008,6 +2169,26 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         isTransitioningRef.current = false;
         console.warn("[RadioContext] Crossover track play error:", err);
+      }
+      return;
+    }
+
+    // Direct clean transition when AI drops are disabled or pool is empty (no drop talkover bed)
+    if (!aiDropsEnabledRef.current || availableDropsRef.current.length === 0) {
+      const incomingSrc = nextTrack.playback_url || nextTrack.audio_url;
+      if (incomingSrc && audio.src !== incomingSrc) {
+        audio.src = incomingSrc;
+      }
+      audio.currentTime = 0;
+      audio.volume = masterVol;
+      try {
+        await audio.play();
+        isTransitioningRef.current = false;
+        setIsPlaying(true);
+        setEngineState("live");
+      } catch {
+        isTransitioningRef.current = false;
+        attachAndPlayLiveStream();
       }
       return;
     }
@@ -2700,8 +2881,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   const handleEnded = useCallback(
     (deck: "A" | "B") => {
-      // Ignore ended events from the inactive/faded-out deck
+      // Ignore ended events from the inactive/faded-out deck or during crossfade
       if (deck !== activeDeckRef.current) return;
+      if (isCrossfadingRef.current) return;
       sendPlayBeaconOnce(true);
       hasFiredOutroDropRef.current = false;
       hasFiredAutoDjCrossfadeRef.current = false;
@@ -2734,6 +2916,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           setInterpolatedElapsed(0);
           lastPollElapsedRef.current = 0;
           lastPollTimestampRef.current = Date.now();
+          setUpNextQueue((prev) => (prev.length > 0 && prev[0].id === nextTrackCandidate.id ? prev.slice(1) : prev));
         }
         fetchRadioLive();
       } else {
@@ -2775,12 +2958,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Warm standby audio deck with immediate upcoming track
+    // Warm standby audio deck with immediate upcoming track and buffer frames
     if (urlsToPreload[0]) {
       const standby = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
       if (standby && standby.paused && !isCrossfadingRef.current && standby.src !== urlsToPreload[0]) {
         standby.preload = "auto";
         standby.src = urlsToPreload[0];
+        standby.load();
       }
     }
 
@@ -2875,6 +3059,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           if (audioRef.current) audioRef.current.preload = "auto";
         }}
+        onPlaying={() => {
+          if (activeDeckRef.current === "A") {
+            if (stallWatchdogRef.current) {
+              clearTimeout(stallWatchdogRef.current);
+              stallWatchdogRef.current = null;
+            }
+            setEngineState("live");
+          }
+        }}
+        onWaiting={() => {
+          if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
+            setEngineState("reconnecting");
+            if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+            stallWatchdogRef.current = setTimeout(() => {
+              if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
+                console.warn("[RadioContext] 🛡️ Deck A stall detected: attempting playback nudge");
+                audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
+                audioRef.current.play().catch(() => {
+                  console.warn("[RadioContext] 🛡️ Deck A unrecoverable stall, advancing to next set");
+                  advanceBroadcastTrack(false);
+                });
+              }
+            }, 2500);
+          }
+        }}
+        onStalled={() => {
+          if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
+            if (!stallWatchdogRef.current) {
+              stallWatchdogRef.current = setTimeout(() => {
+                if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
+                  console.warn("[RadioContext] 🛡️ Deck A network stall, failing forward to next set");
+                  advanceBroadcastTrack(false);
+                }
+              }, 3000);
+            }
+          }
+        }}
         onPause={() => {
           if (activeDeckRef.current === "A") {
             if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
@@ -2886,6 +3107,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           if (activeDeckRef.current === "A" && !isCrossfadingRef.current) {
+            console.warn("[RadioContext] 🛡️ Deck A error, attempting proxy recovery");
             if (currentTrackIdRef.current) {
               const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
               const candidate = backupSetsRef.current.find((s) => String(s.id) === cleanId);
@@ -2894,15 +3116,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 if (audioRef.current.src !== retrySrc) {
                   audioRef.current.src = retrySrc;
                   audioRef.current.play().catch(() => {
-                    setIsPlaying(false);
-                    setEngineState("error");
+                    console.warn("[RadioContext] 🛡️ Proxy failed, advancing to next set");
+                    advanceBroadcastTrack(false);
                   });
                   return;
                 }
               }
             }
-            setIsPlaying(false);
-            setEngineState("error");
+            advanceBroadcastTrack(false);
           }
         }}
         onEnded={() => handleEnded("A")}
@@ -2920,6 +3141,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           if (preloadAudioRef.current) preloadAudioRef.current.preload = "auto";
         }}
+        onPlaying={() => {
+          if (activeDeckRef.current === "B") {
+            if (stallWatchdogRef.current) {
+              clearTimeout(stallWatchdogRef.current);
+              stallWatchdogRef.current = null;
+            }
+            setEngineState("live");
+          }
+        }}
+        onWaiting={() => {
+          if (activeDeckRef.current === "B" && isPlayingRef.current && !isCrossfadingRef.current) {
+            setEngineState("reconnecting");
+            if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+            stallWatchdogRef.current = setTimeout(() => {
+              if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
+                console.warn("[RadioContext] 🛡️ Deck B stall detected: attempting playback nudge");
+                preloadAudioRef.current.currentTime = Math.max(0, preloadAudioRef.current.currentTime + 0.2);
+                preloadAudioRef.current.play().catch(() => {
+                  console.warn("[RadioContext] 🛡️ Deck B unrecoverable stall, advancing to next set");
+                  advanceBroadcastTrack(false);
+                });
+              }
+            }, 2500);
+          }
+        }}
+        onStalled={() => {
+          if (activeDeckRef.current === "B" && isPlayingRef.current && !isCrossfadingRef.current) {
+            if (!stallWatchdogRef.current) {
+              stallWatchdogRef.current = setTimeout(() => {
+                if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
+                  console.warn("[RadioContext] 🛡️ Deck B network stall, failing forward to next set");
+                  advanceBroadcastTrack(false);
+                }
+              }, 3000);
+            }
+          }
+        }}
         onPause={() => {
           if (activeDeckRef.current === "B") {
             if (preloadAudioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
@@ -2931,6 +3189,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           if (activeDeckRef.current === "B" && !isCrossfadingRef.current) {
+            console.warn("[RadioContext] 🛡️ Deck B error, attempting proxy recovery");
             if (currentTrackIdRef.current) {
               const cleanId = currentTrackIdRef.current.replace(/^(set-|vault-|pl-\d+-)/, "");
               const candidate = backupSetsRef.current.find((s) => String(s.id) === cleanId);
@@ -2939,15 +3198,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 if (preloadAudioRef.current.src !== retrySrc) {
                   preloadAudioRef.current.src = retrySrc;
                   preloadAudioRef.current.play().catch(() => {
-                    setIsPlaying(false);
-                    setEngineState("error");
+                    console.warn("[RadioContext] 🛡️ Proxy failed, advancing to next set");
+                    advanceBroadcastTrack(false);
                   });
                   return;
                 }
               }
             }
-            setIsPlaying(false);
-            setEngineState("error");
+            advanceBroadcastTrack(false);
           }
         }}
         onEnded={() => handleEnded("B")}

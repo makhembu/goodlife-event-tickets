@@ -35,14 +35,14 @@ export async function GET(req: NextRequest) {
     const dropsRes = await neonQuery(`
       SELECT 
         id, persona, mood, title, script, audio_url, 
-        target_track_id, target_track_title, target_artist, 
-        timing_type, play_count, created_at
+        target_track_id, target_track_title, 
+        timing_type, created_at
       FROM radio_drops
       ORDER BY created_at DESC
       LIMIT 50
     `).catch(() =>
       neonQuery(`
-        SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title, timing_type, play_count, created_at
+        SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title, timing_type, created_at
         FROM radio_drops ORDER BY created_at DESC LIMIT 50
       `).catch(() => ({ rows: [] }))
     );

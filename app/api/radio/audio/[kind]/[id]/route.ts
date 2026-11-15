@@ -137,6 +137,31 @@ async function handleAudioRequest(req: NextRequest, context: AudioRouteContext, 
     );
   }
 
+  // Drops are public station announcements, soundboard clips, and voice IDs.
+  // They are stored on public R2 / local paths, never in the private sets bucket.
+  if (kind === "drop") {
+    let dropUrl = (row.audio_url || "").trim();
+    if (
+      !dropUrl.startsWith("http://") &&
+      !dropUrl.startsWith("https://") &&
+      !dropUrl.startsWith("/")
+    ) {
+      const publicBase = (
+        process.env.R2_PUBLIC_DOMAIN ||
+        process.env.RADIO_R2_PUBLIC_DOMAIN ||
+        "https://pub-a4616bfcc17e435a86f092c95d4e603b.r2.dev"
+      ).replace(/\/+$/, "");
+      dropUrl = `${publicBase}/${dropUrl.replace(/^\/+/, "")}`;
+    }
+    return new NextResponse(null, {
+      status: 307,
+      headers: {
+        Location: dropUrl,
+        "Cache-Control": "private, no-store, max-age=0",
+      },
+    });
+  }
+
   const r2Key = resolveR2Key(row);
   if (!r2Key) {
     return NextResponse.json(

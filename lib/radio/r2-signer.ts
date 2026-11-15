@@ -58,7 +58,13 @@ export function getRadioR2() {
   const accountId = cleanEnv(readEnvLocal("R2_ACCOUNT_ID"));
   const accessKeyId = cleanEnv(readEnvLocal("R2_ACCESS_KEY_ID"));
   const secretAccessKey = cleanEnv(readEnvLocal("R2_SECRET_ACCESS_KEY"));
-  const bucket = cleanEnv(readEnvLocal("RADIO_R2_BUCKET"));
+  // Fail-closed invariant: if RADIO_R2_BUCKET is explicitly empty, return null
+  if (process.env.RADIO_R2_BUCKET === "") {
+    return null;
+  }
+  const envRadioBucket = cleanEnv(readEnvLocal("RADIO_R2_BUCKET"));
+  const primaryBucket = cleanEnv(readEnvLocal("R2_BUCKET_NAME")) || "goodlife";
+  const bucket = envRadioBucket || primaryBucket;
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
     return null;
@@ -103,7 +109,7 @@ export async function createRadioPresignedUpload(params: {
   const cleanBase = params.filename
     .replace(/\.[^/.]+$/, "")
     .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .slice(0, 30);
+    .slice(0, 100);
   const randomSuffix = Math.random().toString(36).substring(2, 9);
   const tier = params.isHighQuality ? "320k" : "192k";
   const key = `radio/${Date.now()}-${cleanBase || "set"}-${tier}-${randomSuffix}.${ext}`;

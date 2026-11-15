@@ -82,39 +82,58 @@ export async function POST(req: NextRequest) {
 
     const durationStr = formatAudioDuration(finalDurationSec);
 
-    const query = `
-      INSERT INTO radio_sets (
-        event_id, title, dj_name, audio_url, r2_key, cover_url, 
-        duration, duration_sec, genre, file_size, bitrate, 
-        source_type, external_id, processing_status, display_order, is_active
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'r2', $12, 'ready', 0, true)
-      ON CONFLICT (external_id) WHERE deleted_at IS NULL AND external_id IS NOT NULL
-      DO UPDATE SET 
-        audio_url = EXCLUDED.audio_url,
-        r2_key = EXCLUDED.r2_key,
-        file_size = EXCLUDED.file_size,
-        cover_url = EXCLUDED.cover_url,
-        processing_status = 'ready'
-      RETURNING id, title;
-    `;
+    const lookupKey = video_id || audio_url;
+    const existingCheck = await neonQuery(
+      `SELECT id FROM radio_sets WHERE (external_id = $1 OR audio_url = $2) AND deleted_at IS NULL LIMIT 1`,
+      [lookupKey || "", audio_url]
+    );
 
-    const params = [
-      event_id || 2,
-      title,
-      dj_name || "Resident DJ",
-      audio_url,
-      r2_key || null,
-      cover_url || "",
-      durationStr,
-      finalDurationSec,
-      genre || "Afro House",
-      file_size || 0,
-      finalBitrate,
-      video_id || null,
-    ];
-
-    const { rows } = await neonQuery(query, params);
+    let rows: any[] = [];
+    if (existingCheck.rows.length > 0) {
+      const updateRes = await neonQuery(
+        `UPDATE radio_sets
+         SET audio_url = $1, r2_key = $2, file_size = $3, cover_url = $4,
+             duration = $5, duration_sec = $6, bitrate = $7, processing_status = 'ready'
+         WHERE id = $8
+         RETURNING id, title`,
+        [
+          audio_url,
+          r2_key || null,
+          file_size || 0,
+          cover_url || "",
+          durationStr,
+          finalDurationSec,
+          finalBitrate,
+          existingCheck.rows[0].id,
+        ]
+      );
+      rows = updateRes.rows;
+    } else {
+      const insertRes = await neonQuery(
+        `INSERT INTO radio_sets (
+          event_id, title, dj_name, audio_url, r2_key, cover_url, 
+          duration, duration_sec, genre, file_size, bitrate, 
+          source_type, external_id, processing_status, display_order, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'r2', $12, 'ready', 0, true)
+        RETURNING id, title`,
+        [
+          event_id || 2,
+          title,
+          dj_name || "Resident DJ",
+          audio_url,
+          r2_key || null,
+          cover_url || "",
+          durationStr,
+          finalDurationSec,
+          genre || "Afro House",
+          file_size || 0,
+          finalBitrate,
+          video_id || null,
+        ]
+      );
+      rows = insertRes.rows;
+    }
     if (rows && rows.length > 0) {
       const trackId = rows[0].id;
       const targetPlaylistId = playlist_id ? Number(playlist_id) : null;

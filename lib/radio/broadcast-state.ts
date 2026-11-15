@@ -32,6 +32,7 @@ export interface AuthoritativePlayoutState {
     drop_url: string;
     target_track_id: number;
   } | null;
+  ai_drops_enabled: boolean;
   active_listeners: number;
   server_timestamp: number;
 }
@@ -66,7 +67,7 @@ async function getCachedPlayoutDb(): Promise<PlayoutCache> {
       ORDER BY pt.position ASC, pt.id ASC
     `).catch(() => ({ rows: [] })),
     neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at, radio_enabled FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, active_set_id, active_started_at, radio_enabled, ai_drops_enabled FROM radio_settings WHERE id = 1"
     ).catch(() => ({ rows: [] })),
   ]);
 
@@ -238,25 +239,28 @@ export async function getAuthoritativePlayoutState(): Promise<AuthoritativePlayo
   const playlistScope = activePlaylistId ? `pl_${activePlaylistId}` : "catalog";
   const transitionId = `${playlistScope}:loop_${loopCycle}:trk_${currentTrack.id}->trk_${nextTrack.id}`;
 
-  // Fetch upcoming ready drop for next track
+  // Fetch upcoming ready drop for next track (only when AI auto drops are enabled)
   let upcomingDrop = null;
-  try {
-    const dropRes = await neonQuery(
-      `SELECT id, persona, mood, title, script, audio_url as drop_url, target_track_id
-       FROM radio_drops
-       WHERE target_track_id = $1 
-         AND status = 'READY'
-         AND audio_url IS NOT NULL 
-         AND audio_url != ''
-         AND created_at > NOW() - INTERVAL '15 minutes'
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [nextTrack.id]
-    );
-    if (dropRes.rows.length > 0) {
-      upcomingDrop = dropRes.rows[0];
-    }
-  } catch {}
+  const isAiDropsEnabled = settings.ai_drops_enabled === true;
+  if (isAiDropsEnabled) {
+    try {
+      const dropRes = await neonQuery(
+        `SELECT id, persona, mood, title, script, audio_url as drop_url, target_track_id
+         FROM radio_drops
+         WHERE target_track_id = $1 
+           AND status = 'READY'
+           AND audio_url IS NOT NULL 
+           AND audio_url != ''
+           AND created_at > NOW() - INTERVAL '15 minutes'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [nextTrack.id]
+      );
+      if (dropRes.rows.length > 0) {
+        upcomingDrop = dropRes.rows[0];
+      }
+    } catch {}
+  }
 
   const activeListeners = await getActiveListenersCount();
 
@@ -270,6 +274,7 @@ export async function getAuthoritativePlayoutState(): Promise<AuthoritativePlayo
     next_track: nextTrack,
     up_next: upNext,
     upcoming_drop: upcomingDrop,
+    ai_drops_enabled: isAiDropsEnabled,
     active_listeners: activeListeners,
     server_timestamp: nowSec,
   };

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { bridgeQueueIngest, bridgeQueueNext } from "@/lib/radio/bridge-client";
 import { neonQuery } from "@/lib/supabase-db";
 import { slotTrackAsPlaylistUpNext } from "@/lib/radio/playlist-slotter";
+import { invalidateLivePlayoutCache, invalidateRadioStateCache } from "@/lib/radio/playout-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -187,49 +188,61 @@ export async function POST(req: NextRequest) {
 
     // Upsert into radio_sets with processing_status = 'processing'
     // Do NOT set audio_url to raw youtube.com - leave empty until R2 MP3 is uploaded
-    const upsertRes = await neonQuery(
-      `INSERT INTO radio_sets (
-        event_id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre,
-        processing_status, is_active, display_order, source_type, external_id
-      ) VALUES (
-        2, $1, $2, '', $3, $4, $5, 'Hip-Hop',
-        'processing', true, 0, 'r2', $6
-      )
-      ON CONFLICT (external_id) WHERE deleted_at IS NULL AND external_id IS NOT NULL
-      DO UPDATE SET
-        title = EXCLUDED.title,
-        dj_name = EXCLUDED.dj_name,
-        cover_url = EXCLUDED.cover_url,
-        processing_status = 'processing'
-      RETURNING id, title, dj_name, duration_sec, audio_url`,
-      [
-        (title && typeof title === "string" && title.trim()) || "Quick Insert Track",
-        (artist && typeof artist === "string" && artist.trim()) || "Guest Artist",
-        safeThumbnail,
-        durationStr,
-        durSec,
-        videoId || trimmedUrl,
-      ]
-    );
+    let createdTrack: any = null;
+    try {
+      const lookupKey = videoId || trimmedUrl;
+      const existingRes = await neonQuery(
+        `SELECT id, title, dj_name, duration_sec, audio_url FROM radio_sets WHERE external_id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [lookupKey]
+      );
 
-    const createdTrack = upsertRes.rows[0];
+      if (existingRes.rows.length > 0) {
+        const updateRes = await neonQuery(
+          `UPDATE radio_sets
+           SET title = $1, dj_name = $2, cover_url = $3, processing_status = 'processing'
+           WHERE id = $4
+           RETURNING id, title, dj_name, duration_sec, audio_url`,
+          [
+            (title && typeof title === "string" && title.trim()) || "Quick Insert Track",
+            (artist && typeof artist === "string" && artist.trim()) || "Guest Artist",
+            safeThumbnail,
+            existingRes.rows[0].id,
+          ]
+        );
+        createdTrack = updateRes.rows[0];
+      } else {
+        const insertRes = await neonQuery(
+          `INSERT INTO radio_sets (
+            event_id, title, dj_name, audio_url, cover_url, duration, duration_sec, genre,
+            processing_status, is_active, display_order, source_type, external_id
+          ) VALUES (
+            2, $1, $2, '', $3, $4, $5, 'Hip-Hop',
+            'processing', true, 0, 'r2', $6
+          )
+          RETURNING id, title, dj_name, duration_sec, audio_url`,
+          [
+            (title && typeof title === "string" && title.trim()) || "Quick Insert Track",
+            (artist && typeof artist === "string" && artist.trim()) || "Guest Artist",
+            safeThumbnail,
+            durationStr,
+            durSec,
+            lookupKey,
+          ]
+        );
+        createdTrack = insertRes.rows[0];
+      }
+    } catch (upsertErr: any) {
+      console.warn("[api/admin/radio/queue-next] Track upsert error:", upsertErr.message);
+      throw upsertErr;
+    }
     if (!createdTrack) {
       return NextResponse.json({ error: "Failed to record track for ingestion." }, { status: 500 });
     }
 
-    if (playlist_id && typeof playlist_id === "number") {
-      const posRes = await neonQuery(
-        `SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM radio_playlist_tracks WHERE playlist_id = $1`,
-        [playlist_id]
-      );
-      const nextPos = posRes.rows[0]?.next_pos || 1;
-      await neonQuery(
-        `INSERT INTO radio_playlist_tracks (playlist_id, track_id, position, created_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT DO NOTHING`,
-        [playlist_id, createdTrack.id, nextPos]
-      );
-    }
+    // Slot track directly as UP NEXT in active broadcast playlist and radio_settings
+    await slotTrackAsPlaylistUpNext(createdTrack.id);
+    invalidateLivePlayoutCache();
+    invalidateRadioStateCache();
 
     // Trigger Ingest on Radio Bridge (yt-dlp -> R2 upload -> /api/webhooks/radio-ingest)
     const ingestRes = await bridgeQueueIngest({

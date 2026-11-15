@@ -38,13 +38,29 @@ export interface DropVaultOption {
 export function isValidSoundboardAudioUrl(url: string | null | undefined): boolean {
   if (!url) return true; // Nullable clip is allowed
   const trimmed = url.trim();
-  if (trimmed.startsWith("/drops/")) return true;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith("javascript:") ||
+    lower.startsWith("data:") ||
+    lower.startsWith("blob:") ||
+    lower.startsWith("vbscript:")
+  ) {
+    return false;
+  }
+  if (trimmed.startsWith("/drops/") || trimmed.startsWith("/api/radio/")) return true;
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    if (trimmed.includes(":") || trimmed.startsWith("//")) return false;
+    return true; // Relative R2 key or internal path
+  }
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "https:") return false;
     return (
       parsed.hostname.endsWith(".r2.dev") ||
-      parsed.hostname.endsWith(".cloudflarestorage.com")
+      parsed.hostname.endsWith(".cloudflarestorage.com") ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname.includes("goodlife") ||
+      parsed.hostname.includes("vercel.app")
     );
   } catch {
     return false;
@@ -150,6 +166,10 @@ export async function validateSoundboardAudioLimits(
     clearTimeout(timeoutId);
 
     if (!res.ok) {
+      // Some storage buckets disallow HEAD requests (403/405); allow if URL is well-formed
+      if (res.status === 403 || res.status === 405 || res.status === 400) {
+        return { valid: true };
+      }
       return { valid: false, error: `Remote audio file returned HTTP ${res.status}.` };
     }
 

@@ -57,13 +57,13 @@ export function extractPrimaryArtist(title?: string | null, djName?: string | nu
 
 export function getGenreBridgeScore(genreA?: string | null, genreB?: string | null): number {
   if (!genreA || !genreB) return 0;
-  const a = genreA.toLowerCase().trim();
-  const b = genreB.toLowerCase().trim();
+  const a = genreA.toLowerCase().trim().replace(/[-_]/g, " ");
+  const b = genreB.toLowerCase().trim().replace(/[-_]/g, " ");
   if (a === b) return 1.2;
 
-  const afroCluster = ["amapiano", "afro house", "afrobeats", "afropop", "3-step", "afro-tech"];
-  const urbanCluster = ["hip-hop", "rap", "gengetone", "arbantone", "trap", "drill", "r&b", "pop"];
-  const chillCluster = ["chillout", "sundowner", "lounge", "reggae", "soul", "rhumba"];
+  const afroCluster = ["amapiano", "afro house", "afrobeats", "afropop", "3 step", "afro tech"];
+  const urbanCluster = ["hip hop", "rap", "gengetone", "arbantone", "trap", "drill", "r&b", "pop"];
+  const chillCluster = ["chillout", "sundowner", "lounge", "reggae", "dancehall", "soul", "rhumba"];
 
   const inSameCluster = [afroCluster, urbanCluster, chillCluster].some(
     (c) => c.some((tok) => a.includes(tok)) && c.some((tok) => b.includes(tok))

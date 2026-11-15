@@ -3,21 +3,9 @@ import { neonQuery } from "@/lib/supabase-db";
 import { resolveCoverArt } from "@/lib/radio/media-helpers";
 import { getActiveListenersCount } from "@/lib/radio/listener-tracker";
 import { withPlayback } from "@/lib/radio/playback";
+import { getStateDbCache, setStateDbCache } from "@/lib/radio/playout-cache";
 
 export const revalidate = 5;
-
-// In-memory serverless cache (short 5s cache to ensure kill-switch and stream switchers react promptly)
-let _stateDbCache: {
-  settings: any;
-  sets: any[];
-  fallbackSet: any;
-  totalDurationSec: number;
-  activatedAt: string | null;
-  activePlaylistName: string | null;
-  activePlaylistId: number | null;
-  onAirSlot: any;
-  ts: number;
-} | null = null;
 
 // Module-level schema cache: checked once per serverless worker instance (0 DB queries on subsequent calls)
 let _hasRadioEnabledColumn: boolean | null = null;
@@ -25,7 +13,7 @@ let _hasRadioEnabledColumn: boolean | null = null;
 export async function GET() {
   const now = Date.now();
   try {
-    let cached = _stateDbCache;
+    let cached = getStateDbCache();
     if (!cached || now - cached.ts > 5000) {
       // 1. Fetch settings and check for runtime kill-switch flag
       let settings = {
@@ -34,11 +22,12 @@ export async function GET() {
         live_title: "GOODLIFE RADIO LIVE",
         live_fallback_set_id: null,
         radio_enabled: true,
+        queued_next_set_id: null as number | null,
       };
 
       try {
         const settingsRes = await neonQuery(
-          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id, active_set_id, active_started_at, radio_enabled FROM radio_settings WHERE id = 1"
+          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id, active_set_id, active_started_at, radio_enabled, ai_drops_enabled, queued_next_set_id FROM radio_settings WHERE id = 1"
         );
         if (settingsRes.rows[0]) {
           settings = { ...settings, ...settingsRes.rows[0] };
@@ -104,19 +93,18 @@ export async function GET() {
           };
           settings.broadcast_mode = "live";
           settings.live_title = `${row.show_title} with ${row.on_air_dj_name}`;
-        } else if (settings.broadcast_mode === "live") {
-          // No presenter slot is live right now: fail-safe to autodj so player doesn't lie
-          settings.broadcast_mode = "autodj";
         }
       } catch (slotErr) {
         console.warn("[api/radio/state] Error checking live show_slots:", slotErr);
       }
 
-      // If station broadcast_mode is not 'live', there is no external stream — 24/7 R2 tracks are active
-      if (settings.broadcast_mode !== "live") {
+      // If station broadcast_mode is 'live', ensure live_stream_url is resolved
+      if (settings.broadcast_mode === "live") {
+        if (!settings.live_stream_url || settings.live_stream_url.trim() === "") {
+          settings.live_stream_url = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
+        }
+      } else {
         settings.live_stream_url = "";
-      } else if (!settings.live_stream_url && process.env.RADIO_STREAM_URL && process.env.RADIO_STREAM_URL.trim() !== "") {
-        settings.live_stream_url = process.env.RADIO_STREAM_URL.trim();
       }
 
 
@@ -194,7 +182,7 @@ export async function GET() {
         onAirSlot: onAirSlotData,
         ts: now,
       };
-      _stateDbCache = cached;
+      setStateDbCache(cached);
     }
 
     const {
@@ -290,10 +278,14 @@ export async function GET() {
         };
       }
 
-      // Check upcoming drop for the next track
-      const nextIdx = (activeIdx + 1) % sets.length;
+      // Check upcoming drop for the next track (strictly skipped when AI auto drops are disabled)
+      let nextIdx = (activeIdx + 1) % sets.length;
+      if (settings.queued_next_set_id) {
+        const qIdx = sets.findIndex((s: any) => s.id === Number(settings.queued_next_set_id));
+        if (qIdx !== -1) nextIdx = qIdx;
+      }
       const nextTrack = sets[nextIdx];
-      if (nextTrack) {
+      if (nextTrack && settings.ai_drops_enabled === true) {
         try {
           const dropRes = await neonQuery(
             `SELECT id, persona, mood, title, script, audio_url as drop_url, target_track_id
@@ -326,35 +318,38 @@ export async function GET() {
       }
     }
 
-      // Load active drops from PostgreSQL database
+      // Load active drops from PostgreSQL database (strictly skipped if ai_drops_enabled is false)
       let activeDrops: any[] = [];
-      try {
-        const dropsRes = await neonQuery(
-          `SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title
-           FROM radio_drops
-           WHERE (created_at > NOW() - INTERVAL '7 days' OR timing_type IN ('generic', 'station_id', 'intro', 'outro'))
-             AND (timing_type IS NULL OR timing_type NOT IN ('live_inject', 'live_drop'))
-             AND audio_url IS NOT NULL
-           ORDER BY created_at DESC
-           LIMIT 50`
-        );
-        activeDrops = (dropsRes.rows || []).map((r: any) =>
-          withPlayback(
-            {
-              id: `db-drop-${r.id}`,
-              title: r.title,
-              script: r.script,
-              audio_url: r.audio_url,
-              persona: r.persona,
-              mood: r.mood,
-              target_track_id: r.target_track_id,
-              target_track_title: r.target_track_title,
-            },
-            "drop"
-          )
-        );
-      } catch (dbErr: any) {
-        console.warn("[api/radio/state] Error loading active drops:", dbErr.message);
+      if (settings.ai_drops_enabled === true) {
+        try {
+          const dropsRes = await neonQuery(
+            `SELECT id, persona, mood, title, script, audio_url, target_track_id, target_track_title
+             FROM radio_drops
+             WHERE timing_type IN ('generic', 'station_id', 'intro', 'outro')
+               AND (is_active IS NULL OR is_active = true)
+               AND audio_url IS NOT NULL
+               AND audio_url NOT LIKE 'blob:%'
+             ORDER BY created_at DESC
+             LIMIT 50`
+          );
+          activeDrops = (dropsRes.rows || []).map((r: any) =>
+            withPlayback(
+              {
+                id: `db-drop-${r.id}`,
+                title: r.title,
+                script: r.script,
+                audio_url: r.audio_url,
+                persona: r.persona,
+                mood: r.mood,
+                target_track_id: r.target_track_id,
+                target_track_title: r.target_track_title,
+              },
+              "drop"
+            )
+          );
+        } catch (dbErr: any) {
+          console.warn("[api/radio/state] Error loading active drops:", dbErr.message);
+        }
       }
 
     const activeListeners = await getActiveListenersCount();
@@ -362,6 +357,7 @@ export async function GET() {
     const payload = {
       enabled: settings.radio_enabled !== false,
       mode: settings.broadcast_mode || "live",
+      ai_drops_enabled: Boolean(settings.ai_drops_enabled),
       listeners_count: activeListeners,
       on_air_slot: onAirSlot || null,
       live: {
@@ -383,8 +379,9 @@ export async function GET() {
   } catch (err: any) {
     console.error("[api/radio/state] Error:", err);
     // Stale cache fallback if database is temporarily unavailable
-    if (_stateDbCache) {
-      const { settings, sets, fallbackSet } = _stateDbCache;
+    const cachedFallback = getStateDbCache();
+    if (cachedFallback) {
+      const { settings, sets, fallbackSet } = cachedFallback;
       return NextResponse.json({
         mode: settings.broadcast_mode || "curated",
         live: { title: settings.live_title || "", stream_url: settings.live_stream_url || "", fallback_set: fallbackSet },

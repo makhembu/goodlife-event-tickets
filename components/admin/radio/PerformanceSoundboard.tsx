@@ -105,6 +105,8 @@ export default function PerformanceSoundboard({
   const [volume, setVolume] = useState<number>(0.85);
   const [muted, setMuted] = useState<boolean>(false);
   const [broadcastMode, setBroadcastMode] = useState<"local" | "on_air">("on_air");
+  const [localAuditionPadId, setLocalAuditionPadId] = useState<number | null>(null);
+  const localAuditionAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Radio monitor state to coordinate local audition vs live monitor ducking
   const { isPlaying } = useRadio();
@@ -242,6 +244,50 @@ export default function PerformanceSoundboard({
     }
   };
 
+  // Audition / Play Pad Locally (Headphones / Monitor without broadcasting to stream)
+  const playPadLocally = useCallback((pad: SoundPad) => {
+    if (!pad.audioUrl) {
+      showToast(`Pad "${pad.name}" has no audio clip assigned. Tap Edit to assign one.`, "error");
+      return;
+    }
+
+    // Toggle off if already playing this pad locally
+    if (localAuditionPadId === pad.id) {
+      if (localAuditionAudioRef.current) {
+        localAuditionAudioRef.current.pause();
+        localAuditionAudioRef.current.currentTime = 0;
+        localAuditionAudioRef.current = null;
+      }
+      setLocalAuditionPadId(null);
+      return;
+    }
+
+    // Stop existing local audition
+    if (localAuditionAudioRef.current) {
+      localAuditionAudioRef.current.pause();
+      localAuditionAudioRef.current.currentTime = 0;
+    }
+
+    try {
+      const audio = new Audio(pad.audioUrl);
+      audio.volume = muted ? 0 : volume;
+      audio.onended = () => {
+        setLocalAuditionPadId(null);
+        localAuditionAudioRef.current = null;
+      };
+      audio.onerror = () => {
+        setLocalAuditionPadId(null);
+        localAuditionAudioRef.current = null;
+        showToast(`Could not play "${pad.name}" locally.`, "error");
+      };
+      localAuditionAudioRef.current = audio;
+      setLocalAuditionPadId(pad.id);
+      void audio.play();
+    } catch (err) {
+      console.warn("Local play error:", err);
+    }
+  }, [localAuditionPadId, muted, volume, showToast]);
+
   // Emergency Choke All (Works in both Perform and Edit modes)
   const stopAllPads = () => {
     playingPads.forEach((audio) => {
@@ -251,6 +297,12 @@ export default function PerformanceSoundboard({
     setPlayingPads(new Map());
     setPadCountdowns(new Map());
     setActivePad(null);
+    if (localAuditionAudioRef.current) {
+      localAuditionAudioRef.current.pause();
+      localAuditionAudioRef.current.currentTime = 0;
+      localAuditionAudioRef.current = null;
+    }
+    setLocalAuditionPadId(null);
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
       setPreviewingUrl(null);
@@ -313,18 +365,24 @@ export default function PerformanceSoundboard({
       return;
     }
 
+    // In Local audition mode: clicking pad plays it locally without broadcasting to stream!
+    if (broadcastMode === "local") {
+      playPadLocally(pad);
+      return;
+    }
+
     setActivePad(pad.id);
 
+    // In ON AIR mode: strictly send to live stream broadcast!
     if (broadcastMode === "on_air" && onFireOnAir) {
       onFireOnAir(pad.name, pad.audioUrl);
     }
 
     try {
       const audio = new Audio(pad.audioUrl);
-      // In on_air mode: if the radio monitor is actively playing, mute local element so the monitor's ducked stream playout handles it without echo. If the monitor is NOT playing (or local mode), play locally so the DJ hears the sound!
-      const isMutedLocal = muted || (broadcastMode === "on_air" && isPlaying);
-      audio.volume = isMutedLocal ? 0 : volume;
-      audio.muted = isMutedLocal;
+      // In on_air mode: keep local audio completely silent so DJ hears NO local duplicate echo
+      audio.volume = 0;
+      audio.muted = true;
 
       audio.onloadedmetadata = () => {
         const dur = audio.duration || 4;
@@ -1191,16 +1249,20 @@ export default function PerformanceSoundboard({
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                 ) : (
-                  onSendToCue &&
                   hasClip && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSendToCue(pad);
+                        playPadLocally(pad);
+                        if (onSendToCue) onSendToCue(pad);
                       }}
-                      aria-label={`Audition ${pad.name} in PFL Cue`}
-                      title="Audition in Cue Dock (PFL)"
-                      className="absolute top-1.5 right-1.5 z-10 p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center bg-black/75 hover:bg-[#DFBB7D] text-[#DFBB7D] hover:text-[#16181D] border border-white/20 text-[9px] font-mono transition-all rounded active:scale-90 cursor-pointer"
+                      aria-label={`Play ${pad.name} locally`}
+                      title={localAuditionPadId === pad.id ? "Stop Local Play" : "Play Locally (Headphones / Monitor)"}
+                      className={`absolute top-1.5 right-1.5 z-10 p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center border text-[9px] font-mono transition-all rounded active:scale-90 cursor-pointer ${
+                        localAuditionPadId === pad.id
+                          ? "bg-[#10B981] text-black border-[#10B981] animate-pulse shadow-[0_0_8px_#10B981]"
+                          : "bg-black/75 hover:bg-[#DFBB7D] text-[#DFBB7D] hover:text-[#16181D] border-white/20"
+                      }`}
                     >
                       <Headphones className="w-3.5 h-3.5" />
                     </button>
@@ -1458,7 +1520,17 @@ export default function PerformanceSoundboard({
                     <span className="text-[10px] font-mono text-emerald-400 block font-bold">
                       ✓ AUDIO ATTACHED
                     </span>
-                    <p className="text-xs font-mono text-white truncate" title={editAudioUrl}>
+                    <p className="text-xs font-mono text-white font-bold truncate" title={editAudioUrl}>
+                      {(() => {
+                        const matched = vaultDrops.find((d) => d.audio_url === editAudioUrl || (editDropId && d.id === editDropId));
+                        if (matched?.title) {
+                          return `${matched.title} (${matched.persona || "Drop"})`;
+                        }
+                        const raw = editAudioUrl.split("/").pop() || "Audio Clip";
+                        return raw.replace(/^\d+[-_]/, "").replace(/[_-]/g, " ").replace(/\.(mp3|wav|webm|m4a)$/i, "") || raw;
+                      })()}
+                    </p>
+                    <p className="text-[10px] font-mono text-white/40 truncate">
                       {editAudioUrl.split("/").pop()}
                     </p>
                   </div>
@@ -1583,7 +1655,7 @@ export default function PerformanceSoundboard({
                             <div className="min-w-0 flex-1">
                               <div className="font-bold truncate text-white">{d.title}</div>
                               <div className="text-[10px] text-[#DFBB7D] truncate">
-                                {d.persona} · {d.mood}
+                                {d.persona} · {d.mood === "live_air" ? "Live Broadcast Drop" : d.mood}
                               </div>
                             </div>
 
@@ -1608,7 +1680,7 @@ export default function PerformanceSoundboard({
                                 onClick={() => {
                                   setEditAudioUrl(d.audio_url);
                                   setEditDropId(d.id);
-                                  if (!editLabel || editLabel === "New Pad") {
+                                  if (!editLabel || editLabel === "New Pad" || editLabel === "Untitled Pad" || editLabel.startsWith("Pad #") || editLabel.toLowerCase().includes("test")) {
                                     setEditLabel(d.title.slice(0, 50));
                                   }
                                 }}

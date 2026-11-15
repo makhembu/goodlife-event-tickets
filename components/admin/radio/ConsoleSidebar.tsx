@@ -95,6 +95,12 @@ export default function ConsoleSidebar({
   // Secondary tabs accessed through "More" bottom sheet
   const secondaryTabs: { id: ConsoleTab; label: string; icon: React.ReactNode; desc: string }[] = [
     {
+      id: "schedule",
+      label: "Timetable, Shows & Presenter Roster",
+      icon: <Calendar className="w-5 h-5 text-purple-400" />,
+      desc: "Weekly broadcast schedule, shows & presenter applications roster",
+    },
+    {
       id: "live",
       label: "Live DJ Decks",
       icon: <RadioTower className="w-5 h-5 text-emerald-400" />,
@@ -114,7 +120,7 @@ export default function ConsoleSidebar({
     },
   ];
 
-  const isSecondaryActive = ["live", "telemetry", "overrides"].includes(activeTab);
+  const isSecondaryActive = ["schedule", "live", "telemetry", "overrides"].includes(activeTab);
 
   return (
     <>

@@ -45,8 +45,13 @@ export async function POST(req: NextRequest) {
       } catch (uploadErr) {
         console.warn("[live-inject] Base64 R2 upload fallback:", uploadErr);
       }
-    } else if (!cleanAudioUrl.startsWith("http://") && !cleanAudioUrl.startsWith("https://")) {
-      // If it's a relative key or path, prepend public R2 domain
+    } else if (
+      !cleanAudioUrl.startsWith("http://") &&
+      !cleanAudioUrl.startsWith("https://") &&
+      !cleanAudioUrl.startsWith("/api/") &&
+      !cleanAudioUrl.startsWith("/drops/")
+    ) {
+      // If it's a relative R2 key, prepend public R2 domain
       const publicBase = (
         process.env.R2_PUBLIC_DOMAIN ||
         process.env.RADIO_R2_PUBLIC_DOMAIN ||

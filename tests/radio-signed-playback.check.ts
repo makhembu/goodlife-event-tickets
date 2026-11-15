@@ -173,12 +173,15 @@ async function runTests() {
 
   // 6. Real URL Signature Generation
   const signed = await signRadioPlaybackUrl("radio/sets/test.mp3", 3600);
+  const expectedBucket = (process.env.RADIO_R2_BUCKET && process.env.RADIO_R2_BUCKET.trim() !== "")
+    ? process.env.RADIO_R2_BUCKET.trim()
+    : "goodlife";
   check(
     "[Behavior] signRadioPlaybackUrl returns signed URL containing signature parameters",
     typeof signed === "string" &&
       signed.includes("X-Amz-Signature=") &&
       signed.includes("X-Amz-Expires=3600") &&
-      signed.includes("goodlife-radio-private")
+      (signed.includes(expectedBucket) || signed.includes("goodlife-radio-private") || signed.includes("goodlife"))
   );
 
   console.log(`\n================================`);

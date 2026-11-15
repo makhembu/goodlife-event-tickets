@@ -114,6 +114,7 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [airingStatus, setAiringStatus] = useState<string | null>(null);
+  const [isAiring, setIsAiring] = useState(false);
   const [synthStage, setSynthStage] = useState<{ step: number; title: string; percent: number }>({
     step: 1,
     title: "Connecting to Fish Audio neural model...",
@@ -426,13 +427,16 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   };
 
   const handleReAir = async () => {
-    if (!activeDrop?.audioUrl || !onAirLive) return;
+    if (!activeDrop?.audioUrl || !onAirLive || isAiring) return;
+    setIsAiring(true);
     setAiringStatus("Airing to stream...");
     try {
       const ok = await onAirLive(activeDrop.audioUrl, activeDrop.title, activeDrop.persona, activeDrop.script);
       setAiringStatus(ok ? "✓ Fired live to stream!" : "Aired!");
     } catch {
       setAiringStatus("Failed to air drop");
+    } finally {
+      setIsAiring(false);
     }
     setTimeout(() => setAiringStatus(null), 3500);
   };
@@ -888,10 +892,13 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
               <button
                 type="button"
                 onClick={handleReAir}
-                className="px-3 py-1.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1 shadow-[2px_2px_0px_#DFBB7D] cursor-pointer"
+                disabled={isAiring}
+                className={`px-3 py-1.5 bg-[#E84855] hover:bg-red-600 text-white font-mono text-xs font-bold border border-white/20 flex items-center space-x-1 shadow-[2px_2px_0px_#DFBB7D] cursor-pointer ${
+                  isAiring ? "opacity-60 cursor-not-allowed" : ""
+                }`}
               >
-                <Radio className="w-3.5 h-3.5 animate-pulse" />
-                <span>FIRE TO LIVE STREAM</span>
+                <Radio className={`w-3.5 h-3.5 ${isAiring ? "animate-spin" : "animate-pulse"}`} />
+                <span>{isAiring ? "AIRING..." : "FIRE TO LIVE STREAM"}</span>
               </button>
 
               <button

@@ -79,7 +79,7 @@ export async function createR2PresignedUpload(params: {
   const cleanBase = params.filename
     .replace(/\.[^/.]+$/, "")
     .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .slice(0, 30);
+    .slice(0, 100);
   const randomSuffix = Math.random().toString(36).substring(2, 9);
   const key = `${folder}/${Date.now()}-${cleanBase || "media"}-${randomSuffix}.${ext}`;
 

@@ -13,24 +13,9 @@ interface LiveCachedState {
   ts: number;
 }
 
+import { getPlayoutCache, setPlayoutCache, type RadioPlayoutDbCache } from "@/lib/radio/playout-cache";
+
 let _cachedLiveState: LiveCachedState | null = null;
-
-// 30-second instance cache for settings and playlist playout structure
-interface RadioPlayoutDbCache {
-  settings: {
-    broadcast_mode?: string;
-    active_set_id?: string | number | null;
-    active_started_at?: string | null;
-    ai_drops_enabled?: boolean;
-  };
-  sets: any[];
-  activatedAt: string | null;
-  activePlaylistName: string | null;
-  activePlaylistId: number | null;
-  timestamp: number;
-}
-
-let _dbPlayoutCache: RadioPlayoutDbCache | null = null;
 const PLAYOUT_CACHE_TTL_MS = 5_000; // 5 seconds (fast response for track skips and mode changes)
 
 // 2.5-second instance cache for live-drop broadcast check (stays within 2-3s delivery window)
@@ -51,7 +36,7 @@ async function queryRecentLiveDrop() {
        WHERE timing_type IN ('live_inject', 'live_drop')
          AND audio_url IS NOT NULL
          AND audio_url NOT LIKE 'blob:%'
-         AND created_at > NOW() - INTERVAL '120 seconds'
+         AND created_at > NOW() - INTERVAL '90 seconds'
        ORDER BY created_at DESC
        LIMIT 1`
     );
@@ -113,8 +98,9 @@ async function getLiveSlotOnAir() {
 
 async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
   const now = Date.now();
-  if (_dbPlayoutCache && now - _dbPlayoutCache.timestamp < PLAYOUT_CACHE_TTL_MS) {
-    return _dbPlayoutCache;
+  const cached = getPlayoutCache();
+  if (cached && now - cached.timestamp < PLAYOUT_CACHE_TTL_MS) {
+    return cached;
   }
 
   // Combined single query round: fetch settings and active playlist in parallel
@@ -129,7 +115,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
       ORDER BY pt.position ASC, pt.id ASC
     `).catch(() => ({ rows: [] })),
     neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at, ai_drops_enabled FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id, ai_drops_enabled FROM radio_settings WHERE id = 1"
     ).catch(() => ({ rows: [] })),
   ]);
 
@@ -158,7 +144,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
   }
 
   const settings = settingsRes.rows[0] || {};
-  _dbPlayoutCache = {
+  const freshCache: RadioPlayoutDbCache = {
     settings,
     sets,
     activatedAt,
@@ -166,7 +152,8 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
     activePlaylistId,
     timestamp: now,
   };
-  return _dbPlayoutCache;
+  setPlayoutCache(freshCache);
+  return freshCache;
 }
 
 async function getTimelineFallback() {
@@ -265,6 +252,29 @@ async function getTimelineFallback() {
         sets[(activeIdx + 2) % sets.length],
         sets[(activeIdx + 3) % sets.length],
       ].filter(Boolean);
+    }
+
+    const queuedId = settings.queued_next_set_id ? Number(settings.queued_next_set_id) : null;
+    if (queuedId) {
+      if (currentTrack && currentTrack.id === queuedId) {
+        // Queued track is currently on air! Clear queued_next_set_id
+        neonQuery("UPDATE radio_settings SET queued_next_set_id = NULL WHERE id = 1").catch(() => {});
+      } else {
+        // Force queued track to be #1 in Up Next
+        let queuedTrack = sets.find((s: any) => s.id === queuedId);
+        if (!queuedTrack) {
+          try {
+            const qRes = await neonQuery(
+              "SELECT id, title, dj_name, audio_url, r2_key, cover_url, duration, duration_sec, genre FROM radio_sets WHERE id = $1 AND deleted_at IS NULL",
+              [queuedId]
+            );
+            if (qRes.rows.length > 0) queuedTrack = qRes.rows[0];
+          } catch {}
+        }
+        if (queuedTrack) {
+          nextTracks = [queuedTrack, ...nextTracks.filter((s: any) => s.id !== queuedId)].slice(0, 3);
+        }
+      }
     }
 
     if (!currentTrack) return null;
@@ -431,8 +441,11 @@ export async function GET() {
       liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
     }
 
+    const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
+
     return NextResponse.json(
       {
+        mode: "live",
         offline: false,
         stale: false,
         listeners_count: activeListeners,
@@ -440,6 +453,11 @@ export async function GET() {
         now_playing: liveData.nowPlaying,
         up_next: liveData.upNext,
         history: liveData.history,
+        live: {
+          stream_url: streamUrl,
+          title: "GOODLIFE RADIO LIVE - ON AIR",
+        },
+        stream_url: streamUrl,
         live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
         target_duration_sec: 2.0,
       },

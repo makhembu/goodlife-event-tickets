@@ -199,11 +199,21 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
       const res = await fetch("/api/admin/radio/playlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "play_next", setId }),
+        body: JSON.stringify({
+          action: "play_next",
+          setId,
+          currentTrackId: activeSetId,
+        }),
       });
       if (res.ok) {
         notify(`⏭️ QUEUED NEXT: "${trackTitle}" will play right after this track!`);
-        fetchPlaylist();
+        await fetchPlaylist();
+        await fetchRadioLive();
+        if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+          try {
+            new BroadcastChannel("goodlife_radio_tab_sync").postMessage({ type: "QUEUE_NEXT" });
+          } catch {}
+        }
       } else {
         alert("Failed to queue track as next.");
       }
