@@ -399,6 +399,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pollBackoffMsRef = useRef<number>(10_000);
   const isPollingRef = useRef<boolean>(false);
+  const stalePollCountRef = useRef<number>(0);
 
   // Beacon / Stats refs
   const currentTrackIdRef = useRef<string>("");
@@ -577,14 +578,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.offline) {
-        setIsStale(Boolean(data.stale));
         if (engineStateRef.current === "live" || engineStateRef.current === "connecting") {
           handleStreamStall();
         }
         return;
       }
 
-      setIsStale(Boolean(data.stale));
+      if (data.stale) {
+        stalePollCountRef.current = (stalePollCountRef.current || 0) + 1;
+        if (stalePollCountRef.current >= 3) {
+          setIsStale(true);
+        }
+      } else {
+        stalePollCountRef.current = 0;
+        setIsStale(false);
+      }
       if (data.on_air_slot !== undefined) {
         setOnAirSlot(data.on_air_slot);
       }

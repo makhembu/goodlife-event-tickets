@@ -387,29 +387,52 @@ export async function GET() {
     );
   }
 
-  // 3. Station is in explicit live stage mode: query upstream relay with 3000ms timeout
+  // 3. Station is in explicit live stage mode: query upstream relay with resilient timeout
   const cleanBase = upstreamBase.replace(/\/+$/, "");
-  const timeoutMs = 3000;
+  const timeoutMs = 6000;
+  const onAirSlot = await getLiveSlotOnAir();
+  const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
+  const liveTitle = cachedPlayout.settings.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER";
+  const defaultArtist = onAirSlot?.presenter?.dj_name || "ADMIN MASTER HARBOR / LIVE DJ";
+  const defaultTitle = onAirSlot?.show?.title || liveTitle;
 
   try {
-    const [nowRes, nextRes, histRes] = await Promise.all([
+    const [nowResult, nextResult, histResult] = await Promise.allSettled([
       fetchWithTimeout(`${cleanBase}/api/now-playing`, timeoutMs),
       fetchWithTimeout(`${cleanBase}/api/up-next`, timeoutMs),
       fetchWithTimeout(`${cleanBase}/api/history`, timeoutMs),
     ]);
 
-    if (!nowRes.ok) {
-      throw new Error(`now-playing responded with status ${nowRes.status}`);
+    let nowPlaying: any = null;
+    if (nowResult.status === "fulfilled" && nowResult.value.ok) {
+      nowPlaying = await nowResult.value.json().catch(() => null);
     }
 
-    const nowPlaying = await nowRes.json();
-    const upNext = nextRes.ok ? await nextRes.json().catch(() => []) : [];
-    const history = histRes.ok ? await histRes.json().catch(() => []) : [];
+    let upNext: any[] = [];
+    if (nextResult.status === "fulfilled" && nextResult.value.ok) {
+      upNext = await nextResult.value.json().catch(() => []);
+    }
+
+    let history: any[] = [];
+    if (histResult.status === "fulfilled" && histResult.value.ok) {
+      history = await histResult.value.json().catch(() => []);
+    }
+
     const liveDrop = await queryRecentLiveDrop();
 
-    if (nowPlaying && nowPlaying.title) {
+    if (!nowPlaying || !nowPlaying.title) {
+      nowPlaying = {
+        title: defaultTitle,
+        artist: defaultArtist,
+        is_live: true,
+        state: "live",
+        duration: 0,
+        elapsed: 0,
+      };
+    } else {
       nowPlaying.title = formatTrackTitle(nowPlaying.title);
     }
+
     const cleanUpNext = Array.isArray(upNext)
       ? upNext.slice(0, 5).map((t: any) => ({
           ...t,
@@ -427,26 +450,17 @@ export async function GET() {
     _cachedLiveState = liveData;
 
     const activeListeners = await getActiveListenersCount();
-    if (liveData.nowPlaying && !liveData.nowPlaying.listeners) {
-      liveData.nowPlaying.listeners = {
-        total: activeListeners,
-        unique: activeListeners,
-      };
-    }
-
-    const onAirSlot = await getLiveSlotOnAir();
-    const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
-    const liveTitle = cachedPlayout.settings.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER";
-
     if (liveData.nowPlaying) {
+      if (!liveData.nowPlaying.listeners) {
+        liveData.nowPlaying.listeners = {
+          total: activeListeners,
+          unique: activeListeners,
+        };
+      }
       if (onAirSlot) {
         liveData.nowPlaying.on_air_slot = onAirSlot;
         liveData.nowPlaying.title = onAirSlot.show.title;
         liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
-      } else {
-        // Admin Master Live Takeover / Direct Hardware Ingest
-        liveData.nowPlaying.title = liveTitle;
-        liveData.nowPlaying.artist = "ADMIN MASTER HARBOR / LIVE DJ";
       }
       liveData.nowPlaying.is_live = true;
       liveData.nowPlaying.audio_url = streamUrl;
@@ -484,47 +498,33 @@ export async function GET() {
 
     const activeListeners = await getActiveListenersCount();
 
-    // If we have fresh cached data (< 15s), serve it with stale: true; otherwise advance timeline via fallback
-    if (_cachedLiveState && Date.now() - _cachedLiveState.ts < 15000) {
-      return NextResponse.json(
-        {
-          offline: false,
-          stale: true,
-          listeners_count: activeListeners,
-          now_playing: _cachedLiveState.nowPlaying,
-          up_next: _cachedLiveState.upNext,
-          history: _cachedLiveState.history,
-          target_duration_sec: 2.0,
-        },
-        {
-          status: 200,
-          headers: {
-            "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
-          },
-        }
-      );
-    }
-
-    // 24/7 Virtual Playout Timeline Fallback
-    const fallback = await getTimelineFallback();
-    if (fallback) {
-      return NextResponse.json(fallback, {
-        status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=3, max-age=0, must-revalidate",
-        },
-      });
-    }
-
-    // Completely unavailable without cached fallback -> honest offline state
+    // In live mode, NEVER fall back to AutoDJ while radio_settings says 'live'
     return NextResponse.json(
       {
-        offline: true,
+        mode: "live",
+        offline: false,
         stale: true,
-        reason: "Upstream server unreachable",
-        now_playing: null,
-        up_next: [],
-        history: [],
+        listeners_count: activeListeners,
+        on_air_slot: onAirSlot,
+        now_playing: {
+          title: defaultTitle,
+          artist: defaultArtist,
+          is_live: true,
+          state: "live",
+          duration: 0,
+          elapsed: 0,
+          audio_url: streamUrl,
+          playback_url: streamUrl,
+        },
+        up_next: _cachedLiveState?.upNext || [],
+        history: _cachedLiveState?.history || [],
+        live: {
+          stream_url: streamUrl,
+          title: defaultTitle,
+          is_live: true,
+        },
+        stream_url: streamUrl,
+        target_duration_sec: 2.0,
       },
       {
         status: 200,
