@@ -296,6 +296,38 @@ export default function AdminRadioPage() {
     }
   };
 
+  const [showStopLiveModal, setShowStopLiveModal] = useState(false);
+  const [stoppingLive, setStoppingLive] = useState(false);
+
+  const confirmStopLiveBroadcast = async () => {
+    setStoppingLive(true);
+    try {
+      const res = await fetch("/api/admin/radio/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "autodj" }),
+      });
+      if (res.ok) {
+        setLiveOnAirStatus({
+          isConnected: false,
+          type: "autodj",
+          name: null,
+          showTitle: null,
+        });
+        setShowStopLiveModal(false);
+        showMsg("Live broadcast released. Station returned to 24/7 AutoDJ.", "success");
+        checkBridgeHealth();
+        fetchBroadcastSettings();
+      } else {
+        showMsg("Failed to switch broadcast mode to AutoDJ.", "error");
+      }
+    } catch {
+      showMsg("Network error releasing live broadcast.", "error");
+    } finally {
+      setStoppingLive(false);
+    }
+  };
+
   const checkBridgeHealth = async () => {
     try {
       const res = await fetch("/api/admin/radio/health");
@@ -698,14 +730,25 @@ export default function AdminRadioPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab("live")}
-                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>VIEW HARBOR / ENCODER</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowStopLiveModal(true)}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  title="Stop Live Broadcast & Return to AutoDJ"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>STOP LIVE (SWITCH TO AUTODJ)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("live")}
+                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-bold uppercase shrink-0 border border-black shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>VIEW HARBOR / ENCODER</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -1459,6 +1502,58 @@ export default function AdminRadioPage() {
       />
       {/* Global Assign to Pad Sheet */}
       <AssignToPadSheet />
+
+      {/* Custom Stop Live Broadcast Modal */}
+      {showStopLiveModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-[#16181D] border-2 border-red-500 shadow-[6px_6px_0px_#000] p-6 max-w-md w-full font-mono text-xs space-y-4">
+            <div className="flex items-center space-x-2 text-red-400 border-b border-white/10 pb-3">
+              <div className="p-2 bg-red-600/20 border border-red-500 text-red-400">
+                <RadioTower className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white uppercase tracking-wider">
+                  RELEASE LIVE BROADCAST
+                </h3>
+                <p className="text-[11px] text-red-300">
+                  Switch station back to 24/7 AutoDJ
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-black/40 border border-white/10 p-3 space-y-2 text-white/80 leading-relaxed text-[11px]">
+              <p>
+                Are you sure you want to <strong>disconnect the live feed</strong> and restore regular festival playout?
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-white/60">
+                <li>The station will immediately release the harbor stream.</li>
+                <li> Playout will switch seamlessly back to scheduled 24/7 AutoDJ tracks.</li>
+                <li>Listeners will transition smoothly without dead air.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowStopLiveModal(false)}
+                disabled={stoppingLive}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold border border-white/20 uppercase transition-colors cursor-pointer"
+              >
+                CANCEL / KEEP LIVE
+              </button>
+              <button
+                type="button"
+                onClick={confirmStopLiveBroadcast}
+                disabled={stoppingLive}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold border border-black uppercase flex items-center space-x-1.5 shadow-[2px_2px_0px_#000] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>{stoppingLive ? "RELEASING..." : "CONFIRM & RELEASE AIRWAVES"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SoundboardProvider>
   </RadioConsoleLayout>
 );

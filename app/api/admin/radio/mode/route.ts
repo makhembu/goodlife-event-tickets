@@ -89,6 +89,9 @@ export async function POST(req: NextRequest) {
              updated_at = NOW() 
          WHERE id = 1`
       );
+      await neonQuery(
+        `UPDATE show_slots SET status = 'completed', updated_at = NOW() WHERE status = 'live'`
+      ).catch(() => {});
     }
 
     return NextResponse.json({
