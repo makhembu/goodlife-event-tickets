@@ -389,7 +389,7 @@ export async function GET() {
 
   // 3. Station is in explicit live stage mode: query upstream relay with resilient timeout
   const cleanBase = upstreamBase.replace(/\/+$/, "");
-  const timeoutMs = 6000;
+  const timeoutMs = 3000;
   const onAirSlot = await getLiveSlotOnAir();
   const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
   const liveTitle = cachedPlayout.settings.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER";

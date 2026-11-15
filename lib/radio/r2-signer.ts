@@ -1,6 +1,7 @@
 import {
   S3Client,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   DeleteObjectCommand,
   CreateMultipartUploadCommand,
@@ -82,13 +83,34 @@ export function getRadioR2() {
 
 export async function signRadioPlaybackUrl(
   key: string,
-  ttlSeconds: number
+  ttlSeconds: number,
+  bucketOverride?: string
 ): Promise<string | null> {
   const r2 = getRadioR2();
   if (!r2) return null; // fail closed, never a public URL
   const cleanKey = key.replace(/^\/+/, "");
+  let targetBucket = bucketOverride || r2.bucket;
+  const primaryBucket = cleanEnv(readEnvLocal("R2_BUCKET_NAME")) || "goodlife";
+
+  // Seamless fallback between private radio bucket and primary bucket
+  if (!bucketOverride && targetBucket !== primaryBucket) {
+    try {
+      await r2.s3.send(new HeadObjectCommand({ Bucket: targetBucket, Key: cleanKey }));
+    } catch (e: any) {
+      if (
+        e?.name === "NotFound" ||
+        e?.$metadata?.httpStatusCode === 404 ||
+        e?.Code === "NoSuchKey" ||
+        e?.$metadata?.httpStatusCode === 403 ||
+        e?.name === "AccessDenied"
+      ) {
+        targetBucket = primaryBucket;
+      }
+    }
+  }
+
   const cmd = new GetObjectCommand({
-    Bucket: r2.bucket,
+    Bucket: targetBucket,
     Key: cleanKey,
     ResponseContentDisposition: "inline",
   });
