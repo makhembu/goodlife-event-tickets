@@ -574,6 +574,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               attachAndPlayLiveStream();
             }
           }
+        } else if (newMode === "live" && (engineStateRef.current === "backup-mix" || engineStateRef.current === "reconnecting")) {
+          // Automatic recovery: if a temporary dropout pushed us to backup-mix, return to live broadcast automatically!
+          if (isPlayingRef.current && !data.offline) {
+            console.log("[RadioContext] Live feed healthy again: auto-recovering from backup mix to live broadcast");
+            attachAndPlayLiveStream();
+          }
         }
       }
 
@@ -640,9 +646,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           hasFiredOutroDropRef.current = false;
           tracksSinceLastDropRef.current += 1;
 
-          // If playing and track advances, update audio src safely without truncating playing song
+          // If playing and track advances, update audio src safely without truncating playing song (AutoDJ mode only)
           const targetTrackSrc = track.playback_url || track.audio_url;
-          if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && targetTrackSrc) {
+          if (broadcastModeRef.current !== "live" && audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && targetTrackSrc) {
             if (audioRef.current.src !== targetTrackSrc) {
               const audio = audioRef.current;
               const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
@@ -1032,8 +1038,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     setEngineState("reconnecting");
 
-    // Start timer derived from target duration to failover to backup mix
+    // Start timer to failover to backup mix (give live broadcast 20s grace period before failing over)
     if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    const thresholdMs = broadcastModeRef.current === "live" ? 20_000 : timingConfigRef.current.backupMixThresholdMs;
     stallTimerRef.current = setTimeout(() => {
       if (engineStateRef.current === "reconnecting") {
         if (backupSets.length > 0) {
@@ -1043,7 +1050,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           setEngineState("error");
         }
       }
-    }, timingConfigRef.current.backupMixThresholdMs);
+    }, thresholdMs);
   }, [backupSets.length]);
 
   const startBackupMix = useCallback(() => {
