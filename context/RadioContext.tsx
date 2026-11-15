@@ -556,11 +556,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const newMode = (data as any).mode;
       if (newMode) {
         const prevMode = broadcastModeRef.current;
+        broadcastModeRef.current = newMode;
         setBroadcastMode(newMode);
         if (prevMode !== newMode) {
           if (newMode === "live") {
             const stream = (data as any).stream_url || (data as any)?.live?.stream_url;
             if (typeof stream === "string" && stream.trim()) {
+              liveStreamUrlRef.current = stream.trim();
               setLiveStreamUrl(stream.trim());
             }
             if (isPlayingRef.current) {
@@ -1331,7 +1333,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       hls.on(Hls.Events.ERROR, async (_event: any, data: any) => {
         if (!data?.fatal) return;
-        console.warn("[RadioContext] Live stream failed with error, falling over to sync track:", data.type);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          console.warn("[RadioContext] Live HLS network jitter, re-syncing buffer:", data.details);
+          try {
+            hls.startLoad();
+          } catch {}
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          console.warn("[RadioContext] Live HLS media decode glitch, recovering:", data.details);
+          try {
+            hls.recoverMediaError();
+          } catch {}
+          return;
+        }
+        console.warn("[RadioContext] Live stream unrecoverable fatal error, falling over to sync track:", data.type);
         teardownPlayback();
         await playCurrentTrackAudio();
       });
