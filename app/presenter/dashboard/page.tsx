@@ -361,7 +361,7 @@ export default function PresenterDashboardPage() {
     );
   }
 
-  const host = connStatus?.stream_config.host || "live.darajadigital.com";
+  const host = connStatus?.stream_config.host || "stream.darajadigital.com";
   const port = connStatus?.stream_config.port || 8005;
   const mount = connStatus?.stream_config.mount || "/live";
   const username = connStatus?.stream_config.username || `dj_${profile?.slug}`;

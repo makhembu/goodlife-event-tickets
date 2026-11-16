@@ -20,7 +20,7 @@ export interface DecksConnectCardProps {
 }
 
 export default function DecksConnectCard({
-  harborHost = "live.darajadigital.com",
+  harborHost = "stream.darajadigital.com",
   harborPort = 8005,
   harborMount = "/live",
 }: DecksConnectCardProps) {
