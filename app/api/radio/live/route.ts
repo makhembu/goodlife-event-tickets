@@ -27,6 +27,10 @@ interface LiveDropCache {
 let _liveDropCache: LiveDropCache | null = null;
 const LIVE_DROP_CACHE_TTL_MS = 2_500; // 2.5 seconds
 
+// Upstream relay circuit breaker
+let _upstreamFailCount = 0;
+let _upstreamDeadUntil = 0;
+
 async function queryRecentLiveDrop() {
   try {
     const dropRes = await neonQuery(
@@ -401,7 +405,8 @@ export async function GET() {
     let upNext: any[] = [];
     let history: any[] = [];
 
-    if (cleanBase) {
+    if (cleanBase && Date.now() >= _upstreamDeadUntil) {
+      const timeoutMs = 1200;
       const [nowResult, nextResult, histResult] = await Promise.allSettled([
         fetchWithTimeout(`${cleanBase}/api/now-playing`, timeoutMs),
         fetchWithTimeout(`${cleanBase}/api/up-next`, timeoutMs),
@@ -410,6 +415,13 @@ export async function GET() {
 
       if (nowResult.status === "fulfilled" && nowResult.value.ok) {
         nowPlaying = await nowResult.value.json().catch(() => null);
+        _upstreamFailCount = 0;
+        _upstreamDeadUntil = 0;
+      } else {
+        _upstreamFailCount++;
+        if (_upstreamFailCount >= 2) {
+          _upstreamDeadUntil = Date.now() + 30_000;
+        }
       }
 
       if (nextResult.status === "fulfilled" && nextResult.value.ok) {

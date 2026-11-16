@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       [setId]
     );
     if (setCheck.rows.length === 0) {
-      return new NextResponse(null, { status: 404 });
+      return new NextResponse(null, { status: 204 });
     }
 
     // Rotating daily salt for vault sets

@@ -646,7 +646,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     isPollingRef.current = true;
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3500);
+      const timer = setTimeout(() => controller.abort(), 6000);
       const res = await fetch("/api/radio/live", { signal: controller.signal });
       clearTimeout(timer);
 
@@ -855,7 +855,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       // Reset poll backoff on successful response
       pollBackoffMsRef.current = timingConfigRef.current.metadataPollIntervalMs;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return;
+      }
       console.warn("[RadioContext] Live metadata poll error:", err);
       // Exponential backoff up to max
       pollBackoffMsRef.current = Math.min(
@@ -1064,18 +1067,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (!currentId) return;
 
     try {
+      const isLive = broadcastModeRef.current === "live" || engineStateRef.current === "live";
       const activeBackup = backupSetsRef.current.find((s) => String(s.id) === currentId);
-      const setId = activeBackup ? activeBackup.id : 1; // Fallback to flagship station ID
 
-      navigator.sendBeacon?.(
-        "/api/radio/play-event",
-        JSON.stringify({
-          set_id: setId,
-          seconds_listened: Math.round(secondsListenedRef.current),
-          completed,
-          quality: qualityRef.current,
-        })
-      );
+      const payload = isLive
+        ? {
+            mode: "live",
+            seconds_listened: Math.round(secondsListenedRef.current),
+            quality: qualityRef.current,
+          }
+        : {
+            set_id: activeBackup ? activeBackup.id : 1,
+            seconds_listened: Math.round(secondsListenedRef.current),
+            completed,
+            quality: qualityRef.current,
+          };
+
+      navigator.sendBeacon?.("/api/radio/play-event", JSON.stringify(payload));
       if (completed || secondsListenedRef.current >= 20) {
         hasSentBeaconRef.current = true;
       }
