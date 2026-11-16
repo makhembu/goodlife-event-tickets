@@ -20,7 +20,7 @@ npx tsx tests/<name>.check.ts   # the verification suite (see below)
 ```
 
 - `next.config.ts`: `typescript.ignoreBuildErrors: false` + `eslint.ignoreDuringBuilds: true`. So **`npm run build` is the typechecker** (a red build = a TS error). Because `build` cleans first, the old "stale `.next/` crashes with `Cannot read properties of undefined (reading 'length')`" failure is auto-mitigated; if it still happens, run `npm run clean` by hand.
-- **`npm run lint` currently crashes** before linting anything: `Failed to patch ESLint because the calling module was not recognized` from `@rushstack/eslint-patch` (ESLint 9.39.1 + eslint-config-next 15.5.29). Don't read it as "my change broke lint". `eslint.config.mjs` ignores `.netlify/**`, `replace.js`, `check.js`; the ignores **must** live in their own config object to act globally in flat config.
+- **`npm run lint` currently crashes** before linting anything: `Failed to patch ESLint because the calling module was not recognized` from `@rushstack/eslint-patch` (ESLint 9.39.1 + eslint-config-next 15.5.29). Don't read it as "my change broke lint". `eslint.config.mjs` ignores `.netlify/**`, `replace.js`, `check.js`; the ignores **must** live in their own config object to act globally in flat config. → **fix plan:** see “Known issues & remediation plan” at the end.
 - `tsconfig.json` **excludes `tests` and `scripts`**, so `npx tsc --noEmit` does NOT typecheck the test suite. `tsconfig.tsbuildinfo` is gitignored — keep it untracked.
 - HMR is disabled only when `DISABLE_HMR=true` is exported (`next.config.ts` `webpack()`); it is not in `.env.local`.
 - No CI, no test framework, no `test` script. `scripts/` (~250 files) is gitignored and hits the **live** DB; don't run it casually.
@@ -60,7 +60,7 @@ Caveat: `admin-routes-guarded.check.ts` only greps for the *presence* of a guard
   - `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN` → those toggles/PINs never match.
   - `PRESENTER_SESSION_SECRET` unset → the whole `/presenter` portal refuses every session.
 - `.env.example` documents the ticketing + radio keys (`ADMIN_*`, `PRESENTER/SCANNER/VENDOR_SESSION_SECRET`, `CRON_SECRET`, `PAYHERO_*`, `TAB_SELF_PAY_SECRET`, R2 + radio playback/bridge keys, `IMGBB_API_KEY`, `OPERATOR_WHATSAPP_NUMBERS`). It still omits `SIMULATOR_PASSWORD`, `GATE_SCANNER_PIN`, `WAHA_*` — add them if you touch auth.
-- `/api/mpesa/*` is dead Daraja code. `lib/supabase-db.ts`'s *client* branch of `createPendingPayment` still posts to `/api/mpesa/stkpush`; the live PayHero routes call the server branch instead. `app/api/vendor/mpesa/stk` is a *misnomer*: it drives PayHero.
+- There is **no** `app/api/mpesa` directory — the Daraja routes are gone. `createPendingPayment` (`lib/supabase-db.ts`) is server-only SQL and throws if called from the browser. `app/api/vendor/mpesa/stk` is a *misnomer*: it drives PayHero.
 - `scripts/`, `backups/`, `scan-qr.html`, `SECURITY-AUDIT.md`, `/research/`, root `*.png`, and root debug files are untracked/gitignored so credentials, DB dumps, and audit findings don't leak. Assume the DB credential is already burned. `scripts/test-e2e-suite.js` INSERTs/UPDATEs/DELETEs rows for event `2` in the live DB — not a unit test.
 
 ## Database
@@ -101,7 +101,7 @@ Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 2. **Manual till** — `POST /api/payments/till-submit` writes a `till_pending` row; an admin approves it (`/api/admin/pending-payments/approve`) before any ticket exists. The endpoint currently has **no UI caller**.
 3. **Vendor tab self-pay** — public `/pay/tab/[id]?t=<hmac>`; the token is HMAC-SHA256 verified with `timingSafeEqual`. Never add an unauthenticated tab route (tab IDs are enumerable). Vendor-initiated tab STK is `/api/vendor/mpesa/stk` (PayHero under the hood).
 4. **Paystack** — code kept, hidden behind `NEXT_PUBLIC_ENABLE_PAYSTACK=true`. `NEXT_PUBLIC_*` is baked at build time, so toggling needs a redeploy.
-5. `/api/mpesa/*` (Daraja) is legacy and unused by the UI.
+5. Daraja `/api/mpesa/*` is **removed** (no directory). `app/api/vendor/mpesa/stk` is PayHero under the hood.
 
 ## Event lifecycle (read before touching routing or status)
 
@@ -155,7 +155,7 @@ Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 - **Presenter portal:** `/presenter` + `/api/presenter/*` with its own signed cookie `goodlife_presenter_session` (`lib/presenter-session.ts`, `PRESENTER_SESSION_SECRET`, fail-closed). `requirePresenter()` (`lib/presenter-auth.ts`) loads the `presenters` row (bcrypt `password_hash`) and rejects non-`active` accounts. Admin cookies are **not** accepted as presenter.
 - **Scanner/vendor sessions:** HMAC-SHA256 signed, `base64url(payload).base64url(sig)`. Scanner payload requires `role === "scanner"`; vendor payload requires a `vendorId`. Gate PIN is `event_details.gate_pin` → `GATE_SCANNER_PIN` → admin password (each a plain `===`, not `timingSafeEqual`).
 - **`config.matcher` (explicit allowlist):** `/admin/:path*`, `/scanner/:path*`, `/vendor/:path*`, `/presenter/:path*`, `/api/admin/:path*`, `/api/scanner/:path*`, `/api/presenter/:path*`, `/api/event-details`. **A new `/api/*` route is public until you add it here** — or guard it in-handler; `tests/admin-routes-guarded.check.ts` requires one or the other.
-- **⚠️ `/api/vendor/*` is NOT in the matcher** (unlike the `/vendor/*` pages). Vendor API handlers decode `goodlife_vendor_session` themselves, and several define a local `getSession`/`getVendorSession` that only base64-decodes the payload **without verifying the HMAC** (e.g. `vendor/sales`, `vendor/tabs`, `vendor/items`, `vendor/mpesa/stk`). `lib/vendor-tab-auth.ts` `verifyVendorSession`/`getTabActor` **do** verify — prefer them. Never treat a `vendorId` from a request body as trusted. `admin-routes-guarded.check.ts` counts a bare `getSession()` as a valid guard, so it won't catch this.
+- **⚠️ `/api/vendor/*` is NOT in the matcher** (unlike the `/vendor/*` pages). Vendor API handlers decode `goodlife_vendor_session` themselves, and several define a local `getSession`/`getVendorSession` that only base64-decodes the payload **without verifying the HMAC** (e.g. `vendor/sales`, `vendor/tabs`, `vendor/items`, `vendor/mpesa/stk`). `lib/vendor-tab-auth.ts` `verifyVendorSession`/`getTabActor` **do** verify — prefer them. Never treat a `vendorId` from a request body as trusted. `admin-routes-guarded.check.ts` counts a bare `getSession()` as a valid guard, so it won't catch this. → **fix plan:** see “Known issues & remediation plan” at the end.
 - `lib/vendor-tab-auth.ts` accepts the admin cookie as a **superuser** on customer tabs (`getTabActor`/`tabOwnershipGuard`). Operators pass only for their own tabs; tabs with NULL `vendor_id` are legacy and open to all vendors.
 - `/admin/vendors/[id]/login-as` impersonates a vendor, creating an operator row with a random PIN if the vendor has none (writes `vendor_operators` in prod).
 - `/scanner` + `/scanner/login` are their own route pair with `goodlife_scanner_session`; middleware redirects `/admin/scanner` → `/scanner` when a scanner session exists. "Protected by middleware" ≠ "admin cookie".
@@ -215,3 +215,106 @@ Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 - `.eslintrc.json` is dead — ESLint 9 uses the flat `eslint.config.mjs`.
 - `.netlify/`, `deno.lock`, `metadata.json`, `docs/root.bolt`, `schema*.sql` are Google AI Studio / Netlify CLI leftovers, not source of truth. `hooks/` has five plain React hooks (`use-eat-today`, `use-mobile`, `useCountdown`, `useOnlineStatus`, `use-audio-recorder`).
 - Deploy: Vercel project `goodlife-event-tickets` (`.vercel/project.json`) via `vercel --prod --token=$env:VERCEL_TOKEN`. `vercel.json` is an empty schema stub — crons moved to the home-server daemon.
+
+## Known issues & remediation plan (verified 2026-11-15)
+
+Two real defects, documented not fixed. Do this before trusting vendor auth or `npm run lint`.
+
+### Issue 1 — `/api/vendor/*` accepts forged vendor sessions
+
+**Impact:** any client can craft `goodlife_vendor_session = base64url({"vendorId":N}).<garbage>` and read/write that vendor's POS data, tabs, sales and expenses. The cookie is signed at login (`app/api/vendor/auth/route.ts` uses `createHmac("sha256", secret)`), but the API never checks the signature.
+
+**Root cause (all three must be understood):**
+1. `middleware.ts` `config.matcher` covers `/vendor/:path*` (pages) but **not** `/api/vendor/:path*`, so every vendor API handler must self-guard.
+2. **18 route files** define a local `getSession`/`getVendorSession` — or inline the same logic — that splits the cookie on `.` and base64-decodes part `[0]`. The HMAC is never verified. Only `lib/vendor-tab-auth.ts` `verifyVendorSession()` does `crypto.subtle.verify`.
+3. `tests/admin-routes-guarded.check.ts` (≈ lines 301–306) treats the *presence* of `getSession`/`getVendorSession`/`goodlife_vendor_session` as a valid guard, so the suite stays green.
+
+**Decode-only files to fix (18):**
+`vendor/{checkout,expenses,categories,customers,items,session,sales,tabs}` + `vendor/items/[id]`, `vendor/sales/[saleId]/void`, `vendor/tabs/[id]`, `vendor/tabs/[id]/limit`, `vendor/tabs/remind-all`, `vendor/mpesa/{status,stk}`, `vendor/till/{open,current,close}`. (`vendor/sales/[saleId]` just delegates to `void` and inherits the fix.)
+
+**Already correct — copy this pattern:** `app/api/vendor/tabs/[id]/{pay,close,remind}/route.ts` (`getTabActor()` + `tabOwnershipGuard(tab.vendor_id, actor)`).
+**Public by design — leave alone:** `vendor/auth`, `vendor/logout` (already in `NON_ADMIN_PUBLIC_ALLOWLIST`).
+
+**Fix steps:**
+1. Middleware: add `"/api/vendor/:path*"` to `config.matcher` **and** a branch mirroring the scanner block (the existing vendor block only matches `/vendor…`, not `/api/vendor…`):
+   ```ts
+   if (pathname.startsWith("/api/vendor/") || pathname === "/api/vendor") {
+     const isPublic = pathname === "/api/vendor/auth" || pathname === "/api/vendor/logout";
+     if (!isPublic && !(await isValidVendorSession(vendorSession)) && !isAdmin) {
+       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+     }
+   }
+   ```
+2. Replace each local decoder with `await verifyVendorSession(cookieValue)` from `@/lib/vendor-tab-auth`; 401 on null. Keep the admin-superuser path (`verifyAdminSession`) where it already exists (`vendor/sales`, `vendor/sales/[saleId]/void`).
+3. Tab-scoped routes: use `getTabActor()` + `tabOwnershipGuard()` so a vendor cannot touch another vendor's tab.
+4. Never read `vendorId` from a request body/query for authorization — take it from the verified payload.
+5. Harden the guard test: accept only `verifyVendorSession`/`getTabActor`/`verifyAdminSession` (drop bare `getSession`/`getVendorSession`), and add `tests/vendor-session-auth.check.ts` asserting an unsigned cookie gets 401 on every `/api/vendor/*` handler.
+6. Run `tests/scanner-vendor-auth.check.ts`, `tests/admin-vendor-auth.check.ts`, `tests/admin-routes-guarded.check.ts` plus the new test.
+
+**Acceptance:** every `/api/vendor/*` handler rejects a missing/forged/badly-signed cookie with 401; admin cookie still passes on the two admin-superuser routes.
+
+### Issue 2 — `npm run lint` crashes before linting
+
+**Symptom:** `ESLint: 9.39.1 → Error: Failed to patch ESLint because the calling module was not recognized.` (thrown by `@rushstack/eslint-patch`).
+
+**Root cause:** `eslint.config.mjs` does `import next from "eslint-config-next"`. That entry (`eslint-config-next/index.js`) is the **legacy CJS** config; its line 53 `require('@rushstack/eslint-patch/modern-module-resolution')` walks the require stack for `@eslint/eslintrc/lib/config-array-factory.js`. Imported directly from an ESM flat config, no such module is on the stack → it throws. `eslint-config-next@15.5.29` ships no flat export, and `eslint@9.39.1` is the installed version.
+
+**Verified fix (probe-tested: ESLint runs and reports real violations):** load the legacy config through `FlatCompat` so `@eslint/eslintrc` is on the require stack:
+```js
+// eslint.config.mjs
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { FlatCompat } from "@eslint/eslintrc";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const compat = new FlatCompat({ baseDirectory: __dirname });
+
+export default [
+  {
+    ignores: [
+      ".netlify/**", "replace.js", "check.js",
+      "scripts/**", "tests/**", ".next/**", "backups/**", "deno.lock",
+    ],
+  },
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+];
+```
+Add `@eslint/eslintrc` to `devDependencies` (today it is only transitive via `eslint`).
+
+**Expect a large pre-existing backlog.** With the fixed config, `eslint .` reports ~35,000 problems repo-wide; `app/ lib/ components/ context/ hooks/` alone is ~1,600 (1,158 errors, 446 warnings), dominated by `@typescript-eslint/no-explicit-any`. Builds do **not** lint (`eslint.ignoreDuringBuilds: true`), so this is not release-blocking. Phase it:
+1. Land the config fix + `scripts/**`/`tests/**`/`backups/**` ignores so the command runs at all.
+2. `eslint --fix` (277 auto-fixable repo-wide, 23 in app).
+3. Downgrade the noisy stylistic rules (`@typescript-eslint/no-explicit-any`, `no-unused-vars`) to `warn` in a targeted `overrides` block instead of mass-editing.
+4. Only then consider gating CI, with `--max-warnings` pinned to the current baseline.
+
+**Acceptance:** `npm run lint` runs to completion (exit 0, or a documented threshold), and a red result reflects real new violations, not a crash.
+
+## Codebase audit & refactor plan (verified 2026-11-15)
+
+Full audit with evidence, per-monolith recipes and a phased plan: **`docs/CODEBASE-AUDIT-AND-REFACTOR-PLAN.md`**. This section is the short version.
+
+Config/bucket mismatch audit (R2 bucket split, env drift, public-domain and feature-flag mismatches): **`docs/CONFIG-MISMATCH-AUDIT.md`**.
+
+**Verified shape:** `app/` 42.0k lines, `components/` 29.7k, `lib/` 18.4k, `context/` 3.4k, `tests/` 9.5k. 207 API routes (admin 110 = 64 radio + 46 ticketing; public radio 26; vendor 24). Radio is `lib/radio` 8.3k lines / 39 modules (healthy) but **20.6k lines of radio UI** and 90 radio API routes.
+
+**Highest-value defects beyond Issues 1–2:**
+- `lib/radio/alerts.ts` hardcodes `waha-ember.darajadigital.com` + `goodlife_waha_secret_2026`; it has **0 importers** → delete (or rebuild on `lib/waha.ts`). The same hardcoded URL/key fallback also exists in the **active** modules `lib/waha.ts:78-87` and `lib/whatsapp.ts:7-16` (see `docs/CONFIG-MISMATCH-AUDIT.md` F10).
+- `lib/radio/bridge-client.ts:4-8` silently falls back to `https://invidious-bridge.darajadigital.com` when `RADIO_BRIDGE_URL` is unset → fail closed instead.
+- `lib/supabase-db.ts:258,261` run **`ALTER TABLE events ADD COLUMN …` inside `createEvent`/`updateEvent`** → move to migrations.
+- **Three DB pools:** `supabase-db.ts` own `neonQuery`, `lib/neon-client.ts` `getDbPool`, `lib/radio/events.ts` `getEventsDbPool`. Radio routes import `neonQuery` from the ticketing god module just to run SQL. Collapse to `lib/db/client.ts`.
+- `tests/radio-hardcoding-grep.check.ts` only bans 7 brand strings; it does not catch `darajadigital` URLs or hardcoded keys, which is why the two above pass.
+
+**Cleanup list (verified 0 refs / 0 callers):**
+- Orphan files: `components/admin/radio/{AzuraCastQueueCard,BroadcastConsole,CartwallSoundboard,RadioHeader}.tsx`, `lib/radio/{ai-drops,alerts}.ts`, `hooks/use-mobile.ts`.
+- Dead exports in `lib/supabase-db.ts` (9): `fetchVendorsForEvent`, `updateVendorEventAssignment`, `getVendorSettlement`, `exportVendorReport`, `deactivateOperator`, `fetchSalesForVendor`, `fetchVendorDashboardMetrics`, `fetchAllVendorMetrics`, `updateEventLifecycle`. Internal-only (5): `clearTicketTiersCache`, `fetchAllTicketsAll`, `restoreTicket`, `restoreTicketTier`, `fetchPendingPayment`.
+- No in-repo caller: `/api/admin/radio/{analytics,drops/fire,tips}`, `/api/admin/verify-simulator-password`, `/api/admin/whatsapp/status` (console uses `/qr`, which returns status). `/api/admin/paystack/*` is dormant behind `NEXT_PUBLIC_ENABLE_PAYSTACK`. Cron/internal/webhook routes are external-caller, not dead.
+- 9 `.pyc` files are **tracked** under `home-server/daemon/**/__pycache__/`; empty `utils/`.
+- Stale docs: the old `/api/mpesa` claims (fixed above); `CLAUDE.md`/`README`/`DESIGN`/`PRODUCT` still say Neon/Paystack/Netlify.
+
+**Monoliths (true line counts) and target:** `lib/supabase-db.ts` 4,536 (104 exports) → `lib/db/*` + barrel; `app/admin/dashboard/page.tsx` 4,508 (66 `useState`, 35 `fetch`) → tab components + data hooks; `VendorDetailDrawer` 3,800 (57 `any`, inline phone normalization) → typed tabs + `lib/phone`; `vendor/sell` 3,485 (63 `useState`) → POS hooks; `ScheduleManager` 3,250 (79 `useState`) and `PlaylistManagerPanel` 3,368 (64) → editor hooks + panels; `RadioContext` 3,230 (68 `useRef`) → `lib/radio/client-playout.ts` state machine + `useRadioPlayout`; `CheckoutClientPage` 2,548 → step components (keep the empty-ladder guard first).
+
+**Radio gaps:** 0 direct tests for `broadcast-state` (authoritative playout), `slot-lifecycle`, `playlist-slotter`, `playlist-resolver`, `listener-analytics`, `lyrics-service`, `audio-mastering`, `playout-cache`, `messaging-provider`. Duplicated `KE_TZ` (events + schedule-generator) and `maskPhone` (ops-service + shoutout-filter); timezone offsets in 7 modules → `lib/radio/time.ts` + `lib/phone.ts`.
+
+**Order of work:** Phase 0 (2–3 d) Issues 1–2 + deletes + bridge/alerts + `.pyc` + baseline; Phase 1 (4–6 d) one DB client + migrations + hardened guards + `tsconfig.tests.json`; Phase 2 (8–12 d) playout extraction + radio panel splits + missing tests + bridge contract; Phase 3 (15–25 d) `supabase-db` → `lib/db/*`, then budget/drawer/sell/dashboard/checkout one PR at a time; Phase 4 (2–3 d) CI (typecheck incl. tests, build, grouped suites, lint baseline) + logger.
+
+**Definition of done:** no component >800 lines, no `useState` count >15 in one file, 0 orphan files, 0 dead exports, every `/api/vendor/*` returns 401 on a forged cookie, `npm run lint` exits cleanly, CI gates merges. Do refactors one module/tab per PR with no behavior change; `npm run build` is the typechecker.

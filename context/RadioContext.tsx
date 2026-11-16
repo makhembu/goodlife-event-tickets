@@ -388,6 +388,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const timingConfigRef = useRef(RADIO_TIMING);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
   const stallWatchdogRef = useRef<NodeJS.Timeout | null>(null);
+  const waitingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const backupProbeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastBufferTimeRef = useRef<number>(0);
   const lastPlaybackTimeRef = useRef<number>(0);
@@ -978,6 +979,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // 8. Stream Teardown: Pause = Disconnect (Releases buffers, stops loading)
   const teardownPlayback = useCallback(() => {
+    if (waitingDebounceTimerRef.current) {
+      clearTimeout(waitingDebounceTimerRef.current);
+      waitingDebounceTimerRef.current = null;
+    }
+    if (stallWatchdogRef.current) {
+      clearTimeout(stallWatchdogRef.current);
+      stallWatchdogRef.current = null;
+    }
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current);
       stallTimerRef.current = null;
@@ -1887,6 +1896,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
+  executeCrossfadeRef.current = executeCrossfade;
 
   // Instant Studio Track Switcher: smooth equal-power crossfade from playing track into target track
   const playImmediateBroadcastTrack = useCallback(
@@ -3096,6 +3106,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onPlaying={() => {
           if (activeDeckRef.current === "A") {
+            if (waitingDebounceTimerRef.current) {
+              clearTimeout(waitingDebounceTimerRef.current);
+              waitingDebounceTimerRef.current = null;
+            }
             if (stallWatchdogRef.current) {
               clearTimeout(stallWatchdogRef.current);
               stallWatchdogRef.current = null;
@@ -3105,7 +3119,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onWaiting={() => {
           if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
-            setEngineState("reconnecting");
+            if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
+            waitingDebounceTimerRef.current = setTimeout(() => {
+              if (isPlayingRef.current && !isCrossfadingRef.current) {
+                setEngineState("reconnecting");
+              }
+            }, 1800);
+
             if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
             stallWatchdogRef.current = setTimeout(() => {
               if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
@@ -3116,7 +3136,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 2500);
+            }, 6000);
           }
         }}
         onStalled={() => {
@@ -3127,7 +3147,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   console.warn("[RadioContext] 🛡️ Deck A network stall, failing forward to next set");
                   advanceBroadcastTrack(false);
                 }
-              }, 3000);
+              }, 6000);
             }
           }
         }}
@@ -3178,6 +3198,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onPlaying={() => {
           if (activeDeckRef.current === "B") {
+            if (waitingDebounceTimerRef.current) {
+              clearTimeout(waitingDebounceTimerRef.current);
+              waitingDebounceTimerRef.current = null;
+            }
             if (stallWatchdogRef.current) {
               clearTimeout(stallWatchdogRef.current);
               stallWatchdogRef.current = null;
@@ -3187,7 +3211,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onWaiting={() => {
           if (activeDeckRef.current === "B" && isPlayingRef.current && !isCrossfadingRef.current) {
-            setEngineState("reconnecting");
+            if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
+            waitingDebounceTimerRef.current = setTimeout(() => {
+              if (isPlayingRef.current && !isCrossfadingRef.current) {
+                setEngineState("reconnecting");
+              }
+            }, 1800);
+
             if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
             stallWatchdogRef.current = setTimeout(() => {
               if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
@@ -3198,7 +3228,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 2500);
+            }, 6000);
           }
         }}
         onStalled={() => {
@@ -3209,7 +3239,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   console.warn("[RadioContext] 🛡️ Deck B network stall, failing forward to next set");
                   advanceBroadcastTrack(false);
                 }
-              }, 3000);
+              }, 6000);
             }
           }
         }}
