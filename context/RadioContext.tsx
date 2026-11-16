@@ -90,6 +90,7 @@ export interface RadioContextType {
   engineState: RadioEngineState;
   isPlaying: boolean;
   isLive: boolean;
+  broadcastMode: BroadcastMode;
   statusText: string;
 
   // Track metadata (honest, derived from real stream/endpoints)
@@ -164,6 +165,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   engineState: "offline",
   isPlaying: false,
   isLive: true,
+  broadcastMode: "autodj",
   statusText: "Offline",
   title: "Station Rotation Active",
   artist: null,
@@ -1130,15 +1132,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) {
       try {
         audioRef.current.pause();
-        audioRef.current.removeAttribute("src");
-        audioRef.current.load();
+        // Do NOT call removeAttribute("src") or load() — preserves mobile user gesture unlock
       } catch {}
     }
     if (preloadAudioRef.current) {
       try {
         preloadAudioRef.current.pause();
-        preloadAudioRef.current.removeAttribute("src");
-        preloadAudioRef.current.load();
+        // Do NOT call removeAttribute("src") or load() — preserves mobile user gesture unlock
       } catch {}
     }
     /* teardownDropSnippet_done */
@@ -1412,7 +1412,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const rebuild = (reason: string) => {
       if (isStale() || liveRetryTimerRef.current) return;
       const n = liveRebuildCountRef.current++;
-      const delay = Math.min(1000 * 2 ** Math.min(n, 4), 10000);
+      const delay = Math.min(500 * (n === 0 ? 1 : 2 ** Math.min(n, 3)), 6000);
       console.warn(`[RadioContext] live recover (${reason}) in ${delay}ms`);
       setEngineState("buffering");
       liveRetryTimerRef.current = setTimeout(() => {
@@ -1433,11 +1433,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           liveLastProgressAtRef.current = Date.now();
           return;
         }
-        if (Date.now() - liveLastProgressAtRef.current > 15000) {
+        if (Date.now() - liveLastProgressAtRef.current > 7000) {
           liveLastProgressAtRef.current = Date.now();
           rebuild("frozen-playhead");
         }
-      }, 3000);
+      }, 2000);
     };
 
     const onPlayRejected = (err: any) => {
@@ -2626,28 +2626,35 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     }
 
     // 2. Prime Deck A (audioRef) and Deck B (preloadAudioRef) inside user gesture
-    if (audioRef.current && (!audioRef.current.src || audioRef.current.src === "" || audioRef.current.src.startsWith("data:"))) {
+    if (audioRef.current) {
       try {
-        audioRef.current.src = SILENT_WAV_DATA_URI;
-        audioRef.current.volume = 0.001;
-        audioRef.current.play().then(() => {
-          if (audioRef.current && audioRef.current.src.startsWith("data:")) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
+        if (audioRef.current.paused) {
+          const p = audioRef.current.play();
+          if (p !== undefined) {
+            p.catch(() => {
+              if (audioRef.current && (!audioRef.current.src || audioRef.current.src.startsWith("data:"))) {
+                audioRef.current.src = SILENT_WAV_DATA_URI;
+                audioRef.current.volume = 0.001;
+                audioRef.current.play().then(() => {
+                  if (audioRef.current && audioRef.current.src.startsWith("data:")) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                  }
+                }).catch(() => {});
+              }
+            });
           }
-        }).catch(() => {});
+        }
       } catch {}
     }
-    if (preloadAudioRef.current && (!preloadAudioRef.current.src || preloadAudioRef.current.src === "" || preloadAudioRef.current.src.startsWith("data:"))) {
+    if (preloadAudioRef.current) {
       try {
-        preloadAudioRef.current.src = SILENT_WAV_DATA_URI;
-        preloadAudioRef.current.volume = 0.001;
-        preloadAudioRef.current.play().then(() => {
-          if (preloadAudioRef.current && preloadAudioRef.current.src.startsWith("data:")) {
-            preloadAudioRef.current.pause();
-            preloadAudioRef.current.currentTime = 0;
+        if (preloadAudioRef.current.paused) {
+          const p = preloadAudioRef.current.play();
+          if (p !== undefined) {
+            p.catch(() => {});
           }
-        }).catch(() => {});
+        }
       } catch {}
     }
   }, []);
@@ -3234,6 +3241,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         engineState,
         isPlaying,
         isLive,
+        broadcastMode,
         statusText,
         title: displayTitle,
         artist: displayArtist,
@@ -3319,32 +3327,40 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onWaiting={() => {
           if (activeDeckRef.current !== "A" || !isPlayingRef.current || isCrossfadingRef.current) return;
-          if (liveActiveRef.current) {
+          if (liveActiveRef.current || broadcastModeRef.current === "live") {
             if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
             waitingDebounceTimerRef.current = setTimeout(() => {
-              if (isPlayingRef.current && liveActiveRef.current) setEngineState("buffering");
-            }, 800);
+              if (isPlayingRef.current && (liveActiveRef.current || broadcastModeRef.current === "live")) {
+                setEngineState("buffering");
+              }
+            }, 600);
             return;
           }
 
           if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
           waitingDebounceTimerRef.current = setTimeout(() => {
             if (isPlayingRef.current && !isCrossfadingRef.current) {
-              setEngineState("reconnecting");
+              setEngineState("buffering");
             }
-          }, 1800);
+          }, 1200);
 
           if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
           stallWatchdogRef.current = setTimeout(() => {
             if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
               console.warn("[RadioContext] 🛡️ Deck A stall detected: attempting playback nudge");
               audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
-              audioRef.current.play().catch(() => {
-                console.warn("[RadioContext] 🛡️ Deck A unrecoverable stall, advancing to next set");
-                advanceBroadcastTrack(false);
+              audioRef.current.play().then(() => {
+                setEngineState("live");
+              }).catch(() => {
+                console.warn("[RadioContext] 🛡️ Deck A unrecoverable stall");
+                if (broadcastModeRef.current === "live") {
+                  if (recoverLiveRef.current) recoverLiveRef.current("waiting-stall");
+                } else {
+                  advanceBroadcastTrack(false);
+                }
               });
             }
-          }, 6000);
+          }, 4000);
         }}
         onStalled={() => {
           if (liveActiveRef.current) return;
@@ -3427,21 +3443,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
             waitingDebounceTimerRef.current = setTimeout(() => {
               if (isPlayingRef.current && !isCrossfadingRef.current) {
-                setEngineState("reconnecting");
+                setEngineState("buffering");
               }
-            }, 1800);
+            }, 1200);
 
             if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
             stallWatchdogRef.current = setTimeout(() => {
               if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
                 console.warn("[RadioContext] 🛡️ Deck B stall detected: attempting playback nudge");
                 preloadAudioRef.current.currentTime = Math.max(0, preloadAudioRef.current.currentTime + 0.2);
-                preloadAudioRef.current.play().catch(() => {
+                preloadAudioRef.current.play().then(() => {
+                  setEngineState("live");
+                }).catch(() => {
                   console.warn("[RadioContext] 🛡️ Deck B unrecoverable stall, advancing to next set");
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 6000);
+            }, 4000);
           }
         }}
         onStalled={() => {

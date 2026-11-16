@@ -59,6 +59,7 @@ export default function RadioPage() {
     engineState,
     isPlaying,
     isLive,
+    broadcastMode,
     activePlaylist,
     title,
     artist,
@@ -580,9 +581,22 @@ export default function RadioPage() {
                           <span>STATION DROP · {activePersona || "DJ"}</span>
                         </div>
                       )}
-                      <h2 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-off-white leading-tight line-clamp-2 break-words">
-                        {displayTitle}
-                      </h2>
+                      {displayTitle.length > 20 ? (
+                        <div className="overflow-hidden w-full select-none py-0.5">
+                          <div className="inline-flex animate-marquee whitespace-nowrap hover:[animation-play-state:paused]">
+                            <span className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-off-white pr-8">
+                              {displayTitle}
+                            </span>
+                            <span aria-hidden="true" className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-off-white pr-8">
+                              {displayTitle}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <h2 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-off-white leading-tight break-words">
+                          {displayTitle}
+                        </h2>
+                      )}
                       {artist && (
                         <p className="font-mono text-xs sm:text-sm font-bold tracking-wider uppercase text-brand-accent mt-0.5 truncate">
                           BY {artist}
@@ -634,9 +648,22 @@ export default function RadioPage() {
                       </div>
                     )}
 
-                    <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl uppercase tracking-wide text-brand-off-white leading-[1.05] line-clamp-2">
-                      {displayTitle}
-                    </h2>
+                    {displayTitle.length > 26 ? (
+                      <div className="overflow-hidden w-full select-none py-1">
+                        <div className="inline-flex animate-marquee whitespace-nowrap hover:[animation-play-state:paused]">
+                          <span className="font-display text-3xl sm:text-4xl lg:text-5xl uppercase tracking-wide text-brand-off-white leading-[1.05] pr-12">
+                            {displayTitle}
+                          </span>
+                          <span aria-hidden="true" className="font-display text-3xl sm:text-4xl lg:text-5xl uppercase tracking-wide text-brand-off-white leading-[1.05] pr-12">
+                            {displayTitle}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl uppercase tracking-wide text-brand-off-white leading-[1.05]">
+                        {displayTitle}
+                      </h2>
+                    )}
 
                     {artist && (
                       <p className="font-mono text-sm sm:text-base font-bold tracking-widest uppercase text-brand-accent mt-1 flex items-center gap-2">
@@ -798,8 +825,28 @@ export default function RadioPage() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 {/* LEFT COLUMN: UP NEXT & RECENTLY PLAYED (7 COLS) */}
                 <div className="lg:col-span-7 space-y-6">
-                  {/* 1. UP NEXT SECTION */}
-                  {upNext && upNext.length > 0 && (
+                  {/* 1. UP NEXT SECTION (Suppressed during Live DJ sets; DJ mixes live from crates) */}
+                  {broadcastMode === "live" ? (
+                    <section
+                      aria-label="Live DJ Session"
+                      className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-4 sm:p-5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between border-b-2 border-brand-navy/15 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
+                          <h3 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-navy">
+                            LIVE DJ IN THE MIX
+                          </h3>
+                        </div>
+                        <span className="font-mono text-xs font-bold uppercase text-red-600 px-2 py-0.5 rounded bg-red-50 border border-red-300">
+                          ON AIR
+                        </span>
+                      </div>
+                      <p className="font-mono text-xs uppercase text-brand-navy/70 leading-relaxed">
+                        Tracks are selected and transitioned live on the decks. There is no automated queue.
+                      </p>
+                    </section>
+                  ) : upNext && upNext.length > 0 ? (
                     <section
                       aria-label="Up Next"
                       className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-4 sm:p-5 space-y-3"
@@ -870,7 +917,7 @@ export default function RadioPage() {
                         ))}
                       </div>
                     </section>
-                  )}
+                  ) : null}
 
                   {/* 2. RECENTLY PLAYED SECTION */}
                   {history && history.length > 0 && (

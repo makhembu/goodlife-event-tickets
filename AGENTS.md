@@ -5,7 +5,7 @@ Next.js 15 App Router + TypeScript + Tailwind v4. One repo, two products:
 - **Ticketing** — Supabase PostgreSQL (`DATABASE_URL`), live M-Pesa via **PayHero STK push**, PDF/WhatsApp tickets, QR gate scanning, vendor POS + customer tabs, event budgets/settlements.
 - **GOODLIFE Radio 254** — a full radio station: home-server playout (AzuraCast/Liquidsoap + a Python daemon) with this Next.js app as the BFF/console and public player. ~40 modules under `lib/radio/`, 24 test files.
 
-`CLAUDE.md`, `README.md`, `DESIGN.md`, `PRODUCT.md` drift badly (they still describe Neon + Paystack + Netlify). This file is the verified one. Re-verified against the working tree on **2026-11-15**.
+`CLAUDE.md` and `README.md` drift badly (they still describe Neon + Paystack + Netlify). This file is the verified one. `DESIGN.md` and `PRODUCT.md` were rewritten on **2026-11-16** to match the code and the radio product; see `docs/DESIGN-AUDIT.md` for the UI/UX findings. Re-verified against the working tree on **2026-11-15**.
 
 ## Commands
 
@@ -205,7 +205,7 @@ Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 
 ## Half-removed payment code (do not resurrect blindly)
 
-- `app/api/tickets/rsvp-free/route.ts` still issues a ticket for **no payment**, but the checkout's free-RSVP pipeline was deleted while the UI keeps `totalPrice === 0` branches ("KES 0 (FREE)", "INSTANT PASS ISSUED DIRECTLY TO WHATSAPP"). `CheckoutClientPage` guards the empty-ladder case *before anything else*, so a zero-ladder page can't hand out a pass that doesn't exist. KES 0 is a *discount*, never a giveaway.
+- `app/api/tickets/rsvp-free/route.ts` still issues a ticket for **no payment**, but the checkout's free-RSVP pipeline was deleted while the UI keeps `totalPrice === 0` branches ("KES 0 (FREE)", "RSVP FREE ENTRY PASS"). The guard at `CheckoutClientPage.tsx:740-760` only rejects on submit; the form and CTA stay visible, and `/?event=3` currently demonstrates that dead end. KES 0 is a *discount*, never a giveaway. Hide the form/CTA when the displayed ladder is empty (see `docs/DESIGN-AUDIT.md` P0).
 
 ## Conventions
 
@@ -295,6 +295,14 @@ Full audit with evidence, per-monolith recipes and a phased plan: **`docs/CODEBA
 
 Config/bucket mismatch audit (R2 bucket split, env drift, public-domain and feature-flag mismatches): **`docs/CONFIG-MISMATCH-AUDIT.md`**.
 
+UI/UX and design-system audit (22/40 Nielsen score, P0 checkout dead end, radio PWA reload, accessibility, type/palette drift): **`docs/DESIGN-AUDIT.md`**. The canonical design spec is root `DESIGN.md` (charcoal `#16181D`, cream `#FBF9F6`, sand `#F3ECE1`, gold `#DFBB7D`, Space Grotesk + Bebas Neue, 11px caption floor, 4px borders, hard shadows, square-by-default, 32px floor / 44px primary).
+
+**UI/UX priorities (2026-11-16, full evidence in `docs/DESIGN-AUDIT.md`):**
+- **P0 (revenue):** `/?event=3` advertises passes, then renders zero tiers, `KES 0 (FREE)`, and `RSVP FREE ENTRY PASS`. Cause: the mini weekday filter (`CheckoutClientPage.tsx:544-551`) hides both paid tiers because the event has no RSVP tier; the banner uses `isEventSellable` (`app/page.tsx:238`); total/CTA branch on `totalPrice === 0` (`:1974`, `:2094-2098`). Do not fix by inventing a tier or a fallback ladder. **Open product decision:** A show paid tiers on weekdays when no RSVP tier exists (recommended for event 3), B create a real RSVP tier, C gate to `coming_soon` on weekdays.
+- **P1 (radio first):** `PwaUpdatePrompt.tsx:22-30` + `public/sw.js:30,42` auto-reload and can cut live audio; `/radio` and `/radio/apply` lack `<main>`; apply/shoutout/tip labels are unassociated; `text-brand-accent` on cream is 1.73:1. Gallery cards are `<div onClick>` and the lightbox is not a dialog; `/login` is h2-only.
+- **P2:** footer legal links 12–15px; 1,512 literal font sizes (721 at 10px, 213 at 9px, 17 at 8px) vs 22 token uses; radio mixes `#142B4C`/`#C8A54A`/`#0F2038` and rounded cards; placeholders 3.8–3.9:1.
+- **Design spec:** `DESIGN.md` is the verified source; `PRODUCT.md` now includes radio listeners/presenters/station managers and WCAG 2.2 AA. Detector baseline is **1,099** findings (919 before the rewrite; the rise is the stricter 11px floor, not a code regression).
+
 **Verified shape:** `app/` 42.0k lines, `components/` 29.7k, `lib/` 18.4k, `context/` 3.4k, `tests/` 9.5k. 207 API routes (admin 110 = 64 radio + 46 ticketing; public radio 26; vendor 24). Radio is `lib/radio` 8.3k lines / 39 modules (healthy) but **20.6k lines of radio UI** and 90 radio API routes.
 
 **Highest-value defects beyond Issues 1–2:**
@@ -309,7 +317,7 @@ Config/bucket mismatch audit (R2 bucket split, env drift, public-domain and feat
 - Dead exports in `lib/supabase-db.ts` (9): `fetchVendorsForEvent`, `updateVendorEventAssignment`, `getVendorSettlement`, `exportVendorReport`, `deactivateOperator`, `fetchSalesForVendor`, `fetchVendorDashboardMetrics`, `fetchAllVendorMetrics`, `updateEventLifecycle`. Internal-only (5): `clearTicketTiersCache`, `fetchAllTicketsAll`, `restoreTicket`, `restoreTicketTier`, `fetchPendingPayment`.
 - No in-repo caller: `/api/admin/radio/{analytics,drops/fire,tips}`, `/api/admin/verify-simulator-password`, `/api/admin/whatsapp/status` (console uses `/qr`, which returns status). `/api/admin/paystack/*` is dormant behind `NEXT_PUBLIC_ENABLE_PAYSTACK`. Cron/internal/webhook routes are external-caller, not dead.
 - 9 `.pyc` files are **tracked** under `home-server/daemon/**/__pycache__/`; empty `utils/`.
-- Stale docs: the old `/api/mpesa` claims (fixed above); `CLAUDE.md`/`README`/`DESIGN`/`PRODUCT` still say Neon/Paystack/Netlify.
+- Stale docs: the old `/api/mpesa` claims (fixed above); `CLAUDE.md`/`README` still say Neon/Paystack/Netlify. `DESIGN.md` and `PRODUCT.md` now match the code; keep them that way.
 
 **Monoliths (true line counts) and target:** `lib/supabase-db.ts` 4,536 (104 exports) → `lib/db/*` + barrel; `app/admin/dashboard/page.tsx` 4,508 (66 `useState`, 35 `fetch`) → tab components + data hooks; `VendorDetailDrawer` 3,800 (57 `any`, inline phone normalization) → typed tabs + `lib/phone`; `vendor/sell` 3,485 (63 `useState`) → POS hooks; `ScheduleManager` 3,250 (79 `useState`) and `PlaylistManagerPanel` 3,368 (64) → editor hooks + panels; `RadioContext` 3,230 (68 `useRef`) → `lib/radio/client-playout.ts` state machine + `useRadioPlayout`; `CheckoutClientPage` 2,548 → step components (keep the empty-ladder guard first).
 
