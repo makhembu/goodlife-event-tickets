@@ -35,6 +35,45 @@ import {
 } from "@/lib/radio/media-helpers";
 import { resolveLiveStreamUrl } from "@/lib/radio/bitrate";
 
+const LIVE_EXIT_MS = 10_000;
+const MODE_FRESH_MS = 15_000;
+
+const loadPolicy = (ttfb: number, total: number, timeoutRetries: number, errorRetries: number) => ({
+  default: {
+    maxTimeToFirstByteMs: ttfb,
+    maxLoadTimeMs: total,
+    timeoutRetry: { maxNumRetry: timeoutRetries, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: errorRetries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+  },
+});
+
+// Tuned for 6s HLS segments on Cloudflare R2
+const LIVE_HLS_CONFIG: any = {
+  lowLatencyMode: false,
+  enableWorker: true,
+  liveSyncDurationCount: 3,          // ~18s behind edge
+  liveMaxLatencyDurationCount: 10,   // avoids edge-seeking jumps after a stall
+  maxBufferLength: 30,
+  maxMaxBufferLength: 60,
+  backBufferLength: 30,
+  maxBufferHole: 0.5,
+  nudgeMaxRetry: 10,
+  manifestLoadPolicy: loadPolicy(8000, 20000, 4, 6),
+  levelLoadPolicy: loadPolicy(8000, 20000, 4, 6),
+  fragLoadPolicy: loadPolicy(10000, 60000, 4, 6),
+};
+
+function shouldUseNativeHls(audio: HTMLAudioElement) {
+  if (!audio.canPlayType("application/vnd.apple.mpegurl")) return false;
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
+    /^((?!chrome|android).)*safari/i.test(ua)
+  );
+}
+
 export interface ActivePlaylist {
   id: number;
   name: string;
@@ -433,6 +472,76 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
 
+  const modeFreshAtRef = useRef(0);
+  const modeProbeRef = useRef<Promise<void> | null>(null);
+  const nonLiveSinceRef = useRef(0);
+  const liveActiveRef = useRef(false);
+  const liveAttachGenRef = useRef(0);
+  const isReattachingRef = useRef(false);
+  const liveRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const liveWatchdogRef = useRef<NodeJS.Timeout | null>(null);
+  const liveRebuildCountRef = useRef(0);
+  const liveLastTimeRef = useRef(0);
+  const liveLastProgressAtRef = useRef(0);
+  const liveNetRetriesRef = useRef(0);
+  const liveMediaRetriesRef = useRef(0);
+  const recoverLiveRef = useRef<(reason: string) => void>(() => {});
+  const attachLiveRef = useRef<(o?: { force?: boolean }) => Promise<void>>(async () => {});
+  const startBackupMixRef = useRef<() => void>(() => {});
+
+  const applyMode = useCallback((m: BroadcastMode) => {
+    broadcastModeRef.current = m;
+    setBroadcastMode(m);
+  }, []);
+  const isModeFresh = useCallback(() => Date.now() - modeFreshAtRef.current < MODE_FRESH_MS, []);
+
+  const cancelLiveEngine = useCallback(() => {
+    liveActiveRef.current = false;
+    liveAttachGenRef.current++;
+    if (liveRetryTimerRef.current) {
+      clearTimeout(liveRetryTimerRef.current);
+      liveRetryTimerRef.current = null;
+    }
+    if (liveWatchdogRef.current) {
+      clearInterval(liveWatchdogRef.current);
+      liveWatchdogRef.current = null;
+    }
+  }, []);
+
+  const resolveBroadcastMode = useCallback((timeoutMs = 2500): Promise<void> => {
+    if (isModeFresh()) return Promise.resolve();
+    if (!modeProbeRef.current) {
+      modeProbeRef.current = (async () => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+          const res = await fetch("/api/radio/live", { signal: ctrl.signal, cache: "no-store" });
+          if (!res.ok) throw new Error(String(res.status));
+          const data: any = await res.json();
+          if (data?.mode) {
+            applyMode(data.mode);
+            try { sessionStorage.setItem("gl_radio_last_mode", data.mode); } catch {}
+          }
+          const stream = data?.stream_url || data?.live?.stream_url;
+          if (typeof stream === "string" && stream.trim()) {
+            liveStreamUrlRef.current = stream.trim();
+            setLiveStreamUrl(stream.trim());
+          }
+          modeFreshAtRef.current = Date.now();
+        } catch {
+          try {
+            const last = sessionStorage.getItem("gl_radio_last_mode");
+            if (last) applyMode(last as BroadcastMode);
+          } catch {}
+        } finally {
+          clearTimeout(t);
+          modeProbeRef.current = null;
+        }
+      })();
+    }
+    return modeProbeRef.current;
+  }, [applyMode, isModeFresh]);
+
   // 1. Initialize State & Load Preferences from localStorage
   useEffect(() => {
     try {
@@ -445,13 +554,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(savedSets);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setBackupSets(parsed);
-          // Instant 0ms Stream Start: pre-warm Deck A with the first track buffer
-          const firstTrackUrl = parsed[0]?.playback_url || parsed[0]?.audio_url;
-          if (firstTrackUrl && audioRef.current && !audioRef.current.src) {
-            audioRef.current.preload = "auto";
-            audioRef.current.src = firstTrackUrl;
-            audioRef.current.load();
-          }
+          // Note: Deck A pre-warm with playlist track is REMOVED to prevent race condition over live stream
         }
       }
     } catch {}
@@ -478,9 +581,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (data.mode) {
-        setBroadcastMode(data.mode);
-      }
+      // /api/radio/live is the single source of truth for broadcast mode; do not overwrite here
       if (data.on_air_slot !== undefined) {
         setOnAirSlot(data.on_air_slot);
       }
@@ -558,34 +659,37 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const newMode = (data as any).mode;
       if (newMode) {
         const prevMode = broadcastModeRef.current;
-        broadcastModeRef.current = newMode;
-        setBroadcastMode(newMode);
-        if (prevMode !== newMode) {
-          if (newMode === "live") {
-            const stream = (data as any).stream_url || (data as any)?.live?.stream_url;
-            if (typeof stream === "string" && stream.trim()) {
-              liveStreamUrlRef.current = stream.trim();
-              setLiveStreamUrl(stream.trim());
-            }
-            if (isPlayingRef.current) {
-              attachAndPlayLiveStream();
-            }
-          } else if (prevMode === "live") {
-            if (isPlayingRef.current) {
-              attachAndPlayLiveStream();
-            }
+        modeFreshAtRef.current = Date.now();
+        try { sessionStorage.setItem("gl_radio_last_mode", newMode); } catch {}
+
+        if (newMode === "live") {
+          nonLiveSinceRef.current = 0;
+          const stream = (data as any).stream_url || (data as any)?.live?.stream_url;
+          if (typeof stream === "string" && stream.trim()) {
+            liveStreamUrlRef.current = stream.trim();
+            setLiveStreamUrl(stream.trim());
           }
-        } else if (newMode === "live" && (engineStateRef.current === "backup-mix" || engineStateRef.current === "reconnecting")) {
-          // Automatic recovery: if a temporary dropout pushed us to backup-mix, return to live broadcast automatically!
-          if (isPlayingRef.current && !data.offline) {
-            console.log("[RadioContext] Live feed healthy again: auto-recovering from backup mix to live broadcast");
-            attachAndPlayLiveStream();
+          if (prevMode !== "live") {
+            applyMode("live");
+            if (isPlayingRef.current) attachAndPlayLiveStream();
           }
+          // Note: no re-attach on "reconnecting" / "buffering". The live engine heals in place.
+        } else if (prevMode === "live") {
+          // Leaving live needs ~10s of continuous non-live reports (or if we are not playing)
+          if (!nonLiveSinceRef.current) nonLiveSinceRef.current = Date.now();
+          if (!isPlayingRef.current || Date.now() - nonLiveSinceRef.current >= LIVE_EXIT_MS) {
+            nonLiveSinceRef.current = 0;
+            applyMode(newMode);
+            if (isPlayingRef.current) attachAndPlayLiveStream();
+          }
+        } else if (prevMode !== newMode) {
+          applyMode(newMode);
         }
       }
 
       if (data.offline) {
-        if (engineStateRef.current === "live" || engineStateRef.current === "connecting") {
+        if (broadcastModeRef.current !== "live" &&
+            (engineStateRef.current === "live" || engineStateRef.current === "connecting")) {
           handleStreamStall();
         }
         return;
@@ -877,13 +981,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 15s Outro Crossover Trigger: Drop starts 15 seconds before the track ends, continuing across next track start
+      const djLive = broadcastModeRef.current === "live";
       const remainingSec = trackDuration - clamped;
-      if (aiDropsEnabledRef.current && availableDropsRef.current.length > 0 && remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
+      if (!djLive && aiDropsEnabledRef.current && availableDropsRef.current.length > 0 && remainingSec <= 15 && remainingSec > 2 && !hasFiredOutroDropRef.current && !isDropPlayingRef.current) {
         triggerOutroDropCrossoverRef.current();
       }
 
       // Preload next matching drop if available from station pool (pre-mastered on Home Server)
-      if (aiDropsEnabledRef.current && clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
+      if (!djLive && aiDropsEnabledRef.current && clamped >= 3 && availableDropsRef.current.length > 0 && !isPrefetchingDropRef.current) {
         let nextCandidate: any = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
         if (!nextCandidate && backupSetsRef.current.length > 0) {
           const sets = backupSetsRef.current;
@@ -959,7 +1064,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (!currentId) return;
 
     try {
-      const activeBackup = backupSets.find((s) => String(s.id) === currentId);
+      const activeBackup = backupSetsRef.current.find((s) => String(s.id) === currentId);
       const setId = activeBackup ? activeBackup.id : 1; // Fallback to flagship station ID
 
       navigator.sendBeacon?.(
@@ -968,7 +1073,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           set_id: setId,
           seconds_listened: Math.round(secondsListenedRef.current),
           completed,
-          quality,
+          quality: qualityRef.current,
         })
       );
       if (completed || secondsListenedRef.current >= 20) {
@@ -979,6 +1084,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // 8. Stream Teardown: Pause = Disconnect (Releases buffers, stops loading)
   const teardownPlayback = useCallback(() => {
+    cancelLiveEngine();
+    activeDeckRef.current = "A";
+
     if (waitingDebounceTimerRef.current) {
       clearTimeout(waitingDebounceTimerRef.current);
       waitingDebounceTimerRef.current = null;
@@ -1037,30 +1145,31 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setActivePersona(null);
     setActiveMood(null);
 
-  }, []);
+  }, [cancelLiveEngine]);
 
   // 9. Stale Stream & Reconnect -> Backup Mix Failover Pipeline
   const handleStreamStall = useCallback(() => {
+    if (broadcastModeRef.current === "live") {
+      setEngineState("buffering");
+      return;
+    }
     if (engineStateRef.current === "reconnecting" || engineStateRef.current === "backup-mix") {
       return;
     }
 
     setEngineState("reconnecting");
 
-    // Start timer to failover to backup mix (give live broadcast 20s grace period before failing over)
     if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-    const thresholdMs = broadcastModeRef.current === "live" ? 20_000 : timingConfigRef.current.backupMixThresholdMs;
     stallTimerRef.current = setTimeout(() => {
       if (engineStateRef.current === "reconnecting") {
-        if (backupSets.length > 0) {
-          startBackupMix();
+        if (backupSetsRef.current.length > 0) {
+          startBackupMixRef.current();
         } else {
-          // Reconnecting -> Error when stream is down and no backup library tracks exist
           setEngineState("error");
         }
       }
-    }, thresholdMs);
-  }, [backupSets.length]);
+    }, timingConfigRef.current.backupMixThresholdMs);
+  }, []);
 
   const startBackupMix = useCallback(() => {
     setEngineState("backup-mix");
@@ -1131,9 +1240,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }, timingConfigRef.current.manifestProbeIntervalMs);
   }, [backupSets, currentBackupIndex]);
+  startBackupMixRef.current = startBackupMix;
 
   // 10. Live Playback Engine: Plays synchronized R2 festival track in autodj/mania; plays HLS in live mode
-  const attachAndPlayLiveStream = useCallback(async () => {
+  const attachAndPlayLiveStream = useCallback(async (opts?: { force?: boolean }): Promise<void> => {
     if (!radioEnabledRef.current) {
       setEngineState("offline");
       setIsPlaying(false);
@@ -1150,8 +1260,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
-    // Helper: Play the synchronized R2 festival track directly
+    // Helper: Play the synchronized R2 festival track directly (AutoDJ mode only)
     const playCurrentTrackAudio = async () => {
+      cancelLiveEngine();
       const audio = audioRef.current;
       if (!audio) return;
 
@@ -1267,118 +1378,168 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // External Live DJ Stream mode
+    // ───────── External Live DJ stream: from here the client NEVER falls back to an AutoDJ song ─────────
+    if (!opts?.force && liveActiveRef.current) return; // Idempotent: already on the live stream
+
+    isReattachingRef.current = true;
     teardownPlayback();
+    liveActiveRef.current = true;
+    const gen = liveAttachGenRef.current;
+    const isStale = () => gen !== liveAttachGenRef.current || !liveActiveRef.current;
+    const settle = () => setTimeout(() => { isReattachingRef.current = false; }, 1500);
+
     setEngineState("connecting");
     setIsLive(true);
     notifyOtherTabsPlay();
 
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio) {
+      liveActiveRef.current = false;
+      settle();
+      return;
+    }
     audio.volume = isMutedRef.current ? 0 : volumeRef.current;
 
-    // Direct MP3 Icecast Stream (Standard 64k Data Saver / High 192k Hi-Fi)
-    if (streamUrl && !streamUrl.includes(".m3u8")) {
-      if (audio.src !== streamUrl) {
-        audio.src = streamUrl;
-      }
-      try {
-        await audio.play();
-        setEngineState("live");
-        setIsPlaying(true);
-      } catch (err: any) {
-        if (err?.name === "NotAllowedError") {
-          setEngineState("idle");
-          setIsPlaying(false);
-        } else {
-          await playCurrentTrackAudio();
+    // Recovery = same URL, same element, exponential backoff. Never a song.
+    const rebuild = (reason: string) => {
+      if (isStale() || liveRetryTimerRef.current) return;
+      const n = liveRebuildCountRef.current++;
+      const delay = Math.min(1000 * 2 ** Math.min(n, 4), 10000);
+      console.warn(`[RadioContext] live recover (${reason}) in ${delay}ms`);
+      setEngineState("buffering");
+      liveRetryTimerRef.current = setTimeout(() => {
+        liveRetryTimerRef.current = null;
+        if (!isStale()) attachLiveRef.current({ force: true });
+      }, delay);
+    };
+    recoverLiveRef.current = rebuild;
+
+    // Frozen-playhead watchdog: the only escalation path for silent stalls
+    const startWatchdog = () => {
+      if (liveWatchdogRef.current) clearInterval(liveWatchdogRef.current);
+      liveLastProgressAtRef.current = Date.now();
+      liveWatchdogRef.current = setInterval(() => {
+        if (isStale()) return;
+        const a = audioRef.current;
+        if (!a || a.paused) {
+          liveLastProgressAtRef.current = Date.now();
+          return;
         }
+        if (Date.now() - liveLastProgressAtRef.current > 15000) {
+          liveLastProgressAtRef.current = Date.now();
+          rebuild("frozen-playhead");
+        }
+      }, 3000);
+    };
+
+    const onPlayRejected = (err: any) => {
+      if (isStale()) return;
+      if (err?.name === "NotAllowedError") {
+        cancelLiveEngine();
+        setEngineState("idle");
+        setIsPlaying(false);
+      } else {
+        rebuild("play-rejected");
       }
+    };
+
+    // Direct MP3 Icecast Stream or Apple-native Safari HLS
+    if (!streamUrl.includes(".m3u8") || shouldUseNativeHls(audio)) {
+      audio.src = streamUrl;
+      audio.play()
+        .then(() => {
+          if (!isStale()) {
+            setEngineState("live");
+            setIsPlaying(true);
+            startWatchdog();
+          }
+        })
+        .catch(onPlayRejected);
+      settle();
       return;
     }
 
-    // A. Native Safari / iOS HLS
-    if (audio.canPlayType("application/vnd.apple.mpegurl")) {
-      if (audio.src !== streamUrl) {
-        audio.src = streamUrl;
-      }
-      try {
-        await audio.play();
-        setEngineState("live");
-        setIsPlaying(true);
-      } catch (err: any) {
-        console.warn("[RadioContext] iOS native play rejected:", err?.name);
-        if (err?.name === "NotAllowedError") {
-          setEngineState("idle");
-          setIsPlaying(false);
-        } else {
-          await playCurrentTrackAudio();
-        }
-      }
-      return;
-    }
-
-    // B. hls.js for Chrome / Firefox
+    // hls.js (Android Chrome, desktop browsers)
     try {
       const { default: Hls } = await import("hls.js");
+      if (isStale()) return;
       if (!Hls.isSupported()) {
         await playCurrentTrackAudio();
         return;
       }
 
-      const hls = new Hls({
-        lowLatencyMode: false,
-        enableWorker: true,
-        backBufferLength: 8,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 6,
-      });
-
+      const hls = new Hls(LIVE_HLS_CONFIG);
       hlsRef.current = hls;
       hls.loadSource(streamUrl);
       hls.attachMedia(audio);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        audio
-          .play()
+        if (isStale()) return;
+        audio.play()
           .then(() => {
-            setEngineState("live");
-            setIsPlaying(true);
-          })
-          .catch(async (err: any) => {
-            if (err?.name === "NotAllowedError") {
-              setEngineState("idle");
-              setIsPlaying(false);
-            } else {
-              await playCurrentTrackAudio();
+            if (!isStale()) {
+              setEngineState("live");
+              setIsPlaying(true);
+              startWatchdog();
             }
-          });
+          })
+          .catch(onPlayRejected);
       });
 
-      hls.on(Hls.Events.ERROR, async (_event: any, data: any) => {
-        if (!data?.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          console.warn("[RadioContext] Live HLS network jitter, re-syncing buffer:", data.details);
-          try {
-            hls.startLoad();
-          } catch {}
-          return;
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        liveNetRetriesRef.current = 0;
+        liveMediaRetriesRef.current = 0;
+      });
+
+      hls.on(Hls.Events.ERROR, (_e: any, data: any) => {
+        if (isStale()) return;
+        if (!data?.fatal) {
+          if (data?.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+            setEngineState("buffering");
+          }
+          return; // non-fatal: hls.js self-heals in-flight
         }
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          console.warn("[RadioContext] Live HLS media decode glitch, recovering:", data.details);
-          try {
-            hls.recoverMediaError();
-          } catch {}
-          return;
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR: {
+            const n = liveNetRetriesRef.current++;
+            if (n >= 6) {
+              rebuild("network-exhausted");
+              return;
+            }
+            setEngineState("buffering");
+            setTimeout(() => {
+              if (!isStale()) {
+                try { hls.startLoad(-1); } catch {}
+              }
+            }, Math.min(1000 * 2 ** n, 8000));
+            return;
+          }
+          case Hls.ErrorTypes.MEDIA_ERROR: {
+            const m = liveMediaRetriesRef.current++;
+            try {
+              if (m === 0) hls.recoverMediaError();
+              else if (m === 1) {
+                hls.swapAudioCodec();
+                hls.recoverMediaError();
+              } else {
+                rebuild("media");
+              }
+            } catch {
+              rebuild("media-throw");
+            }
+            return;
+          }
+          default:
+            rebuild("fatal-" + data.type);
         }
-        console.warn("[RadioContext] Live stream unrecoverable fatal error, falling over to sync track:", data.type);
-        teardownPlayback();
-        await playCurrentTrackAudio();
       });
     } catch {
-      await playCurrentTrackAudio();
+      rebuild("hls-import-failed");
+    } finally {
+      settle();
     }
-  }, [teardownPlayback]);
+  }, [cancelLiveEngine, teardownPlayback]);
+  attachLiveRef.current = attachAndPlayLiveStream;
 
   // 11. Stalled playback buffer watchdog & AutoDJ natural crossfader
   const handleTimeUpdate = useCallback(
@@ -1386,6 +1547,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       if (deck !== activeDeckRef.current) return;
       const audio = deck === "A" ? audioRef.current : preloadAudioRef.current;
       if (!audio) return;
+
+      if (liveActiveRef.current) {
+        if (audio.currentTime !== liveLastTimeRef.current) {
+          liveLastTimeRef.current = audio.currentTime;
+          liveLastProgressAtRef.current = Date.now();
+          liveRebuildCountRef.current = 0;
+          if (engineStateRef.current === "buffering" || engineStateRef.current === "reconnecting") {
+            setEngineState("live");
+          }
+        }
+        return; // none of the AutoDJ crossfade logic applies to the live DJ stream
+      }
+
       const cur = audio.currentTime;
       // Cap effective duration to database duration if audio file has trailing silence
       const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
@@ -2492,25 +2666,29 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       teardownPlayback();
       setIsPlaying(false);
       setEngineState("paused");
-    } else {
-      setIsMinimized(false);
-      setIsPlaying(true);
-      setEngineState("live");
-
-      // Prime the audio elements synchronously inside the user click gesture
-      primeAudioPipeline();
-
-      // Trigger attachAndPlayLiveStream immediately within the click turn
-      attachAndPlayLiveStream();
-
-      // Background-refresh fresh state and live track without blocking audio start
-      Promise.all([fetchRadioState(), fetchRadioLive()]).catch(() => {});
+      return;
     }
-  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive, primeAudioPipeline]);
+    setIsMinimized(false);
+    setIsPlaying(true);
+    setEngineState("connecting");
+
+    // Prime the audio elements synchronously inside the user click gesture
+    primeAudioPipeline();
+
+    if (isModeFresh()) {
+      attachAndPlayLiveStream();
+    } else {
+      resolveBroadcastMode(2500).finally(() => {
+        if (isPlayingRef.current) attachAndPlayLiveStream();
+      });
+    }
+
+    Promise.all([fetchRadioState(), fetchRadioLive()]).catch(() => {});
+  }, [isPlaying, attachAndPlayLiveStream, teardownPlayback, fetchRadioState, fetchRadioLive, primeAudioPipeline, isModeFresh, resolveBroadcastMode]);
 
   const retry = useCallback(() => {
-    attachAndPlayLiveStream();
-  }, [attachAndPlayLiveStream]);
+    resolveBroadcastMode().finally(() => attachAndPlayLiveStream({ force: true }));
+  }, [attachAndPlayLiveStream, resolveBroadcastMode]);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
@@ -2559,6 +2737,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     // If currently playing live stream, seamlessly switch audio stream URL
+    if (isPlayingRef.current && liveActiveRef.current) {
+      attachAndPlayLiveStream({ force: true });
+      return;
+    }
+
     if (audioRef.current && isPlayingRef.current && isLiveRef.current) {
       const rawUrl = liveStreamUrlRef.current;
       const targetUrl = resolveLiveStreamUrl(rawUrl, q);
@@ -2569,7 +2752,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         });
       }
     }
-  }, []);
+  }, [attachAndPlayLiveStream]);
 
   const switchToLive = useCallback(() => {
     setActivePlaylist(null);
@@ -2889,6 +3072,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         return isStale ? "LIVE (STALE)" : "LIVE";
       case "connecting":
         return "CONNECTING...";
+      case "buffering":
+        return "BUFFERING...";
       case "reconnecting":
         return "RECONNECTING...";
       case "backup-mix":
@@ -2929,6 +3114,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       // Ignore ended events from the inactive/faded-out deck or during crossfade
       if (deck !== activeDeckRef.current) return;
       if (isCrossfadingRef.current) return;
+
+      if (liveActiveRef.current) {
+        recoverLiveRef.current("ended");
+        return;
+      }
+
       sendPlayBeaconOnce(true);
       hasFiredOutroDropRef.current = false;
       hasFiredAutoDjCrossfadeRef.current = false;
@@ -2975,6 +3166,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // Automatically warms audio buffers for the next 3 upcoming tracks in the queue so transitions are 0ms instant
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (broadcastMode === "live") return;
     const urlsToPreload: string[] = [];
 
     // 1. Collect from Up Next queue
@@ -3026,7 +3218,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         document.head.appendChild(link);
       }
     }
-  }, [upNextQueue, backupSets, nowPlayingTrack?.video_id]);
+  }, [upNextQueue, backupSets, nowPlayingTrack?.video_id, broadcastMode]);
 
   return (
     <RadioContext.Provider
@@ -3060,7 +3252,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         backupSets,
         currentSet,
         onAirSlot,
-        isSyncedToBroadcast: engineState === "live",
+        isSyncedToBroadcast: engineState === "live" || engineState === "buffering",
         liveTitle: displayTitle,
         liveDropFallback: engineState === "backup-mix",
         hasLoaded,
@@ -3118,28 +3310,36 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onWaiting={() => {
-          if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
+          if (activeDeckRef.current !== "A" || !isPlayingRef.current || isCrossfadingRef.current) return;
+          if (liveActiveRef.current) {
             if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
             waitingDebounceTimerRef.current = setTimeout(() => {
-              if (isPlayingRef.current && !isCrossfadingRef.current) {
-                setEngineState("reconnecting");
-              }
-            }, 1800);
-
-            if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
-            stallWatchdogRef.current = setTimeout(() => {
-              if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
-                console.warn("[RadioContext] 🛡️ Deck A stall detected: attempting playback nudge");
-                audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
-                audioRef.current.play().catch(() => {
-                  console.warn("[RadioContext] 🛡️ Deck A unrecoverable stall, advancing to next set");
-                  advanceBroadcastTrack(false);
-                });
-              }
-            }, 6000);
+              if (isPlayingRef.current && liveActiveRef.current) setEngineState("buffering");
+            }, 800);
+            return;
           }
+
+          if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
+          waitingDebounceTimerRef.current = setTimeout(() => {
+            if (isPlayingRef.current && !isCrossfadingRef.current) {
+              setEngineState("reconnecting");
+            }
+          }, 1800);
+
+          if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
+          stallWatchdogRef.current = setTimeout(() => {
+            if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
+              console.warn("[RadioContext] 🛡️ Deck A stall detected: attempting playback nudge");
+              audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
+              audioRef.current.play().catch(() => {
+                console.warn("[RadioContext] 🛡️ Deck A unrecoverable stall, advancing to next set");
+                advanceBroadcastTrack(false);
+              });
+            }
+          }, 6000);
         }}
         onStalled={() => {
+          if (liveActiveRef.current) return;
           if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
             if (!stallWatchdogRef.current) {
               stallWatchdogRef.current = setTimeout(() => {
@@ -3152,6 +3352,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onPause={() => {
+          if (isReattachingRef.current) return;
           if (activeDeckRef.current === "A") {
             if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
             setIsPlaying(false);
@@ -3159,6 +3360,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onError={() => {
           if (!audioRef.current?.src || audioRef.current.src === "" || audioRef.current.src.startsWith("data:") || (typeof window !== "undefined" && audioRef.current.src === window.location.href)) {
+            return;
+          }
+          if (liveActiveRef.current) {
+            recoverLiveRef.current("element-error");
             return;
           }
           if (activeDeckRef.current === "A" && !isCrossfadingRef.current) {
@@ -3244,6 +3449,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onPause={() => {
+          if (isReattachingRef.current) return;
           if (activeDeckRef.current === "B") {
             if (preloadAudioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
             setIsPlaying(false);

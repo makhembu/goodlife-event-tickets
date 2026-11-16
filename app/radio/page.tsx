@@ -326,6 +326,12 @@ export default function RadioPage() {
                   <span>CONNECTING</span>
                 </span>
               )}
+              {engineState === "buffering" && (
+                <span className="hidden sm:flex bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
+                  <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
+                  <span>BUFFERING</span>
+                </span>
+              )}
               {engineState === "reconnecting" && (
                 <span className="hidden sm:flex bg-amber-500 text-brand-navy font-mono text-xs font-bold px-2.5 sm:px-3 py-1 uppercase items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs)">
                   <span className="w-2 h-2 rounded-full bg-brand-navy animate-ping" />
@@ -406,6 +412,8 @@ export default function RadioPage() {
                       ? "LIVE AIRWAVE · NAIROBI FREQUENCY"
                       : engineState === "backup-mix"
                       ? "BACKUP MIX · LIVE RECOVERY ACTIVE"
+                      : engineState === "buffering"
+                      ? "BUFFERING AUDIO..."
                       : engineState === "reconnecting"
                       ? "RECONNECTING TO LIVE STREAM..."
                       : engineState === "connecting"
@@ -664,7 +672,7 @@ export default function RadioPage() {
                               ? "bg-red-600 animate-pulse"
                               : isPlaying && engineState === "backup-mix"
                               ? "bg-purple-400 animate-pulse"
-                              : engineState === "connecting" || engineState === "reconnecting"
+                              : engineState === "connecting" || engineState === "reconnecting" || engineState === "buffering"
                               ? "bg-amber-400 animate-ping"
                               : "bg-white/30"
                           }`}
@@ -681,6 +689,8 @@ export default function RadioPage() {
                               ? "BACKUP MIX ACTIVE"
                               : engineState === "connecting"
                               ? "CONNECTING TO STREAM..."
+                              : engineState === "buffering"
+                              ? "BUFFERING AUDIO..."
                               : engineState === "reconnecting"
                               ? "RECONNECTING TO STREAM..."
                               : "AUDIO PLAYING"

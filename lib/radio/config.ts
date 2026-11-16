@@ -47,6 +47,7 @@ export type RadioEngineState =
   | "idle"
   | "connecting"
   | "live"
+  | "buffering"
   | "reconnecting"
   | "backup-mix"
   | "paused"
