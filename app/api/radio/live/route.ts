@@ -357,7 +357,7 @@ export async function GET() {
   const broadcastMode = cachedPlayout.settings.broadcast_mode || "autodj";
 
   // 2. If station is in autodj or mania mode, Cloudflare R2 virtual timeline is the primary playout
-  if (broadcastMode !== "live" || !upstreamBase) {
+  if (broadcastMode !== "live") {
     const fallback = await getTimelineFallback();
     if (fallback) {
       return NextResponse.json(fallback, {
@@ -388,7 +388,7 @@ export async function GET() {
   }
 
   // 3. Station is in explicit live stage mode: query upstream relay with resilient timeout
-  const cleanBase = upstreamBase.replace(/\/+$/, "");
+  const cleanBase = upstreamBase ? upstreamBase.replace(/\/+$/, "") : null;
   const timeoutMs = 3000;
   const onAirSlot = await getLiveSlotOnAir();
   const streamUrl = process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8";
@@ -397,25 +397,28 @@ export async function GET() {
   const defaultTitle = onAirSlot?.show?.title || liveTitle;
 
   try {
-    const [nowResult, nextResult, histResult] = await Promise.allSettled([
-      fetchWithTimeout(`${cleanBase}/api/now-playing`, timeoutMs),
-      fetchWithTimeout(`${cleanBase}/api/up-next`, timeoutMs),
-      fetchWithTimeout(`${cleanBase}/api/history`, timeoutMs),
-    ]);
-
     let nowPlaying: any = null;
-    if (nowResult.status === "fulfilled" && nowResult.value.ok) {
-      nowPlaying = await nowResult.value.json().catch(() => null);
-    }
-
     let upNext: any[] = [];
-    if (nextResult.status === "fulfilled" && nextResult.value.ok) {
-      upNext = await nextResult.value.json().catch(() => []);
-    }
-
     let history: any[] = [];
-    if (histResult.status === "fulfilled" && histResult.value.ok) {
-      history = await histResult.value.json().catch(() => []);
+
+    if (cleanBase) {
+      const [nowResult, nextResult, histResult] = await Promise.allSettled([
+        fetchWithTimeout(`${cleanBase}/api/now-playing`, timeoutMs),
+        fetchWithTimeout(`${cleanBase}/api/up-next`, timeoutMs),
+        fetchWithTimeout(`${cleanBase}/api/history`, timeoutMs),
+      ]);
+
+      if (nowResult.status === "fulfilled" && nowResult.value.ok) {
+        nowPlaying = await nowResult.value.json().catch(() => null);
+      }
+
+      if (nextResult.status === "fulfilled" && nextResult.value.ok) {
+        upNext = await nextResult.value.json().catch(() => []);
+      }
+
+      if (histResult.status === "fulfilled" && histResult.value.ok) {
+        history = await histResult.value.json().catch(() => []);
+      }
     }
 
     const liveDrop = await queryRecentLiveDrop();
