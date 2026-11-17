@@ -716,6 +716,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (!nonLiveSinceRef.current) nonLiveSinceRef.current = Date.now();
           if (!isPlayingRef.current || Date.now() - nonLiveSinceRef.current >= LIVE_EXIT_MS) {
             nonLiveSinceRef.current = 0;
+            cancelLiveEngine();
             applyMode(newMode);
             if (data.now_playing) {
               const freshTrack = {
@@ -726,7 +727,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               nowPlayingTrackRef.current = freshTrack;
               setNowPlayingTrack(freshTrack);
             }
-            if (isPlayingRef.current) attachAndPlayLiveStream();
+            if (isPlayingRef.current) attachAndPlayLiveStream({ force: true });
           }
         } else if (prevMode !== newMode) {
           applyMode(newMode);
@@ -1342,7 +1343,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     // Helper: Play the synchronized R2 festival track directly (AutoDJ mode only)
     const playCurrentTrackAudio = async () => {
-      if (broadcastModeRef.current === "live" || liveActiveRef.current) {
+      if (broadcastModeRef.current === "live") {
         return;
       }
       cancelLiveEngine();
