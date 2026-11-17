@@ -2625,36 +2625,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
 
-    // 2. Prime Deck A (audioRef) and Deck B (preloadAudioRef) inside user gesture
-    if (audioRef.current) {
+    // 2. Guarantee the standby deck is PAUSED so two decks never play simultaneously
+    const standbyAudio = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
+    if (standbyAudio && !isCrossfadingRef.current) {
       try {
-        if (audioRef.current.paused) {
-          const p = audioRef.current.play();
-          if (p !== undefined) {
-            p.catch(() => {
-              if (audioRef.current && (!audioRef.current.src || audioRef.current.src.startsWith("data:"))) {
-                audioRef.current.src = SILENT_WAV_DATA_URI;
-                audioRef.current.volume = 0.001;
-                audioRef.current.play().then(() => {
-                  if (audioRef.current && audioRef.current.src.startsWith("data:")) {
-                    audioRef.current.pause();
-                    audioRef.current.currentTime = 0;
-                  }
-                }).catch(() => {});
-              }
-            });
-          }
-        }
-      } catch {}
-    }
-    if (preloadAudioRef.current) {
-      try {
-        if (preloadAudioRef.current.paused) {
-          const p = preloadAudioRef.current.play();
-          if (p !== undefined) {
-            p.catch(() => {});
-          }
-        }
+        standbyAudio.pause();
       } catch {}
     }
   }, []);
@@ -2686,6 +2661,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     setIsMinimized(false);
     setIsPlaying(true);
     setEngineState("connecting");
+
+    // Strictly pause standby deck so two tracks never overlap
+    if (preloadAudioRef.current && activeDeckRef.current === "A") {
+      try { preloadAudioRef.current.pause(); } catch {}
+    }
+    if (audioRef.current && activeDeckRef.current === "B") {
+      try { audioRef.current.pause(); } catch {}
+    }
 
     // Prime the audio elements synchronously inside the user click gesture
     primeAudioPipeline();
