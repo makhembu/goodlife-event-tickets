@@ -697,6 +697,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (!isPlayingRef.current || Date.now() - nonLiveSinceRef.current >= LIVE_EXIT_MS) {
             nonLiveSinceRef.current = 0;
             applyMode(newMode);
+            if (data.now_playing) {
+              const freshTrack = {
+                ...data.now_playing,
+                title: formatTrackTitle(data.now_playing.title),
+                elapsed: typeof data.now_playing.elapsed === "number" ? data.now_playing.elapsed : 0,
+              };
+              nowPlayingTrackRef.current = freshTrack;
+              setNowPlayingTrack(freshTrack);
+            }
             if (isPlayingRef.current) attachAndPlayLiveStream();
           }
         } else if (prevMode !== newMode) {
@@ -1318,30 +1327,27 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         activeAudioUrl = "/api/radio/audio/track/20";
       }
 
-      // If track is missing or stale, background refresh live track without blocking immediate audio start
+      // If track is missing or stale, refresh live track synchronously to avoid race condition/abort errors
       if (isTrackStaleOrFinished) {
-        fetch("/api/radio/live")
-          .then((res) => (res.ok ? res.json() : null))
-          .then((data) => {
+        try {
+          const res = await fetch("/api/radio/live");
+          if (res.ok) {
+            const data = await res.json();
             if (data?.now_playing?.playback_url || data?.now_playing?.audio_url) {
               const freshTrack = {
                 ...data.now_playing,
                 title: formatTrackTitle(data.now_playing.title),
               };
+              track = freshTrack;
+              nowPlayingTrackRef.current = freshTrack;
               setNowPlayingTrack(freshTrack);
               lastPollElapsedRef.current = freshTrack.elapsed || 0;
               lastPollTimestampRef.current = Date.now();
               setInterpolatedElapsed(freshTrack.elapsed || 0);
-
-              const freshAudioUrl = freshTrack.playback_url || freshTrack.audio_url;
-              if (audioRef.current && isPlayingRef.current && freshAudioUrl && audioRef.current.src !== freshAudioUrl) {
-                audioRef.current.src = freshAudioUrl;
-                safeSeekAudio(audioRef.current, freshTrack.elapsed || 0);
-                audioRef.current.play().catch(() => {});
-              }
+              activeAudioUrl = freshTrack.playback_url || freshTrack.audio_url || activeAudioUrl;
             }
-          })
-          .catch(() => {});
+          }
+        } catch {}
       }
 
       // Clean up previous HLS and crossfader timers without wiping audio elements
@@ -1380,7 +1386,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         seekOffset = Math.max(0, seekOffset);
       }
 
-      if (audio.src !== activeAudioUrl) {
+      if (activeAudioUrl && audio.src !== activeAudioUrl) {
         audio.src = activeAudioUrl;
       }
       audio.volume = isMutedRef.current ? 0 : volumeRef.current;
@@ -1400,6 +1406,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }, 250);
         }
       } catch (err: any) {
+        if (err?.name === "AbortError") {
+          return; // Superceded by another valid track load, do not transition to error state
+        }
         console.warn("[RadioContext] audio.play() error:", err);
         if (err?.name === "NotAllowedError") {
           setEngineState("idle");
