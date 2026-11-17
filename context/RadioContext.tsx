@@ -47,15 +47,15 @@ const loadPolicy = (ttfb: number, total: number, timeoutRetries: number, errorRe
   },
 });
 
-// Tuned for 6s HLS segments on Cloudflare R2
+// Tuned for real-time live DJ broadcast edge (0-1 segment latency)
 const LIVE_HLS_CONFIG: any = {
-  lowLatencyMode: false,
+  lowLatencyMode: true,
   enableWorker: true,
-  liveSyncDurationCount: 3,          // ~18s behind edge
-  liveMaxLatencyDurationCount: 10,   // avoids edge-seeking jumps after a stall
-  maxBufferLength: 30,
-  maxMaxBufferLength: 60,
-  backBufferLength: 30,
+  liveSyncDurationCount: 1,          // snaps to immediate live edge
+  liveMaxLatencyDurationCount: 2,    // avoids drifting back into historical segments
+  maxBufferLength: 8,
+  maxMaxBufferLength: 16,
+  backBufferLength: 0,               // discard pre-live segments immediately
   maxBufferHole: 0.5,
   nudgeMaxRetry: 10,
   manifestLoadPolicy: loadPolicy(8000, 20000, 4, 6),
@@ -1530,6 +1530,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (isStale()) return;
+        if (typeof hls.liveSyncPosition === "number" && hls.liveSyncPosition > 0) {
+          try { audio.currentTime = hls.liveSyncPosition; } catch {}
+        }
         audio.play()
           .then(() => {
             if (!isStale()) {
