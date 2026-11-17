@@ -136,6 +136,14 @@ async function runTests() {
   const recordingsCode = fs.readFileSync(path.join(process.cwd(), "app/api/radio/recordings/route.ts"), "utf8");
   check("[Source-Check] Recordings route does not expose raw r2_key in response mapping", !recordingsCode.includes("r2_key: row.r2_key"));
 
+  // 11. HLS Sync & Standby Playout Invariants
+  check("[Source-Check] RadioContext does NOT execute aggressive edge-snap (details.edge - 1.5)", !radioContextCode.includes("details.edge - 1.5"));
+  check("[Source-Check] RadioContext configures liveSyncDurationCount for resilient buffer", radioContextCode.includes("liveSyncDurationCount: 3"));
+  check("[Source-Check] Standby helper script exists", fs.existsSync(path.join(process.cwd(), "home-server/liquidsoap/get-standby-audio.sh")));
+
+  const liqCode = fs.readFileSync(path.join(process.cwd(), "home-server/liquidsoap/goodlife-station.liq"), "utf8");
+  check("[Source-Check] Liquidsoap integrates standby_source in fallback chain", liqCode.includes("standby_source") && liqCode.includes("get-standby-audio.sh"));
+
   console.log(`\n================================`);
   console.log(`Total checks: ${pass + failures.length}`);
   console.log(`Passed: ${pass}`);

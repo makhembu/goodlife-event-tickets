@@ -95,7 +95,7 @@ output.file(
 )
 
 # 5. Smart Crossfade & Harbor Failover
-# Smooth 3.0s crossfade when live DJ joins or drops
+# Smooth 3.0s crossfade when audio sources switch
 def smooth_crossfade(a, b) =
   add(normalize=false, [
     fade.out(duration=3.0, a),
@@ -103,11 +103,30 @@ def smooth_crossfade(a, b) =
   ])
 end
 
-# Failover logic: Live DJ overrides AutoDJ; Fallback overrides silence
+# 5a. Standby Audio Ingest (Dynamic Presenter / Station Default Loop)
+# Resolves dynamic standby URL from Next.js BFF via helper script
+def get_standby_url() =
+  let script = "/usr/local/bin/get-standby-audio.sh"
+  let fallback_file = "/var/goodlife/drops/emergency-fallback.mp3"
+  if file.exists(script) then
+    let res = string.trim(process.read(script))
+    if res != "" and string.match(pattern="^http", res) then
+      res
+    else
+      fallback_file
+    end
+  else
+    fallback_file
+  end
+end
+
+standby_source = mksafe(audio_to_stereo(input.http(get_standby_url, buffer=3.0, autostart=true)))
+
+# Failover logic: Live DJ overrides Standby/AutoDJ; AutoDJ overrides Emergency
 radio_stream = fallback(
   track_sensitive=false,
-  transitions=[smooth_crossfade, smooth_crossfade],
-  [live_dj, autodj_source, emergency_track]
+  transitions=[smooth_crossfade, smooth_crossfade, smooth_crossfade],
+  [live_dj, autodj_source, standby_source, emergency_track]
 )
 
 # 5b. On-Air Live Voice Drops / Jingle Harbor (Port 8006, Mount /drops)

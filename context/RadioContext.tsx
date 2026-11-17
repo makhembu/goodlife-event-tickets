@@ -60,11 +60,11 @@ const loadPolicy = (ttfb: number, total: number, timeoutRetries: number, errorRe
   },
 });
 
-// Tuned for 6s HLS segments on Cloudflare R2 / Liquidsoap HLS (Resilient mobile-first config)
+// Tuned for 4s HLS segments on Liquidsoap HLS / Cloudflare R2 (Resilient mobile-first config)
 const LIVE_HLS_CONFIG: any = {
   lowLatencyMode: false,
   enableWorker: true,
-  liveSyncDurationCount: 3,          // ~18s behind edge (resilient buffer for mobile cell handoff)
+  liveSyncDurationCount: 3,          // ~12s behind edge (3 x 4s segments, resilient buffer for mobile cell handoff)
   liveMaxLatencyDurationCount: 10,   // avoids edge-seeking jumps after a stall
   maxBufferLength: 30,
   maxMaxBufferLength: 60,
@@ -165,7 +165,13 @@ export interface RadioContextType {
   nextTrack: () => void;
   prevTrack: () => void;
   seek: (percent: number) => void;
-  airLiveDrop: (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => Promise<boolean>;
+  airLiveDrop: (dropData: {
+    audioUrl: string;
+    title: string;
+    persona?: string;
+    script?: string;
+    playLocal?: boolean;
+  }) => Promise<boolean>;
   setManualDucking: (ducked: boolean) => void;
   fetchRadioState: () => Promise<void>;
   fetchRadioLive: () => Promise<void>;
@@ -813,9 +819,18 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
           // If playing and track advances, update audio src safely without truncating playing song (AutoDJ mode only)
           const targetTrackSrc = track.playback_url || track.audio_url;
-          if (audioRef.current && isPlayingRef.current && (!isDropPlayingRef.current || audioRef.current.ended) && targetTrackSrc) {
-            if (!areSameAudioSrc(audioRef.current.src, targetTrackSrc)) {
-              const audio = audioRef.current;
+          const activeDeck = activeDeckRef.current;
+          const currentDeckAudio = activeDeck === "A" ? audioRef.current : preloadAudioRef.current;
+          const standbyDeckAudio = activeDeck === "A" ? preloadAudioRef.current : audioRef.current;
+
+          if (currentDeckAudio && isPlayingRef.current && (!isDropPlayingRef.current || currentDeckAudio.ended) && targetTrackSrc) {
+            // If already crossfading, do not interrupt or double-trigger
+            if (isCrossfadingRef.current) {
+              return;
+            }
+
+            if (!areSameAudioSrc(currentDeckAudio.src, targetTrackSrc)) {
+              const audio = currentDeckAudio;
               const targetDur = nowPlayingTrack?.duration_sec || nowPlayingTrack?.duration;
               const effectiveTrackDur = (targetDur && targetDur > 10)
                 ? Math.min(audio.duration || Infinity, targetDur)
@@ -850,6 +865,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
                   const duckedVol = masterVol > 0 ? Math.max(0.24, Math.min(0.36, masterVol * 0.30)) : 0;
                   audio.volume = isDropPlayingRef.current ? duckedVol : masterVol;
+
+                  // Strictly pause standby deck so two tracks never overlap during poll advance
+                  if (standbyDeckAudio) {
+                    try {
+                      standbyDeckAudio.pause();
+                      standbyDeckAudio.currentTime = 0;
+                    } catch {}
+                  }
 
                   // Update audio source directly without calling audio.load() which wipes the background audio session on mobile
                   if (newAudioSrc && !areSameAudioSrc(audio.src, newAudioSrc)) {
@@ -1336,15 +1359,6 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
-    // Transition window special case: If listener joins within 45s of DJ going live, or if client just transitioned modes,
-    // snap to the live edge on first segment buffer to bypass Liquidsoap's 12-14s Harbor input delay.
-    // Explicitly skipped on recovery retries to avoid buffer wipeout.
-    const isInitialTransitionJoin = !opts?.isRecovery && (
-      opts?.isModeSwitch === true ||
-      (typeof liveSinceRef.current === "number" &&
-       liveSinceRef.current > 0 &&
-       (Math.floor(Date.now() / 1000) - liveSinceRef.current) < 45)
-    );
 
     // Helper: Play the synchronized R2 festival track directly (AutoDJ mode only)
     const playCurrentTrackAudio = async () => {
@@ -1591,33 +1605,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           .catch(onPlayRejected);
       });
 
-      let hasSnappedToEdge = false;
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         liveNetRetriesRef.current = 0;
         liveMediaRetriesRef.current = 0;
-
-        // Transition window special case: If listener joins within 45s of DJ going live,
-        // snap once to the real live edge (with a tight 1.5s cushion) to bypass
-        // the 12-14s residual AutoDJ audio buffered inside Liquidsoap's Harbor input pipeline.
-        // Otherwise, maintain standard resilient buffer (~18s depth) to protect mobile playback against cellular handover stalls.
-        if (isInitialTransitionJoin && !hasSnappedToEdge) {
-          hasSnappedToEdge = true;
-          const details = hls.levels?.[hls.currentLevel]?.details;
-          if (details && typeof details.edge === "number") {
-            const targetTime = Math.max(audio.currentTime, details.edge - 1.5);
-            console.debug("[Radio:LiveEdgeSnap]", {
-              timestamp: new Date().toISOString(),
-              currentTime: audio.currentTime,
-              targetTime,
-              detailsEdge: details.edge,
-              targetDuration: details.targetduration,
-              secondsSinceLive: liveSinceRef.current ? Math.floor(Date.now() / 1000) - liveSinceRef.current : null,
-            });
-            try {
-              audio.currentTime = targetTime;
-            } catch {}
-          }
-        }
+        // Rely purely on HLS.js liveSyncDurationCount (3 segments = ~12s buffer depth)
+        // rather than seeking to edge - 1.5s, which previously starved the buffer and caused stall loops.
       });
 
       hls.on(Hls.Events.ERROR, (_e: any, data: any) => {
@@ -2026,9 +2018,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     [swellMusicToFullVolume]
   );
 
-  // Method exposed to admin and DJ soundboard: broadcast drop to live stream and play on active monitor
+  // Method exposed to admin and DJ soundboard: broadcast drop to live stream.
+  // By default, playLocal is false so DJs/broadcasters monitoring the broadcast stream
+  // do not hear an instant local duplicate at t=0 followed by the stream audio ~12s later.
   const airLiveDrop = useCallback(
-    async (dropData: { audioUrl: string; title: string; persona?: string; script?: string }) => {
+    async (dropData: {
+      audioUrl: string;
+      title: string;
+      persona?: string;
+      script?: string;
+      playLocal?: boolean;
+    }) => {
       try {
         const res = await fetch("/api/radio/drops/live-inject", {
           method: "POST",
@@ -2048,14 +2048,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             firedDropIdsRef.current.add(data.drop.id);
             lastLiveDropIdRef.current = data.drop.id;
 
-            // Immediately air on DJ's broadcast stream monitor with smooth ducking
-            triggerLiveInjectedDrop({
-              id: data.drop.id,
-              title: data.drop.title || dropData.title,
-              persona: data.drop.persona || dropData.persona,
-              audio_url: data.drop.audio_url || dropData.audioUrl,
-              playback_url: data.drop.audio_url || dropData.audioUrl,
-            });
+            // Only play locally if explicitly requested (e.g. auditioning offline or local player without stream)
+            if (dropData.playLocal) {
+              triggerLiveInjectedDrop({
+                id: data.drop.id,
+                title: data.drop.title || dropData.title,
+                persona: data.drop.persona || dropData.persona,
+                audio_url: data.drop.audio_url || dropData.audioUrl,
+                playback_url: data.drop.audio_url || dropData.audioUrl,
+              });
+            }
             return true;
           }
         }
@@ -3462,6 +3464,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         ref={audioRef}
         onTimeUpdate={() => handleTimeUpdate("A")}
         onPlay={() => {
+          if (liveActiveRef.current || broadcastModeRef.current === "live") {
+            // Live stream plays on Deck A; ensure Deck B is paused
+            try { preloadAudioRef.current?.pause(); } catch {}
+          } else if (!isCrossfadingRef.current && activeDeckRef.current === "B") {
+            // If Deck A starts playing outside of crossfade while Deck B is active, Deck B should not compete
+            try { preloadAudioRef.current?.pause(); } catch {}
+          } else if (!isCrossfadingRef.current && activeDeckRef.current === "A") {
+            // Guarantee Deck B is paused
+            try { preloadAudioRef.current?.pause(); } catch {}
+          }
           console.debug("[Radio:Playback]", { timestamp: new Date().toISOString(), deck: "A", src: audioRef.current?.src, mode: broadcastModeRef.current, isLive: liveActiveRef.current });
           if (activeDeckRef.current === "A") {
             setIsPlaying(true);
@@ -3593,6 +3605,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             console.debug("[Radio:Live] Deck B attempted to play during live mode: suppressing");
             try { preloadAudioRef.current?.pause(); } catch {}
             return;
+          }
+          if (!isCrossfadingRef.current && activeDeckRef.current === "A") {
+            // Deck B started unexpectedly while Deck A is active and not crossfading; suppress Deck B
+            console.debug("[Radio:Playout] Suppressing unexpected Deck B play while Deck A is active");
+            try { preloadAudioRef.current?.pause(); } catch {}
+            return;
+          }
+          if (!isCrossfadingRef.current && activeDeckRef.current === "B") {
+            // Guarantee Deck A is paused so two decks never play simultaneously
+            try { audioRef.current?.pause(); } catch {}
           }
           console.debug("[Radio:Playback]", { timestamp: new Date().toISOString(), deck: "B", src: preloadAudioRef.current?.src });
           if (activeDeckRef.current === "B") {
