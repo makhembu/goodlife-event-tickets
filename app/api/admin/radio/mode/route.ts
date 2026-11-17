@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
          SET broadcast_mode = 'live',
              live_stream_url = COALESCE($1, live_stream_url),
              live_title = COALESCE($2, live_title),
+             active_started_at = NOW(),
              updated_at = NOW() 
          WHERE id = 1`,
         [live_stream_url || null, live_title || null]

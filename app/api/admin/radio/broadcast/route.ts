@@ -26,6 +26,7 @@ export async function PUT(req: NextRequest) {
         live_title = COALESCE($3, live_title),
         live_fallback_set_id = $4,
         ai_drops_enabled = COALESCE($5, ai_drops_enabled),
+        active_started_at = CASE WHEN COALESCE($1, broadcast_mode) = 'live' THEN NOW() ELSE active_started_at END,
         updated_at = NOW()
       WHERE id = 1
       RETURNING *;

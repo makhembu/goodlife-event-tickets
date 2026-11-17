@@ -513,7 +513,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const liveNetRetriesRef = useRef(0);
   const liveMediaRetriesRef = useRef(0);
   const recoverLiveRef = useRef<(reason: string) => void>(() => {});
-  const attachLiveRef = useRef<(o?: { force?: boolean; isRecovery?: boolean }) => Promise<void>>(async () => {});
+  const attachLiveRef = useRef<(o?: { force?: boolean; isRecovery?: boolean; isModeSwitch?: boolean }) => Promise<void>>(async () => {});
   const startBackupMixRef = useRef<() => void>(() => {});
 
   const applyMode = useCallback((m: BroadcastMode) => {
@@ -708,7 +708,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           if (prevMode !== "live" || !liveActiveRef.current) {
             applyMode("live");
-            if (isPlayingRef.current) attachAndPlayLiveStream({ force: true });
+            if (prevMode !== "live") {
+              liveSinceRef.current = Math.floor(Date.now() / 1000);
+            }
+            if (isPlayingRef.current) attachAndPlayLiveStream({ force: true, isModeSwitch: prevMode !== "live" });
           }
           // Note: no re-attach on "reconnecting" / "buffering". The live engine heals in place.
         } else if (prevMode === "live") {
@@ -1316,7 +1319,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   startBackupMixRef.current = startBackupMix;
 
   // 10. Live Playback Engine: Plays synchronized R2 festival track in autodj/mania; plays HLS in live mode
-  const attachAndPlayLiveStream = useCallback(async (opts?: { force?: boolean; isRecovery?: boolean }): Promise<void> => {
+  const attachAndPlayLiveStream = useCallback(async (opts?: { force?: boolean; isRecovery?: boolean; isModeSwitch?: boolean }): Promise<void> => {
     if (!radioEnabledRef.current) {
       setEngineState("offline");
       setIsPlaying(false);
@@ -1333,13 +1336,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
-    // Transition window special case: If listener joins within 40s of DJ going live,
-    // we mark this as an initial transition join to snap to the live edge on first segment buffer.
+    // Transition window special case: If listener joins within 45s of DJ going live, or if client just transitioned modes,
+    // snap to the live edge on first segment buffer to bypass Liquidsoap's 12-14s Harbor input delay.
     // Explicitly skipped on recovery retries to avoid buffer wipeout.
-    const isInitialTransitionJoin = !opts?.isRecovery &&
-      typeof liveSinceRef.current === "number" &&
-      liveSinceRef.current > 0 &&
-      (Math.floor(Date.now() / 1000) - liveSinceRef.current) < 40;
+    const isInitialTransitionJoin = !opts?.isRecovery && (
+      opts?.isModeSwitch === true ||
+      (typeof liveSinceRef.current === "number" &&
+       liveSinceRef.current > 0 &&
+       (Math.floor(Date.now() / 1000) - liveSinceRef.current) < 45)
+    );
 
     // Helper: Play the synchronized R2 festival track directly (AutoDJ mode only)
     const playCurrentTrackAudio = async () => {
@@ -1591,16 +1596,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         liveNetRetriesRef.current = 0;
         liveMediaRetriesRef.current = 0;
 
-        // Transition window special case: If listener joins within 40s of DJ going live,
-        // snap once to real live edge with a 2-segment cushion (~12s) to bypass
-        // residual AutoDJ audio buffered during Harbor's input delay.
+        // Transition window special case: If listener joins within 45s of DJ going live,
+        // snap once to the real live edge (with a tight 1.5s cushion) to bypass
+        // the 12-14s residual AutoDJ audio buffered inside Liquidsoap's Harbor input pipeline.
         // Otherwise, maintain standard resilient buffer (~18s depth) to protect mobile playback against cellular handover stalls.
         if (isInitialTransitionJoin && !hasSnappedToEdge) {
           hasSnappedToEdge = true;
           const details = hls.levels?.[hls.currentLevel]?.details;
-          if (details && typeof details.edge === "number" && typeof details.targetduration === "number") {
-            const edgeCushionSec = details.targetduration * 2; // ~12s cushion
-            const targetTime = Math.max(audio.currentTime, details.edge - edgeCushionSec);
+          if (details && typeof details.edge === "number") {
+            const targetTime = Math.max(audio.currentTime, details.edge - 1.5);
             console.debug("[Radio:LiveEdgeSnap]", {
               timestamp: new Date().toISOString(),
               currentTime: audio.currentTime,
