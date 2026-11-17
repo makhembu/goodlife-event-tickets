@@ -354,9 +354,6 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
-let _liveSinceEpochSec: number | null = null;
-let _lastBroadcastMode: string = "autodj";
-
 export async function GET() {
   const upstreamBase = process.env.RADIO_UPSTREAM_URL?.trim();
 
@@ -364,17 +361,11 @@ export async function GET() {
   const cachedPlayout = await getCachedPlayoutData();
   const broadcastMode = cachedPlayout.settings.broadcast_mode || "autodj";
 
-  if (broadcastMode === "live") {
-    if (_lastBroadcastMode !== "live" || !_liveSinceEpochSec) {
-      const dbStartedAt = cachedPlayout.settings.active_started_at
-        ? Math.floor(new Date(cachedPlayout.settings.active_started_at).getTime() / 1000)
-        : null;
-      _liveSinceEpochSec = dbStartedAt || Math.floor(Date.now() / 1000);
-    }
-  } else {
-    _liveSinceEpochSec = null;
-  }
-  _lastBroadcastMode = broadcastMode;
+  // Durable single-source: active_started_at from PostgreSQL radio_settings table.
+  // Explicitly null if not live or if unrecorded, avoiding serverless module-variable memory leaks or falsified cold-start timestamps.
+  const liveSinceEpochSec = broadcastMode === "live" && cachedPlayout.settings.active_started_at
+    ? Math.floor(new Date(cachedPlayout.settings.active_started_at).getTime() / 1000)
+    : null;
 
   // 2. If station is in autodj or mania mode, Cloudflare R2 virtual timeline is the primary playout
   if (broadcastMode !== "live") {
@@ -515,7 +506,7 @@ export async function GET() {
         },
         stream_url: streamUrl,
         live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
-        live_since: _liveSinceEpochSec,
+        live_since: liveSinceEpochSec,
         target_duration_sec: 6.0,
       },
       {
@@ -556,7 +547,7 @@ export async function GET() {
           is_live: true,
         },
         stream_url: streamUrl,
-        live_since: _liveSinceEpochSec,
+        live_since: liveSinceEpochSec,
         target_duration_sec: 6.0,
       },
       {

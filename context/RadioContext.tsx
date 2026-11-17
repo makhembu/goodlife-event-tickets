@@ -502,7 +502,6 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const modeProbeRef = useRef<Promise<void> | null>(null);
   const nonLiveSinceRef = useRef(0);
   const liveSinceRef = useRef<number | null>(null);
-  const lastUserPlayTriggerAtRef = useRef<number>(0);
   const liveActiveRef = useRef(false);
   const liveAttachGenRef = useRef(0);
   const isReattachingRef = useRef(false);
@@ -803,8 +802,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          // Single-writer rule: do not let background polling overwrite audio.src during or immediately after user play gesture
-          if (Date.now() - lastUserPlayTriggerAtRef.current < 3500) {
+          // Single-writer rule: do not let background polling reassign audio.src while engine is actively connecting to a user-initiated target
+          if (engineStateRef.current === "connecting" && !isPlaylistSwitch && !isPlaylistIdSwitch) {
             return;
           }
 
@@ -1333,13 +1332,13 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     const streamUrl = resolveLiveStreamUrl(rawStreamUrl, qualityRef.current);
     const currentMode = broadcastModeRef.current;
 
-    // Transition window special case: If listener joins within 30s of DJ going live,
+    // Transition window special case: If listener joins within 40s of DJ going live,
     // we mark this as an initial transition join to snap to the live edge on first segment buffer.
     // Explicitly skipped on recovery retries to avoid buffer wipeout.
     const isInitialTransitionJoin = !opts?.isRecovery &&
       typeof liveSinceRef.current === "number" &&
       liveSinceRef.current > 0 &&
-      (Math.floor(Date.now() / 1000) - liveSinceRef.current) < 30;
+      (Math.floor(Date.now() / 1000) - liveSinceRef.current) < 40;
 
     // Helper: Play the synchronized R2 festival track directly (AutoDJ mode only)
     const playCurrentTrackAudio = async () => {
@@ -1591,21 +1590,26 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         liveNetRetriesRef.current = 0;
         liveMediaRetriesRef.current = 0;
 
-        // Transition window special case: If listener joins within 30s of DJ going live,
-        // snap once to hls.liveSyncPosition after the first segment is buffered to bypass
-        // residual AutoDJ audio buffered in Liquidsoap's input pipeline.
+        // Transition window special case: If listener joins within 40s of DJ going live,
+        // snap once to real live edge with a 2-segment cushion (~12s) to bypass
+        // residual AutoDJ audio buffered during Harbor's input delay.
         // Otherwise, maintain standard resilient buffer (~18s depth) to protect mobile playback against cellular handover stalls.
         if (isInitialTransitionJoin && !hasSnappedToEdge) {
           hasSnappedToEdge = true;
-          if (typeof hls.liveSyncPosition === "number" && hls.liveSyncPosition > 0) {
+          const details = hls.levels?.[hls.currentLevel]?.details;
+          if (details && typeof details.edge === "number" && typeof details.targetduration === "number") {
+            const edgeCushionSec = details.targetduration * 2; // ~12s cushion
+            const targetTime = Math.max(audio.currentTime, details.edge - edgeCushionSec);
             console.debug("[Radio:LiveEdgeSnap]", {
               timestamp: new Date().toISOString(),
               currentTime: audio.currentTime,
-              targetLiveSyncPosition: hls.liveSyncPosition,
+              targetTime,
+              detailsEdge: details.edge,
+              targetDuration: details.targetduration,
               secondsSinceLive: liveSinceRef.current ? Math.floor(Date.now() / 1000) - liveSinceRef.current : null,
             });
             try {
-              audio.currentTime = hls.liveSyncPosition;
+              audio.currentTime = targetTime;
             } catch {}
           }
         }
@@ -2816,7 +2820,6 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       setEngineState("paused");
       return;
     }
-    lastUserPlayTriggerAtRef.current = Date.now();
     setIsMinimized(false);
     setIsPlaying(true);
     setEngineState("connecting");
