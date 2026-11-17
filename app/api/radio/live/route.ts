@@ -328,6 +328,7 @@ async function getTimelineFallback() {
       ),
       history: [],
       live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
+      live_since: null,
       target_duration_sec: 2.0,
     };
   } catch (err: any) {
@@ -353,12 +354,27 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
+let _liveSinceEpochSec: number | null = null;
+let _lastBroadcastMode: string = "autodj";
+
 export async function GET() {
   const upstreamBase = process.env.RADIO_UPSTREAM_URL?.trim();
 
   // 1. Get playout data from instance cache (combines settings & playlist queries in a 30s cache)
   const cachedPlayout = await getCachedPlayoutData();
   const broadcastMode = cachedPlayout.settings.broadcast_mode || "autodj";
+
+  if (broadcastMode === "live") {
+    if (_lastBroadcastMode !== "live" || !_liveSinceEpochSec) {
+      const dbStartedAt = cachedPlayout.settings.active_started_at
+        ? Math.floor(new Date(cachedPlayout.settings.active_started_at).getTime() / 1000)
+        : null;
+      _liveSinceEpochSec = dbStartedAt || Math.floor(Date.now() / 1000);
+    }
+  } else {
+    _liveSinceEpochSec = null;
+  }
+  _lastBroadcastMode = broadcastMode;
 
   // 2. If station is in autodj or mania mode, Cloudflare R2 virtual timeline is the primary playout
   if (broadcastMode !== "live") {
@@ -499,7 +515,8 @@ export async function GET() {
         },
         stream_url: streamUrl,
         live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
-        target_duration_sec: 2.0,
+        live_since: _liveSinceEpochSec,
+        target_duration_sec: 6.0,
       },
       {
         status: 200,
@@ -539,7 +556,8 @@ export async function GET() {
           is_live: true,
         },
         stream_url: streamUrl,
-        target_duration_sec: 2.0,
+        live_since: _liveSinceEpochSec,
+        target_duration_sec: 6.0,
       },
       {
         status: 200,
