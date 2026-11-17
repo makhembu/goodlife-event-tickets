@@ -46,6 +46,7 @@ export interface RadioSettings {
   live_stream_url: string;
   live_title: string;
   live_fallback_set_id?: number | null;
+  default_standby_audio_url?: string | null;
   last_heartbeat: string;
   updated_at: string;
 }
@@ -179,6 +180,7 @@ export interface Presenter {
   social_links?: Record<string, string>;
   stream_key_hash?: string | null;
   stream_key_prefix?: string | null;
+  standby_audio_url?: string | null;
   status: PresenterStatus;
   failed_login_count: number;
   locked_until?: string | null;

@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { dj_name, bio, avatar_url, social_links } = body;
+    const { dj_name, bio, avatar_url, social_links, standby_audio_url } = body;
 
     const query = `
       UPDATE presenters
@@ -30,9 +30,10 @@ export async function PATCH(req: NextRequest) {
           bio = COALESCE($2, bio),
           avatar_url = COALESCE($3, avatar_url),
           social_links = COALESCE($4, social_links),
+          standby_audio_url = COALESCE($5, standby_audio_url),
           updated_at = NOW()
-      WHERE id = $5
-      RETURNING id, full_name, dj_name, slug, email, phone, bio, avatar_url, social_links, status, must_change_password;
+      WHERE id = $6
+      RETURNING id, full_name, dj_name, slug, email, phone, bio, avatar_url, social_links, standby_audio_url, status, must_change_password;
     `;
 
     const { rows } = await neonQuery(query, [
@@ -40,6 +41,7 @@ export async function PATCH(req: NextRequest) {
       bio !== undefined ? String(bio).trim() : null,
       avatar_url !== undefined ? String(avatar_url).trim() : null,
       social_links ? JSON.stringify(social_links) : null,
+      standby_audio_url !== undefined ? (standby_audio_url ? String(standby_audio_url).trim() : null) : null,
       presenter.id,
     ]);
 

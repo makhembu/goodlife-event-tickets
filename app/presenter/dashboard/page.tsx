@@ -38,6 +38,7 @@ interface PresenterProfile {
   bio?: string | null;
   avatar_url?: string | null;
   social_links?: Record<string, string>;
+  standby_audio_url?: string | null;
   must_change_password: boolean;
 }
 
@@ -104,6 +105,10 @@ export default function PresenterDashboardPage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [instaUrl, setInstaUrl] = useState("");
   const [twitterUrl, setTwitterUrl] = useState("");
+  const [standbyAudioUrl, setStandbyAudioUrl] = useState("");
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const [audioUploadSuccess, setAudioUploadSuccess] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Change Password Modal State
@@ -156,6 +161,7 @@ export default function PresenterDashboardPage() {
         setAvatarUrl(meData.presenter.avatar_url || "");
         setInstaUrl(meData.presenter.social_links?.instagram || "");
         setTwitterUrl(meData.presenter.social_links?.twitter || "");
+        setStandbyAudioUrl(meData.presenter.standby_audio_url || "");
 
         if (meData.presenter.must_change_password) {
           setShowPasswordModal(true);
@@ -313,6 +319,51 @@ export default function PresenterDashboardPage() {
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err: any) {
       setSaveStatus(`Error: ${err.message}`);
+    }
+  };
+
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAudioUploadError(null);
+    setAudioUploadSuccess(null);
+    setUploadingAudio(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/presenter/standby-audio", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setStandbyAudioUrl(data.standby_audio_url);
+      setAudioUploadSuccess("Custom on-air standby audio uploaded and saved successfully!");
+      setTimeout(() => setAudioUploadSuccess(null), 4000);
+    } catch (err: any) {
+      setAudioUploadError(err.message || "Failed to upload audio file");
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
+  const handleRemoveStandbyAudio = async () => {
+    setAudioUploadError(null);
+    setAudioUploadSuccess(null);
+    try {
+      const res = await fetch("/api/presenter/standby-audio", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ standby_audio_url: null }),
+      });
+      if (!res.ok) throw new Error("Failed to remove standby audio");
+      setStandbyAudioUrl("");
+      setAudioUploadSuccess("Standby audio removed. Station will use the default branded drops.");
+      setTimeout(() => setAudioUploadSuccess(null), 4000);
+    } catch (err: any) {
+      setAudioUploadError(err.message || "Failed to remove standby audio");
     }
   };
 
@@ -1062,6 +1113,71 @@ export default function PresenterDashboardPage() {
                 </button>
               </div>
             </form>
+
+            {/* Standby Audio & Stinger Customization Card */}
+            <div className="mt-8 border-t-2 border-brand-navy pt-6">
+              <h3 className="font-display text-lg uppercase tracking-wide text-brand-navy mb-2 flex items-center gap-2">
+                <Music className="w-5 h-5 text-brand-accent" /> On-Air Standby Audio & Stinger
+              </h3>
+              <p className="text-xs font-mono text-zinc-600 mb-4">
+                Upload your personal 10–30s branded audio stinger (e.g. <em>&quot;DJ {djName || "Name"} live on GOODLIFE Radio 254!&quot;</em>). When you go live, the station plays your custom drop to transition listeners into your set.
+              </p>
+
+              {audioUploadError && (
+                <div className="p-3 border-2 text-xs font-bold bg-red-100 border-red-600 text-red-800 mb-4 font-mono">
+                  {audioUploadError}
+                </div>
+              )}
+              {audioUploadSuccess && (
+                <div className="p-3 border-2 text-xs font-bold bg-emerald-100 border-emerald-600 text-emerald-800 mb-4 font-mono">
+                  {audioUploadSuccess}
+                </div>
+              )}
+
+              {standbyAudioUrl ? (
+                <div className="p-4 bg-brand-off-white/60 border-2 border-brand-navy mb-4 font-mono text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold uppercase text-emerald-800 flex items-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-600" /> Active Custom Standby Drop
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRemoveStandbyAudio}
+                      className="text-red-700 hover:text-red-900 underline font-bold cursor-pointer"
+                    >
+                      Remove & Revert to Default
+                    </button>
+                  </div>
+                  <audio controls src={standbyAudioUrl} className="w-full mt-2" />
+                  <div className="mt-2 text-[10px] text-zinc-500 break-all">
+                    URL: {standbyAudioUrl}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-amber-50 border-2 border-amber-300 text-amber-900 mb-4 font-mono text-xs">
+                  <div className="font-bold uppercase flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600" /> Using Station Default Drops
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-1">
+                    You have not uploaded a custom standby stinger yet. Listeners will hear the station&apos;s default branded drops before your set.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 font-mono text-xs">
+                <label className={`px-4 py-2.5 bg-brand-navy hover:bg-brand-accent text-white hover:text-brand-navy font-bold uppercase border-2 border-brand-navy shadow-xs flex items-center gap-2 cursor-pointer ${uploadingAudio ? "opacity-50 cursor-not-allowed" : ""}`}>
+                  <Music className="w-4 h-4" />
+                  <span>{uploadingAudio ? "Uploading Audio..." : standbyAudioUrl ? "Replace Audio Drop" : "Upload Custom Audio Drop (MP3/WAV)"}</span>
+                  <input
+                    type="file"
+                    accept="audio/*,.mp3,.wav,.ogg,.m4a"
+                    className="hidden"
+                    disabled={uploadingAudio}
+                    onChange={handleAudioUpload}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         )}
 

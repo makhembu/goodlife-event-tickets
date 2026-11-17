@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Zap,
   AlertTriangle,
+  Music,
 } from "lucide-react";
 
 export interface DecksConnectCardProps {
@@ -38,6 +39,11 @@ export default function DecksConnectCard({
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Station Default Standby Audio state
+  const [standbyAudioUrl, setStandbyAudioUrl] = useState<string | null>(null);
+  const [uploadingStandby, setUploadingStandby] = useState(false);
+  const [standbyMsg, setStandbyMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
   // Load cached key and status on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -59,6 +65,19 @@ export default function DecksConnectCard({
       }
     };
     fetchAdminKey();
+
+    const fetchStandbyAudio = async () => {
+      try {
+        const res = await fetch("/api/admin/radio/standby-audio");
+        if (res.ok) {
+          const data = await res.json();
+          setStandbyAudioUrl(data.default_standby_audio_url);
+        }
+      } catch (e) {
+        console.error("Failed to load standby audio:", e);
+      }
+    };
+    fetchStandbyAudio();
   }, []);
 
   // Poll health status
@@ -127,6 +146,49 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
     }
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 3000);
+  };
+
+  const handleStandbyAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStandbyMsg(null);
+    setUploadingStandby(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/admin/radio/standby-audio", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setStandbyAudioUrl(data.default_standby_audio_url);
+      setStandbyMsg({ text: "Station default standby audio updated!" });
+      setTimeout(() => setStandbyMsg(null), 4000);
+    } catch (err: any) {
+      setStandbyMsg({ text: err.message || "Failed to upload audio", error: true });
+    } finally {
+      setUploadingStandby(false);
+    }
+  };
+
+  const handleClearStandbyAudio = async () => {
+    setStandbyMsg(null);
+    try {
+      const res = await fetch("/api/admin/radio/standby-audio", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ default_standby_audio_url: null }),
+      });
+      if (!res.ok) throw new Error("Failed to reset standby audio");
+      setStandbyAudioUrl(null);
+      setStandbyMsg({ text: "Reset to system default audio rotation." });
+      setTimeout(() => setStandbyMsg(null), 4000);
+    } catch (err: any) {
+      setStandbyMsg({ text: err.message || "Failed to reset audio", error: true });
+    }
   };
 
   return (
@@ -365,6 +427,66 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
           </div>
         </div>
       )}
+
+      {/* Station Default Standby Audio (Master Fallback Drop) */}
+      <div className="bg-[#1A1D24]/80 border border-white/10 p-3 font-mono text-xs space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Music className="w-4 h-4 text-[#DFBB7D]" />
+            <span className="font-bold uppercase tracking-wider text-white">Default Station Standby Audio</span>
+          </div>
+          {standbyAudioUrl && (
+            <button
+              onClick={handleClearStandbyAudio}
+              className="text-[11px] text-red-400 hover:text-red-300 underline cursor-pointer"
+            >
+              Reset to Server Default
+            </button>
+          )}
+        </div>
+        <p className="text-[11px] text-white/60">
+          This audio drop loops whenever no live DJ or presenter is on air, or when an on-air presenter has not set their own custom standby audio.
+        </p>
+
+        {standbyMsg && (
+          <div
+            className={`p-2 text-[11px] border ${
+              standbyMsg.error
+                ? "bg-red-950/60 border-red-700/60 text-red-300"
+                : "bg-emerald-950/60 border-emerald-700/60 text-emerald-300"
+            }`}
+          >
+            {standbyMsg.text}
+          </div>
+        )}
+
+        {standbyAudioUrl ? (
+          <div className="space-y-1.5 pt-1">
+            <audio controls src={standbyAudioUrl} className="w-full h-8" />
+            <div className="text-[10px] text-white/40 break-all truncate">
+              Source: {standbyAudioUrl}
+            </div>
+          </div>
+        ) : (
+          <div className="text-[11px] text-[#DFBB7D] bg-black/30 border border-dashed border-[#DFBB7D]/30 p-2">
+            Active: System Branded Rotation (4 local station drops). Uploading a custom audio file here overrides the master station loop.
+          </div>
+        )}
+
+        <div className="pt-1">
+          <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-bold border border-white/20 text-[11px] uppercase cursor-pointer ${uploadingStandby ? "opacity-50 cursor-not-allowed" : ""}`}>
+            <Music className="w-3.5 h-3.5 text-[#DFBB7D]" />
+            <span>{uploadingStandby ? "UPLOADING..." : standbyAudioUrl ? "REPLACE STATION AUDIO" : "UPLOAD MASTER STANDBY AUDIO (MP3)"}</span>
+            <input
+              type="file"
+              accept="audio/*,.mp3,.wav,.ogg,.m4a"
+              className="hidden"
+              disabled={uploadingStandby}
+              onChange={handleStandbyAudioUpload}
+            />
+          </label>
+        </div>
+      </div>
 
       {/* Takeover Notice */}
       <div className="bg-[#1A1D24]/60 border border-[#DFBB7D]/30 p-2.5 font-mono text-[11px] text-white/80 flex items-start gap-2">

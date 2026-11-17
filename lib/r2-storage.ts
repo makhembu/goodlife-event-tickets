@@ -95,6 +95,43 @@ export async function createR2PresignedUpload(params: {
   return { uploadUrl, publicUrl, key };
 }
 
+export async function uploadBufferToR2(params: {
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
+  folder?: string;
+}): Promise<{ publicUrl: string; key: string } | null> {
+  const r2 = getR2Client();
+  if (!r2) return null;
+
+  const folder = params.folder || "standby-audio";
+  const ext = params.filename.includes(".")
+    ? params.filename.split(".").pop()?.toLowerCase() || "mp3"
+    : "mp3";
+  const cleanBase = params.filename
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 100);
+  const randomSuffix = Math.random().toString(36).substring(2, 9);
+  const key = `${folder}/${Date.now()}-${cleanBase || "audio"}-${randomSuffix}.${ext}`;
+
+  const command = new PutObjectCommand({
+    Bucket: r2.bucket,
+    Key: key,
+    ContentType: params.contentType,
+    Body: params.buffer,
+  });
+
+  try {
+    await r2.s3.send(command);
+    const publicUrl = `${r2.publicDomain}/${key}`;
+    return { publicUrl, key };
+  } catch (err) {
+    console.error("[r2-storage] uploadBufferToR2 error:", err);
+    return null;
+  }
+}
+
 export async function deleteR2Object(keyOrUrl: string): Promise<boolean> {
   const r2 = getR2Client();
   if (!r2) return false;

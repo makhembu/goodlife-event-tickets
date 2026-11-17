@@ -99,6 +99,7 @@ const NON_ADMIN_PUBLIC_ALLOWLIST = new Map<string, string>([
   ["app/api/radio/sponsors/route.ts:GET", "Public active radio sponsors and promotions"],
   ["app/api/radio/tips/initialize/route.ts:POST", "Public radio listener tip STK initialization"],
   ["app/api/radio/tips/verify/route.ts:GET", "Public radio listener tip status verification polling"],
+  ["app/api/radio/standby-audio/route.ts:GET", "Public radio standby audio resolver (presenter custom or station default)"],
   ["app/api/cron/radio-health-monitor/route.ts:GET", "Internal cron job for radio health, noshows, and stream status monitoring"],
 
   // Session login/logout endpoints (unauthenticated by definition)

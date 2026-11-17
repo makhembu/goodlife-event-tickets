@@ -16,7 +16,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { broadcast_mode, live_stream_url, live_title, live_fallback_set_id, ai_drops_enabled } = body;
+    const { broadcast_mode, live_stream_url, live_title, live_fallback_set_id, ai_drops_enabled, default_standby_audio_url } = body;
 
     const query = `
       UPDATE radio_settings
@@ -26,6 +26,7 @@ export async function PUT(req: NextRequest) {
         live_title = COALESCE($3, live_title),
         live_fallback_set_id = $4,
         ai_drops_enabled = COALESCE($5, ai_drops_enabled),
+        default_standby_audio_url = COALESCE($6, default_standby_audio_url),
         active_started_at = CASE WHEN COALESCE($1, broadcast_mode) = 'live' THEN NOW() ELSE active_started_at END,
         updated_at = NOW()
       WHERE id = 1
@@ -38,6 +39,7 @@ export async function PUT(req: NextRequest) {
       live_title || null,
       live_fallback_set_id ? parseInt(String(live_fallback_set_id), 10) : null,
       typeof ai_drops_enabled === "boolean" ? ai_drops_enabled : null,
+      default_standby_audio_url !== undefined ? (default_standby_audio_url ? String(default_standby_audio_url).trim() : null) : null,
     ];
 
     const { rows } = await neonQuery(query, params);
