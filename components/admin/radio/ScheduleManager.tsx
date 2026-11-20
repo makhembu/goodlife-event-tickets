@@ -1102,12 +1102,12 @@ export default function ScheduleManager() {
   return (
     <div className="space-y-6 font-mono text-brand-navy">
       {/* Header & Quick Actions */}
-      <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="border-3 border-brand-navy bg-white p-3 sm:p-5 shadow-[4px_4px_0px_#142B4C] flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent block">
             STATION PROGRAMMING
           </span>
-          <h2 className="text-2xl font-display font-black uppercase text-brand-navy">
+          <h2 className="text-xl sm:text-2xl font-display font-black uppercase text-brand-navy">
             Timetable, Shows & Presenter Roster
           </h2>
           <p className="text-xs text-neutral-600 mt-0.5">
@@ -1115,10 +1115,10 @@ export default function ScheduleManager() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-wrap">
           <button
             onClick={handleClearAllFutureSlots}
-            className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border-2 border-red-300 font-display text-sm uppercase tracking-wider transition-all shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 cursor-pointer"
+            className="w-full sm:w-auto px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border-2 border-red-300 font-display text-xs sm:text-sm uppercase tracking-wider transition-all shadow-[2px_2px_0px_#dc2626] flex items-center justify-center gap-1.5 cursor-pointer"
             title="Wipe upcoming broadcast slots from today onwards"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -1135,7 +1135,7 @@ export default function ScheduleManager() {
               }
               setShowManualSlotModal(true);
             }}
-            className="px-3.5 py-2 bg-brand-navy text-white border-2 border-brand-navy font-display text-sm uppercase tracking-wider hover:bg-brand-accent hover:text-brand-navy transition-all shadow-[2px_2px_0px_#142B4C] flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="w-full sm:w-auto px-3.5 py-2 bg-brand-navy text-white border-2 border-brand-navy font-display text-xs sm:text-sm uppercase tracking-wider hover:bg-brand-accent hover:text-brand-navy transition-all shadow-[2px_2px_0px_#142B4C] flex items-center justify-center gap-1.5 cursor-pointer"
             title="Manually schedule a single broadcast slot into the timetable"
           >
             <Plus className="w-4 h-4" />
@@ -1145,10 +1145,10 @@ export default function ScheduleManager() {
           <button
             onClick={handleGenerate30Days}
             disabled={generating}
-            className="px-4 py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-sm uppercase tracking-wider hover:bg-brand-navy hover:text-white transition-all shadow-[2px_2px_0px_#142B4C] flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+            className="w-full sm:w-auto px-4 py-2 bg-brand-accent text-brand-navy border-2 border-brand-navy font-display text-xs sm:text-sm uppercase tracking-wider hover:bg-brand-navy hover:text-white transition-all shadow-[2px_2px_0px_#142B4C] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
-            {generating ? "Generating..." : "Generate Next 30 Days"}
+            <span>{generating ? "Generating..." : "Generate Next 30 Days"}</span>
           </button>
         </div>
       </div>
@@ -1169,10 +1169,10 @@ export default function ScheduleManager() {
       )}
 
       {/* Sub Tabs */}
-      <div className="flex flex-wrap border-b-2 border-brand-navy gap-2">
+      <div className="flex border-b-2 border-brand-navy gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
         <button
           onClick={() => setActiveSubTab("slots")}
-          className={`px-4 sm:px-5 py-2 font-display text-base sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3 sm:px-5 py-2 font-display text-sm sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
             activeSubTab === "slots"
               ? "bg-white text-brand-navy font-black shadow-xs"
               : "bg-neutral-200 text-neutral-600 hover:bg-white"
@@ -1188,7 +1188,7 @@ export default function ScheduleManager() {
 
         <button
           onClick={() => setActiveSubTab("shows")}
-          className={`px-4 sm:px-5 py-2 font-display text-base sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer ${
+          className={`px-3 sm:px-5 py-2 font-display text-sm sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer whitespace-nowrap shrink-0 ${
             activeSubTab === "shows"
               ? "bg-white text-brand-navy font-black shadow-xs"
               : "bg-neutral-200 text-neutral-600 hover:bg-white"
@@ -1199,7 +1199,7 @@ export default function ScheduleManager() {
 
         <button
           onClick={() => setActiveSubTab("presenters")}
-          className={`px-4 sm:px-5 py-2 font-display text-base sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer ${
+          className={`px-3 sm:px-5 py-2 font-display text-sm sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer whitespace-nowrap shrink-0 ${
             activeSubTab === "presenters"
               ? "bg-white text-brand-navy font-black shadow-xs"
               : "bg-neutral-200 text-neutral-600 hover:bg-white"
@@ -1210,7 +1210,7 @@ export default function ScheduleManager() {
 
         <button
           onClick={() => setActiveSubTab("applications")}
-          className={`px-4 sm:px-5 py-2 font-display text-base sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3 sm:px-5 py-2 font-display text-sm sm:text-lg uppercase tracking-wide border-t-2 border-x-2 border-brand-navy -mb-0.5 cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
             activeSubTab === "applications"
               ? "bg-white text-brand-navy font-black shadow-xs"
               : "bg-neutral-200 text-neutral-600 hover:bg-white"
@@ -1227,7 +1227,7 @@ export default function ScheduleManager() {
 
       {/* 1. SLOTS TAB */}
       {activeSubTab === "slots" && (
-        <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
+        <div className="border-3 border-brand-navy bg-white p-3 sm:p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-brand-navy pb-3 gap-2">
             <div>
               <h3 className="font-display text-lg uppercase text-brand-navy">Upcoming Broadcast Schedule</h3>
@@ -1520,7 +1520,7 @@ export default function ScheduleManager() {
 
       {/* 2. SHOWS TAB */}
       {activeSubTab === "shows" && (
-        <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
+        <div className="border-3 border-brand-navy bg-white p-3 sm:p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
           <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
             <div>
               <h3 className="font-display text-lg uppercase text-brand-navy">Recurring Show Titles</h3>
@@ -1630,7 +1630,7 @@ export default function ScheduleManager() {
 
       {/* 3. PRESENTERS TAB */}
       {activeSubTab === "presenters" && (
-        <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
+        <div className="border-3 border-brand-navy bg-white p-3 sm:p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
           <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
             <div>
               <h3 className="font-display text-lg uppercase text-brand-navy">Resident Presenter Roster</h3>
@@ -1699,9 +1699,32 @@ export default function ScheduleManager() {
                   {/* Stream Key Prefix row */}
                   <div className="pt-2 border-t border-brand-navy/15 flex items-center justify-between text-[11px]">
                     <span className="text-neutral-500">Harbor Key:</span>
-                    <span className="font-bold text-brand-navy bg-white px-1.5 py-0.5 border font-mono">
-                      {p.stream_key_prefix ? `${p.stream_key_prefix}...` : "None"}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-brand-navy bg-white px-1.5 py-0.5 border font-mono select-all">
+                        {p.stream_key_prefix ? `${p.stream_key_prefix}...` : "None"}
+                      </span>
+                      {p.stream_key_prefix && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (navigator.clipboard) {
+                              navigator.clipboard.writeText(p.stream_key_prefix || "");
+                              setCopiedField(`prefix_${p.id}`);
+                              setTimeout(() => setCopiedField(null), 2000);
+                            }
+                          }}
+                          className="px-1.5 py-0.5 bg-neutral-100 hover:bg-brand-accent text-brand-navy text-[10px] font-bold border border-brand-navy/30 flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Copy Stream Key Prefix"
+                        >
+                          {copiedField === `prefix_${p.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                          <span>{copiedField === `prefix_${p.id}` ? "COPIED" : "COPY"}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Shows Hosted by this Presenter */}
@@ -1831,7 +1854,7 @@ export default function ScheduleManager() {
 
       {/* 4. APPLICATIONS TAB */}
       {activeSubTab === "applications" && (
-        <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
+        <div className="border-3 border-brand-navy bg-white p-3 sm:p-5 shadow-[4px_4px_0px_#142B4C] space-y-4">
           <div className="flex items-center justify-between border-b-2 border-brand-navy pb-3">
             <div>
               <h3 className="font-display text-lg uppercase text-brand-navy">

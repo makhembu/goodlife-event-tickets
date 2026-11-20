@@ -26,6 +26,7 @@ import {
   Globe,
   Sliders,
   HelpCircle,
+  X,
 } from "lucide-react";
 
 interface PresenterProfile {
@@ -1318,11 +1319,21 @@ export default function PresenterDashboardPage() {
       {showPasswordModal && (
         <div className="fixed inset-0 bg-brand-navy/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-brand-navy p-6 max-w-md w-full shadow-[8px_8px_0px_#142B4C] space-y-4 font-mono text-xs">
-            <div className="flex items-center gap-2 text-brand-navy border-b-2 border-brand-navy pb-3">
-              <Shield className="w-5 h-5 text-brand-accent" />
-              <h2 className="font-display text-xl uppercase tracking-wide">
-                Set Permanent Password
-              </h2>
+            <div className="flex items-center justify-between text-brand-navy border-b-2 border-brand-navy pb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-brand-accent" />
+                <h2 className="font-display text-xl uppercase tracking-wide">
+                  Set Permanent Password
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(false)}
+                className="text-neutral-500 hover:text-brand-navy p-1 cursor-pointer"
+                title="Dismiss (Admin mode)"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             <p className="text-neutral-600">

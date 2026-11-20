@@ -8,10 +8,19 @@ export async function GET(req: NextRequest) {
   const authResult = await requirePresenter(req);
   if (authResult instanceof NextResponse) return authResult;
 
-  const { presenter } = authResult;
+  const { presenter, session } = authResult;
   // Exclude password_hash from response
   const { password_hash, ...safePresenter } = presenter;
-  return NextResponse.json({ presenter: safePresenter });
+  
+  // If admin takeover, suppress mandatory password change prompt
+  if (session.isAdminTakeover) {
+    safePresenter.must_change_password = false;
+  }
+
+  return NextResponse.json({ 
+    presenter: safePresenter,
+    isAdminTakeover: Boolean(session.isAdminTakeover),
+  });
 }
 
 export async function PATCH(req: NextRequest) {

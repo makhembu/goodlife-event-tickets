@@ -9,6 +9,7 @@ export interface PresenterSessionPayload {
   email: string;
   djName: string;
   mustChangePassword: boolean;
+  isAdminTakeover?: boolean;
   exp: number;
 }
 
@@ -72,6 +73,7 @@ export async function signPresenterSession(
     email: string;
     dj_name: string;
     must_change_password?: boolean;
+    isAdminTakeover?: boolean;
   },
   maxAgeSec: number = 86400 * 7 // 7 days session
 ): Promise<string> {
@@ -87,6 +89,7 @@ export async function signPresenterSession(
     email: presenter.email,
     djName: presenter.dj_name,
     mustChangePassword: Boolean(presenter.must_change_password),
+    isAdminTakeover: Boolean(presenter.isAdminTakeover),
     exp: Math.floor(Date.now() / 1000) + maxAgeSec,
   };
 

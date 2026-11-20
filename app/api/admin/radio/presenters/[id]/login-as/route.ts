@@ -39,13 +39,14 @@ export async function POST(
 
     const presenter = res.rows[0];
 
-    // 4. Sign presenter session token
+    // 4. Sign presenter session token with admin takeover flag
     const token = await signPresenterSession({
       id: presenter.id,
       slug: presenter.slug,
       email: presenter.email,
       dj_name: presenter.dj_name,
       must_change_password: false, // In admin takeover mode, don't force password change
+      isAdminTakeover: true,
     });
 
     const response = NextResponse.json({
