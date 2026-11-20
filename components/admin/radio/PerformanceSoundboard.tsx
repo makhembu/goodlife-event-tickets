@@ -482,48 +482,28 @@ export default function PerformanceSoundboard({
     setUploadProgress(5);
 
     try {
-      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const presignRes = await fetch("/api/admin/radio/multipart", {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.[^/.]+$/, "");
+      const formData = new FormData();
+      formData.append("audio", file);
+      formData.append("name", `soundboard_${Date.now()}_${cleanName}`);
+
+      setUploadProgress(20);
+      const res = await fetch("/api/admin/radio/drops/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "presigned",
-          filename: `soundboard_${Date.now()}_${cleanName}`,
-          contentType: file.type || "audio/mpeg",
-          isHighQuality: true,
-        }),
+        body: formData,
       });
 
-      if (!presignRes.ok) {
-        const errJson = await presignRes.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to generate presigned upload URL.");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Upload failed with status HTTP ${res.status}`);
       }
 
-      const { uploadUrl, publicUrl } = await presignRes.json();
-
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl, true);
-        xhr.setRequestHeader("Content-Type", file.type || "audio/mpeg");
-
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const pct = Math.round((evt.loaded / evt.total) * 90);
-            setUploadProgress(Math.max(5, pct));
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Storage provider rejected upload (HTTP ${xhr.status})`));
-          }
-        };
-
-        xhr.onerror = () => reject(new Error("Network error during audio upload"));
-        xhr.send(file);
-      });
+      setUploadProgress(90);
+      const data = await res.json();
+      const publicUrl = data.audio_url;
+      if (!publicUrl) {
+        throw new Error("No public audio URL returned from upload server.");
+      }
 
       setUploadProgress(100);
       setEditAudioUrl(publicUrl);

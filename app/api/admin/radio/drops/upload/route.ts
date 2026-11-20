@@ -22,7 +22,18 @@ export async function POST(req: NextRequest) {
       }
 
       const arrayBuffer = await audioFile.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      let buffer = Buffer.from(arrayBuffer);
+
+      // Automatic EBU R128 (-14 LUFS) mastering pipeline for soundboard & custom audio drops
+      try {
+        const { masterDropAudio } = await import("@/lib/radio/audio-mastering");
+        const mastered = await masterDropAudio(buffer);
+        if (mastered && mastered.length > 500) {
+          buffer = mastered;
+        }
+      } catch (masterErr: any) {
+        console.warn("[drops/upload] Audio mastering bypass/fallback:", masterErr?.message);
+      }
 
       // Detect container & codec
       const fileMime = audioFile.type || "audio/webm";
@@ -56,7 +67,19 @@ export async function POST(req: NextRequest) {
     }
 
     const rawBase64 = audio_base64.replace(/^data:audio\/[^;]+;base64,/, "");
-    const buffer = Buffer.from(rawBase64, "base64");
+    let buffer = Buffer.from(rawBase64, "base64");
+
+    // Automatic EBU R128 (-14 LUFS) mastering pipeline for base64 uploads
+    try {
+      const { masterDropAudio } = await import("@/lib/radio/audio-mastering");
+      const mastered = await masterDropAudio(buffer);
+      if (mastered && mastered.length > 500) {
+        buffer = mastered;
+      }
+    } catch (masterErr: any) {
+      console.warn("[drops/upload] Base64 mastering bypass/fallback:", masterErr?.message);
+    }
+
     const cleanName = (name || "mic_drop").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
 
     let r2Url: string | null = null;
