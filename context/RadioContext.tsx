@@ -353,7 +353,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     ping();
-    const interval = setInterval(ping, 18000);
+    // 28s ping cadence comfortably stays within the 60s active threshold while cutting pings by ~35%
+    const interval = setInterval(ping, 28000);
 
     return () => {
       clearInterval(interval);
@@ -448,6 +449,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const timingConfigRef = useRef(RADIO_TIMING);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
   const stallWatchdogRef = useRef<NodeJS.Timeout | null>(null);
+  const stallNudgeCountRef = useRef<number>(0);
   const waitingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const backupProbeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastBufferTimeRef = useRef<number>(0);
@@ -3367,30 +3369,59 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Warm standby audio deck with immediate upcoming track and buffer frames
+    // Warm standby audio deck with immediate upcoming track when playing deck is healthy or near track end
     if (urlsToPreload[0]) {
+      const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
       const standby = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
-      if (standby && standby.paused && !isCrossfadingRef.current && standby.src !== urlsToPreload[0]) {
+
+      // Check if current deck is buffered ahead sufficiently (> 15s) or near transition (< 25s remaining)
+      let shouldWarmStandby = !isPlaying; // if paused, warming is fine
+      if (activeAudio && isPlaying) {
+        const cur = activeAudio.currentTime || 0;
+        const dur = activeAudio.duration || (nowPlayingTrack?.duration_sec || 180);
+        const remaining = dur - cur;
+
+        let forwardBuffered = 0;
+        try {
+          for (let i = 0; i < activeAudio.buffered.length; i++) {
+            if (activeAudio.buffered.start(i) <= cur && cur <= activeAudio.buffered.end(i)) {
+              forwardBuffered = activeAudio.buffered.end(i) - cur;
+              break;
+            }
+          }
+        } catch {}
+
+        // Allow standby preload if active deck has >= 15s buffered, or remaining track time is <= 25s
+        if (forwardBuffered >= 15 || remaining <= 25) {
+          shouldWarmStandby = true;
+        }
+      }
+
+      if (shouldWarmStandby && standby && standby.paused && !isCrossfadingRef.current && standby.src !== urlsToPreload[0]) {
         standby.preload = "auto";
         standby.src = urlsToPreload[0];
         standby.load();
       }
     }
 
-    // Warm tracks 2 & 3 via <link rel="prefetch"> in document head
-    for (let i = 1; i < urlsToPreload.length; i++) {
-      const url = urlsToPreload[i];
-      if (!url) continue;
-      const existing = document.querySelector(`link[data-gl-preload="${url}"]`);
-      if (!existing) {
-        const link = document.createElement("link");
-        link.rel = "prefetch";
-        link.href = url;
-        link.dataset.glPreload = url;
-        document.head.appendChild(link);
+    // Warm tracks 2 & 3 via <link rel="prefetch"> in document head (only on unconstrained connections)
+    const conn = typeof navigator !== "undefined" ? (navigator as any).connection : null;
+    const isSaveData = conn?.saveData || conn?.effectiveType === "2g" || conn?.effectiveType === "slow-2g";
+    if (!isSaveData) {
+      for (let i = 1; i < urlsToPreload.length; i++) {
+        const url = urlsToPreload[i];
+        if (!url) continue;
+        const existing = document.querySelector(`link[data-gl-preload="${url}"]`);
+        if (!existing) {
+          const link = document.createElement("link");
+          link.rel = "prefetch";
+          link.href = url;
+          link.dataset.glPreload = url;
+          document.head.appendChild(link);
+        }
       }
     }
-  }, [upNextQueue, backupSets, nowPlayingTrack?.video_id, broadcastMode]);
+  }, [upNextQueue, backupSets, nowPlayingTrack?.video_id, broadcastMode, isPlaying, interpolatedElapsed]);
 
   return (
     <RadioContext.Provider
@@ -3483,6 +3514,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         onPlaying={() => {
           console.debug("[Radio:Playing]", { timestamp: new Date().toISOString(), deck: "A", src: audioRef.current?.src, currentTime: audioRef.current?.currentTime });
           if (activeDeckRef.current === "A") {
+            stallNudgeCountRef.current = 0;
             if (waitingDebounceTimerRef.current) {
               clearTimeout(waitingDebounceTimerRef.current);
               waitingDebounceTimerRef.current = null;
@@ -3517,7 +3549,34 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
           stallWatchdogRef.current = setTimeout(() => {
             if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
-              console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: "Deck A stall detected: attempting playback nudge" });
+              // If the browser has already buffered ahead, give it time instead of disrupting the stream
+              const cur = audioRef.current.currentTime || 0;
+              let forwardBuffered = 0;
+              try {
+                for (let i = 0; i < audioRef.current.buffered.length; i++) {
+                  if (audioRef.current.buffered.start(i) <= cur && cur <= audioRef.current.buffered.end(i)) {
+                    forwardBuffered = audioRef.current.buffered.end(i) - cur;
+                    break;
+                  }
+                }
+              } catch {}
+
+              // If actively downloading or buffered > 1s, don't interrupt with seek
+              if (forwardBuffered > 1.0) {
+                audioRef.current.play().then(() => setEngineState("live")).catch(() => {});
+                return;
+              }
+
+              // Guard against endless stall nudging (max 2 nudges before failing forward)
+              if (stallNudgeCountRef.current >= 2) {
+                console.warn("[Radio:Stall] Deck A exceeded maximum stall nudges, advancing track");
+                stallNudgeCountRef.current = 0;
+                advanceBroadcastTrack(false);
+                return;
+              }
+
+              stallNudgeCountRef.current += 1;
+              console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck A stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)` });
               audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
               audioRef.current.play().then(() => {
                 setEngineState("live");
@@ -3530,11 +3589,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          }, 4000);
+          }, 8000);
         }}
         onStalled={() => {
-          console.debug("[Radio:Stalled]", { timestamp: new Date().toISOString(), deck: "A", src: audioRef.current?.src, mode: broadcastModeRef.current });
           if (liveActiveRef.current || broadcastModeRef.current === "live") return;
+          if (activeDeckRef.current !== "A") return; // ignore background standby deck stalls
+          console.debug("[Radio:Stalled]", { timestamp: new Date().toISOString(), deck: "A", src: audioRef.current?.src, mode: broadcastModeRef.current });
           if (activeDeckRef.current === "A" && isPlayingRef.current && !isCrossfadingRef.current) {
             if (!stallWatchdogRef.current) {
               stallWatchdogRef.current = setTimeout(() => {
@@ -3542,7 +3602,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: "Deck A network stall, failing forward to next set" });
                   advanceBroadcastTrack(false);
                 }
-              }, 6000);
+              }, 10000);
             }
           }
         }}
@@ -3629,6 +3689,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           console.debug("[Radio:Playing]", { timestamp: new Date().toISOString(), deck: "B", src: preloadAudioRef.current?.src });
           if (activeDeckRef.current === "B") {
+            stallNudgeCountRef.current = 0;
             if (waitingDebounceTimerRef.current) {
               clearTimeout(waitingDebounceTimerRef.current);
               waitingDebounceTimerRef.current = null;
@@ -3645,6 +3706,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             try { preloadAudioRef.current?.pause(); } catch {}
             return;
           }
+          if (activeDeckRef.current !== "B") return; // ignore background standby waiting
           console.debug("[Radio:Waiting]", { timestamp: new Date().toISOString(), deck: "B", src: preloadAudioRef.current?.src });
           if (activeDeckRef.current === "B" && isPlayingRef.current && !isCrossfadingRef.current) {
             if (waitingDebounceTimerRef.current) clearTimeout(waitingDebounceTimerRef.current);
@@ -3657,7 +3719,31 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
             stallWatchdogRef.current = setTimeout(() => {
               if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
-                console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: "Deck B stall detected: attempting playback nudge" });
+                const cur = preloadAudioRef.current.currentTime || 0;
+                let forwardBuffered = 0;
+                try {
+                  for (let i = 0; i < preloadAudioRef.current.buffered.length; i++) {
+                    if (preloadAudioRef.current.buffered.start(i) <= cur && cur <= preloadAudioRef.current.buffered.end(i)) {
+                      forwardBuffered = preloadAudioRef.current.buffered.end(i) - cur;
+                      break;
+                    }
+                  }
+                } catch {}
+
+                if (forwardBuffered > 1.0) {
+                  preloadAudioRef.current.play().then(() => setEngineState("live")).catch(() => {});
+                  return;
+                }
+
+                if (stallNudgeCountRef.current >= 2) {
+                  console.warn("[Radio:Stall] Deck B exceeded maximum stall nudges, advancing track");
+                  stallNudgeCountRef.current = 0;
+                  advanceBroadcastTrack(false);
+                  return;
+                }
+
+                stallNudgeCountRef.current += 1;
+                console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck B stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)` });
                 preloadAudioRef.current.currentTime = Math.max(0, preloadAudioRef.current.currentTime + 0.2);
                 preloadAudioRef.current.play().then(() => {
                   setEngineState("live");
@@ -3666,11 +3752,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 4000);
+            }, 8000);
           }
         }}
         onStalled={() => {
           if (liveActiveRef.current || broadcastModeRef.current === "live") return;
+          if (activeDeckRef.current !== "B") return; // ignore background standby deck stalls
           console.debug("[Radio:Stalled]", { timestamp: new Date().toISOString(), deck: "B", src: preloadAudioRef.current?.src });
           if (activeDeckRef.current === "B" && isPlayingRef.current && !isCrossfadingRef.current) {
             if (!stallWatchdogRef.current) {
@@ -3679,7 +3766,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: "Deck B network stall, failing forward to next set" });
                   advanceBroadcastTrack(false);
                 }
-              }, 6000);
+              }, 10000);
             }
           }
         }}

@@ -123,7 +123,7 @@ export async function getActiveListenersCount(forceFresh = false): Promise<numbe
     const res = await neonQuery(
       `SELECT COUNT(DISTINCT session_id)::int as count 
        FROM radio_listener_pings 
-       WHERE last_seen >= NOW() - INTERVAL '40 seconds'`
+       WHERE last_seen >= NOW() - INTERVAL '60 seconds'`
     );
     const count = Number(res.rows?.[0]?.count) || 0;
     _cachedListenerCount = count;

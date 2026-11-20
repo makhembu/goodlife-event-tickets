@@ -24,6 +24,11 @@ npx tsx tests/<name>.check.ts   # the verification suite (see below)
 - `tsconfig.json` **excludes `tests` and `scripts`**, so `npx tsc --noEmit` does NOT typecheck the test suite. `tsconfig.tsbuildinfo` is gitignored — keep it untracked.
 - HMR is disabled only when `DISABLE_HMR=true` is exported (`next.config.ts` `webpack()`); it is not in `.env.local`.
 - No CI, no test framework, no `test` script. `scripts/` (~250 files) is gitignored and hits the **live** DB; don't run it casually.
+- **Home-Server / Self-Hosting Playout:**
+  - Playout runs Next.js production server locally (`npm run start -- -p 3000` via PM2 / startup script).
+  - Outbound public tunneling supported via Cloudflare Tunnel (`cloudflared`) or dynamic tunnels.
+  - Playout standby audio fallback chain integrates `home-server/liquidsoap/get-standby-audio.sh` and `/api/radio/standby-audio`.
+  - Drop playout in `context/RadioContext.tsx` defaults `playLocal: false` in `airLiveDrop` to prevent broadcaster duplicate playback echo between local browser and live HLS stream.
 
 ## Verification suite (`tests/`)
 
