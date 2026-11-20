@@ -219,7 +219,13 @@ Two overlapping "event" models; mixing them breaks checkout/tiers/scans:
 - `next.config.ts`: global security headers (with a `frame-ancestors *` carve-out for `/radio/embed`), `transpilePackages: ['motion']`, `outputFileTracingRoot: process.cwd()`, and **no** `output: "standalone"` (CLAUDE.md is wrong). Whitelisted remote image hosts: `picsum.photos`, `i.ibb.co`, `**.r2.dev`, `**.cloudflarestorage.com`, `**.hearthis.at`.
 - `.eslintrc.json` is dead — ESLint 9 uses the flat `eslint.config.mjs`.
 - `.netlify/`, `deno.lock`, `metadata.json`, `docs/root.bolt`, `schema*.sql` are Google AI Studio / Netlify CLI leftovers, not source of truth. `hooks/` has five plain React hooks (`use-eat-today`, `use-mobile`, `useCountdown`, `useOnlineStatus`, `use-audio-recorder`).
-- Deploy: Vercel project `goodlife-event-tickets` (`.vercel/project.json`) via `vercel --prod --token=$env:VERCEL_TOKEN`. `vercel.json` is an empty schema stub — crons moved to the home-server daemon.
+- **Deployment:** The production app is self-hosted on the Ubuntu Home Server (`192.168.100.29`), tunneled publicly through Cloudflare Tunnel (`cloudflared`) at `https://goodlife.smwhr.space`.
+  - Deployment workflow:
+    1. Commit & push changes to `origin/master`.
+    2. SSH/log in to the home server (`192.168.100.29`).
+    3. `git pull origin master && npm run build`
+    4. `pm2 reload all` (or `pm2 restart goodlife`).
+  - Vercel is disabled / not in use. Ignore `.vercel/project.json`.
 
 ## Known issues & remediation plan (verified 2026-11-15)
 
