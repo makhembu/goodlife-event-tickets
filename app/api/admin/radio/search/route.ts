@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   const libItems: any[] = [];
   try {
     const { rows } = await neonQuery(
-      `SELECT id, title, dj_name, duration_sec, audio_url, cover_image_url
+      `SELECT id, title, dj_name, duration_sec, audio_url, cover_url
        FROM radio_sets
        WHERE deleted_at IS NULL AND (title ILIKE $1 OR dj_name ILIKE $1)
        ORDER BY created_at DESC LIMIT 6`,
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
     );
     if (rows && rows.length > 0) {
       for (const row of rows) {
-        let safeCover = row.cover_image_url || row.cover_url || "";
+        let safeCover = row.cover_url || "";
         if (safeCover.includes("192.168.") || safeCover.includes("localhost") || safeCover.includes("127.0.0.1") || safeCover.includes(":3000")) {
           const match = safeCover.match(/\/vi\/([a-zA-Z0-9_-]{11})/);
           safeCover = match ? `https://i.ytimg.com/vi/${match[1]}/hqdefault.jpg` : "/flyer.png";

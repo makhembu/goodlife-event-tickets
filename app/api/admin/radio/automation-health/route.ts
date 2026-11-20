@@ -40,21 +40,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Fetch latest drop info
+    // 2. Fetch latest drop info (using actual radio_drops columns)
     const { rows: dropRows } = await neonQuery(
-      `SELECT id, title, status, created_at, audio_url, completed_at, attempt_count, last_error
+      `SELECT id, title, created_at, audio_url, timing_type
        FROM radio_drops
        ORDER BY created_at DESC 
        LIMIT 1`
     );
     const latestDrop = dropRows?.[0] || null;
 
-    // 3. Count failures in last 24h
-    const { rows: failedRows } = await neonQuery(
-      `SELECT COUNT(*)::int as count 
-       FROM radio_drops 
-       WHERE status = 'FAILED' AND created_at > NOW() - INTERVAL '24 hours'`
-    );
+    // 3. Count failures in last 24h from automation worker error status
+    let failedCount = 0;
+    if (worker && worker.last_error && worker.last_error_at) {
+      const errTime = new Date(worker.last_error_at).getTime();
+      if (Date.now() - errTime < 24 * 3600 * 1000) {
+        failedCount = 1;
+      }
+    }
 
     // 4. Active listeners count
     const { rows: listenerRows } = await neonQuery(
@@ -78,7 +80,7 @@ export async function GET(req: NextRequest) {
         : null,
       active_listeners: listenerRows?.[0]?.count || 0,
       latest_drop: latestDrop,
-      failed_jobs_24h: failedRows?.[0]?.count || 0,
+      failed_jobs_24h: failedCount,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

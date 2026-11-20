@@ -34,6 +34,7 @@ import {
   Search,
   SlidersHorizontal,
   Layers,
+  Radio,
 } from "lucide-react";
 
 interface Presenter {
@@ -130,6 +131,7 @@ export default function ScheduleManager() {
   const [promptDialog, setPromptDialog] = useState<PromptDialogState | null>(null);
   const [promptValue, setPromptValue] = useState("");
   const [dialogLoading, setDialogLoading] = useState(false);
+  const [takingOverPresenterId, setTakingOverPresenterId] = useState<number | null>(null);
 
   // Bulk Slot Selection & Filtering
   const [selectedSlotIds, setSelectedSlotIds] = useState<number[]>([]);
@@ -803,6 +805,26 @@ export default function ScheduleManager() {
         }
       },
     });
+  };
+
+  // ADMIN TAKEOVER / LOGIN AS PRESENTER
+  const handleLoginAsPresenter = async (presenter: Presenter) => {
+    setTakingOverPresenterId(presenter.id);
+    try {
+      const res = await fetch(`/api/admin/radio/presenters/${presenter.id}/login-as`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        window.open(data.redirectUrl || "/presenter/dashboard", "_blank");
+      } else {
+        alert(data.error || "Failed to switch to presenter session");
+      }
+    } catch (err: any) {
+      alert(err.message || "Network error logging into presenter studio");
+    } finally {
+      setTakingOverPresenterId(null);
+    }
   };
 
   // CREATE SHOW
@@ -1754,6 +1776,17 @@ export default function ScheduleManager() {
 
                 {/* Presenter Actions */}
                 <div className="space-y-1.5 pt-2 border-t border-brand-navy/15">
+                  <button
+                    type="button"
+                    onClick={() => handleLoginAsPresenter(p)}
+                    disabled={takingOverPresenterId === p.id}
+                    className="w-full border-2 border-brand-navy bg-brand-navy text-brand-off-white hover:bg-brand-accent hover:text-brand-navy px-2 py-1.5 text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-(--shadow-brut-xs) cursor-pointer disabled:opacity-50"
+                    title={`Take over and open Studio Dashboard as ${p.dj_name}`}
+                  >
+                    <Radio className="w-3.5 h-3.5 text-brand-accent" />
+                    <span>{takingOverPresenterId === p.id ? "TAKING OVER STUDIO..." : "TAKEOVER / LOGIN AS PRESENTER ↗"}</span>
+                  </button>
+
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => handleResetPassword(p)}
