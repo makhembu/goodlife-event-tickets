@@ -1,0 +1,36 @@
+name: Deploy to Home Server
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: deploy-home-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Reload (Home Server)
+    runs-on: [self-hosted, home-server]
+    steps:
+      - name: Deploy to GoodLife Web app directory
+        run: |
+          set -e
+          cd /home/khesh/apps/goodlife-event-tickets
+
+          echo "==> Fetching latest changes from master..."
+          git fetch origin master
+          git reset --hard origin/master
+
+          echo "==> Installing any new dependencies..."
+          npm install --prefer-offline --no-audit
+
+          echo "==> Building Next.js app..."
+          npm run build
+
+          echo "==> Reloading PM2 goodlife-web with zero downtime..."
+          pm2 reload goodlife-web --update-env
+
+          echo "==> PM2 Status:"
+          pm2 status goodlife-web
