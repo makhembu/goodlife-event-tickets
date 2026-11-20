@@ -29,10 +29,24 @@ export async function POST(req: NextRequest) {
           const masteredBuffer = await masterDropAudio(rawBuffer);
           const fileName = `drop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp3`;
           
-          // Default to high-fidelity base64 data URI (works on all serverless & edge runtimes)
-          let dropUrl = `data:audio/mp3;base64,${masteredBuffer.toString("base64")}`;
+          // Primary: Upload to Cloudflare R2 so it is immediately accessible to all listeners via CDN
+          let dropUrl: string | null = null;
+          try {
+            const { uploadDropBufferToR2 } = await import("@/lib/radio/r2-signer");
+            dropUrl = await uploadDropBufferToR2({
+              buffer: masteredBuffer,
+              filename: fileName,
+            });
+          } catch (r2Err: any) {
+            console.warn("[drops/generate] R2 drop upload fallback:", r2Err?.message);
+          }
 
-          // If local writable filesystem is available, also persist static file
+          // Fallback if R2 unconfigured/failed: high-fidelity base64 data URI (works universally without filesystem dependency)
+          if (!dropUrl) {
+            dropUrl = `data:audio/mp3;base64,${masteredBuffer.toString("base64")}`;
+          }
+
+          // Also persist local copy if filesystem is writable
           try {
             const fs = await import("fs");
             const path = await import("path");
@@ -42,11 +56,8 @@ export async function POST(req: NextRequest) {
             }
             const outPath = path.join(outDir, fileName);
             fs.writeFileSync(outPath, masteredBuffer);
-            if (process.env.VERCEL !== "1") {
-              dropUrl = `/drops/generated/${fileName}`;
-            }
           } catch {
-            // Read-only filesystem in serverless container - gracefully served via data URI
+            // Read-only filesystem in serverless container
           }
 
           return NextResponse.json({
