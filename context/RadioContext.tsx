@@ -2192,13 +2192,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }, 30);
       };
 
-      // Watchdog: If incoming takes > 3.5s to start, force begin crossfade or attempt recovery
+      // Watchdog: If incoming is slow to buffer, DO NOT silence outgoing deck prematurely.
+      // Wait up to 12s for incoming to emit frames before attempting proxy recovery.
       const bufferWatchdog = setTimeout(() => {
         if (!hasBegunMixing) {
-          console.warn("[RadioContext] Incoming deck slow to buffer, triggering mix");
-          beginCrossfadeMixing();
+          console.warn("[RadioContext] Incoming deck slow to buffer; waiting for data without silencing outgoing");
+          if (track?.id && incoming) {
+            const proxyUrl = `/api/radio/audio/track/${encodeURIComponent(track.id)}`;
+            if (!areSameAudioSrc(incoming.src, proxyUrl)) {
+              console.debug("[RadioContext] 🛡️ Attempting proxy recovery on incoming deck");
+              incoming.src = proxyUrl;
+              incoming.play().then(() => beginCrossfadeMixing()).catch(() => {});
+            }
+          }
         }
-      }, 3500);
+      }, 8000);
 
       const onIncomingPlaying = () => {
         clearTimeout(bufferWatchdog);
@@ -3391,8 +3399,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
 
-        // Allow standby preload if active deck has >= 15s buffered, or remaining track time is <= 25s
-        if (forwardBuffered >= 15 || remaining <= 25) {
+        // Allow standby preload if active deck has >= 10s buffered, or remaining track time is <= 45s
+        // (45s gives ample runway to buffer the upcoming track before the 3.5s crossfade point)
+        if (forwardBuffered >= 10 || remaining <= 45) {
           shouldWarmStandby = true;
         }
       }
