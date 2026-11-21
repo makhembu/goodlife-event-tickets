@@ -41,21 +41,33 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Filter candidates based on vibe criteria
-    const genresLower = (body.genres && Array.isArray(body.genres) && body.genres.length > 0)
-      ? body.genres.map((g: string) => g.toLowerCase().trim())
-      : vibeDef.genres.map((g) => g.toLowerCase().trim());
+    const selectedGenre = (body.genre || "").trim();
+    const genresLower = selectedGenre
+      ? [selectedGenre.toLowerCase()]
+      : (body.genres && Array.isArray(body.genres) && body.genres.length > 0)
+        ? body.genres.map((g: string) => g.toLowerCase().trim())
+        : vibeDef.genres.map((g) => g.toLowerCase().trim());
 
     const minBpm = typeof body.min_bpm === "number" ? body.min_bpm : (vibeDef.minBpm || 80);
     const maxBpm = typeof body.max_bpm === "number" ? body.max_bpm : (vibeDef.maxBpm || 140);
 
     let candidates: TrackWithHarmony[] = allTracks.filter((t: any) => {
-      const matchGenre = !genresLower.length || genresLower.some((g: string) => (t.genre || "").toLowerCase().includes(g));
+      const trackGenre = (t.genre || "").toLowerCase();
+      const matchGenre = !genresLower.length || genresLower.some((g: string) => trackGenre.includes(g));
       const bpm = t.bpm || 115;
       const matchBpm = bpm >= minBpm - 5 && bpm <= maxBpm + 5;
       return matchGenre && matchBpm;
     });
 
-    // Fallback if filter is too restrictive: widen candidates from whole catalog
+    // Fallback if filter is too restrictive: widen by genre alone (ignoring BPM constraints)
+    if (candidates.length < Math.min(targetCount, 8) && genresLower.length > 0) {
+      candidates = allTracks.filter((t: any) => {
+        const trackGenre = (t.genre || "").toLowerCase();
+        return genresLower.some((g: string) => trackGenre.includes(g));
+      });
+    }
+
+    // Fallback if still insufficient: widen candidates from whole catalog
     if (candidates.length < Math.min(targetCount, 8)) {
       candidates = allTracks;
     }

@@ -34,10 +34,27 @@ export default function AutoPlaylistModal({
   showBanner,
 }: AutoPlaylistModalProps) {
   const [selectedVibe, setSelectedVibe] = useState<AutoPlaylistVibe>("late_night");
+  const [selectedGenre, setSelectedGenre] = useState<string>("");
   const [customName, setCustomName] = useState(VIBE_DEFINITIONS.late_night.name);
   const [customDesc, setCustomDesc] = useState(VIBE_DEFINITIONS.late_night.description);
   const [trackCount, setTrackCount] = useState<number>(15);
   const [loading, setLoading] = useState(false);
+
+  // Available library genres for auto-creation
+  const genreOptions = [
+    "Rock",
+    "Hip Hop",
+    "Kenyan Mainstream Songs",
+    "Pop",
+    "Afrobeats",
+    "Amapiano",
+    "Gengetone",
+    "Afro House",
+    "R&B / Soul",
+    "Electronic",
+    "Reggae",
+    "Dancehall",
+  ];
 
   if (!isOpen) return null;
 
@@ -46,6 +63,22 @@ export default function AutoPlaylistModal({
     const def = VIBE_DEFINITIONS[vibeKey];
     setCustomName(def.name);
     setCustomDesc(def.description);
+    if (vibeKey === "rock_classics") {
+      setSelectedGenre("Rock");
+    } else if (vibeKey === "amapiano_groove") {
+      setSelectedGenre("Amapiano");
+    } else if (vibeKey !== "custom_genre") {
+      setSelectedGenre("");
+    }
+  };
+
+  const handleSelectGenre = (genre: string) => {
+    setSelectedGenre(genre);
+    if (selectedVibe !== "custom_genre" && selectedVibe !== "rock_classics") {
+      setSelectedVibe("custom_genre");
+    }
+    setCustomName(`${genre} Festival Rotation`);
+    setCustomDesc(`Harmonically sequenced ${genre} playlist generated automatically from the library.`);
   };
 
   const handleGenerate = async () => {
@@ -56,6 +89,7 @@ export default function AutoPlaylistModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vibe: selectedVibe,
+          genre: selectedGenre.trim(),
           name: customName.trim(),
           description: customDesc.trim(),
           track_count: trackCount,
@@ -177,6 +211,43 @@ export default function AutoPlaylistModal({
 
           {/* Configuration Form */}
           <div className="space-y-4 pt-2 border-t border-white/10">
+            {/* Direct Genre Selector Pill Row */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-mono font-bold uppercase text-white/80">
+                  Select Genre (Auto-Filter &amp; Harmonize)
+                </label>
+                {selectedGenre && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGenre("")}
+                    className="text-[10px] font-mono text-[#DFBB7D] hover:underline"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {genreOptions.map((g) => {
+                  const isGenreActive = selectedGenre.toLowerCase() === g.toLowerCase();
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => handleSelectGenre(g)}
+                      className={`px-2.5 py-1 text-xs font-mono rounded-lg border transition-all ${
+                        isGenreActive
+                          ? "bg-[#DFBB7D] text-[#16181D] font-bold border-[#DFBB7D] shadow-[2px_2px_0px_#000]"
+                          : "bg-[#181B22] text-white/70 border-white/15 hover:border-white/40 hover:text-white"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-mono font-bold uppercase text-white/80 block mb-1">
                 Playlist Name

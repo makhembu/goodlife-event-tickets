@@ -273,7 +273,7 @@ export function buildHarmonicSequence(
   return result;
 }
 
-export type AutoPlaylistVibe = "late_night" | "club_peak" | "sundowner" | "morning_rise" | "amapiano_groove" | "afro_energy";
+export type AutoPlaylistVibe = "late_night" | "club_peak" | "sundowner" | "morning_rise" | "amapiano_groove" | "afro_energy" | "rock_classics" | "custom_genre";
 
 export interface VibeDefinition {
   id: AutoPlaylistVibe;
@@ -346,5 +346,25 @@ export const VIBE_DEFINITIONS: Record<AutoPlaylistVibe, VibeDefinition> = {
     minBpm: 100,
     maxBpm: 128,
     energyCurve: "ascend",
+  },
+  rock_classics: {
+    id: "rock_classics",
+    name: "Rock & Alternative Anthems",
+    description: "High voltage alternative rock, post-grunge, and timeless energetic guitar classics.",
+    suggestedCover: "/flyer.png",
+    genres: ["Rock"],
+    minBpm: 75,
+    maxBpm: 180,
+    energyCurve: "ascend",
+  },
+  custom_genre: {
+    id: "custom_genre",
+    name: "Custom Genre Harmonic Sequence",
+    description: "Auto-generate a harmonically aligned playlist filtered by your chosen music genre.",
+    suggestedCover: "/flyer.png",
+    genres: [],
+    minBpm: 60,
+    maxBpm: 200,
+    energyCurve: "smooth",
   },
 };
