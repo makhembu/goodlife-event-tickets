@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
-import { Space_Grotesk, Bebas_Neue } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css'; // Global styles
 
 export const viewport: Viewport = {
@@ -9,15 +9,14 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
+const spaceGrotesk = localFont({
+  src: '../public/SpaceGrotesk.ttf',
   variable: '--font-space-grotesk',
   display: 'swap',
 });
 
-const bebasNeue = Bebas_Neue({
-  weight: '400',
-  subsets: ['latin'],
+const bebasNeue = localFont({
+  src: '../public/BebasNeue.ttf',
   variable: '--font-bebas-neue',
   display: 'swap',
 });
