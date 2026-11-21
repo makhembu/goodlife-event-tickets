@@ -38,5 +38,5 @@ jobs:
           # Clean old build artifacts & restart PM2 cleanly so all Next.js in-memory prerender caches refresh
           pm2 restart goodlife-web --update-env
 
-          echo "==> PM2 Status:"
-          pm2 status goodlife-web
+          echo "==> PM2 Describe goodlife-web:"
+          pm2 describe goodlife-web
