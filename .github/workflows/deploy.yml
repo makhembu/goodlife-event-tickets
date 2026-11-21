@@ -15,8 +15,11 @@ jobs:
     runs-on: [self-hosted, home-server]
     steps:
       - name: Deploy to GoodLife Web app directory
+        env:
+          ACTIONS_RUNNER_HOOK_JOB_COMPLETED: ""
         run: |
           set -e
+          export ACTIONS_RUNNER_HOOK_JOB_COMPLETED=""
           cd /home/khesh/apps/goodlife-event-tickets
 
           echo "==> Fetching latest changes from master..."
@@ -30,7 +33,8 @@ jobs:
           npm run build
 
           echo "==> Reloading PM2 goodlife-web with zero downtime..."
-          pm2 reload goodlife-web --update-env
+          # Disown PM2 reload from the GitHub runner process group so runner cleanup does not kill the server
+          nohup pm2 reload goodlife-web --update-env </dev/null >/dev/null 2>&1 || pm2 restart goodlife-web --update-env
 
           echo "==> PM2 Status:"
           pm2 status goodlife-web

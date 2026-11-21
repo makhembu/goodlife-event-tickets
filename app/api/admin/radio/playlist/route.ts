@@ -337,17 +337,9 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Anchor virtual timeline to activeIdx so AutoDJ cycle aligns seamlessly
-        let cumulativeUpToActive = 0;
-        for (let i = 0; i < activeIdx; i++) {
-          cumulativeUpToActive += (tracks[i]?.duration_sec || 180);
-        }
-        await neonQuery(
-          `UPDATE radio_playlists 
-           SET activated_at = NOW() - INTERVAL '1 second' * $2, updated_at = NOW() 
-           WHERE id = $1`,
-          [playlistId, cumulativeUpToActive]
-        );
+        // Keep current on-air track playing: DO NOT change activated_at!
+        // Preserving activated_at keeps the virtual elapsed timeline anchored to the current track,
+        // so the newly queued track will play NEXT when current track finishes.
 
         // Store queued_next_set_id in radio_settings
         await neonQuery(
