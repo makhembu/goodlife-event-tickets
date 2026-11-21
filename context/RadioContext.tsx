@@ -60,20 +60,20 @@ const loadPolicy = (ttfb: number, total: number, timeoutRetries: number, errorRe
   },
 });
 
-// Tuned for 4s HLS segments on Liquidsoap HLS / Cloudflare R2 (Resilient mobile-first config)
+// Tuned for immediate live playback & low startup latency on Android (hls.js)
 const LIVE_HLS_CONFIG: any = {
   lowLatencyMode: false,
   enableWorker: true,
-  liveSyncDurationCount: 3,          // ~12s behind edge (3 x 4s segments, resilient buffer for mobile cell handoff)
-  liveMaxLatencyDurationCount: 10,   // avoids edge-seeking jumps after a stall
-  maxBufferLength: 30,
-  maxMaxBufferLength: 60,
-  backBufferLength: 30,
+  liveSyncDurationCount: 2,          // Start closer to edge for faster initial buffer fill
+  liveMaxLatencyDurationCount: 6,    // Prevents lagging too far behind
+  maxBufferLength: 10,               // 10s is responsive yet safe on 3G/4G
+  maxMaxBufferLength: 20,
+  backBufferLength: 10,
   maxBufferHole: 0.5,
   nudgeMaxRetry: 10,
-  manifestLoadPolicy: loadPolicy(8000, 20000, 4, 6),
-  levelLoadPolicy: loadPolicy(8000, 20000, 4, 6),
-  fragLoadPolicy: loadPolicy(10000, 60000, 4, 6),
+  manifestLoadPolicy: loadPolicy(4000, 10000, 3, 4),
+  levelLoadPolicy: loadPolicy(4000, 10000, 3, 4),
+  fragLoadPolicy: loadPolicy(5000, 15000, 3, 4),
 };
 
 function shouldUseNativeHls(audio: HTMLAudioElement) {
@@ -1384,27 +1384,30 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         activeAudioUrl = "/api/radio/audio/track/20";
       }
 
-      // If track is missing or stale, refresh live track synchronously to avoid race condition/abort errors
+      // Fast-path: Set the audio source immediately if already known so the browser decoder starts pre-buffering
+      if (activeAudioUrl && audio.src !== activeAudioUrl) {
+        audio.src = activeAudioUrl;
+        audio.preload = "auto";
+      }
+
+      // If track is missing or stale, refresh live track asynchronously without blocking immediate play
       if (isTrackStaleOrFinished) {
-        try {
-          const res = await fetch("/api/radio/live");
-          if (res.ok) {
-            const data = await res.json();
+        fetch("/api/radio/live")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
             if (data?.now_playing?.playback_url || data?.now_playing?.audio_url) {
               const freshTrack = {
                 ...data.now_playing,
                 title: formatTrackTitle(data.now_playing.title),
               };
-              track = freshTrack;
               nowPlayingTrackRef.current = freshTrack;
               setNowPlayingTrack(freshTrack);
               lastPollElapsedRef.current = freshTrack.elapsed || 0;
               lastPollTimestampRef.current = Date.now();
               setInterpolatedElapsed(freshTrack.elapsed || 0);
-              activeAudioUrl = freshTrack.playback_url || freshTrack.audio_url || activeAudioUrl;
             }
-          }
-        } catch {}
+          })
+          .catch(() => {});
       }
 
       // Clean up previous HLS and crossfader timers without wiping audio elements
