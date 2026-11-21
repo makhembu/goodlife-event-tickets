@@ -321,7 +321,7 @@ export async function renderEventOgImage(
 }
 
 /**
- * Dedicated 1200x630 social card for GOODLIFE Radio 254.
+ * Dedicated 1200x630 social card for GOODLIFE Radio.
  *
  * Scrapers on WhatsApp, X/Twitter, iMessage, Facebook and LinkedIn
  * render this dedicated broadcast studio card instead of the festival ticket flyer.
@@ -406,7 +406,7 @@ export async function renderRadioOgImage(): Promise<ImageResponse> {
               textTransform: 'uppercase',
             }}
           >
-            GOODLIFE RADIO 254
+            GOODLIFE RADIO
           </div>
 
           {/* Gold accent bar */}

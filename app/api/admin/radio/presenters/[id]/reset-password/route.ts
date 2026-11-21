@@ -48,7 +48,7 @@ export async function POST(
 
     // Format WhatsApp message
     const loginUrl = `${process.env.APP_URL || "https://goodlife.smwhr.space"}/presenter/login`;
-    const whatsappMessage = `🎧 *GOODLIFE Radio 254 - Studio Login Details*\n\n` +
+    const whatsappMessage = `🎧 *GOODLIFE Radio - Studio Login Details*\n\n` +
       `Hey *${presenter.dj_name}*, here are your login details for the GOODLIFE Radio Studio:\n\n` +
       `🔗 *Studio Portal:* ${loginUrl}\n` +
       `👤 *Login Email / Username:* ${presenter.email}\n` +

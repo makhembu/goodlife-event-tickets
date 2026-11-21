@@ -38,7 +38,7 @@ function getStationConfig() {
   } catch {}
   return (
     stationConfigCache || {
-      station_name: "GOODLIFE Radio 254",
+      station_name: "GOODLIFE Radio",
       site_base_url: "https://goodlife.smwhr.space",
       default_spoken_ticket_url: "tickets on the Goodlife website",
     }
@@ -376,8 +376,8 @@ export function buildDropPrompt(
       break;
     case "station_callout":
       archetypeDirectives = `DROP ARCHETYPE: STATION CALLOUT & URBAN FREQUENCY
-- Focus on GOODLIFE Radio 254 identity, the heartbeat of Nairobi streets, and the current ${facts.daypart} mood.
-- Structure: [city/hood shoutout e.g. Eastlands, Westlands, Thika Road, matatus] -> [vibe connection] -> [GOODLIFE Radio 254 tag].
+- Focus on GOODLIFE Radio identity, the heartbeat of Nairobi streets, and the current ${facts.daypart} mood.
+- Structure: [city/hood shoutout e.g. Eastlands, Westlands, Thika Road, matatus] -> [vibe connection] -> [GOODLIFE Radio tag].
 - Shout out the listeners, matatus, hoods, and sound lovers across 254.
 - Pure station pride, zero marketing pitch.`;
       break;
@@ -416,12 +416,12 @@ CRITICAL BROADCAST STYLE & RULES:
 
 AUTHENTIC NAIROBI FM BROADCAST EXAMPLES (study how languages blend mid-sentence):
 track_stager examples:
-• "De Mthuda anaingia saa hii — Sgudi Snyc inakuja — GOODLIFE Radio 254, Nairobi twende!"
+• "De Mthuda anaingia saa hii — Sgudi Snyc inakuja — GOODLIFE Radio, Nairobi twende!"
 • "Ke Star inaboom — Focalistic na Davido wanakuletea hii moja — shika sound, msee!"
 • "Hii ni ile track ulitaka — Sam Deep anapiga iMpumelelo vizuri sana — cheza nayo!"
 
 station_callout examples:
-• "Kuanzia mtaa hadi mtaa — kutoka Eastlands mpaka Westlands — hii ndio GOODLIFE Radio 254!"
+• "Kuanzia mtaa hadi mtaa — kutoka Eastlands mpaka Westlands — hii ndio GOODLIFE Radio!"
 • "Wasee wa boda, makanga wa tao, hustle ya mchana — sisi tunaendelea — GOODLIFE Radio!"
 • "Frequency ya 254, usiku au mchana, tuko hapa — GOODLIFE Radio, haiachi!"
 

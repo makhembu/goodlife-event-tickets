@@ -132,7 +132,7 @@ export default function DecksConnectCard({
 
   const copyAllSettings = () => {
     const keyVal = activeKeyFull || keyPrefix || "<ADMIN_MASTER_KEY>";
-    const text = `GOODLIFE Radio 254 - ADMIN MASTER HARBOR CREDENTIALS:
+    const text = `GOODLIFE Radio - ADMIN MASTER HARBOR CREDENTIALS:
 Server / Host: ${harborHost}
 Port: ${harborPort}
 Mountpoint: ${harborMount}

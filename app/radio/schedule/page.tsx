@@ -132,7 +132,7 @@ export default function SchedulePage() {
             </Link>
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 animate-pulse" /> GOODLIFE RADIO 254
+                <Radio className="w-3.5 h-3.5 animate-pulse" /> GOODLIFE RADIO
               </span>
               <h1 className="text-2xl sm:text-3xl font-display font-black uppercase tracking-tight text-white">
                 STATION TIMETABLE

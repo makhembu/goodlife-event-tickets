@@ -1,5 +1,5 @@
 /**
- * GOODLIFE Radio 254: Track Sequencer & BPM Normalization Engine
+ * GOODLIFE Radio: Track Sequencer & BPM Normalization Engine
  * Implements Section 7.3 and Section 7.4 of RADIO-SPECIFICATION.md
  */
 

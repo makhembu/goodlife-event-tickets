@@ -1,4 +1,4 @@
-// East African Sheng & Swahili + standard profanity & spam link filtering for GOODLIFE Radio 254
+// East African Sheng & Swahili + standard profanity & spam link filtering for GOODLIFE Radio
 // Flags messages for presenter/admin queue rather than blindly dropping them.
 
 const ENGLISH_PATTERNS = [

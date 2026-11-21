@@ -38,7 +38,7 @@ export default function RadioEmbedPage() {
           <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
           <div className="min-w-0">
             <span className="font-display tracking-wider text-base uppercase text-brand-accent leading-none block truncate">
-              GOODLIFE RADIO 254
+              GOODLIFE RADIO
             </span>
             <span className="text-[10px] font-mono text-white/70 block truncate">
               254.0 MHZ · NAIROBI

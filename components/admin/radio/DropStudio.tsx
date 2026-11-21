@@ -43,13 +43,13 @@ const PRESETS: DropPreset[] = [
     id: "wazi",
     label: "Wazi 254 Hype",
     vibe: "Hype / Sheng",
-    defaultText: "Yo Nairobi! You're locked into GOODLIFE Radio 254. Keep it tuned for non-stop festival heat, we outside!",
+    defaultText: "Yo Nairobi! You're locked into GOODLIFE Radio. Keep it tuned for non-stop festival heat, we outside!",
   },
   {
     id: "sunrise",
     label: "Nairobi Sunrise",
     vibe: "Warm / Chill",
-    defaultText: "Early vibes with GOODLIFE Radio 254. Sip your morning brew and vibe with the city's finest selections.",
+    defaultText: "Early vibes with GOODLIFE Radio. Sip your morning brew and vibe with the city's finest selections.",
   },
   {
     id: "sunset",
@@ -61,7 +61,7 @@ const PRESETS: DropPreset[] = [
     id: "up_next",
     label: "Up Next Banger",
     vibe: "Transition",
-    defaultText: "Brand new heat coming through your speakers right now on GOODLIFE Radio 254!",
+    defaultText: "Brand new heat coming through your speakers right now on GOODLIFE Radio!",
   },
 ];
 
@@ -135,7 +135,7 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
   const [togglingAiDrops, setTogglingAiDrops] = useState(false);
   const [contextTags, setContextTags] = useState<Array<{ id: string; category?: string; label: string; value: string }>>([
     { id: "tickets_url", category: "tickets", label: "🎟️ Tickets: goodlife.smwhr.space", value: "tickets on goodlife.smwhr.space" },
-    { id: "station", category: "radio", label: "📻 Station: GOODLIFE Radio 254", value: "GOODLIFE Radio 254" },
+    { id: "station", category: "radio", label: "📻 Station: GOODLIFE Radio", value: "GOODLIFE Radio" },
   ]);
 
   const fetchAiDropsStatus = async () => {
@@ -189,7 +189,7 @@ export default function DropStudio({ onDropReady, onFireDirect, onAirLive }: Dro
           date: ev?.countdown_phrase || ev?.custom_schedule_text || d.context.clock?.coarse_phrase || "This Weekend",
           price: entryTier ? (entryTier.price === 0 ? "free entry" : entryTier.price_spoken) : "",
           ticket_url: ev?.spoken_ticket_url || "goodlife.smwhr.space",
-          station_name: d.context.station_name || "GOODLIFE Radio 254",
+          station_name: d.context.station_name || "GOODLIFE Radio",
           current_track: d.context.radio?.now_playing
             ? `${d.context.radio.now_playing.artist ? d.context.radio.now_playing.artist + " - " : ""}${d.context.radio.now_playing.title}`
             : undefined,

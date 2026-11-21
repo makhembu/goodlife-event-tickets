@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: false,
           is_winner: false,
-          message: "Incorrect passphrase. Keep listening to GOODLIFE Radio 254 for the clue!",
+          message: "Incorrect passphrase. Keep listening to GOODLIFE Radio for the clue!",
         });
       }
     } else {

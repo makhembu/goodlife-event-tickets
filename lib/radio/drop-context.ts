@@ -924,8 +924,8 @@ export async function buildUnifiedDropContext(options?: {
   tags.push({
     id: "station",
     category: "radio",
-    label: `📡 Station: GOODLIFE Radio 254`,
-    value: "GOODLIFE Radio 254",
+    label: `📡 Station: GOODLIFE Radio`,
+    value: "GOODLIFE Radio",
   });
 
   const activeListeners = await getActiveListenersCount().catch(() => 0);
@@ -970,7 +970,7 @@ export async function buildUnifiedDropContext(options?: {
 
   return {
     generated_at: now.toISOString(),
-    station_name: "GOODLIFE Radio 254",
+    station_name: "GOODLIFE Radio",
     site_url: siteUrl,
     clock: {
       eat_time: clock.eat_time,

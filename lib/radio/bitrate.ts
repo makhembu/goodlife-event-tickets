@@ -1,5 +1,5 @@
 /**
- * GOODLIFE Radio 254 - Multi-Bitrate & Data Saver Configuration
+ * GOODLIFE Radio - Multi-Bitrate & Data Saver Configuration
  * Provides bitrate constants, stream URL resolvers, and mobile data usage estimates.
  */
 

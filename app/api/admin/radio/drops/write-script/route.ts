@@ -60,7 +60,7 @@ async function fetchBroadcastContext(): Promise<{ context: ScriptContext; tags: 
         date: "24/7 Live Stream",
         price: "",
         ticket_url: "goodlife.smwhr.space",
-        station_name: "GOODLIFE Radio 254",
+        station_name: "GOODLIFE Radio",
       },
       tags: [],
     };
@@ -214,7 +214,7 @@ function generateDeterministicScript(
     return `[relaxed] Chilled beats, golden hour warmth, right here on ${ctx.station_name}. Keep it locked for the finest festival energy.`;
   }
   if (p.includes("bwana")) {
-    return `[relaxed] Frequencies za ukweli, bila haraka. Bwana Mkubwa on the airwaves, GOODLIFE Radio 254.`;
+    return `[relaxed] Frequencies za ukweli, bila haraka. Bwana Mkubwa on the airwaves, GOODLIFE Radio.`;
   }
   return pickRandom([
     `[hype] Lock in across Nairobi! DJ Fusion on the decks. Non-stop festival anthems 24/7 on ${ctx.station_name}. We outside!`,

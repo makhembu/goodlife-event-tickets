@@ -24,8 +24,8 @@ export async function generateMetadata(props: {
   const show = res.rows[0];
   const baseUrl = siteUrl();
   const pageUrl = `${baseUrl}/radio/shows/${slug}`;
-  const title = `${show.title} | GOODLIFE Radio 254`;
-  const description = show.description || `Listen to ${show.title} on GOODLIFE Radio 254.`;
+  const title = `${show.title} | GOODLIFE Radio`;
+  const description = show.description || `Listen to ${show.title} on GOODLIFE Radio.`;
   const ogImageUrl = `${baseUrl}/api/og/radio?show=${encodeURIComponent(slug)}`;
 
   return {
@@ -44,7 +44,7 @@ export async function generateMetadata(props: {
           url: ogImageUrl,
           width: 1200,
           height: 630,
-          alt: `${show.title} on GOODLIFE Radio 254`,
+          alt: `${show.title} on GOODLIFE Radio`,
         },
       ],
     },
@@ -110,7 +110,7 @@ export default async function ShowDetailPage({
     url: `${siteUrl()}/radio/shows/${show.slug}`,
     publisher: {
       "@type": "RadioStation",
-      name: "GOODLIFE Radio 254",
+      name: "GOODLIFE Radio",
       url: siteUrl(),
     },
     creator: {
@@ -184,7 +184,7 @@ export default async function ShowDetailPage({
             </h1>
 
             <p className="text-sm sm:text-base text-neutral-800 font-sans leading-relaxed">
-              {show.description || "Tune in live on GOODLIFE Radio 254."}
+              {show.description || "Tune in live on GOODLIFE Radio."}
             </p>
 
             <div className="pt-2 flex flex-wrap items-center gap-4 border-t-2 border-brand-navy/10">
@@ -292,7 +292,7 @@ export default async function ShowDetailPage({
             </div>
 
             <p className="text-xs text-neutral-700 font-sans leading-relaxed">
-              {show.presenter_bio || "Resident presenter on GOODLIFE Radio 254."}
+              {show.presenter_bio || "Resident presenter on GOODLIFE Radio."}
             </p>
           </div>
         </div>

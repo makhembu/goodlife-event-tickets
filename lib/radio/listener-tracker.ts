@@ -109,7 +109,7 @@ export async function removeListenerSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Fetches the verified number of real active listeners across GOODLIFE Radio 254.
+ * Fetches the verified number of real active listeners across GOODLIFE Radio.
  * Combines active pulse pings from Neon Postgres (heartbeat within 40 seconds)
  * with AzuraCast upstream live relays if active.
  */

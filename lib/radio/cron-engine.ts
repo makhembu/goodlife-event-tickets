@@ -261,7 +261,7 @@ export async function executeCronRadioDrops(
       tagToUse = reviewed.tag;
       audioUrlToUse = (reviewed as any).audio_url || "";
     } else {
-      scriptToUse = "Niaje Kanairo! You are tuned into GOODLIFE Radio 254, keeping the city connected.";
+      scriptToUse = "Niaje Kanairo! You are tuned into GOODLIFE Radio, keeping the city connected.";
       tagToUse = "[excited]";
       audioUrlToUse = "";
     }

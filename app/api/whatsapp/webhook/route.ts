@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       if (process.env.ENABLE_RADIO_WHATSAPP_ACK === "true") {
         await radioMessaging.sendMessage({
           toPhone: cleanSenderPhone,
-          message: "Asante! Your message was received by GOODLIFE Radio 254 and queued for the DJ.",
+          message: "Asante! Your message was received by GOODLIFE Radio and queued for the DJ.",
           recipientRole: "listener",
           messageType: "shoutout_ack",
         });

@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
           timeZone: "Africa/Nairobi",
         });
 
-        const reminderMsg = `⚡ GOODLIFE Radio 254: "${slot.show_title}" hosted by ${slot.dj_name} is going live at ${timeStr} EAT! Tune in: https://tickets.goodlife.co.ke/radio (Reply STOP to opt out)`;
+        const reminderMsg = `⚡ GOODLIFE Radio: "${slot.show_title}" hosted by ${slot.dj_name} is going live at ${timeStr} EAT! Tune in: https://tickets.goodlife.co.ke/radio (Reply STOP to opt out)`;
 
         await radioMessaging.sendMessage({
           toPhone: sub.phone,

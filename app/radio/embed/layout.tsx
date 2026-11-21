@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Live Stream Embed | GOODLIFE Radio 254",
-  description: "Official embeddable audio player for GOODLIFE Radio 254",
+  title: "Live Stream Embed | GOODLIFE Radio",
+  description: "Official embeddable audio player for GOODLIFE Radio",
   robots: {
     index: false,
     follow: false,

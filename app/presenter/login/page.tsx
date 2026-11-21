@@ -47,7 +47,7 @@ export default function PresenterLoginPage() {
             <Radio className="w-8 h-8 text-brand-navy" />
           </div>
           <span className="text-[10px] font-black uppercase tracking-widest text-brand-navy/70 block">
-            GOODLIFE RADIO 254
+            GOODLIFE RADIO
           </span>
           <h1 className="font-display text-2xl sm:text-3xl font-black uppercase text-brand-navy">
             Presenter Studio

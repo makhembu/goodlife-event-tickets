@@ -3,27 +3,27 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   manifest: "/manifests/radio.json",
   title: {
-    absolute: "GOODLIFE Radio 254 · 24/7 Live Festival Airwaves & DJ Vault",
+    absolute: "GOODLIFE Radio · 24/7 Live Festival Airwaves & DJ Vault",
   },
   description:
-    "Listen live to GOODLIFE Radio 254. Uninterrupted 24/7 Afro House, Amapiano, Sheng DJ drops, and exclusive master sets from Nairobi & Marara Camp.",
+    "Listen live to GOODLIFE Radio. Uninterrupted 24/7 Afro House, Amapiano, Sheng DJ drops, and exclusive master sets from Nairobi & Marara Camp.",
   alternates: {
     canonical: "/radio",
   },
   openGraph: {
-    title: "GOODLIFE Radio 254 · 24/7 Live Festival Airwaves",
+    title: "GOODLIFE Radio · 24/7 Live Festival Airwaves",
     description:
-      "Listen live to GOODLIFE Radio 254. 24/7 uninterrupted Afro House, Amapiano, live Sheng DJ drops, and exclusive festival sets.",
+      "Listen live to GOODLIFE Radio. 24/7 uninterrupted Afro House, Amapiano, live Sheng DJ drops, and exclusive festival sets.",
     url: "/radio",
-    siteName: "GOODLIFE Radio 254",
+    siteName: "GOODLIFE Radio",
     locale: "en_KE",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "GOODLIFE Radio 254 · 24/7 Live Festival Airwaves",
+    title: "GOODLIFE Radio · 24/7 Live Festival Airwaves",
     description:
-      "Listen live to GOODLIFE Radio 254. 24/7 uninterrupted Afro House, Amapiano, live Sheng DJ drops, and exclusive festival sets.",
+      "Listen live to GOODLIFE Radio. 24/7 uninterrupted Afro House, Amapiano, live Sheng DJ drops, and exclusive festival sets.",
   },
 };
 

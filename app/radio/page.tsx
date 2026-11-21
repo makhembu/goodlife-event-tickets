@@ -281,7 +281,7 @@ export default function RadioPage() {
 
             <div className="min-w-0">
               <h1 className="font-display text-2xl sm:text-3xl tracking-wide uppercase text-brand-navy leading-none truncate">
-                GOODLIFE RADIO 254
+                GOODLIFE RADIO
               </h1>
               <p className="font-mono text-xs font-semibold text-brand-navy/80 tracking-wider uppercase mt-0.5 truncate">
                 NAIROBI LIVE FESTIVAL AIRWAVE

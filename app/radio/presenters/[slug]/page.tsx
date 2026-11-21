@@ -22,8 +22,8 @@ export async function generateMetadata(props: {
   const presenter = res.rows[0];
   const baseUrl = siteUrl();
   const pageUrl = `${baseUrl}/radio/presenters/${slug}`;
-  const title = `${presenter.dj_name} | GOODLIFE Radio 254`;
-  const description = presenter.bio || `Listen to ${presenter.dj_name} on GOODLIFE Radio 254.`;
+  const title = `${presenter.dj_name} | GOODLIFE Radio`;
+  const description = presenter.bio || `Listen to ${presenter.dj_name} on GOODLIFE Radio.`;
   const ogImageUrl = `${baseUrl}/api/og/radio?presenter=${encodeURIComponent(slug)}`;
 
   return {
@@ -42,7 +42,7 @@ export async function generateMetadata(props: {
           url: ogImageUrl,
           width: 1200,
           height: 630,
-          alt: `${presenter.dj_name} on GOODLIFE Radio 254`,
+          alt: `${presenter.dj_name} on GOODLIFE Radio`,
         },
       ],
     },
@@ -108,7 +108,7 @@ export default async function PresenterDetailPage({
     jobTitle: "Radio Presenter & DJ",
     worksFor: {
       "@type": "RadioStation",
-      name: "GOODLIFE Radio 254",
+      name: "GOODLIFE Radio",
     },
   };
 
@@ -165,7 +165,7 @@ export default async function PresenterDetailPage({
             <p className="text-xs uppercase text-neutral-500 font-bold">{presenter.full_name}</p>
 
             <p className="text-sm text-neutral-800 font-sans leading-relaxed pt-2">
-              {presenter.bio || "Resident DJ & Radio Presenter broadcasting live on GOODLIFE Radio 254 from Nairobi."}
+              {presenter.bio || "Resident DJ & Radio Presenter broadcasting live on GOODLIFE Radio from Nairobi."}
             </p>
 
             {/* Listener Tip Support */}

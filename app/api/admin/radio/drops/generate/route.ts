@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.ok) {
-      const scriptText = custom_text?.trim() || prompt?.trim() || "Yo Nairobi! This is GOODLIFE Radio 254 non-stop festival vibes!";
+      const scriptText = custom_text?.trim() || prompt?.trim() || "Yo Nairobi! This is GOODLIFE Radio non-stop festival vibes!";
       const personaVoice = voice_id?.trim() || "dj-shax";
 
       // Direct synthesis via Fish Audio s2.1-pro-free + Gemini fallback

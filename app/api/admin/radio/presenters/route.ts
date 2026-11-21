@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 
     const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
     const loginUrl = `${process.env.APP_URL || "https://goodlife.smwhr.space"}/presenter/login`;
-    const whatsappMessage = `🎙️ *WELCOME TO GOODLIFE RADIO 254!*\n\n` +
+    const whatsappMessage = `🎙️ *WELCOME TO GOODLIFE RADIO!*\n\n` +
       `Hey *${rows[0].dj_name}*, your resident presenter account is set up:\n\n` +
       `🔗 *Studio Portal:* ${loginUrl}\n` +
       `👤 *Login Email:* ${rows[0].email}\n` +

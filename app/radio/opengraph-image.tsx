@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 
 export const size = OG_SIZE;
 export const contentType = 'image/png';
-export const alt = 'GOODLIFE Radio 254 · 24/7 Live Broadcast & Festival Airwaves';
+export const alt = 'GOODLIFE Radio · 24/7 Live Broadcast & Festival Airwaves';
 export const revalidate = 3600;
 
 export default async function RadioOpengraphImage(): Promise<Response> {

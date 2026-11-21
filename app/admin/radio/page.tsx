@@ -900,7 +900,7 @@ export default function AdminRadioPage() {
               <KenyaListenerMap
                 onSelectCounty={(countyName, count, cities) => {
                   const cityText = cities.length > 0 ? ` out in ${cities.join(", ")}` : "";
-                  const shoutoutScript = `Big shoutout to the ${count} tuned in across ${countyName}${cityText}! Locked into GOODLIFE Radio 254!`;
+                  const shoutoutScript = `Big shoutout to the ${count} tuned in across ${countyName}${cityText}! Locked into GOODLIFE Radio!`;
                   showMsg(`Radar Cue: ${countyName} shoutout loaded to Cue Dock!`, "success");
                   setCueItem({
                     id: `radar_${Date.now()}`,

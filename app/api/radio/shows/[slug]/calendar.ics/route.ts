@@ -56,7 +56,7 @@ export async function GET(
     const endStr = formatIcsDateTime(endUtc);
     const cleanTitle = (show.title || "GOODLIFE Show").replace(/[\\;,]/g, "");
     const cleanDj = (show.dj_name || "Resident DJ").replace(/[\\;,]/g, "");
-    const cleanDesc = (show.description || "Tune in live to GOODLIFE Radio 254.").replace(/[\r\n]+/g, "\\n");
+    const cleanDesc = (show.description || "Tune in live to GOODLIFE Radio.").replace(/[\r\n]+/g, "\\n");
 
     let rruleLine = "";
     if (show.recurrence_pattern === "weekly") {
@@ -76,7 +76,7 @@ export async function GET(
     const icsContent = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//GOODLIFE Radio 254//Nairobi//EN",
+      "PRODID:-//GOODLIFE Radio//Nairobi//EN",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "BEGIN:VEVENT",
@@ -87,7 +87,7 @@ export async function GET(
       rruleLine.trim(),
       `SUMMARY:${cleanTitle} with ${cleanDj}`,
       `DESCRIPTION:${cleanDesc}\\n\\nListen live at ${appUrl}/radio`,
-      "LOCATION:GOODLIFE Radio 254 (Online)",
+      "LOCATION:GOODLIFE Radio (Online)",
       `URL:${appUrl}/radio/shows/${show.slug}`,
       "STATUS:CONFIRMED",
       "END:VEVENT",

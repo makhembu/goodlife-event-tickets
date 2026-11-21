@@ -39,7 +39,7 @@ export function selectGenericReviewedDrop(personaId?: string, daypart?: string):
     persona: personaId || "mc-cheche",
     daypart: daypart || "afternoon",
     tag: "[excited]",
-    script: "Niaje Kanairo, uko aje! You are tuned into GOODLIFE Radio 254, keeping the city connected.",
+    script: "Niaje Kanairo, uko aje! You are tuned into GOODLIFE Radio, keeping the city connected.",
   };
 
   recentGenericDropIds.push(chosen.id);

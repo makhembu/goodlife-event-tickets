@@ -1,5 +1,5 @@
 /**
- * GOODLIFE Radio 254: Dynamic Alert Dispatcher via WAHA (WhatsApp HTTP API)
+ * GOODLIFE Radio: Dynamic Alert Dispatcher via WAHA (WhatsApp HTTP API)
  * Sends real-time operational alerts for dead air, fallback rate, uploader lag, etc.
  */
 
@@ -29,7 +29,7 @@ export async function sendRadioAlert(options: SendAlertOptions): Promise<{ succe
   const intlFormat = localFormat.startsWith("0") ? `254${localFormat.slice(1)}` : localFormat;
   const chatId = `${intlFormat}@c.us`;
   const severityTag = options.severity ? `[${options.severity}] ` : "";
-  const fullText = `📻 *GOODLIFE Radio 254 Alert*\n${severityTag}${options.message}\n\n_Time: ${new Date().toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })} EAT_`;
+  const fullText = `📻 *GOODLIFE Radio Alert*\n${severityTag}${options.message}\n\n_Time: ${new Date().toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })} EAT_`;
 
   const wahaBase = process.env.WAHA_GATEWAY_URL || "https://waha-ember.darajadigital.com";
   const apiKey = process.env.WAHA_API_KEY || "goodlife_waha_secret_2026";

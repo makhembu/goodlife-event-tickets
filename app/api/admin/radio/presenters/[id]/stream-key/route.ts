@@ -72,7 +72,7 @@ export async function POST(
     const presenter = updateRes.rows[0];
 
     const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
-    const whatsappMessage = `🎙️ *GOODLIFE Radio 254 - New Live Stream Key*\n\n` +
+    const whatsappMessage = `🎙️ *GOODLIFE Radio - New Live Stream Key*\n\n` +
       `Hey *${presenter.dj_name}*, your new encoder credentials for GOODLIFE Radio are ready:\n\n` +
       `🔑 *Stream Key / Password:* \`${fullKey}\`\n\n` +
       `*Encoder Settings (VirtualDJ / Mixxx / BUTT / OBS):*\n` +

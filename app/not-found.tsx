@@ -34,7 +34,7 @@ export default function NotFound() {
             className="w-full py-2.5 px-4 bg-white text-[var(--brand-navy,#142B4C)] font-black uppercase text-xs tracking-wider border-2 border-[var(--brand-navy,#142B4C)] flex items-center justify-center gap-2 hover:bg-[var(--brand-accent,#DFBB7D)] transition-all shadow-(--shadow-brut-xs) active:translate-x-0.5 active:translate-y-0.5"
           >
             <Radio className="w-4 h-4 text-brand-navy" />
-            <span>TUNE IN TO GOODLIFE RADIO 254</span>
+            <span>TUNE IN TO GOODLIFE RADIO</span>
           </Link>
 
           <Link

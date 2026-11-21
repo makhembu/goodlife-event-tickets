@@ -1121,7 +1121,7 @@ export default function PresenterDashboardPage() {
                 <Music className="w-5 h-5 text-brand-accent" /> On-Air Standby Audio & Stinger
               </h3>
               <p className="text-xs font-mono text-zinc-600 mb-4">
-                Upload your personal 10–30s branded audio stinger (e.g. <em>&quot;DJ {djName || "Name"} live on GOODLIFE Radio 254!&quot;</em>). When you go live, the station plays your custom drop to transition listeners into your set.
+                Upload your personal 10–30s branded audio stinger (e.g. <em>&quot;DJ {djName || "Name"} live on GOODLIFE Radio!&quot;</em>). When you go live, the station plays your custom drop to transition listeners into your set.
               </p>
 
               {audioUploadError && (

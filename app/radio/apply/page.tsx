@@ -104,7 +104,7 @@ export default function RadioApplyPage() {
             APPLY AS A RESIDENT PRESENTER
           </h1>
           <p className="font-mono text-xs sm:text-sm text-brand-navy/80">
-            GOODLIFE Radio 254 broadcasts 24/7 across Nairobi and the global festival circuit. We are curating our launch roster of weekly and biweekly resident DJs, tastemakers, and music selectors.
+            GOODLIFE Radio broadcasts 24/7 across Nairobi and the global festival circuit. We are curating our launch roster of weekly and biweekly resident DJs, tastemakers, and music selectors.
           </p>
         </div>
 

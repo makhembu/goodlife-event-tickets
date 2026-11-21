@@ -82,7 +82,7 @@ export default function BroadcastConsole({
             }
           }
           setNowPlaying({
-            station: { name: "GOODLIFE Radio 254", mounts: [{ bitrate: 192 }] },
+            station: { name: "GOODLIFE Radio", mounts: [{ bitrate: 192 }] },
             listeners: { total: liveData.listeners_count ?? 0 },
             live: { is_live: liveData.mode === "live" },
             mode: liveData.mode || "autodj",
@@ -142,7 +142,7 @@ export default function BroadcastConsole({
           }
 
           setNowPlaying({
-            station: { name: "GOODLIFE Radio 254", mounts: [{ bitrate: 192 }] },
+            station: { name: "GOODLIFE Radio", mounts: [{ bitrate: 192 }] },
             listeners: { total: stateData.listeners_count ?? 0 },
             live: { is_live: false },
             mode: stateData.mode || "autodj",
@@ -281,7 +281,7 @@ export default function BroadcastConsole({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm tracking-widest font-black uppercase text-white">
-                GOODLIFE RADIO 254
+                GOODLIFE RADIO
               </span>
               <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-[10px] font-mono text-zinc-300 font-bold">
                 GL-254

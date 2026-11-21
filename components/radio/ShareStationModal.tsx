@@ -29,7 +29,7 @@ export default function ShareStationModal({
   const displayTrack = title || "Live Afro House & Amapiano";
   const displayArtist = artist || (presenterName ? presenterName : "GOODLIFE Residents");
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/radio` : "https://tickets.goodlife.co.ke/radio";
-  const shareText = `Tuned in to GOODLIFE Radio 254: "${displayTrack}" by ${displayArtist} · 24/7 Nairobi Festival Airwaves 🇰🇪⚡ Listen live: ${shareUrl}`;
+  const shareText = `Tuned in to GOODLIFE Radio: "${displayTrack}" by ${displayArtist} · 24/7 Nairobi Festival Airwaves 🇰🇪⚡ Listen live: ${shareUrl}`;
 
   // Generate 9:16 Instagram Story Canvas (1080 x 1920)
   useEffect(() => {
@@ -212,7 +212,7 @@ export default function ShareStationModal({
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
-          title: "GOODLIFE Radio 254",
+          title: "GOODLIFE Radio",
           text: shareText,
           url: shareUrl,
         });

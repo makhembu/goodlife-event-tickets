@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const showSlug = searchParams.get("show");
   const presenterSlug = searchParams.get("presenter");
 
-  let headline = "GOODLIFE RADIO 254";
+  let headline = "GOODLIFE RADIO";
   let subheadline = "24/7 LIVE FESTIVAL AIRWAVES";
   let metaInfo = "NAIROBI & MARARA CAMP · AFRO HOUSE · AMAPIANO · SHENG DROPS";
   let badgeText = "ON AIR · LIVE 24/7";
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
         headline = (row.dj_name || "RESIDENT DJ").toUpperCase();
         subheadline = "OFFICIAL RESIDENT PRESENTER";
         badgeText = "RADIO PRESENTER";
-        metaInfo = "GOODLIFE RADIO 254 RESIDENCY";
+        metaInfo = "GOODLIFE RADIO RESIDENCY";
         secondaryDetail = row.bio ? row.bio.slice(0, 80).toUpperCase() : "LIVE BROADCASTS & FESTIVAL SETS";
       }
     } else {
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
         headline = slot.show_title.toUpperCase();
         subheadline = `LIVE ON AIR: ${slot.dj_name.toUpperCase()}`;
         badgeText = "LIVE ON AIR NOW";
-        secondaryDetail = "TUNE IN NOW · GOODLIFE RADIO 254";
+        secondaryDetail = "TUNE IN NOW · GOODLIFE RADIO";
       }
     }
   } catch (err) {
