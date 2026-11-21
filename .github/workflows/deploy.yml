@@ -38,5 +38,11 @@ jobs:
           # Clean old build artifacts & restart PM2 cleanly so all Next.js in-memory prerender caches refresh
           pm2 restart goodlife-web --update-env
 
+          echo "==> PM2 Error Log (last 30 lines):"
+          tail -n 30 /home/khesh/.pm2/logs/goodlife-web-error.log || true
+
+          echo "==> PM2 Output Log (last 30 lines):"
+          tail -n 30 /home/khesh/.pm2/logs/goodlife-web-out.log || true
+
           echo "==> PM2 Describe goodlife-web:"
           pm2 describe goodlife-web
