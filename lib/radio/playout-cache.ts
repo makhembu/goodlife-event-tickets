@@ -7,6 +7,9 @@ export interface RadioPlayoutDbCache {
     ai_drops_enabled?: boolean;
     live_title?: string;
     live_stream_url?: string;
+    is_reconnecting?: boolean;
+    grace_ends_at?: string | null;
+    ended_reason?: "dropped" | "ended" | null;
   };
   sets: any[];
   activatedAt: string | null;

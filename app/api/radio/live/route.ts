@@ -74,8 +74,8 @@ async function getLiveSlotOnAir() {
   try {
     const res = await neonQuery(`
       SELECT s.id AS slot_id, s.starts_at, s.ends_at,
-             sh.id AS show_id, sh.title AS show_title, sh.slug AS show_slug,
-             p.id AS presenter_id,
+             sh.id AS show_id, sh.title AS show_title, sh.slug AS show_slug, sh.genre AS show_genre, sh.description AS show_description,
+             p.id AS presenter_id, p.bio AS presenter_bio, p.avatar_url AS presenter_avatar_url,
              COALESCE(sub.dj_name, p.dj_name) AS on_air_dj_name,
              COALESCE(sub.slug, p.slug) AS on_air_dj_slug
       FROM show_slots s
@@ -87,13 +87,30 @@ async function getLiveSlotOnAir() {
     `);
     if (res.rows.length > 0) {
       const r = res.rows[0];
+      const now = new Date();
+      const endsAt = r.ends_at ? new Date(r.ends_at) : null;
+      const isOverrun = Boolean(endsAt && now.getTime() > endsAt.getTime());
+
       return {
         slot_id: r.slot_id,
-        show: { id: r.show_id, title: r.show_title, slug: r.show_slug },
-        presenter: { id: r.presenter_id, dj_name: r.on_air_dj_name, slug: r.on_air_dj_slug },
+        show: {
+          id: r.show_id,
+          title: r.show_title,
+          slug: r.show_slug,
+          genre: r.show_genre || "Curated Live Selections",
+          description: r.show_description || r.presenter_bio || "Live from the decks.",
+        },
+        presenter: {
+          id: r.presenter_id,
+          dj_name: r.on_air_dj_name,
+          slug: r.on_air_dj_slug,
+          avatar_url: r.presenter_avatar_url || null,
+          bio: r.presenter_bio || null,
+        },
         starts_at: r.starts_at,
         ends_at: r.ends_at,
         is_live: true,
+        is_overrun: isOverrun,
       };
     }
   } catch {}
@@ -330,6 +347,10 @@ async function getTimelineFallback() {
       live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
       live_since: null,
       target_duration_sec: 2.0,
+      server_now: Date.now(),
+      reconnecting: false,
+      grace_remaining_ms: 0,
+      ended_reason: null,
     };
   } catch (err: any) {
     console.error("[api/radio/live] Fallback query failed:", err?.message || err);
@@ -489,11 +510,22 @@ export async function GET() {
       liveData.nowPlaying.playback_url = streamUrl;
     }
 
+    const serverNow = Date.now();
+    const isReconnecting = Boolean(cachedPlayout.settings.is_reconnecting);
+    const graceRemainingMs = isReconnecting
+      ? Math.max(0, (cachedPlayout.settings.grace_ends_at ? new Date(cachedPlayout.settings.grace_ends_at).getTime() : serverNow + 15000) - serverNow)
+      : 0;
+
     return NextResponse.json(
       {
         mode: "live",
         offline: false,
         stale: false,
+        server_now: serverNow,
+        updated_at: cachedPlayout.settings.active_started_at ? new Date(cachedPlayout.settings.active_started_at).getTime() : serverNow,
+        reconnecting: isReconnecting,
+        grace_remaining_ms: graceRemainingMs,
+        ended_reason: cachedPlayout.settings.ended_reason || null,
         listeners_count: activeListeners,
         on_air_slot: onAirSlot,
         now_playing: liveData.nowPlaying,
@@ -521,12 +553,23 @@ export async function GET() {
 
     const activeListeners = await getActiveListenersCount();
 
+    const serverNow = Date.now();
+    const isReconnecting = Boolean(cachedPlayout.settings.is_reconnecting);
+    const graceRemainingMs = isReconnecting
+      ? Math.max(0, (cachedPlayout.settings.grace_ends_at ? new Date(cachedPlayout.settings.grace_ends_at).getTime() : serverNow + 15000) - serverNow)
+      : 0;
+
     // In live mode, NEVER fall back to AutoDJ while radio_settings says 'live'
     return NextResponse.json(
       {
         mode: "live",
         offline: false,
         stale: true,
+        server_now: serverNow,
+        updated_at: cachedPlayout.settings.active_started_at ? new Date(cachedPlayout.settings.active_started_at).getTime() : serverNow,
+        reconnecting: isReconnecting,
+        grace_remaining_ms: graceRemainingMs,
+        ended_reason: cachedPlayout.settings.ended_reason || null,
         listeners_count: activeListeners,
         on_air_slot: onAirSlot,
         now_playing: {

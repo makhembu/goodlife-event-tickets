@@ -161,7 +161,7 @@ export default function UpcomingEventCard({
   // 2. STANDARD FULL CARD (Used on /radio page)
   return (
     <div
-      className={`border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-4 ${className}`}
+      className={`border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-4 ${className}`}
     >
       <div className="flex items-center justify-between border-b-2 border-brand-navy/15 pb-2">
         <span className="font-mono text-xs font-bold uppercase tracking-wider text-brand-navy/80 flex items-center gap-1.5">
@@ -169,11 +169,11 @@ export default function UpcomingEventCard({
           <span>NEXT FESTIVAL EDITION</span>
         </span>
         {isSellable ? (
-          <span className="font-mono text-xs font-bold bg-brand-accent text-brand-navy px-2.5 py-0.5 rounded border border-brand-navy/20">
+          <span className="font-mono text-xs font-bold bg-brand-accent text-brand-navy px-2.5 py-0.5 rounded-none border border-brand-navy/20">
             TICKETS LIVE
           </span>
         ) : (
-          <span className="font-mono text-xs font-bold bg-neutral-200 text-brand-navy/70 px-2.5 py-0.5 rounded border border-brand-navy/20">
+          <span className="font-mono text-xs font-bold bg-neutral-200 text-brand-navy/70 px-2.5 py-0.5 rounded-none border border-brand-navy/20">
             SALES CLOSED
           </span>
         )}
@@ -181,7 +181,7 @@ export default function UpcomingEventCard({
 
       <div className="flex gap-3.5 items-center">
         {/* Event Poster Thumbnail */}
-        <div className="w-20 h-28 rounded border-2 border-brand-navy overflow-hidden bg-brand-navy shrink-0 shadow-(--shadow-brut-xs)">
+        <div className="w-20 h-28 rounded-none border-2 border-brand-navy overflow-hidden bg-brand-navy shrink-0 shadow-(--shadow-brut-xs)">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={resolveEventFlyer(event)}
@@ -220,7 +220,7 @@ export default function UpcomingEventCard({
       </div>
 
       {/* Real Nairobi Countdown / Event Day Display */}
-      <div className="p-3 bg-white border-2 border-brand-navy rounded font-mono text-center">
+      <div className="p-3 bg-white border-2 border-brand-navy rounded-none font-mono text-center">
         <span className="text-xs uppercase font-bold text-brand-navy/70 block mb-1">
           {countdown?.isPassed
             ? "TODAY (KENYA TIME)"
@@ -244,7 +244,7 @@ export default function UpcomingEventCard({
       {/* Pass Purchase CTA */}
       <Link
         href={`/?event=${event.id}`}
-        className="w-full py-3 px-4 bg-brand-accent hover:bg-brand-accent-vivid text-brand-navy font-display text-lg tracking-wider uppercase border-2 border-brand-navy shadow-(--shadow-brut-xs) hover:translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 font-bold cursor-pointer"
+        className="w-full py-3 px-4 bg-brand-accent hover:bg-brand-accent-vivid text-brand-navy font-display text-lg tracking-wider uppercase border-2 border-brand-navy rounded-none shadow-(--shadow-brut-xs) hover:translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 font-bold cursor-pointer focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2"
       >
         <Ticket className="w-4 h-4" />
         <span>{isSellable ? "GET FESTIVAL PASSES" : "VIEW EVENT DETAILS"}</span>

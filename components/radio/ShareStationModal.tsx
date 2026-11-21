@@ -226,7 +226,7 @@ export default function ShareStationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-brand-navy/85 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-brand-off-white text-brand-navy border-4 border-brand-navy shadow-(--shadow-brut-lg) rounded-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="bg-brand-off-white text-brand-navy border-4 border-brand-navy shadow-(--shadow-brut-lg) rounded-none w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="px-5 py-4 bg-brand-navy text-white flex items-center justify-between border-b-4 border-brand-navy shrink-0">
           <div className="flex items-center gap-2">
@@ -235,7 +235,7 @@ export default function ShareStationModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-white/20 text-white rounded transition-colors cursor-pointer"
+            className="p-1 hover:bg-white/20 text-white rounded-none transition-colors cursor-pointer focus-visible:outline-3 focus-visible:outline-brand-accent focus-visible:outline-offset-2"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
@@ -245,8 +245,8 @@ export default function ShareStationModal({
         {/* Modal Body */}
         <div className="p-5 overflow-y-auto space-y-5">
           {/* Quick Info */}
-          <div className="p-3 bg-white border-2 border-brand-navy rounded-lg space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-widest text-brand-navy/60 font-mono">
+          <div className="p-3 bg-white border-2 border-brand-navy rounded-none space-y-1">
+            <div className="text-xs font-black uppercase tracking-widest text-brand-navy/60 font-mono">
               NOW BROADCASTING
             </div>
             <div className="font-display text-lg uppercase text-brand-navy leading-tight">

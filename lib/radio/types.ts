@@ -162,6 +162,11 @@ export interface RadioLiveBffResponse {
   target_duration_sec?: number;
   listeners_count?: number;
   on_air_slot?: any;
+  server_now?: number;
+  updated_at?: number;
+  reconnecting?: boolean;
+  grace_remaining_ms?: number;
+  ended_reason?: "dropped" | "ended" | null;
 }
 
 export type PresenterStatus = 'pending' | 'active' | 'suspended';

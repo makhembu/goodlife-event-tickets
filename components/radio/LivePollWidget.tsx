@@ -76,17 +76,17 @@ export default function LivePollWidget() {
       {polls.map((poll) => (
         <div
           key={poll.id}
-          className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-4"
+          className="border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-4"
         >
           {/* Poll Header */}
           <div className="flex items-center justify-between border-b-2 border-brand-navy/20 pb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-brand-accent text-brand-navy border border-brand-navy rounded">
+              <div className="p-1.5 bg-brand-accent text-brand-navy border border-brand-navy rounded-none">
                 <Vote className="w-4 h-4" />
               </div>
               <div>
-                <span className="text-[10px] font-mono font-black uppercase text-brand-accent-vivid block">
-                  {poll.poll_type === "next_track" ? "🎵 VOTE NEXT TRACK" : "LIVE LISTENER POLL"}
+                <span className="text-xs font-mono font-black uppercase text-brand-navy/70 block">
+                  {poll.poll_type === "next_track" ? "VOTE NEXT TRACK" : "LIVE LISTENER POLL"}
                 </span>
                 <h4 className="font-display text-lg sm:text-xl uppercase tracking-wide text-brand-navy leading-tight">
                   {poll.question}
@@ -94,7 +94,7 @@ export default function LivePollWidget() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 text-[11px] font-mono text-brand-navy/70">
+            <div className="flex items-center gap-1 text-xs font-mono text-brand-navy/70">
               <Clock className="w-3 h-3" />
               <span>LIVE</span>
             </div>
@@ -111,12 +111,12 @@ export default function LivePollWidget() {
                     type="button"
                     disabled={poll.has_voted || votingId !== null}
                     onClick={() => handleVote(poll.id, opt.id)}
-                    className={`w-full p-3 rounded-lg border-2 border-brand-navy text-left font-mono text-xs transition-all relative overflow-hidden flex items-center justify-between cursor-pointer disabled:cursor-default ${
+                    className={`w-full p-3 rounded-none border-2 border-brand-navy text-left font-mono text-xs transition-all relative overflow-hidden flex items-center justify-between cursor-pointer disabled:cursor-default focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
                       isSelected
-                        ? "bg-brand-accent text-brand-navy font-bold shadow-xs ring-2 ring-brand-navy"
+                        ? "bg-brand-accent text-brand-navy font-bold shadow-(--shadow-brut-xs)"
                         : poll.has_voted
                         ? "bg-neutral-50 text-neutral-700"
-                        : "bg-brand-off-white hover:bg-brand-accent/20 active:scale-98"
+                        : "bg-brand-off-white hover:bg-brand-accent/20 active:translate-x-0.5 active:translate-y-0.5"
                     }`}
                   >
                     {/* Progress Bar Background (if voted) */}

@@ -204,7 +204,7 @@ export default function CuratedPlaylists() {
   return (
     <div className="space-y-6">
       {/* Top Banner & Control Deck */}
-      <div className="p-4 sm:p-5 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 sm:p-5 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-brand-accent animate-pulse" />
@@ -236,10 +236,10 @@ export default function CuratedPlaylists() {
 
       {/* Active On-Demand Playlist Audio Player Banner */}
       {activePlaylist && !isLive && (
-        <div className="p-4 sm:p-5 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-lg) rounded-xl space-y-4">
+        <div className="p-4 sm:p-5 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-lg) rounded-none space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-3">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping motion-reduce:animate-none" />
               <span className="font-mono text-xs font-black text-brand-accent tracking-widest uppercase">
                 ON-DEMAND PLAYLIST PLAYBACK
               </span>
@@ -256,7 +256,7 @@ export default function CuratedPlaylists() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg border-2 border-brand-accent bg-neutral-900 overflow-hidden shrink-0">
+              <div className="w-12 h-12 rounded-none border-2 border-brand-accent bg-neutral-900 overflow-hidden shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={resolveCoverArt(activePlaylist.tracks[activePlaylist.trackIndex]?.cover_url || activePlaylist.cover_url)}
@@ -309,7 +309,7 @@ export default function CuratedPlaylists() {
 
       {/* Playlist Grid */}
       {playlists.length === 0 ? (
-        <div className="py-16 border-4 border-dashed border-brand-navy/30 bg-white text-center font-mono text-xs text-brand-navy/60 uppercase tracking-widest rounded-xl">
+        <div className="py-16 border-4 border-dashed border-brand-navy/30 bg-white text-center font-mono text-xs text-brand-navy/60 uppercase tracking-widest rounded-none">
           No public curated playlists published yet. New festival tapes arriving soon!
         </div>
       ) : (
@@ -325,7 +325,7 @@ export default function CuratedPlaylists() {
               <div
                 key={pl.id}
                 id={`playlist-${pl.id}`}
-                className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl overflow-hidden transition-all ${
+                className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none overflow-hidden transition-all ${
                   isThisPlaylistLoaded ? "ring-4 ring-brand-accent/50" : ""
                 }`}
               >
@@ -333,7 +333,7 @@ export default function CuratedPlaylists() {
                 <div className="p-4 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 bg-brand-off-white/40 border-b-2 border-brand-navy/20">
                   <div className="flex items-start sm:items-center gap-4 min-w-0">
                     {/* Cover Art Thumbnail */}
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-lg border-2 border-brand-navy bg-neutral-900 overflow-hidden shrink-0 shadow-(--shadow-brut-xs)">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-none border-2 border-brand-navy bg-neutral-900 overflow-hidden shrink-0 shadow-(--shadow-brut-xs)">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={resolveCoverArt(pl.cover_url)}
@@ -341,8 +341,8 @@ export default function CuratedPlaylists() {
                         className="w-full h-full object-cover"
                       />
                       {pl.is_broadcast_active && (
-                        <div className="absolute top-1 left-1 bg-red-600 text-white font-mono text-[9px] font-black px-1.5 py-0.5 uppercase tracking-widest border border-brand-navy flex items-center gap-1 shadow-sm">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                        <div className="absolute top-1 left-1 bg-red-600 text-white font-mono text-xs font-black px-1.5 py-0.5 uppercase tracking-widest border border-brand-navy flex items-center gap-1 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" />
                           <span>ON AIR</span>
                         </div>
                       )}

@@ -81,14 +81,14 @@ export default function CatchUpVault({
 
   if (loading) {
     return (
-      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-3 ${className}`}>
+      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-3 ${className}`}>
         <div className="flex items-center gap-2 border-b-2 border-brand-navy/15 pb-2">
-          <Disc3 className="w-5 h-5 text-brand-navy animate-spin" />
+          <Disc3 className="w-5 h-5 text-brand-navy animate-spin motion-reduce:animate-none" />
           <h3 className="font-display text-lg uppercase tracking-wide text-brand-navy">
             {title}
           </h3>
         </div>
-        <p className="font-mono text-xs text-brand-navy/60 animate-pulse">
+        <p className="font-mono text-xs text-brand-navy/60 animate-pulse motion-reduce:animate-none">
           Loading approved broadcast vault...
         </p>
       </div>
@@ -97,7 +97,7 @@ export default function CatchUpVault({
 
   if (recordings.length === 0) {
     return (
-      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-2 ${className}`}>
+      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-2 ${className}`}>
         <div className="flex items-center gap-2 border-b-2 border-brand-navy/15 pb-2">
           <Disc3 className="w-5 h-5 text-brand-navy" />
           <h3 className="font-display text-lg uppercase tracking-wide text-brand-navy">
@@ -112,23 +112,23 @@ export default function CatchUpVault({
   }
 
   return (
-    <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-xl p-5 space-y-5 ${className}`}>
+    <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-5 ${className}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-brand-navy/20 pb-3">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-brand-navy text-white rounded">
+          <div className="p-1.5 bg-brand-navy text-white rounded-none">
             <Radio className="w-4 h-4 text-brand-accent" />
           </div>
           <div>
             <h3 className="font-display text-xl uppercase tracking-wide text-brand-navy">
               {title}
             </h3>
-            <span className="text-[11px] font-mono text-brand-navy/70 block">
+            <span className="text-xs font-mono text-brand-navy/70 block">
               OFFICIAL ARCHIVED BROADCASTS · {recordings.length} EPISODES
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 border border-emerald-700 text-emerald-800 text-[10px] font-mono font-bold uppercase rounded">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 border border-emerald-700 text-emerald-800 text-xs font-mono font-bold uppercase rounded-none">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>LICENSED & APPROVED ONLY</span>
         </div>

@@ -90,15 +90,15 @@ export default function LiveContestWidget() {
   };
 
   return (
-    <div className="border-4 border-brand-navy bg-linear-to-br from-amber-50 via-white to-amber-100/50 shadow-(--shadow-brut-md) rounded-xl p-5 space-y-4">
+    <div className="border-4 border-brand-navy bg-linear-to-br from-amber-50 via-white to-amber-100/50 shadow-(--shadow-brut-md) rounded-none p-5 space-y-4">
       {/* Contest Header */}
       <div className="flex items-center justify-between border-b-2 border-brand-navy/20 pb-3">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-red-600 text-white rounded border border-brand-navy animate-pulse">
+          <div className="p-1.5 bg-red-600 text-white rounded-none border border-brand-navy animate-pulse motion-reduce:animate-none">
             <Award className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono font-black uppercase text-red-600 block">
+            <span className="text-xs font-mono font-black uppercase text-red-600 block">
               ON-AIR FESTIVAL PASS GIVEAWAY
             </span>
             <h4 className="font-display text-xl uppercase tracking-wide text-brand-navy">
@@ -107,7 +107,7 @@ export default function LiveContestWidget() {
           </div>
         </div>
 
-        <span className="px-2.5 py-1 bg-amber-400 text-brand-navy font-mono text-[10px] font-black uppercase border border-brand-navy rounded shadow-xs">
+        <span className="px-2.5 py-1 bg-amber-400 text-brand-navy font-mono text-xs font-black uppercase border border-brand-navy rounded-none shadow-(--shadow-brut-xs)">
           {activeContest.max_winners - activeContest.winners_awarded} PASS(ES) LEFT
         </span>
       </div>
