@@ -1724,14 +1724,14 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               >
                 <span>📷 GALLERY</span>
               </Link>
-              <Link
+              <a
                 href="/admin/radio"
                 className="text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
                 title="GOODLIFE Radio, YouTube Ingestion and Live Stream Console"
               >
                 <Radio className="w-3 h-3 shrink-0" />
                 <span>RADIO</span>
-              </Link>
+              </a>
               <Link
                 href="/admin/whatsapp"
                 className="col-span-2 sm:col-span-1 text-[11px] font-black uppercase border-2 border-[var(--brand-navy)] px-2 py-1.5 bg-white text-brand-navy hover:bg-[var(--brand-navy)] hover:text-[var(--brand-off-white)] transition-colors flex items-center justify-center gap-1 shadow-(--shadow-brut-xs)"
