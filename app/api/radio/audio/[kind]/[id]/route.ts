@@ -157,7 +157,7 @@ async function handleAudioRequest(req: NextRequest, context: AudioRouteContext, 
       status: 307,
       headers: {
         Location: dropUrl,
-        "Cache-Control": "private, no-store, max-age=0",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
       },
     });
   }
@@ -181,22 +181,24 @@ async function handleAudioRequest(req: NextRequest, context: AudioRouteContext, 
     );
   }
 
+  // Allow browsers to cache signed playback redirects for up to 5 minutes
+  // This enables smooth HTTP byte-range seeking without triggering fresh DB hits & re-signing on every range slice
+  const redirectCacheHeaders = {
+    Location: signedUrl,
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+    "Accept-Ranges": "bytes",
+  };
+
   if (isHead) {
     return new NextResponse(null, {
       status: 307,
-      headers: {
-        Location: signedUrl,
-        "Cache-Control": "private, no-store, max-age=0",
-      },
+      headers: redirectCacheHeaders,
     });
   }
 
   return new NextResponse(null, {
     status: 307,
-    headers: {
-      Location: signedUrl,
-      "Cache-Control": "private, no-store, max-age=0",
-    },
+    headers: redirectCacheHeaders,
   });
 }
 

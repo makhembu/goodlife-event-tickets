@@ -3556,7 +3556,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             if (isPlayingRef.current && !isCrossfadingRef.current) {
               setEngineState("buffering");
             }
-          }, 1200);
+          }, 800);
 
           if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
           stallWatchdogRef.current = setTimeout(() => {
@@ -3601,7 +3601,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          }, 8000);
+          }, 3500);
         }}
         onStalled={() => {
           if (liveActiveRef.current || broadcastModeRef.current === "live") return;
@@ -3764,7 +3764,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 8000);
+            }, 3500);
           }
         }}
         onStalled={() => {
