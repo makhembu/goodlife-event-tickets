@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "GOODLIFE Admin Console",
   description: "Executive Festival Management, Ticket Orders, and WAHA Console",

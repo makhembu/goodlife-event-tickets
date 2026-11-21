@@ -34,9 +34,9 @@ jobs:
           echo "==> Building Next.js app..."
           npm run build
 
-          echo "==> Reloading PM2 goodlife-web with zero downtime..."
-          # Start or reload PM2 through system daemon so GitHub Actions runner process tree tracker doesn't orphan-kill it
-          systemd-run --user --remain-after-exit=false pm2 reload goodlife-web --update-env 2>/dev/null || pm2 reload goodlife-web --update-env || pm2 restart goodlife-web --update-env
+          echo "==> Restarting PM2 goodlife-web..."
+          # Clean old build artifacts & restart PM2 cleanly so all Next.js in-memory prerender caches refresh
+          pm2 restart goodlife-web --update-env
 
           echo "==> PM2 Status:"
           pm2 status goodlife-web
