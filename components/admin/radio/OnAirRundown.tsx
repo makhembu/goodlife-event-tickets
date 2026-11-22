@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 import { useRadio } from "@/context/RadioContext";
+import ScheduleItemModal from "./ScheduleItemModal";
 
 interface PlaylistTrack {
   id: number;
@@ -64,6 +65,10 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
   const [drawerSearchQuery, setDrawerSearchQuery] = useState("");
   const [notification, setNotification] = useState<string | null>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<number | null>(null);
+
+  // Schedule modal state
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [trackToSchedule, setTrackToSchedule] = useState<PlaylistTrack | null>(null);
 
   const activeTrackRef = useRef<HTMLDivElement | null>(null);
   const drawerActiveRef = useRef<HTMLDivElement | null>(null);
@@ -596,6 +601,19 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
                       <SkipForward className="w-3.5 h-3.5 text-[#F5C842]" />
                       <span>Play Next (Queue Next)</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTrackToSchedule(track);
+                        setScheduleModalOpen(true);
+                        setOpenMenuTrackId(null);
+                      }}
+                      className="flex items-center space-x-2 px-2.5 py-2 hover:bg-[#F5C842]/20 text-[#F5C842] rounded text-left transition-colors font-bold cursor-pointer"
+                      title="Schedule this song to play at a specific time (+4h / clock)"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-[#F5C842]" />
+                      <span>Schedule for Later</span>
+                    </button>
                     <div className="border-t border-white/10 my-0.5" />
                     <button
                       onClick={() => {
@@ -775,6 +793,18 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
                         </button>
                         <button
                           type="button"
+                          onClick={() => {
+                            setTrackToSchedule(track);
+                            setScheduleModalOpen(true);
+                          }}
+                          title="Schedule this song for later (+4h / clock)"
+                          className="px-2.5 py-2 bg-white/5 hover:bg-[#F5C842]/20 text-[#F5C842] rounded font-mono text-[11px] font-bold uppercase transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">SCHED</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handlePlayNext(track.id, track.title)}
                           disabled={isPlaying}
                           title="Queue to play immediately after current track"
@@ -804,6 +834,34 @@ export default function OnAirRundown({ onTrackStateSync, onEditTrack, refreshTri
             </div>
           </div>
         </div>
+      )}
+
+      {/* Schedule Item Modal for Track in Rundown */}
+      {trackToSchedule && (
+        <ScheduleItemModal
+          isOpen={scheduleModalOpen}
+          onClose={() => {
+            setScheduleModalOpen(false);
+            setTrackToSchedule(null);
+          }}
+          targetType="track"
+          targetId={trackToSchedule.id}
+          title={trackToSchedule.title}
+          artistOrPersona={trackToSchedule.dj_name}
+          audioUrl={trackToSchedule.audio_url || ""}
+          coverUrl={trackToSchedule.cover_url}
+          durationSec={trackToSchedule.duration_sec}
+          onScheduledSuccess={(item) => {
+            setNotification(
+              `✓ "${item.title}" scheduled for ${
+                item.trigger_type === "clock_soft"
+                  ? new Date(item.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " EAT (Soft Queue)"
+                  : "Next Up"
+              }!`
+            );
+            setTimeout(() => setNotification(null), 5000);
+          }}
+        />
       )}
     </div>
   );
