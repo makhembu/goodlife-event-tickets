@@ -27,7 +27,9 @@ import {
   ArrowRight,
   GripVertical,
   Upload,
+  Clock,
 } from "lucide-react";
+import ScheduleItemModal from "./ScheduleItemModal";
 import { SoundboardBankItem, SoundboardPadItem, DropVaultOption } from "@/lib/radio/soundboard-helpers";
 import { useSoundboard } from "@/context/SoundboardContext";
 import { useRadio } from "@/context/RadioContext";
@@ -109,7 +111,11 @@ export default function PerformanceSoundboard({
   const localAuditionAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Radio monitor state to coordinate local audition vs live monitor ducking
-  const { isPlaying } = useRadio();
+  const { isPlaying, title: currentTrackTitle } = useRadio();
+
+  // Schedule modal state for soundboard pads
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [padToSchedule, setPadToSchedule] = useState<SoundPad | null>(null);
 
   // Shared Soundboard State from Context
   const {
@@ -1189,7 +1195,23 @@ export default function PerformanceSoundboard({
                         />
                       )}
                     </div>
-                    <span className="text-lg mr-6">{pad.emoji}</span>
+                    <div className="flex items-center space-x-1">
+                      {hasClip && !isEditMode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPadToSchedule(pad);
+                            setScheduleModalOpen(true);
+                          }}
+                          title="Schedule this Drop / Sweeper"
+                          className="p-1 text-white/40 hover:text-[#F5C842] hover:bg-white/10 rounded transition-colors"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <span className="text-lg mr-6">{pad.emoji}</span>
+                    </div>
                   </div>
 
                   {/* Bottom Row: Name & Clip State */}
@@ -1850,6 +1872,35 @@ export default function PerformanceSoundboard({
             </div>
           </div>
         </>
+      )}
+
+      {/* Schedule Item Modal for Soundboard Drop */}
+      {padToSchedule && padToSchedule.audioUrl && (
+        <ScheduleItemModal
+          isOpen={scheduleModalOpen}
+          onClose={() => {
+            setScheduleModalOpen(false);
+            setPadToSchedule(null);
+          }}
+          targetType="drop"
+          targetId={padToSchedule.id}
+          title={padToSchedule.name}
+          artistOrPersona={padToSchedule.category}
+          audioUrl={padToSchedule.audioUrl}
+          currentTrackTitle={currentTrackTitle}
+          onScheduledSuccess={(item) => {
+            showToast(
+              `✓ Drop "${item.title}" scheduled to air ${
+                item.trigger_type === "clock_duck"
+                  ? "at " + new Date(item.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " (with auto-ducking)"
+                  : item.trigger_type === "next_transition"
+                  ? "over the next track transition"
+                  : "inside active track cue"
+              }!`,
+              "success"
+            );
+          }}
+        />
       )}
     </div>
   );

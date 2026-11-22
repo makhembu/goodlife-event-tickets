@@ -40,6 +40,7 @@ import DropStudio from "@/components/admin/radio/DropStudio";
 import BrowserMicRecorder from "@/components/admin/radio/BrowserMicRecorder";
 import OnAirRundown from "@/components/admin/radio/OnAirRundown";
 import QueueNextTrack from "@/components/admin/radio/QueueNextTrack";
+import ScheduledCueDock from "@/components/admin/radio/ScheduledCueDock";
 import DecksConnectCard from "@/components/admin/radio/DecksConnectCard";
 import DropManagerPanel from "@/components/admin/radio/DropManagerPanel";
 import RadioTelemetryLogs from "@/components/admin/radio/RadioTelemetryLogs";
@@ -56,7 +57,7 @@ import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 export default function AdminRadioPage() {
-  const { airLiveDrop, setManualDucking, fetchRadioLive } = useRadio();
+  const { airLiveDrop, setManualDucking, fetchRadioLive, playImmediateBroadcastTrack } = useRadio();
   const [activeTab, setActiveTabState] = useState<ConsoleTab>("studio");
 
   useEffect(() => {
@@ -893,6 +894,25 @@ export default function AdminRadioPage() {
 
             {/* DECK B: Performance Soundboard & Queue (5 cols / ~40%) */}
             <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
+              {/* Scheduled Run of Show / Cue Dock */}
+              <ScheduledCueDock
+                onForcePlayNow={(item) => {
+                  if (item.target_type === "track") {
+                    playImmediateBroadcastTrack({
+                      id: Number(item.target_id) || Date.now(),
+                      title: item.title,
+                      dj_name: item.artist_or_persona,
+                      audio_url: item.audio_url,
+                      cover_url: item.cover_url,
+                    });
+                    showMsg(`Airing "${item.title}" live right now!`, "success");
+                  } else {
+                    airLiveDrop({ audioUrl: item.audio_url, title: item.title, persona: item.artist_or_persona });
+                    showMsg(`Airing drop "${item.title}" live right now!`, "success");
+                  }
+                }}
+              />
+
               {/* Home Server Automation Health */}
               <AutomationHealthWidget />
 

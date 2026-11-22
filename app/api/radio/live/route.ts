@@ -33,6 +33,56 @@ let _upstreamDeadUntil = 0;
 
 async function queryRecentLiveDrop() {
   try {
+    // 1. Check for any due scheduled drop in radio_schedules
+    const schedDropRes = await neonQuery(
+      `SELECT id, title, artist_or_persona, audio_url, created_at, scheduled_for, recurrence
+       FROM radio_schedules
+       WHERE status = 'pending'
+         AND target_type = 'drop'
+         AND trigger_type IN ('clock_duck', 'next_transition')
+         AND (scheduled_for IS NULL OR scheduled_for <= NOW())
+       ORDER BY COALESCE(scheduled_for, created_at) ASC
+       LIMIT 1`
+    );
+
+    if (schedDropRes && schedDropRes.length > 0) {
+      const sd = schedDropRes[0];
+      // Mark as executed immediately so it does not fire repeatedly
+      await neonQuery(
+        `UPDATE radio_schedules 
+         SET status = 'executed', executed_at = NOW() 
+         WHERE id = $1`,
+        [sd.id]
+      ).catch(() => {});
+
+      // Handle recurrence if configured
+      if (sd.recurrence && sd.recurrence !== "once") {
+        let intervalSql = "INTERVAL '1 day'";
+        if (sd.recurrence === "hourly") intervalSql = "INTERVAL '1 hour'";
+        if (sd.recurrence === "weekly") intervalSql = "INTERVAL '1 week'";
+        await neonQuery(
+          `INSERT INTO radio_schedules (
+             target_type, target_id, title, artist_or_persona, audio_url,
+             trigger_type, scheduled_for, recurrence, status, created_by
+           ) VALUES (
+             'drop', null, $1, $2, $3,
+             'clock_duck', $4::timestamptz + ${intervalSql}, $5, 'pending', 'system_repeat'
+           )`,
+          [sd.title, sd.artist_or_persona, sd.audio_url, sd.scheduled_for || new Date().toISOString(), sd.recurrence]
+        ).catch(() => {});
+      }
+
+      return {
+        id: `sched_drop_${sd.id}`,
+        persona: sd.artist_or_persona || "GOODLIFE DJ",
+        title: sd.title,
+        script: sd.title,
+        audio_url: sd.audio_url,
+        fired_at: new Date().toISOString(),
+        age_seconds: 0,
+      };
+    }
+
     const dropRes = await neonQuery(
       `SELECT id, persona, mood, title, script, audio_url, created_at,
               ROUND(EXTRACT(EPOCH FROM (NOW() - created_at))) as age_seconds
@@ -296,6 +346,38 @@ async function getTimelineFallback() {
           nextTracks = [queuedTrack, ...nextTracks.filter((s: any) => s.id !== queuedId)].slice(0, 3);
         }
       }
+    }
+
+    // Check for any due scheduled track in radio_schedules (Soft Queue Priority #0)
+    try {
+      const dueSchedules = await neonQuery(
+        `SELECT id, target_type, target_id, title, artist_or_persona, audio_url, cover_url, duration_sec
+         FROM radio_schedules 
+         WHERE status = 'pending' 
+           AND target_type = 'track'
+           AND trigger_type IN ('clock_soft', 'next_transition')
+           AND (scheduled_for IS NULL OR scheduled_for <= NOW())
+         ORDER BY COALESCE(scheduled_for, created_at) ASC 
+         LIMIT 1`
+      );
+
+      if (dueSchedules && dueSchedules.length > 0) {
+        const dueTrack = dueSchedules[0];
+        const formattedDueTrack = {
+          id: Number(dueTrack.target_id) || `sched-${dueTrack.id}`,
+          title: dueTrack.title,
+          dj_name: dueTrack.artist_or_persona || "Goodlife Radio",
+          audio_url: dueTrack.audio_url,
+          cover_url: dueTrack.cover_url || "/flyer.png",
+          duration_sec: dueTrack.duration_sec || 180,
+          is_scheduled_cue: true,
+          schedule_id: dueTrack.id,
+        };
+        // Place due scheduled track at the absolute top of nextTracks!
+        nextTracks = [formattedDueTrack, ...nextTracks].slice(0, 4);
+      }
+    } catch (schedErr) {
+      console.warn("[live BFF] Schedule check error:", schedErr);
     }
 
     if (!currentTrack) return null;

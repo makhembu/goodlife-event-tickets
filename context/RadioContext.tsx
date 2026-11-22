@@ -800,6 +800,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }
         setNowPlayingTrack(track);
 
+        // If the incoming track was a scheduled cue, automatically mark it as executed
+        if ((track as any)?.is_scheduled_cue && (track as any)?.schedule_id) {
+          fetch(`/api/radio/schedules/${(track as any).schedule_id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "execute" }),
+          }).catch(() => {});
+        }
+
         // Track change detection: reset beacon and listened seconds
         if (newTrackId && newTrackId !== currentTrackIdRef.current) {
           sendPlayBeaconOnce(false);

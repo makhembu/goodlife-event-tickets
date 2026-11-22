@@ -16,7 +16,9 @@ import {
   ListPlus,
   X,
   Check,
+  Clock,
 } from "lucide-react";
+import ScheduleItemModal from "./ScheduleItemModal";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
 interface SearchResultItem {
@@ -59,6 +61,17 @@ export default function QueueNextTrack() {
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<SearchResultItem | null>(null);
+
+  // Schedule modal state
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [trackToSchedule, setTrackToSchedule] = useState<{
+    id?: number | string;
+    title: string;
+    artist: string;
+    audio_url: string;
+    cover_url?: string;
+    duration_sec?: number;
+  } | null>(null);
 
   const isDirectUrl = (str: string) => {
     return /^https?:\/\//i.test(str.trim());
@@ -457,6 +470,25 @@ export default function QueueNextTrack() {
                   <div className="flex items-center space-x-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
+                      title="Schedule for Later"
+                      onClick={() => {
+                        setTrackToSchedule({
+                          id: item.id || item.video_id,
+                          title: item.title,
+                          artist: item.artist,
+                          audio_url: item.url,
+                          cover_url: item.thumbnail_url,
+                          duration_sec: item.duration_sec,
+                        });
+                        setScheduleModalOpen(true);
+                      }}
+                      className="p-1 px-1.5 bg-[#F5C842] hover:bg-amber-400 text-black font-bold text-[10px] flex items-center space-x-1"
+                    >
+                      <Clock className="w-3 h-3" />
+                      <span>SCHEDULE</span>
+                    </button>
+                    <button
+                      type="button"
                       title="Queue as Up Next"
                       disabled={loading}
                       onClick={() => handleAction("queue", item)}
@@ -531,6 +563,35 @@ export default function QueueNextTrack() {
         <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
           <button
             type="button"
+            onClick={() => {
+              if (selectedTrack) {
+                setTrackToSchedule({
+                  id: selectedTrack.id || selectedTrack.video_id,
+                  title: selectedTrack.title,
+                  artist: selectedTrack.artist,
+                  audio_url: selectedTrack.url,
+                  cover_url: selectedTrack.thumbnail_url,
+                  duration_sec: selectedTrack.duration_sec,
+                });
+                setScheduleModalOpen(true);
+              } else if (isDirectUrl(inputValue)) {
+                setTrackToSchedule({
+                  title: "Direct URL Stream",
+                  artist: "Goodlife Radio",
+                  audio_url: inputValue.trim(),
+                });
+                setScheduleModalOpen(true);
+              }
+            }}
+            disabled={loading || (!selectedTrack && !isDirectUrl(inputValue))}
+            className="px-4 py-2 bg-[#F5C842] hover:bg-amber-400 disabled:opacity-40 text-black font-bold border border-black flex items-center space-x-1.5 shadow-[2px_2px_0px_#000]"
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>SCHEDULE FOR LATER</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleAction("queue")}
             disabled={loading || (!selectedTrack && !isDirectUrl(inputValue))}
             className="px-4 py-2 bg-[#DFBB7D] hover:bg-[#F5C842] disabled:opacity-40 text-[#16181D] font-bold border border-[#16181D] flex items-center space-x-1.5 shadow-[2px_2px_0px_#16181D]"
@@ -550,6 +611,33 @@ export default function QueueNextTrack() {
           </button>
         </div>
       </div>
+
+      {/* Schedule Item Modal */}
+      {trackToSchedule && (
+        <ScheduleItemModal
+          isOpen={scheduleModalOpen}
+          onClose={() => {
+            setScheduleModalOpen(false);
+            setTrackToSchedule(null);
+          }}
+          targetType="track"
+          targetId={trackToSchedule.id}
+          title={trackToSchedule.title}
+          artistOrPersona={trackToSchedule.artist}
+          audioUrl={trackToSchedule.audio_url}
+          coverUrl={trackToSchedule.cover_url}
+          durationSec={trackToSchedule.duration_sec}
+          onScheduledSuccess={(item) => {
+            setResult({
+              artist: item.artist_or_persona || "",
+              title: item.title,
+              drop_script: "",
+              queued: false,
+              message: `✓ Track scheduled to play ${item.trigger_type === "clock_soft" ? "at " + new Date(item.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " (Soft Queue)" : "as Next Up"}!`,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
