@@ -39,11 +39,12 @@ export async function DELETE(
       [scheduleId]
     );
 
-    if (!result || result.length === 0) {
+    const cancelledItem = result?.rows?.[0] || result?.[0];
+    if (!cancelledItem) {
       return NextResponse.json({ ok: false, error: "Schedule not found or already executed/cancelled" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, cancelled: result[0] });
+    return NextResponse.json({ ok: true, cancelled: cancelledItem });
   } catch (error: any) {
     console.error("[DELETE /api/radio/schedules/[id]] Error:", error);
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
@@ -67,18 +68,17 @@ export async function PATCH(
     const { action, postpone_minutes } = body;
 
     if (action === "execute") {
-      const rows = await neonQuery(
+      const result = await neonQuery(
         `UPDATE radio_schedules 
          SET status = 'executed', executed_at = NOW() 
          WHERE id = $1 AND status IN ('pending', 'armed')
          RETURNING *`,
         [scheduleId]
       );
-      if (!rows || rows.length === 0) {
+      const executedItem = result?.rows?.[0] || result?.[0];
+      if (!executedItem) {
         return NextResponse.json({ ok: false, error: "Schedule not found or already inactive" }, { status: 404 });
       }
-
-      const executedItem = rows[0];
 
       // Handle recurrence if configured
       if (executedItem.recurrence && executedItem.recurrence !== "once") {
@@ -119,7 +119,7 @@ export async function PATCH(
 
     if (action === "postpone") {
       const minutes = parseInt(postpone_minutes || "15", 10);
-      const rows = await neonQuery(
+      const result = await neonQuery(
         `UPDATE radio_schedules 
          SET scheduled_for = COALESCE(scheduled_for, NOW()) + ($2 || ' minutes')::INTERVAL,
              status = 'pending'
@@ -127,10 +127,11 @@ export async function PATCH(
          RETURNING *`,
         [scheduleId, minutes]
       );
-      if (!rows || rows.length === 0) {
+      const postponedItem = result?.rows?.[0] || result?.[0];
+      if (!postponedItem) {
         return NextResponse.json({ ok: false, error: "Schedule not found or inactive" }, { status: 404 });
       }
-      return NextResponse.json({ ok: true, postponed: rows[0] });
+      return NextResponse.json({ ok: true, postponed: postponedItem });
     }
 
     return NextResponse.json({ ok: false, error: "Invalid action" }, { status: 400 });

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
          AND scheduled_for < NOW() - INTERVAL '10 minutes'`
     );
 
-    const rows = await neonQuery(
+    const { rows } = await neonQuery(
       `SELECT id, target_type, target_id, title, artist_or_persona, audio_url, cover_url, duration_sec,
               trigger_type, scheduled_for, cue_offset_sec, parent_track_id, recurrence,
               status, created_at, created_by,
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       ]
     );
 
-    const created = result[0];
+    const created = result?.rows?.[0] || result?.[0];
     return NextResponse.json({ ok: true, schedule: created }, { status: 201 });
   } catch (error: any) {
     console.error("[POST /api/radio/schedules] Error:", error);

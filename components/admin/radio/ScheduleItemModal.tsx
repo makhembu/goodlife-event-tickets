@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Clock, Calendar, AlertCircle, X, Check, Volume2, Music, Radio, Repeat } from "lucide-react";
 
 export interface ScheduleItemModalProps {
@@ -42,6 +42,7 @@ export default function ScheduleItemModal({
   const [recurrence, setRecurrence] = useState<"once" | "hourly" | "daily" | "weekly">("once");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
 
@@ -271,14 +272,42 @@ export default function ScheduleItemModal({
                 <label className="text-white/50 block text-[10px] uppercase mb-1">
                   Or Custom Time (Nairobi EAT / Local):
                 </label>
-                <div className="flex items-center space-x-2">
-                  <Calendar className="w-4 h-4 text-white/40 shrink-0" />
+                <div 
+                  onClick={() => {
+                    try {
+                      if (dateInputRef.current && "showPicker" in HTMLInputElement.prototype) {
+                        (dateInputRef.current as any).showPicker();
+                      } else {
+                        dateInputRef.current?.focus();
+                      }
+                    } catch {}
+                  }}
+                  className="flex items-center space-x-2 bg-black/60 border border-white/20 p-2 focus-within:border-[#F5C842] cursor-pointer hover:border-white/40 transition-colors"
+                >
+                  <Calendar className="w-4 h-4 text-[#F5C842] shrink-0" />
                   <input
+                    ref={dateInputRef}
                     type="datetime-local"
                     value={customDateTime}
                     onChange={(e) => handleCustomDateTimeChange(e.target.value)}
-                    className="flex-1 bg-black/60 border border-white/20 p-2 text-white focus:border-[#F5C842] outline-none"
+                    className="flex-1 bg-transparent text-white outline-none cursor-pointer [color-scheme:dark]"
                   />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      try {
+                        if (dateInputRef.current && "showPicker" in HTMLInputElement.prototype) {
+                          (dateInputRef.current as any).showPicker();
+                        } else {
+                          dateInputRef.current?.focus();
+                        }
+                      } catch {}
+                    }}
+                    className="px-2 py-0.5 bg-white/10 hover:bg-[#F5C842] hover:text-black text-[10px] font-bold uppercase transition-colors shrink-0"
+                  >
+                    Pick
+                  </button>
                 </div>
               </div>
 
