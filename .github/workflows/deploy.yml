@@ -43,6 +43,12 @@ jobs:
           # Restart cleanly
           pm2 restart goodlife-web --update-env || pm2 start npm --name "goodlife-web" -- run start -- -p 3000
 
+          echo "==> Saving PM2 process list to persist across reboots..."
+          pm2 save || true
+
+          echo "==> Ensuring PM2 startup hook is active for system boot..."
+          pm2 startup systemd -u khesh --hp /home/khesh 2>/dev/null || true
+
           echo "==> PM2 Error Log (last 20 lines):"
           tail -n 20 /home/khesh/.pm2/logs/goodlife-web-error.log || true
 
