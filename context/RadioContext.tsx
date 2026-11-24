@@ -278,11 +278,11 @@ function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number, onSeekAppl
       const dur = audio.duration;
       if (dur && !isNaN(dur) && dur > 2) {
         if (targetOffset >= dur - 2) {
-          // If target offset is at or past the end of the file, wrap around so track does not instantly end
-          const wrapped = targetOffset % Math.floor(dur);
-          audio.currentTime = wrapped;
+          // If target offset is at or past the end of the file, clamp near the end so the track concludes and transitions naturally to next track
+          const clamped = Math.max(0, Math.floor(dur) - 2);
+          audio.currentTime = clamped;
           seekApplied = true;
-          onSeekApplied?.(wrapped);
+          onSeekApplied?.(clamped);
           return;
         }
         audio.currentTime = Math.max(0, targetOffset);
@@ -1488,7 +1488,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const recordMetadata = () => {
         if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
           trackLoadTimingRef.current.loadedMetadataAt = performance.now();
-          console.debug("[Radio:Timing] loadedmetadata", {
+          console.log("[Radio:Timing] loadedmetadata", {
             deck: "A",
             duration: audio.duration,
             elapsedFromSrcSetMs: Math.round(trackLoadTimingRef.current.loadedMetadataAt - trackLoadTimingRef.current.srcSetAt),
@@ -1498,7 +1498,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       const recordCanPlay = () => {
         if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
           trackLoadTimingRef.current.canPlayAt = performance.now();
-          console.debug("[Radio:Timing] canplay", {
+          console.log("[Radio:Timing] canplay", {
             deck: "A",
             readyState: audio.readyState,
             elapsedFromSrcSetMs: Math.round(trackLoadTimingRef.current.canPlayAt - trackLoadTimingRef.current.srcSetAt),
@@ -1509,7 +1509,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       audio.addEventListener("canplay", recordCanPlay, { once: true });
 
       safeSeekAudio(audio, seekOffset, (applied) => {
-        console.debug("[Radio:Timing] safeSeekApplied", {
+        console.log("[Radio:Timing] safeSeekApplied", {
           deck: "A",
           targetSeek: seekOffset,
           appliedSeek: applied,
@@ -3665,7 +3665,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               if (trackLoadTimingRef.current && trackLoadTimingRef.current.deck === "A") {
                 trackLoadTimingRef.current.nudges += 1;
               }
-              console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck A stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)`, isInitialBuffering });
+              console.log("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck A stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)`, isInitialBuffering });
               audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
               audioRef.current.play().then(() => {
                 setEngineState("live");
