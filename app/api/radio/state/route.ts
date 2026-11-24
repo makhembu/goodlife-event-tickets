@@ -117,6 +117,7 @@ export async function GET() {
         JOIN radio_playlist_tracks pt ON pt.playlist_id = p.id
         JOIN radio_sets s ON s.id = pt.track_id AND s.deleted_at IS NULL AND (s.is_active = true OR s.is_active IS NULL)
         WHERE p.is_broadcast_active = true AND p.deleted_at IS NULL
+          AND (s.r2_key IS NOT NULL AND s.r2_key != '' OR (s.audio_url NOT ILIKE '%youtube.com%' AND s.audio_url NOT ILIKE '%youtu.be%'))
         ORDER BY pt.position ASC, pt.id ASC
       `).catch(() => ({ rows: [] }));
 

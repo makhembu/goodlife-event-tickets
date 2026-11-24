@@ -1422,7 +1422,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         Boolean(track.duration && track.duration > 0 && ((track.elapsed || 0) + timeSinceLastPoll) >= track.duration)
       );
 
-      let activeAudioUrl = track?.playback_url || track?.audio_url || backupSetsRef.current[0]?.playback_url || backupSetsRef.current[0]?.audio_url;
+      let activeAudioUrl = resolveAudioSource(track) || resolveAudioSource(backupSetsRef.current[0]);
       if (!activeAudioUrl) {
         activeAudioUrl = "/api/radio/audio/track/20";
       }
@@ -1448,6 +1448,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               lastPollElapsedRef.current = freshTrack.elapsed || 0;
               lastPollTimestampRef.current = Date.now();
               setInterpolatedElapsed(freshTrack.elapsed || 0);
+
+              const freshAudioSrc = resolveAudioSource(freshTrack);
+              const curAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+              if (freshAudioSrc && curAudio && isPlayingRef.current && !areSameAudioSrc(curAudio.src, freshAudioSrc)) {
+                curAudio.src = freshAudioSrc;
+                safeSeekAudio(curAudio, freshTrack.elapsed || 0);
+                curAudio.play().catch(() => {});
+              }
             }
           })
           .catch(() => {});
