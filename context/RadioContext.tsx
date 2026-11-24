@@ -64,7 +64,7 @@ const loadPolicy = (ttfb: number, total: number, timeoutRetries: number, errorRe
 const LIVE_HLS_CONFIG: any = {
   lowLatencyMode: false,
   enableWorker: true,
-  liveSyncDurationCount: 2,          // Start closer to edge for faster initial buffer fill
+  liveSyncDurationCount: 3,          // Resilient 3-segment live edge depth
   liveMaxLatencyDurationCount: 6,    // Prevents lagging too far behind
   maxBufferLength: 10,               // 10s is responsive yet safe on 3G/4G
   maxMaxBufferLength: 20,
@@ -305,6 +305,28 @@ function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number, onSeekAppl
     audio.addEventListener("loadedmetadata", onReady, { once: true });
     audio.addEventListener("canplay", onReady, { once: true });
   }
+}
+
+function isPlayableAudioUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const clean = url.trim().toLowerCase();
+  if (clean === "" || clean.startsWith("data:") || clean.includes("youtube.com") || clean.includes("youtu.be")) {
+    return false;
+  }
+  return true;
+}
+
+function resolveAudioSource(track?: { playback_url?: string; audio_url?: string; id?: number | string; [key: string]: any } | null): string | null {
+  if (!track) return null;
+  if (isPlayableAudioUrl(track.playback_url)) return track.playback_url!;
+  if (isPlayableAudioUrl(track.audio_url)) return track.audio_url!;
+  // If track has an id, fallback to the authenticated audio playback endpoint
+  const rawId = String(track.id || "").replace(/^(set-|vault-|pl-\d+-)/, "");
+  const numId = parseInt(rawId, 10);
+  if (Number.isFinite(numId) && numId > 0) {
+    return `/api/radio/audio/track/${numId}`;
+  }
+  return null;
 }
 
 export function RadioProvider({ children }: { children: React.ReactNode }) {
@@ -1486,7 +1508,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       };
 
       const recordMetadata = () => {
-        if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
+        if (trackLoadTimingRef.current) {
           trackLoadTimingRef.current.loadedMetadataAt = performance.now();
           console.log("[Radio:Timing] loadedmetadata", {
             deck: "A",
@@ -1496,7 +1518,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }
       };
       const recordCanPlay = () => {
-        if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
+        if (trackLoadTimingRef.current) {
           trackLoadTimingRef.current.canPlayAt = performance.now();
           console.log("[Radio:Timing] canplay", {
             deck: "A",
@@ -2160,7 +2182,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       options: { fast?: boolean; targetSeek?: number } = {}
     ) => {
       if (broadcastModeRef.current === "live" || liveActiveRef.current) return;
-      const targetTrackUrl = track?.playback_url || track?.audio_url;
+      const targetTrackUrl = resolveAudioSource(track);
       if (!track || !targetTrackUrl) return;
       const outgoing = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
       const incoming = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
@@ -3156,7 +3178,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     if (!nextTrack) return;
     if (!preloadAudioRef.current) preloadAudioRef.current = new Audio();
     preloadAudioRef.current.preload = "auto";
-    const nextTrackSrc = nextTrack.playback_url || nextTrack.audio_url;
+    const nextTrackSrc = resolveAudioSource(nextTrack);
     if (nextTrackSrc && preloadAudioRef.current.src !== nextTrackSrc) {
       preloadAudioRef.current.src = nextTrackSrc;
       preloadAudioRef.current.load();
@@ -3703,6 +3725,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
         }}
         onError={() => {
+          const currentSrc = audioRef.current?.src || "";
+          if (currentSrc.includes("youtube.com") || currentSrc.includes("youtu.be")) {
+            return; // Suppress expected unsupported media error for YouTube video URLs on audio element
+          }
           const mediaErr = audioRef.current?.error;
           console.error("[Radio:Error]", {
             timestamp: new Date().toISOString(),
@@ -3872,6 +3898,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         }}
         onError={() => {
           if (liveActiveRef.current || broadcastModeRef.current === "live") return;
+          const currentSrc = preloadAudioRef.current?.src || "";
+          if (currentSrc.includes("youtube.com") || currentSrc.includes("youtu.be")) {
+            return; // Suppress expected unsupported media error for YouTube video URLs on audio element
+          }
           const mediaErr = preloadAudioRef.current?.error;
           console.error("[Radio:Error]", {
             timestamp: new Date().toISOString(),

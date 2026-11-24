@@ -356,25 +356,37 @@ export default function RadioPage() {
         {/* ========================================================================= */}
         {activeView === "live" && (
           <div className="space-y-6">
-            {/* If currently playing an on-demand tape, show quick return pill */}
-            {activePlaylist && !isLive && (
+            {/* If currently playing an on-demand tape or vault set, show quick return pill */}
+            {!isLive && (
               <div className="p-3 bg-brand-navy text-white border-3 border-brand-navy rounded-none flex flex-wrap items-center justify-between gap-3 shadow-(--shadow-brut-sm)">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-brand-accent animate-ping motion-reduce:animate-none shrink-0" />
                   <span className="font-mono text-xs uppercase truncate text-brand-off-white">
-                    PLAYING ON-DEMAND PLAYLIST:{" "}
-                    <strong className="text-brand-accent">{activePlaylist.name}</strong>{" "}
-                    (TRACK {activePlaylist.trackIndex + 1} OF {activePlaylist.tracks.length})
+                    {activePlaylist ? (
+                      <>
+                        PLAYING ON-DEMAND PLAYLIST:{" "}
+                        <strong className="text-brand-accent">{activePlaylist.name}</strong>{" "}
+                        (TRACK {activePlaylist.trackIndex + 1} OF {activePlaylist.tracks.length})
+                      </>
+                    ) : (
+                      <>
+                        PLAYING ON-DEMAND VAULT ARCHIVE:{" "}
+                        <strong className="text-brand-accent">{displayTitle}</strong>
+                        {activePresenterName && <span> — {activePresenterName}</span>}
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveView("playlists")}
-                    className="px-3 py-1 bg-white text-brand-navy font-mono text-xs font-bold uppercase border border-brand-navy hover:bg-brand-accent transition-colors cursor-pointer rounded-none focus-visible:outline-3 focus-visible:outline-brand-accent focus-visible:outline-offset-2"
-                  >
-                    VIEW TAPE
-                  </button>
+                  {activePlaylist && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveView("playlists")}
+                      className="px-3 py-1 bg-white text-brand-navy font-mono text-xs font-bold uppercase border border-brand-navy hover:bg-brand-accent transition-colors cursor-pointer rounded-none focus-visible:outline-3 focus-visible:outline-brand-accent focus-visible:outline-offset-2"
+                    >
+                      VIEW TAPE
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={snapToBroadcast}
@@ -397,7 +409,9 @@ export default function RadioPage() {
                     }`}
                   />
                   <span className="font-mono text-xs font-bold text-brand-accent tracking-widest uppercase">
-                    {engineState === "live"
+                    {!isLive
+                      ? "VAULT ARCHIVE · ON-DEMAND PLAYBACK"
+                      : engineState === "live"
                       ? "LIVE AIRWAVE · NAIROBI FREQUENCY"
                       : engineState === "reconnecting"
                       ? "RECONNECTING TO LIVE STREAM..."
@@ -489,11 +503,17 @@ export default function RadioPage() {
                         />
                       )}
 
-                      {/* Single Definitive ON AIR NOW Badge */}
-                      {engineState === "live" && isPlaying && (
+                      {/* Single Definitive ON AIR NOW / VAULT ARCHIVE Badge */}
+                      {isLive && engineState === "live" && isPlaying && (
                         <div className="absolute top-2 left-2 bg-brand-danger text-white font-mono font-bold text-xs px-2.5 py-1 uppercase tracking-widest border border-brand-navy shadow-md flex items-center gap-1.5 rounded-none">
                           <Radio className="w-3.5 h-3.5 animate-pulse motion-reduce:animate-none" />
                           <span>ON AIR NOW</span>
+                        </div>
+                      )}
+                      {!isLive && isPlaying && (
+                        <div className="absolute top-2 left-2 bg-brand-accent text-brand-navy font-mono font-bold text-xs px-2.5 py-1 uppercase tracking-widest border border-brand-navy shadow-md flex items-center gap-1.5 rounded-none">
+                          <Disc3 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" />
+                          <span>VAULT ARCHIVE</span>
                         </div>
                       )}
                       {engineState === "reconnecting" && (
@@ -625,7 +645,7 @@ export default function RadioPage() {
 
                       <div className="space-y-0.5">
                         <span className="font-mono text-xs font-bold text-white uppercase tracking-wider block">
-                          {isPlaying ? "LIVE PLAYBACK ACTIVE" : "PRESS PLAY TO TUNE IN"}
+                          {isPlaying ? (isLive ? "LIVE PLAYBACK ACTIVE" : "VAULT PLAYBACK ACTIVE") : "PRESS PLAY TO TUNE IN"}
                         </span>
                         <span className="font-mono text-xs text-white/70 hidden lg:block">
                           Spacebar: Play/Pause · M: Mute
