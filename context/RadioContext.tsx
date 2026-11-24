@@ -856,16 +856,14 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               const isStalledOrEnded = audio.ended || audio.paused || remaining <= 0;
               const isDjManiaOverride = (data as any)?.mode === "mania";
               const isExplicitPlaylistChange = isPlaylistSwitch || isPlaylistIdSwitch;
-              const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 15;
-              const isServerTrackFresh = typeof track.elapsed === "number" && track.elapsed <= 15;
+              const hasDivergedSignificantly = Math.abs((audio.currentTime || 0) - (track.elapsed || 0)) > 20;
 
               if (
                 isExplicitPlaylistChange ||
                 isDjManiaOverride ||
                 isStalledOrEnded ||
                 isOutroWindow ||
-                hasDivergedSignificantly ||
-                isServerTrackFresh
+                hasDivergedSignificantly
               ) {
                 if (!isTransitioningRef.current) {
                   isTransitioningRef.current = true;

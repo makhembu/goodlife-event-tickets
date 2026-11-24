@@ -41,8 +41,8 @@ export default function LoginPage() {
         throw new Error(data.message || "Invalid authentication credentials.");
       }
 
-      router.push("/admin/dashboard");
-      router.refresh();
+      // Hard redirect to admin dashboard to ensure the session cookie is immediately picked up by Next.js middleware and server components
+      window.location.href = "/admin/dashboard";
     } catch (err: any) {
       setError(err.message || "Invalid authentication credentials.");
       setLoading(false);
