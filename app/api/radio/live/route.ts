@@ -31,6 +31,79 @@ const LIVE_DROP_CACHE_TTL_MS = 2_500; // 2.5 seconds
 let _upstreamFailCount = 0;
 let _upstreamDeadUntil = 0;
 
+// In-memory artwork cache for live VirtualDJ / IceCast track titles (30 min TTL)
+const _liveArtworkCache = new Map<string, { url: string | null; ts: number }>();
+const LIVE_ARTWORK_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function normalizeMatchText(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function resolveLiveTrackThumbnail(
+  rawTitle: string,
+  rawArtist: string,
+  sets: any[],
+  presenterAvatar?: string | null
+): Promise<string> {
+  const cleaned = rawTitle.replace(/\[[^\]]*\]/g, "").trim();
+  const cacheKey = cleaned.toLowerCase();
+  if (!cleaned || cleaned.includes("GOODLIFE RADIO LIVE")) {
+    return presenterAvatar || "/flyer.png";
+  }
+
+  // 1. Check station library (already cached in memory)
+  const parts = cleaned.split(" - ");
+  const artistPart = parts.length >= 2 ? normalizeMatchText(parts[0]) : normalizeMatchText(rawArtist);
+  const titlePart = parts.length >= 2 ? normalizeMatchText(parts.slice(1).join(" ")) : normalizeMatchText(cleaned);
+  const fullNorm = normalizeMatchText(cleaned);
+
+  if (Array.isArray(sets) && sets.length > 0) {
+    for (const s of sets) {
+      if (!s?.cover_url) continue;
+      const sTitle = normalizeMatchText(s.title || "");
+      const sArtist = normalizeMatchText(s.dj_name || "");
+      if (!sTitle || sTitle.length < 3) continue;
+
+      const titleMatch = sTitle === titlePart || (titlePart.length >= 4 && sTitle.includes(titlePart)) || (sTitle.length >= 5 && fullNorm.includes(sTitle));
+      const artistMatch = !artistPart || artistPart === "live on air dj" || !sArtist || sArtist.includes(artistPart) || artistPart.includes(sArtist) || fullNorm.includes(sArtist);
+      if (titleMatch && artistMatch) {
+        return s.cover_url;
+      }
+    }
+  }
+
+  // 2. Check cached iTunes lookup
+  const cached = _liveArtworkCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < LIVE_ARTWORK_CACHE_TTL_MS) {
+    return cached.url || presenterAvatar || "/flyer.png";
+  }
+
+  // 3. Query iTunes Search API with short 800ms timeout so it never stalls /api/radio/live
+  try {
+    const queryTerm = parts.length >= 2 ? cleaned : `${cleaned} ${rawArtist !== "Live On-Air DJ" ? rawArtist : ""}`.trim();
+    const res = await fetchWithTimeout(
+      `https://itunes.apple.com/search?term=${encodeURIComponent(queryTerm)}&entity=song&limit=1`,
+      800
+    );
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      const art = json?.results?.[0]?.artworkUrl100;
+      if (typeof art === "string" && art.startsWith("http")) {
+        const hiRes = art.replace("100x100bb", "600x600bb");
+        if (_liveArtworkCache.size > 200) _liveArtworkCache.clear();
+        _liveArtworkCache.set(cacheKey, { url: hiRes, ts: Date.now() });
+        return hiRes;
+      }
+    }
+  } catch {
+    // Non-fatal: fall through to negative cache + presenter/flyer fallback
+  }
+
+  if (_liveArtworkCache.size > 200) _liveArtworkCache.clear();
+  _liveArtworkCache.set(cacheKey, { url: null, ts: Date.now() });
+  return presenterAvatar || "/flyer.png";
+}
+
 async function queryRecentLiveDrop() {
   try {
     // 1. Check for any due scheduled drop in radio_schedules
@@ -583,10 +656,21 @@ export async function GET() {
           unique: activeListeners,
         };
       }
+      if (!liveData.nowPlaying.thumbnail || liveData.nowPlaying.thumbnail === "/flyer.png") {
+        liveData.nowPlaying.thumbnail = await resolveLiveTrackThumbnail(
+          liveData.nowPlaying.title || "",
+          liveData.nowPlaying.artist || "",
+          cachedPlayout.sets,
+          onAirSlot?.presenter?.avatar_url || null
+        );
+      }
       if (onAirSlot) {
         liveData.nowPlaying.on_air_slot = onAirSlot;
         liveData.nowPlaying.title = onAirSlot.show.title;
         liveData.nowPlaying.artist = onAirSlot.presenter.dj_name;
+        if (onAirSlot.presenter?.avatar_url && (!liveData.nowPlaying.thumbnail || liveData.nowPlaying.thumbnail === "/flyer.png")) {
+          liveData.nowPlaying.thumbnail = onAirSlot.presenter.avatar_url;
+        }
       }
       liveData.nowPlaying.is_live = true;
       liveData.nowPlaying.audio_url = streamUrl;

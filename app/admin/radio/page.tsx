@@ -894,6 +894,9 @@ export default function AdminRadioPage() {
 
             {/* DECK B: Performance Soundboard & Queue (5 cols / ~40%) */}
             <div className={`space-y-6 lg:col-span-5 ${studioDeck !== "playout" ? "hidden lg:block" : "block"}`}>
+              {/* Quick Insert Track · On The Fly (Top of Deck B) */}
+              <QueueNextTrack />
+
               {/* Scheduled Run of Show / Cue Dock */}
               <ScheduledCueDock
                 onForcePlayNow={(item) => {
@@ -916,21 +919,6 @@ export default function AdminRadioPage() {
               {/* Home Server Automation Health */}
               <AutomationHealthWidget />
 
-              {/* 47-County Live Listener Radar */}
-              <KenyaListenerMap
-                onSelectCounty={(countyName, count, cities) => {
-                  const cityText = cities.length > 0 ? ` out in ${cities.join(", ")}` : "";
-                  const shoutoutScript = `Big shoutout to the ${count} tuned in across ${countyName}${cityText}! Locked into GOODLIFE Radio!`;
-                  showMsg(`Radar Cue: ${countyName} shoutout loaded to Cue Dock!`, "success");
-                  setCueItem({
-                    id: `radar_${Date.now()}`,
-                    title: `Shoutout: ${countyName}`,
-                    script: shoutoutScript,
-                    audioUrl: "",
-                    persona: "DJ Fusion",
-                  });
-                }}
-              />
               <PerformanceSoundboard
                 onFireOnAir={async (name, url) => {
                   setIsDucking(true);
@@ -950,8 +938,24 @@ export default function AdminRadioPage() {
                 }}
                 onChoke={() => setIsDucking(false)}
               />
-              <QueueNextTrack />
+
               <DecksConnectCard />
+
+              {/* 47-County Live Listener Radar (Bottom of Deck B on both mobile & desktop) */}
+              <KenyaListenerMap
+                onSelectCounty={(countyName, count, cities) => {
+                  const cityText = cities.length > 0 ? ` out in ${cities.join(", ")}` : "";
+                  const shoutoutScript = `Big shoutout to the ${count} tuned in across ${countyName}${cityText}! Locked into GOODLIFE Radio!`;
+                  showMsg(`Radar Cue: ${countyName} shoutout loaded to Cue Dock!`, "success");
+                  setCueItem({
+                    id: `radar_${Date.now()}`,
+                    title: `Shoutout: ${countyName}`,
+                    script: shoutoutScript,
+                    audioUrl: "",
+                    persona: "DJ Fusion",
+                  });
+                }}
+              />
             </div>
           </div>
         </div>

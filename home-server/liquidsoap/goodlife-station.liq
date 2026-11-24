@@ -104,23 +104,25 @@ def smooth_crossfade(a, b) =
 end
 
 # 5a. Standby Audio Ingest (Dynamic Presenter / Station Default Loop)
-# Resolves dynamic standby URL from Next.js BFF via helper script
-def get_standby_url() =
+# Resolves dynamic standby MP3 via helper script and loops it via request.dynamic
+def get_standby_request() =
   let script = "/usr/local/bin/get-standby-audio.sh"
   let fallback_file = "/var/goodlife/drops/emergency-fallback.mp3"
-  if file.exists(script) then
-    let res = string.trim(process.read(script))
-    if res != "" and string.match(pattern="^http", res) then
-      res
+  let target =
+    if file.exists(script) then
+      let res = string.trim(process.read(script))
+      if res != "" and file.exists(res) then
+        res
+      else
+        fallback_file
+      end
     else
       fallback_file
     end
-  else
-    fallback_file
-  end
+  request.create(target)
 end
 
-standby_source = mksafe(audio_to_stereo(input.http(get_standby_url, buffer=3.0, autostart=true)))
+standby_source = mksafe(audio_to_stereo(request.dynamic(id="standby_queue", get_standby_request)))
 
 # Failover logic: Live DJ overrides Standby/AutoDJ; AutoDJ overrides Emergency
 radio_stream = fallback(

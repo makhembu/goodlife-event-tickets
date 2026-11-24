@@ -3370,7 +3370,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     : broadcastMode === "live"
     ? (nowPlayingTrack?.artist || "ADMIN MASTER HARBOR / LIVE DJ")
     : (nowPlayingTrack?.artist || backupSets[0]?.dj_name || null);
-  const displayCover = resolveCoverArt(nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url);
+  const displayCover = resolveCoverArt(
+    broadcastMode === "live"
+      ? (nowPlayingTrack?.thumbnail || onAirSlot?.presenter?.avatar_url || "/flyer.png")
+      : (nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url)
+  );
   const displayThought = nowPlayingTrack?.thought && nowPlayingTrack.thought.trim() !== "" ? nowPlayingTrack.thought.trim() : null;
   const displayDaypart = nowPlayingTrack?.daypart && nowPlayingTrack.daypart.trim() !== "" ? nowPlayingTrack.daypart.trim() : null;
   const totalDuration = nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : 0;

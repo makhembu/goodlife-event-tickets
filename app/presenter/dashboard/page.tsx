@@ -104,6 +104,8 @@ export default function PresenterDashboardPage() {
   const [djName, setDjName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const [instaUrl, setInstaUrl] = useState("");
   const [twitterUrl, setTwitterUrl] = useState("");
   const [standbyAudioUrl, setStandbyAudioUrl] = useState("");
@@ -320,6 +322,30 @@ export default function PresenterDashboardPage() {
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err: any) {
       setSaveStatus(`Error: ${err.message}`);
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarUploadError(null);
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/presenter/avatar", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setAvatarUrl(data.avatar_url);
+      setSaveStatus("Cover photo uploaded and saved!");
+      setTimeout(() => setSaveStatus(null), 4000);
+    } catch (err: any) {
+      setAvatarUploadError(err.message || "Failed to upload cover photo");
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -1066,15 +1092,45 @@ export default function PresenterDashboardPage() {
 
               <div>
                 <label className="block font-bold uppercase text-brand-navy mb-1">
-                  Avatar / Profile Photo URL
+                  On-Air Live Cover Art / Profile Photo
                 </label>
-                <input
-                  type="url"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="w-full p-2.5 border-2 border-brand-navy bg-brand-off-white/40 focus:outline-none focus:bg-white text-brand-navy"
-                  placeholder="https://..."
-                />
+                <p className="text-[11px] text-zinc-600 mb-2">
+                  Shown on your public profile and on the live radio player when you are broadcasting live (if a track has no album art).
+                </p>
+                {avatarUploadError && (
+                  <div className="p-2 border-2 text-xs font-bold bg-red-100 border-red-600 text-red-800 mb-2">
+                    {avatarUploadError}
+                  </div>
+                )}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  {avatarUrl && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={avatarUrl}
+                      alt="DJ Cover Preview"
+                      className="w-16 h-16 object-cover border-2 border-brand-navy shrink-0 bg-neutral-100"
+                    />
+                  )}
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="url"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      className="w-full p-2.5 border-2 border-brand-navy bg-brand-off-white/40 focus:outline-none focus:bg-white text-brand-navy"
+                      placeholder="https://... or upload an image below"
+                    />
+                    <label className={`inline-flex items-center gap-2 px-3 py-1.5 bg-brand-navy hover:bg-brand-accent text-white hover:text-brand-navy font-bold uppercase border-2 border-brand-navy text-xs cursor-pointer ${uploadingAvatar ? "opacity-50 cursor-not-allowed" : ""}`}>
+                      <span>{uploadingAvatar ? "Uploading Photo..." : "Upload Cover / DJ Photo (PNG/JPG)"}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadingAvatar}
+                        onChange={handleAvatarUpload}
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
