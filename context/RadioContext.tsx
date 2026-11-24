@@ -268,7 +268,7 @@ export function computeLiveTimeline(setsList: RadioSet[]): { index: number; offs
  * to ensure the seek is applied as soon as the media timeline is ready, with
  * fallback verification shortly after play begins.
  */
-function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number) {
+function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number, onSeekApplied?: (appliedOffset: number) => void) {
   if (targetOffset <= 0) return;
 
   let seekApplied = false;
@@ -279,12 +279,15 @@ function safeSeekAudio(audio: HTMLAudioElement, targetOffset: number) {
       if (dur && !isNaN(dur) && dur > 2) {
         if (targetOffset >= dur - 2) {
           // If target offset is at or past the end of the file, wrap around so track does not instantly end
-          audio.currentTime = targetOffset % Math.floor(dur);
+          const wrapped = targetOffset % Math.floor(dur);
+          audio.currentTime = wrapped;
           seekApplied = true;
+          onSeekApplied?.(wrapped);
           return;
         }
         audio.currentTime = Math.max(0, targetOffset);
         seekApplied = true;
+        onSeekApplied?.(Math.max(0, targetOffset));
       }
     } catch (e) {
       console.warn("[RadioContext] safeSeekAudio error:", e);
@@ -450,6 +453,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
   const stallWatchdogRef = useRef<NodeJS.Timeout | null>(null);
   const stallNudgeCountRef = useRef<number>(0);
+  const hasStartedPlayingRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
+  const trackLoadTimingRef = useRef<{
+    deck: "A" | "B";
+    src: string;
+    targetSeek: number;
+    srcSetAt: number;
+    loadedMetadataAt: number | null;
+    canPlayAt: number | null;
+    playingAt: number | null;
+    nudges: number;
+  } | null>(null);
   const waitingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const backupProbeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastBufferTimeRef = useRef<number>(0);
@@ -1458,20 +1472,55 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
       audio.volume = isMutedRef.current ? 0 : volumeRef.current;
 
-      safeSeekAudio(audio, seekOffset);
+      hasStartedPlayingRef.current.A = false;
+      const now = performance.now();
+      trackLoadTimingRef.current = {
+        deck: "A",
+        src: activeAudioUrl,
+        targetSeek: seekOffset,
+        srcSetAt: now,
+        loadedMetadataAt: null,
+        canPlayAt: null,
+        playingAt: null,
+        nudges: 0,
+      };
+
+      const recordMetadata = () => {
+        if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
+          trackLoadTimingRef.current.loadedMetadataAt = performance.now();
+          console.debug("[Radio:Timing] loadedmetadata", {
+            deck: "A",
+            duration: audio.duration,
+            elapsedFromSrcSetMs: Math.round(trackLoadTimingRef.current.loadedMetadataAt - trackLoadTimingRef.current.srcSetAt),
+          });
+        }
+      };
+      const recordCanPlay = () => {
+        if (trackLoadTimingRef.current && trackLoadTimingRef.current.src === audio.src) {
+          trackLoadTimingRef.current.canPlayAt = performance.now();
+          console.debug("[Radio:Timing] canplay", {
+            deck: "A",
+            readyState: audio.readyState,
+            elapsedFromSrcSetMs: Math.round(trackLoadTimingRef.current.canPlayAt - trackLoadTimingRef.current.srcSetAt),
+          });
+        }
+      };
+      audio.addEventListener("loadedmetadata", recordMetadata, { once: true });
+      audio.addEventListener("canplay", recordCanPlay, { once: true });
+
+      safeSeekAudio(audio, seekOffset, (applied) => {
+        console.debug("[Radio:Timing] safeSeekApplied", {
+          deck: "A",
+          targetSeek: seekOffset,
+          appliedSeek: applied,
+          readyState: audio.readyState,
+          elapsedFromSrcSetMs: Math.round(performance.now() - now),
+        });
+      });
 
       try {
         await audio.play();
         setIsPlaying(true);
-        // Fallback check: If browser audio decoder started at 0 despite seekOffset,
-        // snap it to the live offset once playing begins
-        if (seekOffset > 2) {
-          setTimeout(() => {
-            if (audioRef.current && isPlayingRef.current && audioRef.current.currentTime < 1.0) {
-              safeSeekAudio(audioRef.current, seekOffset);
-            }
-          }, 250);
-        }
       } catch (err: any) {
         if (err?.name === "AbortError") {
           return; // Superceded by another valid track load, do not transition to error state
@@ -3531,6 +3580,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (audioRef.current) audioRef.current.preload = "auto";
         }}
         onPlaying={() => {
+          hasStartedPlayingRef.current.A = true;
+          if (trackLoadTimingRef.current && trackLoadTimingRef.current.deck === "A") {
+            trackLoadTimingRef.current.playingAt = performance.now();
+            const totalMs = Math.round(trackLoadTimingRef.current.playingAt - trackLoadTimingRef.current.srcSetAt);
+            console.info("[Radio:Timing] Deck A time-to-first-sound:", {
+              src: trackLoadTimingRef.current.src,
+              targetSeek: trackLoadTimingRef.current.targetSeek,
+              actualCurrentTime: audioRef.current?.currentTime,
+              totalTimeToSoundMs: totalMs,
+              metadataLagMs: trackLoadTimingRef.current.loadedMetadataAt ? Math.round(trackLoadTimingRef.current.loadedMetadataAt - trackLoadTimingRef.current.srcSetAt) : null,
+              canPlayLagMs: trackLoadTimingRef.current.canPlayAt ? Math.round(trackLoadTimingRef.current.canPlayAt - trackLoadTimingRef.current.srcSetAt) : null,
+              nudgesEncountered: trackLoadTimingRef.current.nudges,
+            });
+          }
           console.debug("[Radio:Playing]", { timestamp: new Date().toISOString(), deck: "A", src: audioRef.current?.src, currentTime: audioRef.current?.currentTime });
           if (activeDeckRef.current === "A") {
             stallNudgeCountRef.current = 0;
@@ -3565,6 +3628,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             }
           }, 800);
 
+          // Grace period: Use 12s on initial connect/seek before first sound, 3.5s for mid-track stalls
+          const isInitialBuffering = !hasStartedPlayingRef.current.A;
+          const watchdogTimeoutMs = isInitialBuffering ? 12000 : 3500;
+
           if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
           stallWatchdogRef.current = setTimeout(() => {
             if (audioRef.current && isPlayingRef.current && (audioRef.current.paused || audioRef.current.readyState < 3)) {
@@ -3595,7 +3662,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               }
 
               stallNudgeCountRef.current += 1;
-              console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck A stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)` });
+              if (trackLoadTimingRef.current && trackLoadTimingRef.current.deck === "A") {
+                trackLoadTimingRef.current.nudges += 1;
+              }
+              console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck A stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)`, isInitialBuffering });
               audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + 0.2);
               audioRef.current.play().then(() => {
                 setEngineState("live");
@@ -3608,7 +3678,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 }
               });
             }
-          }, 3500);
+          }, watchdogTimeoutMs);
         }}
         onStalled={() => {
           if (liveActiveRef.current || broadcastModeRef.current === "live") return;
@@ -3702,6 +3772,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (preloadAudioRef.current) preloadAudioRef.current.preload = "auto";
         }}
         onPlaying={() => {
+          hasStartedPlayingRef.current.B = true;
           if (liveActiveRef.current || broadcastModeRef.current === "live") {
             try { preloadAudioRef.current?.pause(); } catch {}
             return;
@@ -3735,6 +3806,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               }
             }, 1200);
 
+            const isInitialBufferingB = !hasStartedPlayingRef.current.B;
+            const watchdogTimeoutMsB = isInitialBufferingB ? 12000 : 3500;
+
             if (stallWatchdogRef.current) clearTimeout(stallWatchdogRef.current);
             stallWatchdogRef.current = setTimeout(() => {
               if (preloadAudioRef.current && isPlayingRef.current && (preloadAudioRef.current.paused || preloadAudioRef.current.readyState < 3)) {
@@ -3762,7 +3836,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 stallNudgeCountRef.current += 1;
-                console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck B stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)` });
+                console.debug("[Radio:Stall]", { timestamp: new Date().toISOString(), detail: `Deck B stall detected: attempting playback nudge (${stallNudgeCountRef.current}/2)`, isInitialBuffering: isInitialBufferingB });
                 preloadAudioRef.current.currentTime = Math.max(0, preloadAudioRef.current.currentTime + 0.2);
                 preloadAudioRef.current.play().then(() => {
                   setEngineState("live");
@@ -3771,7 +3845,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
                   advanceBroadcastTrack(false);
                 });
               }
-            }, 3500);
+            }, watchdogTimeoutMsB);
           }
         }}
         onStalled={() => {
