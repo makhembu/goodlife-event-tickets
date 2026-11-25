@@ -851,6 +851,43 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         }
+        // Keep UI metadata 1:1 with what is actually playing in AutoDJ mode:
+        // If the active deck is mid-song on a different track and we are not swapping yet,
+        // do NOT overwrite nowPlayingTrack with the next server track early.
+        const activeDeckForCheck = activeDeckRef.current;
+        const activeAudioForCheck = activeDeckForCheck === "A" ? audioRef.current : preloadAudioRef.current;
+        const isAutoDjMode = broadcastModeRef.current !== "live" && (data as any)?.mode !== "live";
+        if (
+          isAutoDjMode &&
+          isPlayingRef.current &&
+          isLiveRef.current &&
+          activeAudioForCheck &&
+          !activeAudioForCheck.paused &&
+          !activeAudioForCheck.ended &&
+          activeAudioForCheck.src &&
+          targetTrackSrc &&
+          !areSameAudioSrc(activeAudioForCheck.src, targetTrackSrc) &&
+          !isCrossfadingRef.current
+        ) {
+          const curDur = nowPlayingTrackRef.current?.duration_sec || nowPlayingTrackRef.current?.duration;
+          const effDur = (curDur && curDur > 10)
+            ? Math.min(activeAudioForCheck.duration || Infinity, curDur)
+            : (activeAudioForCheck.duration || 0);
+          const rem = (effDur && !isNaN(effDur) && activeAudioForCheck.currentTime)
+            ? effDur - activeAudioForCheck.currentTime
+            : 0;
+          const willSwapNow =
+            isPlaylistSwitch ||
+            isPlaylistIdSwitch ||
+            (data as any)?.mode === "mania" ||
+            (rem > 0 && rem <= 15) ||
+            rem <= 0 ||
+            Math.abs((activeAudioForCheck.currentTime || 0) - (track.elapsed || 0)) > 20;
+          if (!willSwapNow) {
+            return;
+          }
+        }
+
         setNowPlayingTrack(track);
 
         // If the incoming track was a scheduled cue, automatically mark it as executed
@@ -870,19 +907,20 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           hasSentBeaconRef.current = false;
           hasFiredOutroDropRef.current = false;
           tracksSinceLastDropRef.current += 1;
+        }
 
-          // If in live mode, NEVER update audio src from database playlist tracks
-          if (broadcastModeRef.current === "live" || (data as any)?.mode === "live") {
-            return;
-          }
+        // If in live mode, NEVER update audio src from database playlist tracks
+        if (broadcastModeRef.current === "live" || (data as any)?.mode === "live") {
+          return;
+        }
 
-          // Single-writer rule: do not let background polling reassign audio.src while engine is actively connecting to a user-initiated target
-          if (engineStateRef.current === "connecting" && !isPlaylistSwitch && !isPlaylistIdSwitch) {
-            return;
-          }
+        // Single-writer rule: do not let background polling reassign audio.src while engine is actively connecting to a user-initiated target
+        if (engineStateRef.current === "connecting" && !isPlaylistSwitch && !isPlaylistIdSwitch) {
+          return;
+        }
 
-          // If playing and track advances, update audio src safely without truncating playing song (AutoDJ mode only)
-          const targetTrackSrc = track.playback_url || track.audio_url;
+        // If playing and track advances, update audio src safely without truncating playing song (AutoDJ mode only)
+        {
           const activeDeck = activeDeckRef.current;
           const currentDeckAudio = activeDeck === "A" ? audioRef.current : preloadAudioRef.current;
           const standbyDeckAudio = activeDeck === "A" ? preloadAudioRef.current : audioRef.current;
