@@ -2,37 +2,59 @@
   "id": "/radio",
   "name": "GOODLIFE Radio",
   "short_name": "GL Radio",
-  "description": "24/7 Afrobeats, Amapiano & Festival Anthems Live from Nairobi",
-  "start_url": "/radio",
+  "description": "24/7 Afrobeats, Amapiano & Festival Anthems Live",
+  "start_url": "/radio?source=pwa",
   "scope": "/radio",
   "display": "standalone",
-  "background_color": "#142B4C",
-  "theme_color": "#C8A54A",
+  "background_color": "#16181D",
+  "theme_color": "#F5C842",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/radio-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/radio-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/maskable-192.png",
+      "src": "/icons/radio-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icons/maskable-512.png",
+      "src": "/icons/radio-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Listen Live",
+      "short_name": "Live",
+      "url": "/radio?source=pwa&tab=live"
+    },
+    {
+      "name": "Playlists",
+      "short_name": "Playlists",
+      "url": "/radio?source=pwa&tab=playlists"
+    },
+    {
+      "name": "DJ Vault",
+      "short_name": "Vault",
+      "url": "/radio?source=pwa&tab=vault"
+    },
+    {
+      "name": "Live Chat",
+      "short_name": "Chat",
+      "url": "/radio?source=pwa&tab=chat"
     }
   ]
 }

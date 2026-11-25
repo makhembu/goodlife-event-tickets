@@ -31,6 +31,7 @@ import ShoutoutWall from "@/components/radio/ShoutoutWall";
 import LivePollWidget from "@/components/radio/LivePollWidget";
 import LiveContestWidget from "@/components/radio/LiveContestWidget";
 import ShareStationModal from "@/components/radio/ShareStationModal";
+import RadioPwaShell from "@/components/radio/RadioPwaShell";
 import PwaInstallButton from "@/components/ui/PwaInstallButton";
 import { Event as EventType } from "@/lib/supabase-db-types";
 
@@ -87,6 +88,16 @@ export default function RadioPage() {
   // Cover image fallback state
   const [coverError, setCoverError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [isPwaStandalone, setIsPwaStandalone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as { standalone?: boolean }).standalone === true ||
+      new URLSearchParams(window.location.search).get("source") === "pwa";
+    setIsPwaStandalone(standalone);
+  }, []);
 
   // Active event state for the featured event card
   const [activeEvent, setActiveEvent] = useState<EventType | null>(null);
@@ -219,6 +230,10 @@ export default function RadioPage() {
       </button>
     </div>
   );
+
+  if (isPwaStandalone) {
+    return <RadioPwaShell />;
+  }
 
   return (
     <div className="min-h-screen bg-brand-bg py-4 sm:py-6 px-3 sm:px-6 md:px-10 text-brand-navy font-sans relative selection:bg-brand-accent selection:text-brand-navy overflow-x-hidden w-full max-w-full">
