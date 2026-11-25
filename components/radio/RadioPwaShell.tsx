@@ -14,6 +14,7 @@ import {
   MessageSquare,
   X,
   RotateCcw,
+  Calendar,
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import {
@@ -22,6 +23,7 @@ import {
   formatTrackTitle,
 } from "@/lib/radio/media-helpers";
 import RadioRibbonVisualizer from "@/components/radio/RadioRibbonVisualizer";
+import RadioPwaTimetableDrawer from "@/components/radio/RadioPwaTimetableDrawer";
 import CuratedPlaylists from "@/components/radio/CuratedPlaylists";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
 import CatchUpVault from "@/components/radio/CatchUpVault";
@@ -59,6 +61,7 @@ export default function RadioPwaShell() {
 
   const [activeTab, setActiveTab] = useState<PwaTab>("live");
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [coverError, setCoverError] = useState(false);
 
@@ -119,9 +122,14 @@ export default function RadioPwaShell() {
           />
           <span>{isPlaying ? "ON AIR · 254 FM" : "STANDBY · 254 FM"}</span>
         </div>
-        <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-[#F5C842]">
-          GOODLIFE RADIO
-        </span>
+        <button
+          type="button"
+          onClick={() => setShowSchedule(true)}
+          className="px-2.5 py-1 bg-[#F5C842] hover:bg-[#DFBB7D] text-[#16181D] border-2 border-[#FBF9F6] font-mono text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 cursor-pointer transition-colors"
+        >
+          <Calendar className="w-3 h-3" />
+          <span>SCHEDULE</span>
+        </button>
       </header>
 
       {/* Main Content Area */}
@@ -345,6 +353,11 @@ export default function RadioPwaShell() {
         onClose={() => setShowShareModal(false)}
         title={title}
         artist={activePresenterName}
+      />
+
+      <RadioPwaTimetableDrawer
+        isOpen={showSchedule}
+        onClose={() => setShowSchedule(false)}
       />
     </div>
   );
