@@ -180,9 +180,9 @@ export default function RadioPwaShell() {
               >
                 {statusTag}
               </span>
-              <h1 className="relative z-10 font-display text-3xl sm:text-4xl leading-[0.95] tracking-wide uppercase text-[#FBF9F6] line-clamp-2">
-                {displayTitle}
-              </h1>
+              <span className="relative z-10 font-mono text-[11px] font-bold uppercase tracking-widest text-[#F5C842] drop-shadow">
+                {onAirSlot?.show?.title || "GOODLIFE RADIO 254"}
+              </span>
             </div>
 
             {/* Track Info + Ribbon Soundwave Visualizer */}

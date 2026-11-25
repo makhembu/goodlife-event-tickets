@@ -444,6 +444,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const isTransitioningRef = useRef<boolean>(false);
   const isGeneratingDropRef = useRef<boolean>(false);
   const lastManualSwitchAtRef = useRef<number>(0);
+  const lastLocalCrossfadeAtRef = useRef<number>(0);
+  const lastLocalCrossfadeSrcRef = useRef<string>("");
 
   // Dual-Cadence & Multi-Drop Stacking Tracking (every 2 tracks + every 15 minutes)
   const tracksSinceLastDropRef = useRef<number>(0);
@@ -829,10 +831,23 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           elapsed: adjustedElapsed,
         };
         const newTrackId = track.video_id || `${track.title}-${track.artist || ""}`;
+        const targetTrackSrc = track.playback_url || track.audio_url || "";
         const withinManualGraceWindow = Date.now() - lastManualSwitchAtRef.current < 7000;
         if (withinManualGraceWindow && newTrackId !== currentTrackIdRef.current) {
           // Ignore stale cached server poll response right after an explicit studio cue/skip
           return;
+        }
+        const withinLocalCrossfadeGrace =
+          lastLocalCrossfadeAtRef.current > 0 &&
+          Date.now() - lastLocalCrossfadeAtRef.current < 18000;
+        if (withinLocalCrossfadeGrace && !isPlaylistSwitch && !isPlaylistIdSwitch) {
+          if (targetTrackSrc && areSameAudioSrc(targetTrackSrc, lastLocalCrossfadeSrcRef.current)) {
+            // Server caught up to the track we crossfaded into — resume normal sync
+            lastLocalCrossfadeAtRef.current = 0;
+          } else {
+            // Server is still reporting the outgoing track; do not revert artwork or audio
+            return;
+          }
         }
         setNowPlayingTrack(track);
 
@@ -1855,6 +1870,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           }
           if ((nextCandidate?.playback_url || nextCandidate?.audio_url) && executeCrossfadeRef.current) {
             console.log(`[RadioContext] 🎚️ AutoDJ natural crossfade blending into "${nextCandidate.title}"`);
+            const nextSrc = resolveAudioSource(nextCandidate) || "";
+            lastLocalCrossfadeAtRef.current = Date.now();
+            lastLocalCrossfadeSrcRef.current = nextSrc;
+            lastManualSwitchAtRef.current = Date.now();
             executeCrossfadeRef.current(nextCandidate, { fast: false });
             setNowPlayingTrack({
               ...nextCandidate,
@@ -1863,11 +1882,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               duration: nextCandidate.duration_sec || nextCandidate.duration || 180,
             });
             currentTrackIdRef.current = nextCandidate.video_id || `set-${nextCandidate.id}`;
+            hasFiredOutroDropRef.current = false;
             setInterpolatedElapsed(0);
             lastPollElapsedRef.current = 0;
             lastPollTimestampRef.current = Date.now();
             setUpNextQueue((prev) => (prev.length > 0 && prev[0].id === nextCandidate.id ? prev.slice(1) : prev));
-            fetchRadioLive();
           }
         }
       }
@@ -2246,6 +2265,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         if (!isOutPlaying || startOutVol <= 0) {
           incoming.volume = targetVol;
           isCrossfadingRef.current = false;
+          hasFiredAutoDjCrossfadeRef.current = false;
           activeDeckRef.current = activeDeckRef.current === "A" ? "B" : "A";
           return;
         }
@@ -2268,6 +2288,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
               crossfadeTimerRef.current = null;
             }
             isCrossfadingRef.current = false;
+            hasFiredAutoDjCrossfadeRef.current = false;
             if (outgoing) {
               try {
                 outgoing.pause();

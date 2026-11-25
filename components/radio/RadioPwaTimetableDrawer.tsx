@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Calendar, Clock, Globe, X, Radio, RefreshCw } from "lucide-react";
 
 interface SlotData {
@@ -44,6 +44,7 @@ export default function RadioPwaTimetableDrawer({
   const [error, setError] = useState<string | null>(null);
   const [useLocalTime, setUseLocalTime] = useState(false);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(getTodayEatDayIndex);
+  const hasFetchedRef = useRef(false);
 
   const loadSchedule = useCallback(async () => {
     try {
@@ -61,10 +62,11 @@ export default function RadioPwaTimetableDrawer({
   }, []);
 
   useEffect(() => {
-    if (isOpen && slots.length === 0 && !loading) {
+    if (isOpen && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       loadSchedule();
     }
-  }, [isOpen, slots.length, loading, loadSchedule]);
+  }, [isOpen, loadSchedule]);
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
