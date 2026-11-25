@@ -57,6 +57,7 @@ export default function RadioPwaShell() {
     toggleMute,
     snapToBroadcast,
     onAirSlot,
+    getActiveAudioElement,
   } = useRadio();
 
   const [activeTab, setActiveTab] = useState<PwaTab>("live");
@@ -208,6 +209,7 @@ export default function RadioPwaShell() {
                 isMuted={isMuted}
                 volume={volume}
                 isDropPlaying={isDropPlaying}
+                getAudioElement={getActiveAudioElement}
               />
             </div>
 

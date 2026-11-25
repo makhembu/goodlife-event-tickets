@@ -7,21 +7,38 @@ interface RadioRibbonVisualizerProps {
   isMuted?: boolean;
   volume?: number;
   isDropPlaying?: boolean;
+  getAudioElement?: () => HTMLAudioElement | null;
 }
+
+type AudioCaptureElement = HTMLAudioElement & {
+  captureStream?: () => MediaStream;
+  mozCaptureStream?: () => MediaStream;
+};
 
 /**
  * Fluid 3-ribbon soundwave visualizer rendered directly on the cream card
  * surface (no dark box) in Goodlife sand-gold, vivid gold, and charcoal ink.
+ * Uses a read-only captureStream() -> Web Audio AnalyserNode when supported
+ * so bass/mid/high ribbons react to real audio without muting cross-origin streams.
  */
 export default function RadioRibbonVisualizer({
   isPlaying,
   isMuted = false,
   volume = 1,
   isDropPlaying = false,
+  getAudioElement,
 }: RadioRibbonVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stateRef = useRef({ isPlaying, isMuted, volume, isDropPlaying });
-  stateRef.current = { isPlaying, isMuted, volume, isDropPlaying };
+  const stateRef = useRef({ isPlaying, isMuted, volume, isDropPlaying, getAudioElement });
+  stateRef.current = { isPlaying, isMuted, volume, isDropPlaying, getAudioElement };
+
+  const analyserRef = useRef<{
+    ctx: AudioContext;
+    analyser: AnalyserNode;
+    bins: Uint8Array<ArrayBuffer>;
+    sourceEl: HTMLAudioElement | null;
+    sourceNode: MediaStreamAudioSourceNode | null;
+  } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -35,7 +52,58 @@ export default function RadioRibbonVisualizer({
 
     let rafId = 0;
     let phase = 0;
-    let smoothPower = 0.14;
+    let smoothBass = 0.14;
+    let smoothMid = 0.14;
+    let smoothHigh = 0.14;
+
+    const ensureAnalyser = () => {
+      const el = stateRef.current.getAudioElement?.() as AudioCaptureElement | null;
+      if (!el) return null;
+      const capFn = el.captureStream || el.mozCaptureStream;
+      if (typeof capFn !== "function") return null;
+
+      try {
+        if (!analyserRef.current) {
+          const AudioCtx =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (!AudioCtx) return null;
+          const audioCtx = new AudioCtx();
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          analyser.smoothingTimeConstant = 0.72;
+          analyserRef.current = {
+            ctx: audioCtx,
+            analyser,
+            bins: new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount)),
+            sourceEl: null,
+            sourceNode: null,
+          };
+        }
+
+        const state = analyserRef.current;
+        if (state.ctx.state === "suspended") {
+          state.ctx.resume().catch(() => {});
+        }
+        if (state.sourceEl !== el) {
+          if (state.sourceNode) {
+            try {
+              state.sourceNode.disconnect();
+            } catch {}
+          }
+          const stream = capFn.call(el);
+          if (stream && stream.getAudioTracks().length > 0) {
+            const node = state.ctx.createMediaStreamSource(stream);
+            node.connect(state.analyser);
+            state.sourceNode = node;
+            state.sourceEl = el;
+          }
+        }
+        return state.sourceNode ? state : null;
+      } catch {
+        return null;
+      }
+    };
 
     const drawRibbon = (
       w: number,
@@ -89,16 +157,43 @@ export default function RadioRibbonVisualizer({
       ctx.clearRect(0, 0, cssW, cssH);
 
       const active = playing && !muted;
-      const targetPower = active ? Math.max(0.35, Math.min(1.15, vol * (drop ? 1.15 : 1))) : 0.14;
-      smoothPower += (targetPower - smoothPower) * 0.12;
+      let targetBass = active ? Math.max(0.35, Math.min(1.15, vol * (drop ? 1.15 : 1))) : 0.12;
+      let targetMid = targetBass;
+      let targetHigh = targetBass;
 
-      if (!prefersReducedMotion) {
-        phase += active ? (drop ? 0.12 : 0.095) : 0.015;
+      if (active) {
+        const analyserState = ensureAnalyser();
+        if (analyserState) {
+          analyserState.analyser.getByteFrequencyData(analyserState.bins);
+          const bins = analyserState.bins;
+          const avgRange = (start: number, end: number) => {
+            let sum = 0;
+            const len = Math.max(1, end - start);
+            for (let i = start; i < end && i < bins.length; i++) sum += bins[i];
+            return sum / (len * 255);
+          };
+          const liveBass = avgRange(0, 5);
+          const liveMid = avgRange(5, 14);
+          const liveHigh = avgRange(14, 26);
+          if (liveBass + liveMid + liveHigh > 0.01) {
+            targetBass = 0.25 + liveBass * 1.35;
+            targetMid = 0.22 + liveMid * 1.45;
+            targetHigh = 0.18 + liveHigh * 1.55;
+          }
+        }
       }
 
-      drawRibbon(cssW, cssH, 9, 13 * smoothPower, 1.8, "#DFBB7D", 2, 0.18);
-      drawRibbon(cssW, cssH, 13, 15 * smoothPower, 0.7, "#F5C842", 2.4, 0.22);
-      drawRibbon(cssW, cssH, 7, 11 * smoothPower, 0, "#16181D", 2.6, 0);
+      smoothBass += (targetBass - smoothBass) * 0.22;
+      smoothMid += (targetMid - smoothMid) * 0.22;
+      smoothHigh += (targetHigh - smoothHigh) * 0.22;
+
+      if (!prefersReducedMotion) {
+        phase += active ? 0.06 + smoothBass * 0.075 : 0.015;
+      }
+
+      drawRibbon(cssW, cssH, 9, 13 * smoothHigh, 1.8, "#DFBB7D", 2, 0.18);
+      drawRibbon(cssW, cssH, 13, 15 * smoothMid, 0.7, "#F5C842", 2.4, 0.22);
+      drawRibbon(cssW, cssH, 7, 13 * smoothBass, 0, "#16181D", 2.6, 0);
 
       ctx.restore();
 

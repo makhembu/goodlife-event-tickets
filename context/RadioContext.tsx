@@ -176,6 +176,7 @@ export interface RadioContextType {
   fetchRadioState: () => Promise<void>;
   fetchRadioLive: () => Promise<void>;
   playImmediateBroadcastTrack: (track: { id: number; title: string; dj_name?: string; audio_url: string; duration_sec?: number; cover_url?: string }) => void;
+  getActiveAudioElement: () => HTMLAudioElement | null;
 }
 
 // Safe inert default state returned when radio is disabled, unconfigured, or outside provider.
@@ -241,6 +242,7 @@ export const INERT_RADIO_STATE: RadioContextType = {
   fetchRadioState: async () => {},
   fetchRadioLive: async () => {},
   playImmediateBroadcastTrack: () => {},
+  getActiveAudioElement: () => null,
 };
 
 const RadioContext = createContext<RadioContextType | null>(null);
@@ -3381,20 +3383,21 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   }, [engineState, isStale]);
 
   // Derived display values: while a station drop airs, display the drop metadata
+  // Never fall back to backupSets[0] on initial load so the real live track isn't masked by a stale first catalog row.
   const displayTitle = isDropPlaying && activeDropTitle
     ? activeDropTitle
     : broadcastMode === "live"
     ? (nowPlayingTrack?.title || (nowPlayingTrack as any)?.live_title || "GOODLIFE RADIO LIVE - ON AIR TAKEOVER")
-    : formatTrackTitle(nowPlayingTrack?.title || backupSets[0]?.title);
+    : formatTrackTitle(nowPlayingTrack?.title || "");
   const displayArtist = isDropPlaying && activePersona
     ? activePersona
     : broadcastMode === "live"
     ? (nowPlayingTrack?.artist || "ADMIN MASTER HARBOR / LIVE DJ")
-    : (nowPlayingTrack?.artist || backupSets[0]?.dj_name || null);
+    : (nowPlayingTrack?.artist || null);
   const displayCover = resolveCoverArt(
     broadcastMode === "live"
       ? (nowPlayingTrack?.thumbnail || onAirSlot?.presenter?.avatar_url || "/flyer.png")
-      : (nowPlayingTrack?.thumbnail || backupSets[0]?.cover_url)
+      : (nowPlayingTrack?.thumbnail || "/flyer.png")
   );
   const displayThought = nowPlayingTrack?.thought && nowPlayingTrack.thought.trim() !== "" ? nowPlayingTrack.thought.trim() : null;
   const displayDaypart = nowPlayingTrack?.daypart && nowPlayingTrack.daypart.trim() !== "" ? nowPlayingTrack.daypart.trim() : null;
@@ -3609,6 +3612,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         fetchRadioState,
         fetchRadioLive,
         playImmediateBroadcastTrack,
+        getActiveAudioElement: () =>
+          activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current,
       }}
     >
       {children}
