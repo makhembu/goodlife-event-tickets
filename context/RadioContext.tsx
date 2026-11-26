@@ -1004,10 +1004,19 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (Array.isArray(data.up_next)) {
-        setUpNextQueue(data.up_next.map((t: any) => ({
+        const curRawId = (nowPlayingTrackRef.current as any)?.id;
+        const curId = curRawId != null ? String(curRawId) : null;
+        const curVideoId = nowPlayingTrackRef.current?.video_id ? String(nowPlayingTrackRef.current.video_id) : null;
+        const formattedQueue = data.up_next.map((t: any) => ({
           ...t,
           title: formatTrackTitle(t?.title),
-        })));
+        }));
+        const isHeadSameAsCurrent = formattedQueue.length > 1 && (
+          (curId && formattedQueue[0]?.id != null && String(formattedQueue[0].id) === curId) ||
+          (curVideoId && formattedQueue[0]?.video_id && String(formattedQueue[0].video_id) === curVideoId)
+        );
+        const filteredQueue = isHeadSameAsCurrent ? formattedQueue.slice(1) : formattedQueue;
+        setUpNextQueue(filteredQueue);
       }
       if (Array.isArray(data.history)) {
         setHistoryList(data.history);
@@ -2644,8 +2653,15 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     let nextTrack: any = null;
     let nextIdx = 0;
-    if (upNextQueue && upNextQueue.length > 0 && (upNextQueue[0].playback_url || upNextQueue[0].audio_url)) {
-      nextTrack = upNextQueue[0];
+    const candidateNext = (upNextQueue && upNextQueue.length > 0) ? upNextQueue[0] : null;
+    const isDuplicateOfEnded = Boolean(
+      candidateNext &&
+      cleanEndedId &&
+      String(candidateNext.id) === cleanEndedId &&
+      sets.length > 1
+    );
+    if (candidateNext && !isDuplicateOfEnded && (candidateNext.playback_url || candidateNext.audio_url)) {
+      nextTrack = candidateNext;
       const foundIdx = sets.findIndex((s) => String(s.id) === String(nextTrack.id));
       nextIdx = foundIdx !== -1 ? foundIdx : 0;
       setUpNextQueue((prev) => prev.slice(1));

@@ -86,6 +86,15 @@ interface ConnectionStatusData {
     mount: string;
     username: string;
     format: string;
+    tls?: boolean;
+  };
+  alternate_stream_config?: {
+    label?: string;
+    host: string;
+    port: number;
+    mount: string;
+    username: string;
+    tls: boolean;
   };
   next_slot?: SlotItem | null;
 }
@@ -443,6 +452,8 @@ export default function PresenterDashboardPage() {
   const port = connStatus?.stream_config.port || 8005;
   const mount = connStatus?.stream_config.mount || "/live";
   const username = connStatus?.stream_config.username || `dj_${profile?.slug}`;
+  const alternate = connStatus?.alternate_stream_config;
+  const showAlternate = Boolean(alternate && alternate.host !== host);
 
   return (
     <div className="min-h-screen bg-brand-off-white text-brand-navy font-mono pb-20">
@@ -667,6 +678,30 @@ export default function PresenterDashboardPage() {
                 </div>
               </div>
 
+              {showAlternate && alternate && (
+                <div className="p-3 bg-brand-off-white/60 border-2 border-dashed border-brand-navy/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-neutral-500 font-bold block uppercase">
+                      Alternate test endpoint · {alternate.label || "Cloudflare Tunnel"}
+                    </span>
+                    <span className="font-bold text-brand-navy text-xs">
+                      {alternate.host}:{alternate.port}
+                    </span>
+                    <span className="text-[10px] text-neutral-600 block">
+                      Mount {alternate.mount} · TLS/SSL {alternate.tls ? "ON" : "OFF"} · same username and stream key
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(`${alternate.host}:${alternate.port}`, "alt_endpoint")}
+                    className="px-2.5 py-1 bg-brand-navy hover:bg-brand-accent text-white hover:text-brand-navy border-2 border-brand-navy font-mono text-[11px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                    title="Copy alternate endpoint"
+                  >
+                    {copiedField === "alt_endpoint" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedField === "alt_endpoint" ? "COPIED!" : "COPY"}</span>
+                  </button>
+                </div>
+              )}
+
               {/* Stream Key Preview row */}
               <div className="p-3 bg-brand-off-white/80 border-2 border-brand-navy flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="space-y-1">
@@ -775,6 +810,7 @@ export default function PresenterDashboardPage() {
                       <li>Open BUTT and click <strong>Settings</strong> &gt; <strong>Main</strong> tab.</li>
                       <li>Under Server, click <strong>Add</strong> and select <strong>Type: Icecast</strong>.</li>
                       <li>Set <strong>Address:</strong> <code className="bg-white px-1 border">{host}</code>, <strong>Port:</strong> <code className="bg-white px-1 border">{port}</code>.</li>
+                      <li>To test the alternate endpoint, use <strong>Address:</strong> <code className="bg-white px-1 border">{alternate?.host || "live.darajadigital.com"}</code>, <strong>Port:</strong> <code className="bg-white px-1 border">{alternate?.port || 443}</code>, and enable <strong>TLS/SSL</strong>.</li>
                       <li>Set <strong>Icecast Mount:</strong> <code className="bg-white px-1 border">{mount}</code> and <strong>Icecast User:</strong> <code className="bg-white px-1 border">{username}</code>.</li>
                       <li>In <strong>Password</strong>, paste your secret stream key (<code className="bg-white px-1 border">gl_live_...</code>).</li>
                       <li>In the <strong>Audio</strong> tab, set Codec to <strong>MP3</strong> and Bitrate to <strong>320k</strong> (or 256k on mobile data).</li>

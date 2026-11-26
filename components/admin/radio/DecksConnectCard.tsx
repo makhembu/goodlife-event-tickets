@@ -39,6 +39,11 @@ export default function DecksConnectCard({
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Dual-path ingest: direct bore relay vs Cloudflare Tunnel
+  const [connectionMode, setConnectionMode] = useState<"direct" | "tunnel">("direct");
+  const [apiPrimary, setApiPrimary] = useState<{ host: string; port: number; mount: string; tls: boolean } | null>(null);
+  const [apiAlternate, setApiAlternate] = useState<{ label?: string; host: string; port: number; mount: string; tls: boolean } | null>(null);
+
   // Station Default Standby Audio state
   const [standbyAudioUrl, setStandbyAudioUrl] = useState<string | null>(null);
   const [uploadingStandby, setUploadingStandby] = useState(false);
@@ -59,6 +64,23 @@ export default function DecksConnectCard({
         if (res.ok) {
           const data = await res.json();
           setKeyPrefix(data.key_prefix);
+          if (data.host && data.port) {
+            setApiPrimary({
+              host: data.host,
+              port: data.port,
+              mount: data.mount || harborMount,
+              tls: Boolean(data.tls),
+            });
+          }
+          if (data.alternate?.host && data.alternate?.port) {
+            setApiAlternate({
+              label: data.alternate.label || "Cloudflare Tunnel",
+              host: data.alternate.host,
+              port: data.alternate.port,
+              mount: data.alternate.mount || harborMount,
+              tls: Boolean(data.alternate.tls),
+            });
+          }
         }
       } catch (e) {
         console.error("Failed to load admin stream key:", e);
@@ -130,15 +152,38 @@ export default function DecksConnectCard({
   const activeKeyToDisplay = newlyGeneratedKey || cachedKey || keyPrefix || "gl_live_••••••••••••";
   const activeKeyFull = newlyGeneratedKey || cachedKey || null;
 
+  const direct = apiPrimary || {
+    host: harborHost,
+    port: harborPort,
+    mount: harborMount,
+    tls: false,
+  };
+  const tunnel = apiAlternate || {
+    label: "Cloudflare Tunnel",
+    host: "live.darajadigital.com",
+    port: 443,
+    mount: harborMount,
+    tls: true,
+  };
+  const active = connectionMode === "tunnel" ? tunnel : direct;
+  const alternate = connectionMode === "tunnel" ? direct : tunnel;
+  const activeHost = active.host;
+  const activePort = active.port;
+  const activeMount = active.mount;
+  const activeTls = active.tls;
+
   const copyAllSettings = () => {
     const keyVal = activeKeyFull || keyPrefix || "<ADMIN_MASTER_KEY>";
     const text = `GOODLIFE Radio - ADMIN MASTER HARBOR CREDENTIALS:
-Server / Host: ${harborHost}
-Port: ${harborPort}
-Mountpoint: ${harborMount}
+Connection: ${connectionMode === "tunnel" ? "Cloudflare Tunnel (TLS)" : "Direct relay"}
+Server / Host: ${activeHost}
+Port: ${activePort}
+TLS / SSL: ${activeTls ? "ON" : "OFF"}
+Mountpoint: ${activeMount}
 Username: admin
 Password / Stream Key: ${keyVal}
 Audio Format: MP3 320kbps Stereo (44.1kHz)
+Alternate test endpoint: ${alternate.host}:${alternate.port} (TLS ${alternate.tls ? "ON" : "OFF"})
 Note: Connecting with these credentials executes an instant unconditional On-Air takeover.`;
 
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -207,7 +252,7 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
               </span>
             </h3>
             <p className="text-[11px] font-mono text-[#DFBB7D] mt-0.5">
-              Direct Icecast source harbor · Admin Master Key initiates instant takeover 24/7
+              Direct relay + Cloudflare Tunnel · Admin Master Key initiates instant takeover 24/7
             </p>
 
             {/* Live DJ Status Badge on Mobile (< sm) */}
@@ -271,16 +316,57 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
         </div>
       </div>
 
+      {/* Dual-path ingest selector */}
+      <div className="bg-[#1A1D24] border border-white/10 p-2.5 font-mono text-xs space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-white/50 font-bold uppercase">Connection method</span>
+          <span className="text-[10px] text-[#DFBB7D]">Both hit the same harbor</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setConnectionMode("direct")}
+            className={`text-left p-2 border transition-all cursor-pointer ${
+              connectionMode === "direct"
+                ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D]"
+                : "bg-black/20 text-white/80 border-white/15 hover:border-[#DFBB7D]/60"
+            }`}
+          >
+            <span className="block font-bold uppercase text-[11px]">Direct relay · port {direct.port}</span>
+            <span className={`block text-[10px] ${connectionMode === "direct" ? "text-[#16181D]/70" : "text-white/50"}`}>
+              {direct.host}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setConnectionMode("tunnel")}
+            className={`text-left p-2 border transition-all cursor-pointer ${
+              connectionMode === "tunnel"
+                ? "bg-[#DFBB7D] text-[#16181D] border-[#DFBB7D]"
+                : "bg-black/20 text-white/80 border-white/15 hover:border-[#DFBB7D]/60"
+            }`}
+          >
+            <span className="block font-bold uppercase text-[11px]">{tunnel.label || "Cloudflare Tunnel"} · port {tunnel.port} · TLS</span>
+            <span className={`block text-[10px] ${connectionMode === "tunnel" ? "text-[#16181D]/70" : "text-white/50"}`}>
+              {tunnel.host}
+            </span>
+          </button>
+        </div>
+        <p className="text-[10px] text-white/50">
+          Use the tunnel if your network blocks port {direct.port}. Same mount, username and stream key on both paths.
+        </p>
+      </div>
+
       {/* Harbor Credential Fields */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 font-mono text-xs">
         {/* Host */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
             <span className="text-[11px] text-white/50 block">SERVER / HOST</span>
-            <span className="text-white font-bold">{harborHost}</span>
+            <span className="text-white font-bold">{activeHost}</span>
           </div>
           <button
-            onClick={() => copyToClipboard(harborHost, "host")}
+            onClick={() => copyToClipboard(activeHost, "host")}
             className="p-1 text-white/40 hover:text-[#DFBB7D] cursor-pointer"
             title="Copy Host"
           >
@@ -292,10 +378,10 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
             <span className="text-[11px] text-white/50 block">PORT</span>
-            <span className="text-[#DFBB7D] font-bold">{harborPort}</span>
+            <span className="text-[#DFBB7D] font-bold">{activePort}</span>
           </div>
           <button
-            onClick={() => copyToClipboard(String(harborPort), "port")}
+            onClick={() => copyToClipboard(String(activePort), "port")}
             className="p-1 text-white/40 hover:text-[#DFBB7D] cursor-pointer"
             title="Copy Port"
           >
@@ -303,14 +389,25 @@ Note: Connecting with these credentials executes an instant unconditional On-Air
           </button>
         </div>
 
+        {/* TLS */}
+        <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
+          <div>
+            <span className="text-[11px] text-white/50 block">TLS / SSL</span>
+            <span className={`font-bold ${activeTls ? "text-emerald-400" : "text-white"}`}>
+              {activeTls ? "ON (HTTPS)" : "OFF"}
+            </span>
+          </div>
+          <span className="text-[10px] text-white/40">{activeTls ? "Port 443" : "Plain TCP"}</span>
+        </div>
+
         {/* Mount */}
         <div className="bg-[#1A1D24] p-2.5 border border-white/10 flex items-center justify-between">
           <div>
             <span className="text-[11px] text-white/50 block">MOUNTPOINT</span>
-            <span className="text-white font-bold">{harborMount}</span>
+            <span className="text-white font-bold">{activeMount}</span>
           </div>
           <button
-            onClick={() => copyToClipboard(harborMount, "mount")}
+            onClick={() => copyToClipboard(activeMount, "mount")}
             className="p-1 text-white/40 hover:text-[#DFBB7D] cursor-pointer"
             title="Copy Mount"
           >

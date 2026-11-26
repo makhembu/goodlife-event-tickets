@@ -25,13 +25,24 @@ export async function GET(req: NextRequest) {
     const hasKey = Boolean(row.admin_stream_key_hash);
     const keyPrefix = row.admin_stream_key_prefix || (hasKey ? "gl_live_••••" : "None generated yet");
 
+    const harborPort = parseInt(process.env.HARBOR_PORT || "8005", 10);
+    const harborMount = process.env.HARBOR_MOUNT || "/live";
+
     return NextResponse.json({
       has_key: hasKey,
       key_prefix: keyPrefix,
       username: "admin",
-      mount: "/live",
-      port: 8005,
+      mount: harborMount,
+      port: harborPort,
+      tls: false,
       host: process.env.RADIO_STREAM_HOST || "stream.darajadigital.com",
+      alternate: {
+        label: "Cloudflare Tunnel",
+        host: process.env.RADIO_STREAM_ALT_HOST || "live.darajadigital.com",
+        port: parseInt(process.env.RADIO_STREAM_ALT_PORT || "443", 10),
+        mount: harborMount,
+        tls: true,
+      },
       broadcast_mode: row.broadcast_mode || "autodj",
       live_title: row.live_title || "GOODLIFE RADIO LIVE",
     });

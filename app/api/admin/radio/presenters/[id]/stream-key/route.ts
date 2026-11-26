@@ -71,16 +71,21 @@ export async function POST(
 
     const presenter = updateRes.rows[0];
 
-    const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
+    const streamHost = process.env.RADIO_STREAM_HOST || "stream.darajadigital.com";
+    const streamPort = process.env.HARBOR_PORT || "8005";
+    const streamMount = process.env.HARBOR_MOUNT || "/live";
+    const alternateHost = process.env.RADIO_STREAM_ALT_HOST || "live.darajadigital.com";
+    const alternatePort = process.env.RADIO_STREAM_ALT_PORT || "443";
     const whatsappMessage = `🎙️ *GOODLIFE Radio - New Live Stream Key*\n\n` +
       `Hey *${presenter.dj_name}*, your new encoder credentials for GOODLIFE Radio are ready:\n\n` +
       `🔑 *Stream Key / Password:* \`${fullKey}\`\n\n` +
       `*Encoder Settings (VirtualDJ / Mixxx / BUTT / OBS):*\n` +
       `• Host / Server: ${streamHost}\n` +
-      `• Port: 8005\n` +
-      `• Mount: /live\n` +
+      `• Port: ${streamPort}\n` +
+      `• Mount: ${streamMount}\n` +
       `• Username: dj_${presenter.slug}\n` +
-      `• Password: \`${fullKey}\`\n\n` +
+      `• Password: \`${fullKey}\`\n` +
+      `• Alternate (TLS): ${alternateHost}:${alternatePort} · SSL/TLS ON\n\n` +
       `_Connect 15 minutes before your scheduled slot for soundcheck._`;
 
     let cleanPhone = (presenter.phone || "").replace(/[^0-9]/g, "");

@@ -77,7 +77,11 @@ export async function POST(req: NextRequest) {
       streamKeyPrefix,
     ]);
 
-    const streamHost = process.env.RADIO_STREAM_HOST || "goodlife.smwhr.space";
+    const streamHost = process.env.RADIO_STREAM_HOST || "stream.darajadigital.com";
+    const streamPort = process.env.HARBOR_PORT || "8005";
+    const streamMount = process.env.HARBOR_MOUNT || "/live";
+    const alternateHost = process.env.RADIO_STREAM_ALT_HOST || "live.darajadigital.com";
+    const alternatePort = process.env.RADIO_STREAM_ALT_PORT || "443";
     const loginUrl = `${process.env.APP_URL || "https://goodlife.smwhr.space"}/presenter/login`;
     const whatsappMessage = `🎙️ *WELCOME TO GOODLIFE RADIO!*\n\n` +
       `Hey *${rows[0].dj_name}*, your resident presenter account is set up:\n\n` +
@@ -86,9 +90,10 @@ export async function POST(req: NextRequest) {
       `🔑 *Temporary Password:* \`${temporaryPassword}\`\n\n` +
       `📻 *Live Encoder Stream Key:* \`${fullKey}\`\n` +
       `• Host / Server: ${streamHost}\n` +
-      `• Port: 8005\n` +
-      `• Mount: /live\n` +
-      `• Username: dj_${rows[0].slug}\n\n` +
+      `• Port: ${streamPort}\n` +
+      `• Mount: ${streamMount}\n` +
+      `• Username: dj_${rows[0].slug}\n` +
+      `• Alternate (TLS): ${alternateHost}:${alternatePort} · SSL/TLS ON\n\n` +
       `_Please save your credentials and log in to update your password._`;
 
     let cleanPhone = (rows[0].phone || "").replace(/[^0-9]/g, "");

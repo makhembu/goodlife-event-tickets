@@ -4,6 +4,7 @@ export interface RadioPlayoutDbCache {
     active_set_id?: string | number | null;
     active_started_at?: string | null;
     queued_next_set_id?: string | number | null;
+    updated_at?: string | null;
     ai_drops_enabled?: boolean;
     live_title?: string;
     live_stream_url?: string;

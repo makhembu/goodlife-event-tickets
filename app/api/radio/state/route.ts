@@ -23,11 +23,12 @@ export async function GET() {
         live_fallback_set_id: null,
         radio_enabled: true,
         queued_next_set_id: null as number | null,
+        updated_at: null as string | null,
       };
 
       try {
         const settingsRes = await neonQuery(
-          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id, active_set_id, active_started_at, radio_enabled, ai_drops_enabled, queued_next_set_id FROM radio_settings WHERE id = 1"
+          "SELECT broadcast_mode, live_stream_url, live_title, live_fallback_set_id, active_set_id, active_started_at, radio_enabled, ai_drops_enabled, queued_next_set_id, updated_at FROM radio_settings WHERE id = 1"
         );
         if (settingsRes.rows[0]) {
           settings = { ...settings, ...settingsRes.rows[0] };
@@ -282,8 +283,12 @@ export async function GET() {
       // Check upcoming drop for the next track (strictly skipped when AI auto drops are disabled)
       let nextIdx = (activeIdx + 1) % sets.length;
       if (settings.queued_next_set_id) {
-        const qIdx = sets.findIndex((s: any) => s.id === Number(settings.queued_next_set_id));
-        if (qIdx !== -1) nextIdx = qIdx;
+        const settingsUpdatedMs = settings.updated_at ? new Date(settings.updated_at).getTime() : 0;
+        const isQueuedFresh = settingsUpdatedMs > 0 && !isNaN(settingsUpdatedMs) && (Date.now() - settingsUpdatedMs <= 15 * 60 * 1000);
+        if (isQueuedFresh) {
+          const qIdx = sets.findIndex((s: any) => s.id === Number(settings.queued_next_set_id));
+          if (qIdx !== -1 && qIdx !== activeIdx) nextIdx = qIdx;
+        }
       }
       const nextTrack = sets[nextIdx];
       if (nextTrack && settings.ai_drops_enabled === true) {

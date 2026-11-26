@@ -13,7 +13,13 @@ interface LiveCachedState {
   ts: number;
 }
 
-import { getPlayoutCache, setPlayoutCache, type RadioPlayoutDbCache } from "@/lib/radio/playout-cache";
+import {
+  getPlayoutCache,
+  setPlayoutCache,
+  invalidateLivePlayoutCache,
+  invalidateRadioStateCache,
+  type RadioPlayoutDbCache,
+} from "@/lib/radio/playout-cache";
 
 let _cachedLiveState: LiveCachedState | null = null;
 const PLAYOUT_CACHE_TTL_MS = 5_000; // 5 seconds (fast response for track skips and mode changes)
@@ -260,7 +266,7 @@ async function getCachedPlayoutData(): Promise<RadioPlayoutDbCache> {
       ORDER BY pt.position ASC, pt.id ASC
     `).catch(() => ({ rows: [] })),
     neonQuery(
-      "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id, ai_drops_enabled, live_title, live_stream_url FROM radio_settings WHERE id = 1"
+      "SELECT broadcast_mode, active_set_id, active_started_at, queued_next_set_id, ai_drops_enabled, live_title, live_stream_url, updated_at FROM radio_settings WHERE id = 1"
     ).catch(() => ({ rows: [] })),
   ]);
 
@@ -401,23 +407,34 @@ async function getTimelineFallback() {
 
     const queuedId = settings.queued_next_set_id ? Number(settings.queued_next_set_id) : null;
     if (queuedId) {
-      if (currentTrack && currentTrack.id === queuedId) {
-        // Queued track is currently on air! Clear queued_next_set_id
-        neonQuery("UPDATE radio_settings SET queued_next_set_id = NULL WHERE id = 1").catch(() => {});
+      const QUEUED_NEXT_MAX_AGE_MS = 15 * 60 * 1000;
+      const settingsUpdatedMs = settings.updated_at ? new Date(settings.updated_at).getTime() : 0;
+      const isQueuedStale = !settingsUpdatedMs || isNaN(settingsUpdatedMs) || (Date.now() - settingsUpdatedMs > QUEUED_NEXT_MAX_AGE_MS);
+
+      if (isQueuedStale || (currentTrack && Number(currentTrack.id) === queuedId)) {
+        // Queued track is either already on air or stale: clear queued_next_set_id and invalidate caches
+        neonQuery("UPDATE radio_settings SET queued_next_set_id = NULL WHERE id = 1 AND queued_next_set_id = $1", [queuedId]).catch(() => {});
+        invalidateLivePlayoutCache();
+        invalidateRadioStateCache();
       } else {
         // Force queued track to be #1 in Up Next
         let queuedTrack = sets.find((s: any) => s.id === queuedId);
         if (!queuedTrack) {
           try {
             const qRes = await neonQuery(
-              "SELECT id, title, dj_name, audio_url, r2_key, cover_url, duration, duration_sec, genre FROM radio_sets WHERE id = $1 AND deleted_at IS NULL",
+              "SELECT id, title, dj_name, audio_url, r2_key, cover_url, duration, duration_sec, genre FROM radio_sets WHERE id = $1 AND deleted_at IS NULL AND (is_active = true OR is_active IS NULL)",
               [queuedId]
             );
             if (qRes.rows.length > 0) queuedTrack = qRes.rows[0];
           } catch {}
         }
         if (queuedTrack) {
-          nextTracks = [queuedTrack, ...nextTracks.filter((s: any) => s.id !== queuedId)].slice(0, 3);
+          nextTracks = [queuedTrack, ...nextTracks.filter((s: any) => s.id !== queuedId && s.id !== currentTrack?.id)].slice(0, 3);
+        } else {
+          // Track no longer exists or is inactive: clear queued_next_set_id
+          neonQuery("UPDATE radio_settings SET queued_next_set_id = NULL WHERE id = 1 AND queued_next_set_id = $1", [queuedId]).catch(() => {});
+          invalidateLivePlayoutCache();
+          invalidateRadioStateCache();
         }
       }
     }

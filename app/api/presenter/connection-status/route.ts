@@ -70,6 +70,9 @@ export async function GET(req: NextRequest) {
     const host = process.env.STREAM_HOST || process.env.ICECAST_HOST || "stream.darajadigital.com";
     const port = parseInt(process.env.HARBOR_PORT || "8005", 10);
     const mount = process.env.HARBOR_MOUNT || "/live";
+    const username = formatPresenterUsername(presenter.slug);
+    const alternateHost = process.env.RADIO_STREAM_ALT_HOST || "live.darajadigital.com";
+    const alternatePort = parseInt(process.env.RADIO_STREAM_ALT_PORT || "443", 10);
 
     return NextResponse.json({
       ok: true,
@@ -82,8 +85,17 @@ export async function GET(req: NextRequest) {
         host,
         port,
         mount,
-        username: formatPresenterUsername(presenter.slug),
+        username,
+        tls: false,
         format: "MP3 320kbps Stereo, 44.1kHz",
+      },
+      alternate_stream_config: {
+        label: "Cloudflare Tunnel",
+        host: alternateHost,
+        port: alternatePort,
+        mount,
+        username,
+        tls: true,
       },
       next_slot: slot,
     });
