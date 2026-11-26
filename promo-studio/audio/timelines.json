@@ -1,0 +1,220 @@
+{
+  "promo1": {
+    "totalSec": 40,
+    "scenes": [
+      {
+        "id": "hook",
+        "startSec": 0,
+        "endSec": 5,
+        "label": "NAIROBI'S 24/7 FESTIVAL FREQUENCY"
+      },
+      {
+        "id": "deck",
+        "startSec": 5,
+        "endSec": 13,
+        "label": "HERO DECK CONSOLE · LIVE AUDIO"
+      },
+      {
+        "id": "playlists",
+        "startSec": 13,
+        "endSec": 21,
+        "label": "771+ TRACKS · 17 CURATED TAPES"
+      },
+      {
+        "id": "booth",
+        "startSec": 21,
+        "endSec": 27,
+        "label": "LIVE SHOUTOUTS & M-PESA TIPS"
+      },
+      {
+        "id": "takeover",
+        "startSec": 27,
+        "endSec": 36,
+        "label": "LIVE DJ TAKEOVERS & SET VAULT"
+      },
+      {
+        "id": "outro",
+        "startSec": 36,
+        "endSec": 40,
+        "label": "GOODLIFE.SMWHR.SPACE/RADIO"
+      }
+    ],
+    "captions": [
+      {
+        "startSec": 1,
+        "endSec": 8.157437999999999,
+        "text": "Nairobi, turn your speakers all the way up. This is Goodlife Radio — 24/7 festival energy, straight to your phone."
+      },
+      {
+        "startSec": 14,
+        "endSec": 22.333,
+        "text": "700+ tracks, live DJ takeovers, real-time shoutouts, and archived festival sets on demand. Lock in now."
+      }
+    ]
+  },
+  "promo2": {
+    "totalSec": 35,
+    "scenes": [
+      {
+        "id": "hook",
+        "startSec": 0,
+        "endSec": 8,
+        "label": "PLUG IN YOUR DECKS"
+      },
+      {
+        "id": "creds",
+        "startSec": 8,
+        "endSec": 16,
+        "label": "STREAM.DARAJADIGITAL.COM : 8005"
+      },
+      {
+        "id": "software",
+        "startSec": 16,
+        "endSec": 24,
+        "label": "BUTT · VIRTUALDJ · MIXXX · OBS"
+      },
+      {
+        "id": "live",
+        "startSec": 24,
+        "endSec": 31,
+        "label": "MIXING LIVE · 320KBPS AUTO-ARCHIVE"
+      },
+      {
+        "id": "outro",
+        "startSec": 31,
+        "endSec": 35,
+        "label": "APPLY TO SPIN · /PRESENTER/LOGIN"
+      }
+    ],
+    "captions": [
+      {
+        "startSec": 1,
+        "endSec": 8.366437999999999,
+        "text": "Got a set ready for Nairobi? Plug your decks straight into Goodlife Radio in under two minutes."
+      },
+      {
+        "startSec": 16.5,
+        "endSec": 30.632125000000002,
+        "text": "Mix live from VirtualDJ, Mixxx, BUTT, or OBS. Your set records automatically in 320kbps. Apply to spin today."
+      }
+    ]
+  },
+  "promo3": {
+    "totalSec": 30,
+    "scenes": [
+      {
+        "id": "cockpit",
+        "startSec": 0,
+        "endSec": 10,
+        "label": "STUDIO BROADCAST COCKPIT"
+      },
+      {
+        "id": "drops",
+        "startSec": 10,
+        "endSec": 18,
+        "label": "AI DROP STUDIO · FISH AUDIO S2.1"
+      },
+      {
+        "id": "radar",
+        "startSec": 18,
+        "endSec": 26,
+        "label": "KENYA 47-COUNTY LISTENER RADAR"
+      },
+      {
+        "id": "outro",
+        "startSec": 26,
+        "endSec": 30,
+        "label": "GOODLIFE RADIO 254"
+      }
+    ],
+    "captions": [
+      {
+        "startSec": 1,
+        "endSec": 12.337063,
+        "text": "One browser cockpit to run an entire 24/7 radio station. Soundboard cartwall, AI drops, and live Kenya listener radar."
+      }
+    ]
+  },
+  "tut1": {
+    "totalSec": 97,
+    "steps": [
+      {
+        "key": "t1_s1_login",
+        "startSec": 1.2,
+        "endSec": 14.208874999999999,
+        "durationSec": 13.008875
+      },
+      {
+        "key": "t1_s2_profile",
+        "startSec": 15.208874999999999,
+        "endSec": 27.486313,
+        "durationSec": 12.277438
+      },
+      {
+        "key": "t1_s3_slots",
+        "startSec": 28.486313,
+        "endSec": 39.222563,
+        "durationSec": 10.73625
+      },
+      {
+        "key": "t1_s4_keys",
+        "startSec": 40.222563,
+        "endSec": 53.388188,
+        "durationSec": 13.165625
+      },
+      {
+        "key": "t1_s5_software",
+        "startSec": 54.388188,
+        "endSec": 70.871376,
+        "durationSec": 16.483188
+      },
+      {
+        "key": "t1_s6_interact",
+        "startSec": 71.871376,
+        "endSec": 79.89087599999999,
+        "durationSec": 8.0195
+      },
+      {
+        "key": "t1_s7_recordings",
+        "startSec": 80.89087599999999,
+        "endSec": 93.168314,
+        "durationSec": 12.277438
+      }
+    ]
+  },
+  "tut2": {
+    "totalSec": 71,
+    "steps": [
+      {
+        "key": "t2_s1_roster",
+        "startSec": 1.2,
+        "endSec": 15.018688,
+        "durationSec": 13.818688
+      },
+      {
+        "key": "t2_s2_schedule",
+        "startSec": 16.018688,
+        "endSec": 27.120626,
+        "durationSec": 11.101938
+      },
+      {
+        "key": "t2_s3_library",
+        "startSec": 28.120626,
+        "endSec": 41.991564000000004,
+        "durationSec": 13.870938
+      },
+      {
+        "key": "t2_s4_cockpit",
+        "startSec": 42.991564000000004,
+        "endSec": 54.093502,
+        "durationSec": 11.101938
+      },
+      {
+        "key": "t2_s5_harbor",
+        "startSec": 55.093502,
+        "endSec": 67.867315,
+        "durationSec": 12.773813
+      }
+    ]
+  }
+}

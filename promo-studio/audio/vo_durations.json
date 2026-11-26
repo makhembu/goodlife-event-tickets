@@ -1,0 +1,19 @@
+{
+  "p1_hook": 7.157438,
+  "p1_body": 8.333,
+  "p2_hook": 7.366438,
+  "p2_body": 14.132125,
+  "p3_hook": 11.337063,
+  "t1_s1_login": 13.008875,
+  "t1_s2_profile": 12.277438,
+  "t1_s3_slots": 10.73625,
+  "t1_s4_keys": 13.165625,
+  "t1_s5_software": 16.483188,
+  "t1_s6_interact": 8.0195,
+  "t1_s7_recordings": 12.277438,
+  "t2_s1_roster": 13.818688,
+  "t2_s2_schedule": 11.101938,
+  "t2_s3_library": 13.870938,
+  "t2_s4_cockpit": 11.101938,
+  "t2_s5_harbor": 12.773813
+}

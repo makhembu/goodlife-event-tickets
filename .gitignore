@@ -75,3 +75,6 @@ tests/__pycache__/
  
 .workbuddy-ai/
 RADIO-*.md
+promo-studio/node_modules/
+promo-studio/out/
+
