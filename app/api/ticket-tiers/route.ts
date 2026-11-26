@@ -55,6 +55,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    if (Array.isArray(body)) {
+      if (body.length === 0) {
+        return NextResponse.json({ error: "No ticket tiers provided in array" }, { status: 400 });
+      }
+      const results = [];
+      for (const item of body) {
+        results.push(await createTicketTier(item));
+      }
+      return NextResponse.json(results, { status: 201 });
+    }
     const tier = await createTicketTier(body);
     return NextResponse.json(tier, { status: 201 });
   } catch (error: any) {

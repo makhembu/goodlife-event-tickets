@@ -16,6 +16,7 @@ import {
   createTicket,
   fetchTicketTiers,
   createTicketTier,
+  createTicketTiers,
   updateTicketTier,
   deleteTicketTier,
   permanentlyDeleteTicket,
@@ -202,6 +203,23 @@ export default function AdminDashboardPage() {
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([]);
   const [editingTier, setEditingTier] = useState<TicketTier | null>(null);
   const [isCreatingTier, setIsCreatingTier] = useState(false);
+  const [tierModalMode, setTierModalMode] = useState<"single" | "bulk">("single");
+  const [bulkTierRows, setBulkTierRows] = useState<Array<{
+    id: string;
+    name: string;
+    price: number;
+    tag: string;
+    description: string;
+    tier_category: "entry" | "camping" | "bundle" | "group";
+    admits_quantity: number;
+    max_quantity: number | null;
+    badge_text: string;
+    is_camping_bundle: boolean;
+    camping_type: "none" | "private" | "shared_bed";
+  }>>([
+    { id: "", name: "", price: 0, tag: "TICKETS", description: "", tier_category: "entry", admits_quantity: 1, max_quantity: null, badge_text: "", is_camping_bundle: false, camping_type: "none" },
+    { id: "", name: "", price: 0, tag: "TICKETS", description: "", tier_category: "entry", admits_quantity: 1, max_quantity: null, badge_text: "", is_camping_bundle: false, camping_type: "none" }
+  ]);
   const [tierFormState, setTierFormState] = useState<Partial<TicketTier>>({});
 
   // Payment Logs states
@@ -1215,20 +1233,109 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
     } finally { setSaving(null); }
   };
 
-  const handleCreateTierClick = () => {
+  const handleCreateTierClick = (mode: "single" | "bulk" = "single") => {
     setIsCreatingTier(true);
+    setTierModalMode(mode);
     setTierFormState({
       id: "",
       name: "",
       price: 0,
       description: "",
-      tag: "",
+      tag: "TICKETS",
       available_from: null,
       available_until: null,
       max_quantity: null,
       show_only_on_event_day: false,
       hide_on_event_day: false
     });
+    setBulkTierRows([
+      { id: "", name: "", price: 0, tag: "TICKETS", description: "", tier_category: "entry", admits_quantity: 1, max_quantity: null, badge_text: "", is_camping_bundle: false, camping_type: "none" },
+      { id: "", name: "", price: 0, tag: "TICKETS", description: "", tier_category: "entry", admits_quantity: 1, max_quantity: null, badge_text: "", is_camping_bundle: false, camping_type: "none" }
+    ]);
+  };
+
+  const handleAddBulkRow = () => {
+    setBulkTierRows(prev => [
+      ...prev,
+      { id: "", name: "", price: 0, tag: "TICKETS", description: "", tier_category: "entry", admits_quantity: 1, max_quantity: null, badge_text: "", is_camping_bundle: false, camping_type: "none" }
+    ]);
+  };
+
+  const handleRemoveBulkRow = (index: number) => {
+    setBulkTierRows(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleBulkRowChange = (index: number, field: string, value: any) => {
+    setBulkTierRows(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      if (field === "tier_category") {
+        if (value === "camping") {
+          copy[index].tag = "CAMPING";
+          copy[index].is_camping_bundle = true;
+          copy[index].camping_type = copy[index].camping_type === "none" ? "private" : copy[index].camping_type;
+        } else if (value === "bundle") {
+          copy[index].tag = "EXPERIENCE";
+          copy[index].is_camping_bundle = false;
+          copy[index].camping_type = "none";
+        }
+      }
+      return copy;
+    });
+  };
+
+  const handleSaveBulkCreateTiers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving("tier");
+    try {
+      const targetEventId = tierFormState.event_id ?? (selectedEventId && selectedEventId > 0 ? selectedEventId : undefined);
+      if (!targetEventId) {
+        alert("Please select a specific event before adding ticket tiers.");
+        return;
+      }
+
+      const activeRows = bulkTierRows.filter(r => r.id.trim() !== "" || r.name.trim() !== "");
+      if (activeRows.length === 0) {
+        alert("Please fill in at least one ticket tier row.");
+        return;
+      }
+
+      for (let i = 0; i < activeRows.length; i++) {
+        const row = activeRows[i];
+        if (!row.id.trim()) throw new Error(`Row ${i + 1} is missing Tier ID`);
+        if (!row.name.trim()) throw new Error(`Row ${i + 1} (${row.id}) is missing Display Name`);
+        if (typeof row.price !== "number" || isNaN(row.price) || row.price < 0) {
+          throw new Error(`Row ${i + 1} (${row.name}) has an invalid price`);
+        }
+      }
+
+      const tiersToCreate: TicketTier[] = activeRows.map(r => ({
+        id: r.id.trim().toUpperCase().replace(/\s+/g, "-"),
+        name: r.name.trim(),
+        price: Number(r.price),
+        description: r.description.trim() || r.name.trim(),
+        tag: r.tag.trim().toUpperCase() || "TICKETS",
+        tier_category: r.tier_category,
+        admits_quantity: r.admits_quantity || 1,
+        max_quantity: r.max_quantity ? Number(r.max_quantity) : null,
+        badge_text: r.badge_text ? r.badge_text.trim() : null,
+        is_camping_bundle: Boolean(r.is_camping_bundle),
+        camping_type: r.camping_type || "none",
+        hidden: false,
+        event_id: targetEventId
+      }));
+
+      await createTicketTiers(tiersToCreate);
+      setIsCreatingTier(false);
+      await loadTicketTiers(selectedEventId && selectedEventId > 0 ? selectedEventId : undefined);
+      await loadDashboardMetrics(selectedEventId);
+      alert(`Successfully added ${tiersToCreate.length} ticket tiers!`);
+    } catch (err: any) {
+      console.error("Failed to bulk create ticket tiers:", err);
+      alert("Failed to create ticket tiers: " + (err.message || "Unknown error"));
+    } finally {
+      setSaving(null);
+    }
   };
 
   const handleSaveCreateTier = async (e: React.FormEvent) => {
@@ -2369,11 +2476,18 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
               <span className="text-xs font-black tracking-widest uppercase">Manage Event Ticket Tiers</span>
               <div className="flex gap-2">
                 <button 
-                  onClick={handleCreateTierClick}
-                  className="px-2 py-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10 text-xs font-black uppercase flex items-center gap-1"
-                  title="Add a new ticket tier"
+                  onClick={() => handleCreateTierClick("single")}
+                  className="px-2 py-1 border border-[var(--brand-off-white)] hover:bg-[var(--brand-off-white)]/10 text-xs font-black uppercase flex items-center gap-1 cursor-pointer"
+                  title="Add a single ticket tier"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Tier
+                </button>
+                <button 
+                  onClick={() => handleCreateTierClick("bulk")}
+                  className="px-2 py-1 border border-brand-accent bg-brand-accent/20 text-brand-accent-vivid hover:bg-brand-accent hover:text-brand-navy text-xs font-black uppercase flex items-center gap-1 cursor-pointer"
+                  title="Add multiple ticket tiers at once"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Multiple
                 </button>
                 <button 
                   onClick={() => loadTicketTiers(selectedEventId && selectedEventId > 0 ? selectedEventId : undefined)}
@@ -3715,154 +3829,359 @@ The event stays listed in the editions switcher. Use ARCHIVE in the event editor
       )}
 
 
-      {/* CREATE TICKET TIER MODAL */}
+      {/* CREATE TICKET TIER MODAL (SINGLE OR MULTIPLE) */}
       {isCreatingTier && (
         <div className="fixed inset-0 bg-[var(--brand-navy)]/80 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain p-4 transition-all duration-200" role="dialog" aria-modal="true" onKeyDown={handleOverlayKeyDown}>
-          <div className="border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] max-w-lg w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl)">
+          <div className={`border-4 border-[var(--brand-navy)] bg-[var(--brand-off-white)] w-full max-h-[90dvh] overflow-y-auto overscroll-contain p-6 relative shadow-(--shadow-brut-xl) ${tierModalMode === "bulk" ? "max-w-4xl" : "max-w-lg"}`}>
             <button
               onClick={() => setIsCreatingTier(false)}
-              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center"
+              className="absolute top-3 right-3 p-2 -m-1 hover:bg-[var(--brand-navy)]/10 text-[var(--brand-navy)] z-20 min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
             >
               <X className="w-6 h-6" />
             </button>
-            <h3 className="text-xl font-black uppercase border-b-2 border-[var(--brand-navy)] pb-2 mb-1">
-              Add Ticket Tier
-            </h3>
-            <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase mb-4">
-              Set date windows for each tier to control when it appears on checkout. Add capacity limits to create scarcity.
-            </p>
-            <form onSubmit={handleSaveCreateTier} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase block">Tier ID (Unique Key)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ADV 500"
-                    value={tierFormState.id || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, id: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase block">Display Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Advance 500"
-                    value={tierFormState.name || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, name: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase block">Price (KES)</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={tierFormState.price || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black uppercase block">Tag / Badge Label</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ADVANCE"
-                    value={tierFormState.tag || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, tag: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-                <div className="space-y-1 col-span-2">
-                  <label className="text-xs font-black uppercase block">Description</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Advance entry ticket"
-                    value={tierFormState.description || ""}
-                    onChange={(e) => setTierFormState({ ...tierFormState, description: e.target.value })}
-                    className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
-                  />
-                </div>
-              </div>
 
-                            {/* Sale Window & Capacity */}
-              <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-3 bg-[var(--brand-bg)]">
-                <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
-                  Sale Window &amp; Capacity
-                </span>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black uppercase block">Available From</label>
-                    <input
-                      type="datetime-local"
-                      value={tierFormState.available_from ? new Date(tierFormState.available_from).toISOString().slice(0, 16) : ""}
-                      onChange={(e) => setTierFormState({ ...tierFormState, available_from: e.target.value ? new Date(e.target.value).toISOString() : null })}
-                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black uppercase block">Available Until</label>
-                    <input
-                      type="datetime-local"
-                      value={tierFormState.available_until ? new Date(tierFormState.available_until).toISOString().slice(0, 16) : ""}
-                      onChange={(e) => setTierFormState({ ...tierFormState, available_until: e.target.value ? new Date(e.target.value).toISOString() : null })}
-                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Leave empty for unlimited"
-                      value={tierFormState.max_quantity || ""}
-                      onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
-                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black uppercase block">Guests Admitted (Pax)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="1 (e.g. 2 for Duo, 4 for Squad)"
-                      value={tierFormState.admits_quantity || 1}
-                      onChange={(e) => setTierFormState({ ...tierFormState, admits_quantity: e.target.value ? Math.max(1, parseInt(e.target.value, 10)) : 1 })}
-                      className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
-                    />
-                  </div>
-                </div>
-                <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
-                  Leave dates empty = always visible. Capacity empty = unlimited. Pax = guests admitted per ticket (1 for single, 2 for duo, 4 for squad).
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-[var(--brand-navy)] pb-3 mb-4 gap-2 pr-8">
+              <div>
+                <h3 className="text-xl font-black uppercase text-[var(--brand-navy)]">
+                  {tierModalMode === "bulk" ? "Add Multiple Ticket Tiers" : "Add Ticket Tier"}
+                </h3>
+                <p className="text-[11px] text-[var(--brand-navy-light)] font-bold uppercase">
+                  {tierModalMode === "bulk" 
+                    ? "Add several passes or bundles at once (entry, camping, beer combos)" 
+                    : "Configure a single ticket tier with detailed timing and limits"}
                 </p>
               </div>
 
-
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-[var(--brand-navy)]/15">
+              {/* Mode Switcher */}
+              <div className="flex items-center self-start sm:self-auto border-2 border-[var(--brand-navy)] bg-white p-0.5 shadow-(--shadow-brut-2xs)">
                 <button
                   type="button"
-                  onClick={() => setIsCreatingTier(false)}
-                  className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase transition-all duration-150 active:scale-95"
+                  onClick={() => setTierModalMode("single")}
+                  className={`px-3 py-1 text-xs font-black uppercase transition-all cursor-pointer ${
+                    tierModalMode === "single"
+                      ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                      : "text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
+                  }`}
                 >
-                  Cancel
+                  Single Tier
                 </button>
                 <button
-                  type="submit"
-                  disabled={saving === "tier"}
-                  className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => setTierModalMode("bulk")}
+                  className={`px-3 py-1 text-xs font-black uppercase transition-all cursor-pointer ${
+                    tierModalMode === "bulk"
+                      ? "bg-[var(--brand-navy)] text-[var(--brand-off-white)]"
+                      : "text-[var(--brand-navy)] hover:bg-[var(--brand-navy)]/10"
+                  }`}
                 >
-                  {saving === "tier" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> ADDING...</> : <><Plus className="w-3.5 h-3.5" /> Add Tier</>}
+                  Multiple Tiers
                 </button>
               </div>
-            </form>
+            </div>
+
+            {tierModalMode === "single" ? (
+              <form onSubmit={handleSaveCreateTier} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase block">Tier ID (Unique Key)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. ADV 500"
+                      value={tierFormState.id || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, id: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-mono text-xs font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase block">Display Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Advance 500"
+                      value={tierFormState.name || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, name: e.target.value })}
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase block">Price (KES)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={tierFormState.price || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, price: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black uppercase block">Tag / Badge Label</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. TICKETS, CAMPING, EXPERIENCE"
+                      value={tierFormState.tag || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, tag: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-xs font-black uppercase block">Description</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Advance entry ticket"
+                      value={tierFormState.description || ""}
+                      onChange={(e) => setTierFormState({ ...tierFormState, description: e.target.value })}
+                      className="w-full px-3 py-2 border-2 border-[var(--brand-navy)] font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Sale Window & Capacity */}
+                <div className="border-2 border-[var(--brand-navy)]/30 p-3 space-y-3 bg-[var(--brand-bg)]">
+                  <span className="text-[11px] font-black uppercase text-[var(--brand-navy)] tracking-widest block mb-2">
+                    Sale Window &amp; Capacity
+                  </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase block">Available From</label>
+                      <input
+                        type="datetime-local"
+                        value={tierFormState.available_from ? new Date(tierFormState.available_from).toISOString().slice(0, 16) : ""}
+                        onChange={(e) => setTierFormState({ ...tierFormState, available_from: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                        className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase block">Available Until</label>
+                      <input
+                        type="datetime-local"
+                        value={tierFormState.available_until ? new Date(tierFormState.available_until).toISOString().slice(0, 16) : ""}
+                        onChange={(e) => setTierFormState({ ...tierFormState, available_until: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                        className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase block">Max Quantity (Capacity)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Leave empty for unlimited"
+                        value={tierFormState.max_quantity || ""}
+                        onChange={(e) => setTierFormState({ ...tierFormState, max_quantity: e.target.value ? Number(e.target.value) : null })}
+                        className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase block">Guests Admitted (Pax)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="1 (e.g. 2 for Duo, 4 for Squad)"
+                        value={tierFormState.admits_quantity || 1}
+                        onChange={(e) => setTierFormState({ ...tierFormState, admits_quantity: e.target.value ? Math.max(1, parseInt(e.target.value, 10)) : 1 })}
+                        className="w-full px-2 py-1.5 border-2 border-[var(--brand-navy)] font-bold text-[11px]"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[var(--brand-navy)]/50 font-medium">
+                    Leave dates empty = always visible. Capacity empty = unlimited. Pax = guests admitted per ticket (1 for single, 2 for duo, 4 for squad).
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-[var(--brand-navy)]/15">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingTier(false)}
+                    className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase transition-all duration-150 active:scale-95 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving === "tier"}
+                    className="px-4 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1 transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {saving === "tier" ? <><div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" /> ADDING...</> : <><Plus className="w-3.5 h-3.5" /> Add Tier</>}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* MULTIPLE TIERS BULK FORM */
+              <form onSubmit={handleSaveBulkCreateTiers} className="space-y-4">
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {bulkTierRows.map((row, idx) => (
+                    <div key={idx} className="border-2 border-[var(--brand-navy)] p-3 bg-white space-y-2 relative shadow-(--shadow-brut-xs)">
+                      <div className="flex items-center justify-between pb-1 border-b border-[var(--brand-navy)]/20">
+                        <span className="font-mono text-xs font-black uppercase text-[var(--brand-navy)] flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-[var(--brand-navy)] text-white text-[10px] flex items-center justify-center font-bold">
+                            {idx + 1}
+                          </span>
+                          Ticket Tier #{idx + 1}
+                        </span>
+                        {bulkTierRows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBulkRow(idx)}
+                            className="text-red-600 hover:text-red-800 text-[11px] font-bold uppercase flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" /> Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Tier ID *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. ADV-800"
+                            value={row.id}
+                            onChange={(e) => handleBulkRowChange(idx, "id", e.target.value.toUpperCase())}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] font-mono text-xs font-bold"
+                          />
+                        </div>
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Display Name *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Advance Pass"
+                            value={row.name}
+                            onChange={(e) => handleBulkRowChange(idx, "name", e.target.value)}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] text-xs font-bold"
+                          />
+                        </div>
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Price (KES) *</label>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            placeholder="800"
+                            value={row.price || ""}
+                            onChange={(e) => handleBulkRowChange(idx, "price", Number(e.target.value))}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] font-mono text-xs font-bold"
+                          />
+                        </div>
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Tag Label</label>
+                          <input
+                            type="text"
+                            placeholder="TICKETS"
+                            value={row.tag}
+                            onChange={(e) => handleBulkRowChange(idx, "tag", e.target.value.toUpperCase())}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                        <div className="space-y-0.5 sm:col-span-2">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Description</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Festival admission or includes drinks/tent"
+                            value={row.description}
+                            onChange={(e) => handleBulkRowChange(idx, "description", e.target.value)}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] text-xs"
+                          />
+                        </div>
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Category</label>
+                          <select
+                            value={row.tier_category}
+                            onChange={(e) => handleBulkRowChange(idx, "tier_category", e.target.value)}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] text-xs font-bold bg-white"
+                          >
+                            <option value="entry">Entry Pass</option>
+                            <option value="camping">Camping / Tent</option>
+                            <option value="bundle">Beer / Drink Experience</option>
+                            <option value="group">Group / Squad</option>
+                          </select>
+                        </div>
+                        <div className="space-y-0.5 sm:col-span-1">
+                          <label className="text-[10px] font-black uppercase block text-[var(--brand-navy)]">Pax Admitted</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={row.admits_quantity || 1}
+                            onChange={(e) => handleBulkRowChange(idx, "admits_quantity", Math.max(1, parseInt(e.target.value, 10) || 1))}
+                            className="w-full px-2 py-1.5 border border-[var(--brand-navy)] font-mono text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-[var(--brand-navy)]/10 text-[10px]">
+                        <div className="flex items-center gap-1">
+                          <label className="font-bold uppercase text-[var(--brand-navy)]">Badge / Urgency:</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 🔥 SELLING FAST"
+                            value={row.badge_text || ""}
+                            onChange={(e) => handleBulkRowChange(idx, "badge_text", e.target.value)}
+                            className="flex-1 px-1.5 py-0.5 border border-[var(--brand-navy)] text-[10px]"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <label className="font-bold uppercase text-[var(--brand-navy)]">Max Qty:</label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Unlimited"
+                            value={row.max_quantity || ""}
+                            onChange={(e) => handleBulkRowChange(idx, "max_quantity", e.target.value ? Number(e.target.value) : null)}
+                            className="w-24 px-1.5 py-0.5 border border-[var(--brand-navy)] text-[10px]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[var(--brand-navy)]/20">
+                  <button
+                    type="button"
+                    onClick={handleAddBulkRow}
+                    className="w-full sm:w-auto px-3 py-2 border-2 border-[var(--brand-navy)] bg-white text-[var(--brand-navy)] text-xs font-black uppercase flex items-center justify-center gap-1.5 hover:bg-[var(--brand-navy)]/10 shadow-(--shadow-brut-xs) active:scale-95 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Add Another Tier Row
+                  </button>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingTier(false)}
+                      className="px-4 py-2 border-2 border-[var(--brand-navy)] text-[var(--brand-navy)] text-xs font-black uppercase cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving === "tier"}
+                      className="px-5 py-2 bg-[var(--brand-navy)] text-[var(--brand-off-white)] border-2 border-[var(--brand-navy)] text-xs font-black uppercase flex items-center gap-1.5 shadow-(--shadow-brut-sm) active:scale-95 disabled:opacity-40 cursor-pointer"
+                    >
+                      {saving === "tier" ? (
+                        <>
+                          <div className="animate-spin border-2 border-[var(--brand-off-white)] border-t-transparent w-3.5 h-3.5" />
+                          Saving Tiers...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          Save All {bulkTierRows.filter(r => r.id.trim() || r.name.trim()).length || ""} Tiers
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

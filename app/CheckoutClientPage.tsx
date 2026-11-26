@@ -594,8 +594,16 @@ export default function TicketCheckoutPage({
           return false;
         }
 
-        // Group & squad passes (admits_quantity > 1) remain available throughout pre-sale
-        if (Number(tier.admits_quantity) > 1 || tier.tier_category === 'group') {
+        // Group & squad passes, plus experience/drink bundles, remain available throughout pre-sale
+        const isBundleOrExperience =
+          tier.tier_category === 'group' ||
+          tier.tier_category === 'bundle' ||
+          tier.tag === 'EXPERIENCE' ||
+          tier.tag === 'BUNDLE' ||
+          tier.id?.toLowerCase().includes("beer") ||
+          tier.name?.toLowerCase().includes("beer");
+
+        if (Number(tier.admits_quantity) > 1 || isBundleOrExperience) {
           return true;
         }
 

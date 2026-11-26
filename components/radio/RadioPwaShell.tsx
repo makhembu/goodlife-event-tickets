@@ -124,19 +124,22 @@ export default function RadioPwaShell() {
   return (
     <div className="h-[100dvh] w-full bg-[#0D0F12] text-[#FBF9F6] flex flex-col overflow-hidden select-none">
       {/* App-Only Top Bar */}
-      <header className="bg-[#14161C] text-[#FBF9F6] px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 font-mono text-xs font-bold tracking-widest uppercase">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              isPlaying ? "bg-[#E84855] animate-pulse motion-reduce:animate-none" : "bg-white/40"
-            }`}
-          />
-          <span>{isPlaying ? "ON AIR · 254 FM" : "STANDBY · 254 FM"}</span>
+      <header className="bg-[#0D0F12] text-[#FBF9F6] px-4 py-3 border-b border-white/[0.08] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#E84855] text-white font-mono text-[11px] font-bold uppercase tracking-wider shadow-sm">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isPlaying ? "bg-white animate-pulse motion-reduce:animate-none" : "bg-white/50"
+              }`}
+            />
+            <span>{isPlaying ? "ON AIR" : "STANDBY"}</span>
+          </div>
+          <span className="font-mono text-xs font-bold tracking-wider text-white/90">254 FM</span>
         </div>
         <button
           type="button"
           onClick={() => setShowSchedule(true)}
-          className="px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-[#F5C842] border border-[#F5C842]/40 font-mono text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 cursor-pointer transition-colors"
+          className="px-3 py-1.5 rounded-lg bg-transparent border border-[#DFBB7D]/50 hover:border-[#DFBB7D] text-[#DFBB7D] font-mono text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 cursor-pointer transition-colors shadow-[inset_0_1px_1px_rgba(223,187,125,0.15)]"
         >
           <Calendar className="w-3.5 h-3.5" />
           <span>SCHEDULE</span>
@@ -164,35 +167,29 @@ export default function RadioPwaShell() {
               </div>
             )}
 
-            {/* Flex Cover Art Box: Centered 3D VIP Pass on fallback, clean artwork when available */}
-            <div className="relative flex-1 min-h-[175px] border border-white/10 rounded-2xl shadow-2xl overflow-hidden bg-[#14161C] flex flex-col justify-between items-center p-4">
+            {/* Flex Cover Art Box: Symmetrically centered large pass or real album artwork */}
+            <div className="relative flex-1 min-h-[220px] border border-white/[0.08] rounded-3xl shadow-2xl overflow-hidden bg-[#12151B] flex flex-col justify-between items-center p-4">
               {isDefaultPass ? (
                 <>
-                  <span
-                    className={`relative z-10 px-3.5 py-1 rounded-full border font-mono text-[10px] font-bold uppercase tracking-wider text-center ${
-                      isLiveTakeover
-                        ? "bg-[#E84855]/90 border-[#E84855] text-white"
-                        : !isLive
-                        ? "bg-[#DFBB7D]/15 border-[#DFBB7D]/40 text-[#DFBB7D]"
-                        : "bg-white/5 border-white/15 text-[#DFBB7D]"
-                    }`}
-                  >
+                  <span className="relative z-10 px-4 py-1.5 rounded-full bg-[#1C2028] border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] font-mono text-[10px] font-bold uppercase tracking-wider text-[#DFBB7D] text-center">
                     {statusTag}
                   </span>
 
-                  <div className="relative z-10 w-full flex-1 flex items-center justify-center py-1">
+                  <div className="relative z-10 w-full flex-1 flex items-center justify-center my-auto py-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={resolvedCover}
                       alt={displayTitle}
                       onError={() => setCoverError(true)}
-                      className="max-h-[220px] max-w-[85%] object-contain mx-auto rounded-xl drop-shadow-[0_12px_24px_rgba(0,0,0,0.65)]"
+                      className="w-[82%] max-w-[340px] aspect-square object-contain mx-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.85)]"
                     />
                   </div>
 
-                  <span className="relative z-10 font-mono text-[11px] font-bold uppercase tracking-widest text-[#F5C842] text-center drop-shadow">
-                    {onAirSlot?.show?.title || "GOODLIFE RADIO 254"}
-                  </span>
+                  <div className="w-full flex items-center justify-start px-2 mt-auto">
+                    <span className="relative z-10 font-mono text-[10px] font-bold uppercase tracking-widest text-[#DFBB7D]/90 drop-shadow-sm">
+                      {onAirSlot?.show?.title || "GOODLIFE RADIO 254"}
+                    </span>
+                  </div>
                 </>
               ) : (
                 <>
@@ -211,40 +208,34 @@ export default function RadioPwaShell() {
                         "linear-gradient(to top, rgba(13,15,18,0.92) 0%, rgba(13,15,18,0.2) 55%, rgba(13,15,18,0.45) 100%)",
                     }}
                   />
-                  <span
-                    className={`relative z-10 self-center px-3.5 py-1 rounded-full border font-mono text-[10px] font-bold uppercase tracking-wider ${
-                      isLiveTakeover
-                        ? "bg-[#E84855] border-[#E84855] text-white"
-                        : !isLive
-                        ? "bg-[#DFBB7D] border-[#DFBB7D] text-[#16181D]"
-                        : "bg-[#F5C842] border-[#F5C842] text-[#16181D]"
-                    }`}
-                  >
+                  <span className="relative z-10 px-4 py-1.5 rounded-full bg-[#1C2028]/80 backdrop-blur-xs border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] font-mono text-[10px] font-bold uppercase tracking-wider text-[#DFBB7D]">
                     {statusTag}
                   </span>
-                  <span className="relative z-10 font-mono text-[11px] font-bold uppercase tracking-widest text-[#F5C842] text-center drop-shadow">
-                    {onAirSlot?.show?.title || "GOODLIFE RADIO 254"}
-                  </span>
+                  <div className="w-full flex items-center justify-start px-2 mt-auto">
+                    <span className="relative z-10 font-mono text-[10px] font-bold uppercase tracking-widest text-[#DFBB7D] drop-shadow">
+                      {onAirSlot?.show?.title || "GOODLIFE RADIO 254"}
+                    </span>
+                  </div>
                 </>
               )}
             </div>
 
             {/* Track Info + Ribbon Soundwave Visualizer */}
-            <div className="bg-[#181A20] border border-white/10 rounded-2xl shadow-lg px-4 py-3 shrink-0">
+            <div className="bg-[#14171E] border border-white/[0.08] rounded-2xl shadow-xl px-4 py-3 shrink-0">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="font-sans font-bold text-xl leading-tight tracking-wide text-white uppercase truncate">
+                <h2 className="font-sans font-bold text-lg sm:text-xl leading-tight tracking-wide text-white uppercase truncate">
                   {displayTitle}
                 </h2>
                 <button
                   type="button"
                   onClick={() => setShowLyrics(true)}
-                  className="px-3 py-1 bg-white/5 hover:bg-white/10 text-white/90 border border-white/15 rounded-full font-mono text-[11px] font-bold uppercase flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                  className="px-3.5 py-1.5 bg-gradient-to-b from-[#242832] to-[#171A21] hover:border-white/20 text-white/90 border border-white/10 rounded-xl font-mono text-xs font-bold uppercase flex items-center gap-1.5 shrink-0 cursor-pointer transition-all shadow-[inset_0_1px_1px_rgba(255,255,255,0.08)]"
                 >
-                  <Music2 className="w-3.5 h-3.5" />
+                  <Music2 className="w-3.5 h-3.5 text-white/80" />
                   <span>LYRICS</span>
                 </button>
               </div>
-              <p className="text-xs font-semibold text-[#CBD5E1] truncate mt-1">
+              <p className="text-xs font-semibold text-[#94A3B8] truncate mt-1">
                 {displaySubtitle}
               </p>
               <RadioRibbonVisualizer
@@ -256,19 +247,19 @@ export default function RadioPwaShell() {
               />
             </div>
 
-            {/* Balanced 3-Button Transport Controls (with >=44px touch floor) */}
-            <div className="flex items-center justify-center gap-6 py-2 shrink-0">
+            {/* Balanced 3-Button Transport Controls (Hardware feel & radial glow play) */}
+            <div className="flex items-center justify-center gap-6 py-2.5 shrink-0">
               <button
                 type="button"
                 onClick={toggleMute}
                 aria-label={isMuted ? "Unmute radio" : "Mute radio"}
-                className={`px-4 py-2.5 rounded-full border font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 cursor-pointer transition-all min-h-[44px] min-w-[90px] ${
+                className={`px-5 py-2.5 rounded-xl border font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 cursor-pointer transition-all min-h-[44px] min-w-[95px] ${
                   isMuted
                     ? "bg-[#E84855] border-[#E84855] text-white shadow-lg"
-                    : "bg-white/5 hover:bg-white/10 border-white/15 text-white shadow-sm"
+                    : "bg-gradient-to-b from-[#222630] to-[#16181F] border-white/10 hover:border-white/20 text-white/90 shadow-[0_4px_12px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.1)]"
                 }`}
               >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-[#DFBB7D]" />}
+                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-white/80" />}
                 <span>{isMuted ? "UNMUTE" : "MUTE"}</span>
               </button>
 
@@ -276,15 +267,15 @@ export default function RadioPwaShell() {
                 type="button"
                 onClick={togglePlay}
                 aria-label={isPlaying ? "Pause radio" : "Play radio"}
-                className="relative w-16 h-16 rounded-full bg-gradient-to-tr from-[#E6B800] via-[#F5C842] to-[#FFE27D] text-[#16181D] shadow-[0_0_24px_rgba(245,200,66,0.5)] hover:shadow-[0_0_32px_rgba(245,200,66,0.7)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                className="relative w-17 h-17 rounded-full bg-[radial-gradient(ellipse_at_35%_35%,#FFE699_0%,#F5C842_45%,#D4A017_85%,#996F0A_100%)] border-2 border-[#FFE8A3]/60 shadow-[0_0_35px_rgba(245,200,66,0.65),0_0_15px_rgba(245,200,66,0.45)] hover:shadow-[0_0_45px_rgba(245,200,66,0.85)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
               >
                 {isPlaying && (
                   <span className="absolute -inset-2.5 rounded-full border-2 border-[#F5C842] animate-ping motion-reduce:animate-none pointer-events-none opacity-60" />
                 )}
                 {isPlaying ? (
-                  <Pause className="w-7 h-7 text-[#16181D] fill-[#16181D]" />
+                  <Pause className="w-7 h-7 text-[#16181D] fill-[#16181D] drop-shadow-[0_1px_1px_rgba(255,255,255,0.3)]" />
                 ) : (
-                  <Play className="w-7 h-7 text-[#16181D] fill-[#16181D] ml-0.5" />
+                  <Play className="w-7 h-7 text-[#16181D] fill-[#16181D] ml-0.5 drop-shadow-[0_1px_1px_rgba(255,255,255,0.3)]" />
                 )}
               </button>
 
@@ -292,9 +283,9 @@ export default function RadioPwaShell() {
                 type="button"
                 onClick={() => setShowShareModal(true)}
                 aria-label="Share GOODLIFE Radio"
-                className="px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-white font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 cursor-pointer transition-all min-h-[44px] min-w-[90px] shadow-sm"
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-b from-[#222630] to-[#16181F] border border-white/10 hover:border-white/20 text-white/90 font-mono text-xs font-bold uppercase flex items-center justify-center gap-2 cursor-pointer transition-all min-h-[44px] min-w-[95px] shadow-[0_4px_12px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.1)]"
               >
-                <Share2 className="w-4 h-4 text-[#DFBB7D]" />
+                <Share2 className="w-4 h-4 text-white/80" />
                 <span>SHARE</span>
               </button>
             </div>
@@ -368,7 +359,7 @@ export default function RadioPwaShell() {
       {/* Bottom 4-Tab Dock */}
       <nav
         aria-label="GOODLIFE Radio App Navigation"
-        className="bg-[#0D0F12] border-t border-white/10 grid grid-cols-4 shrink-0 pb-[env(safe-area-inset-bottom)] p-1.5 gap-1"
+        className="bg-[#0B0C0E] border-t border-white/[0.08] grid grid-cols-4 shrink-0 pb-[env(safe-area-inset-bottom)]"
       >
         {(
           [
@@ -384,10 +375,10 @@ export default function RadioPwaShell() {
               key={id}
               type="button"
               onClick={() => setActiveTab(id)}
-              className={`py-2 px-1 flex flex-col items-center justify-center gap-1 font-mono text-[10px] font-bold uppercase rounded-xl cursor-pointer transition-all ${
+              className={`py-3 px-1 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase cursor-pointer transition-all ${
                 isActive
-                  ? "bg-[#F5C842] text-[#16181D] shadow-md"
-                  : "text-[#CBD5E1] hover:text-white hover:bg-white/5"
+                  ? "bg-[#F5C842] text-[#16181D] font-bold shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.04] font-medium"
               }`}
             >
               <Icon className="w-4 h-4" />

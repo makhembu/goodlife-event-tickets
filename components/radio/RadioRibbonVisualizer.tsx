@@ -157,9 +157,9 @@ export default function RadioRibbonVisualizer({
       ctx.clearRect(0, 0, cssW, cssH);
 
       const active = playing && !muted;
-      let targetBass = active ? Math.max(0.35, Math.min(1.15, vol * (drop ? 1.15 : 1))) : 0.12;
-      let targetMid = targetBass;
-      let targetHigh = targetBass;
+      let targetBass = active ? Math.max(0.45, Math.min(1.25, vol * (drop ? 1.25 : 1))) : 0.38;
+      let targetMid = active ? targetBass : 0.44;
+      let targetHigh = active ? targetBass : 0.34;
 
       if (active) {
         const analyserState = ensureAnalyser();
@@ -176,9 +176,9 @@ export default function RadioRibbonVisualizer({
           const liveMid = avgRange(5, 14);
           const liveHigh = avgRange(14, 26);
           if (liveBass + liveMid + liveHigh > 0.01) {
-            targetBass = 0.25 + liveBass * 1.35;
-            targetMid = 0.22 + liveMid * 1.45;
-            targetHigh = 0.18 + liveHigh * 1.55;
+            targetBass = 0.35 + liveBass * 1.45;
+            targetMid = 0.30 + liveMid * 1.55;
+            targetHigh = 0.25 + liveHigh * 1.65;
           }
         }
       }
@@ -188,16 +188,19 @@ export default function RadioRibbonVisualizer({
       smoothHigh += (targetHigh - smoothHigh) * 0.22;
 
       if (!prefersReducedMotion) {
-        phase += active ? 0.06 + smoothBass * 0.075 : 0.015;
+        phase += active ? 0.055 + smoothBass * 0.075 : 0.022;
       }
 
-      // Ambient golden studio luminescence for dark deck integration
-      ctx.shadowColor = "rgba(245, 200, 66, 0.45)";
-      ctx.shadowBlur = 6;
+      // 1. Dark intertwining wave (creates dimensional depth from mockup)
+      drawRibbon(cssW, cssH, 5, 10 * smoothBass, 0.3, "#282D38", 2.2, 0);
 
-      drawRibbon(cssW, cssH, 8, 12 * smoothHigh, 1.6, "#DFBB7D", 1.8, 0.14);
-      drawRibbon(cssW, cssH, 12, 14 * smoothMid, 0.8, "#F5C842", 2.2, 0.22);
-      drawRibbon(cssW, cssH, 6, 9 * smoothBass, 0, "rgba(255, 226, 125, 0.45)", 1.2, 0.08);
+      // 2. Ambient golden studio luminescence for dark deck integration
+      ctx.shadowColor = "rgba(245, 200, 66, 0.65)";
+      ctx.shadowBlur = 8;
+
+      // 3. Fluid champagne & vivid gold glowing waves
+      drawRibbon(cssW, cssH, 8, 12 * smoothMid, 1.3, "#DFBB7D", 1.8, 0.16);
+      drawRibbon(cssW, cssH, 11, 14 * smoothHigh, 2.1, "#F5C842", 2.4, 0.24);
 
       ctx.restore();
 

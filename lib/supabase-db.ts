@@ -381,7 +381,18 @@ export async function createEvent(event: Omit<Event, 'id' | 'created_at'>): Prom
           // late, and a cloned max_quantity resets scarcity to zero because
           // sold_count is recomputed from tickets for the new event. An admin
           // sets these for the new edition in seconds.
-          JSON.stringify(tier.tour_media_urls || [])
+          Array.isArray(tier.tour_media_urls)
+            ? tier.tour_media_urls
+            : typeof tier.tour_media_urls === "string"
+              ? (() => {
+                  try {
+                    const p = JSON.parse(tier.tour_media_urls);
+                    return Array.isArray(p) ? p : [];
+                  } catch {
+                    return [];
+                  }
+                })()
+              : []
         ]
       );
     }
@@ -2192,7 +2203,18 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
         tier.is_camping_bundle ?? (tier.tag === "CAMPING"),
         tier.camping_type || (tier.id.includes("shared") ? "shared_bed" : tier.tag === "CAMPING" ? "private" : "none"),
         tier.badge_text || null,
-        JSON.stringify(tier.tour_media_urls || [])
+        Array.isArray(tier.tour_media_urls)
+          ? tier.tour_media_urls
+          : typeof tier.tour_media_urls === "string"
+            ? (() => {
+                try {
+                  const p = JSON.parse(tier.tour_media_urls);
+                  return Array.isArray(p) ? p : [];
+                } catch {
+                  return [];
+                }
+              })()
+            : []
       ]
     );
     clearTicketTiersCache(eventId);
@@ -2201,6 +2223,28 @@ export async function createTicketTier(tier: TicketTier): Promise<TicketTier> {
     console.error("Neon createTicketTier error:", err);
     throw err;
   }
+}
+
+// Create multiple ticket tiers in bulk
+export async function createTicketTiers(tiers: TicketTier[]): Promise<TicketTier[]> {
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/ticket-tiers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tiers)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error: ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  const results: TicketTier[] = [];
+  for (const t of tiers) {
+    results.push(await createTicketTier(t));
+  }
+  return results;
 }
 
 /**
@@ -2331,7 +2375,20 @@ export async function updateTicketTier(
       };
     }
     const setClause = fields.map((f, idx) => `"${f}" = $${idx + 3}`).join(", ");
-    const values = fields.map((f) => (updates as any)[f]);
+    const values = fields.map((f) => {
+      if (f === "tour_media_urls") {
+        const v = (updates as any)[f];
+        if (Array.isArray(v)) return v;
+        if (typeof v === "string") {
+          try {
+            const p = JSON.parse(v);
+            if (Array.isArray(p)) return p;
+          } catch {}
+        }
+        return [];
+      }
+      return (updates as any)[f];
+    });
     const { rows } = await neonQuery(
       `UPDATE ticket_tiers SET ${setClause} WHERE id = $1 AND event_id = $2 RETURNING *`,
       [targetId, scopedEventId, ...values]

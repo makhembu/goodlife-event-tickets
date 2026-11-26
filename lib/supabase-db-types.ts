@@ -150,7 +150,7 @@ export interface TicketTier {
   hidden: boolean;
   deleted_at?: string | null;
   event_id?: number | null;
-  tier_category?: 'entry' | 'camping';
+  tier_category?: 'entry' | 'camping' | 'group' | 'bundle';
   admits_quantity?: number;
   is_camping_bundle?: boolean;
   camping_type?: 'none' | 'private' | 'shared_bed';
