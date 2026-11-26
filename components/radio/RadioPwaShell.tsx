@@ -122,7 +122,7 @@ export default function RadioPwaShell() {
   }, [coverUrl, coverError, resolvedCover]);
 
   return (
-    <div className="h-[100dvh] w-full bg-[#0D0F12] text-[#FBF9F6] flex flex-col overflow-hidden select-none">
+    <div className="h-[100dvh] w-full max-w-[480px] mx-auto bg-[#0D0F12] text-[#FBF9F6] flex flex-col overflow-hidden select-none">
       {/* App-Only Top Bar */}
       <header className="bg-[#0D0F12] text-[#FBF9F6] px-4 py-3 border-b border-white/[0.08] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
@@ -168,7 +168,7 @@ export default function RadioPwaShell() {
             )}
 
             {/* Flex Cover Art Box: Symmetrically centered large pass or real album artwork */}
-            <div className="relative flex-1 min-h-[220px] border border-white/[0.08] rounded-3xl shadow-2xl overflow-hidden bg-[#12151B] flex flex-col justify-between items-center p-4">
+            <div className="relative flex-1 min-h-[220px] border border-white/[0.08] rounded-3xl shadow-2xl overflow-hidden bg-[#13151C] flex flex-col justify-between items-center p-4">
               {isDefaultPass ? (
                 <>
                   <span className="relative z-10 px-4 py-1.5 rounded-full bg-[#1C2028] border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] font-mono text-[10px] font-bold uppercase tracking-wider text-[#DFBB7D] text-center">
@@ -181,7 +181,7 @@ export default function RadioPwaShell() {
                       src={resolvedCover}
                       alt={displayTitle}
                       onError={() => setCoverError(true)}
-                      className="w-[82%] max-w-[340px] aspect-square object-contain mx-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.85)]"
+                      className="w-[84%] max-w-[350px] aspect-square object-contain mx-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.85)]"
                     />
                   </div>
 
@@ -267,7 +267,7 @@ export default function RadioPwaShell() {
                 type="button"
                 onClick={togglePlay}
                 aria-label={isPlaying ? "Pause radio" : "Play radio"}
-                className="relative w-17 h-17 rounded-full bg-[radial-gradient(ellipse_at_35%_35%,#FFE699_0%,#F5C842_45%,#D4A017_85%,#996F0A_100%)] border-2 border-[#FFE8A3]/60 shadow-[0_0_35px_rgba(245,200,66,0.65),0_0_15px_rgba(245,200,66,0.45)] hover:shadow-[0_0_45px_rgba(245,200,66,0.85)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                className="relative w-17 h-17 rounded-full bg-[radial-gradient(circle_at_35%_35%,#FFF3B8_0%,#F5C842_45%,#C99318_80%,#7C5808_100%)] border-2 border-[#FFECA8]/70 shadow-[0_0_32px_rgba(245,200,66,0.6),0_4px_16px_rgba(0,0,0,0.6)] hover:shadow-[0_0_45px_rgba(245,200,66,0.85)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
               >
                 {isPlaying && (
                   <span className="absolute -inset-2.5 rounded-full border-2 border-[#F5C842] animate-ping motion-reduce:animate-none pointer-events-none opacity-60" />
@@ -359,7 +359,7 @@ export default function RadioPwaShell() {
       {/* Bottom 4-Tab Dock */}
       <nav
         aria-label="GOODLIFE Radio App Navigation"
-        className="bg-[#0B0C0E] border-t border-white/[0.08] grid grid-cols-4 shrink-0 pb-[env(safe-area-inset-bottom)]"
+        className="bg-[#0B0C0E] border-t border-[#DFBB7D]/25 grid grid-cols-4 shrink-0 pb-[env(safe-area-inset-bottom)]"
       >
         {(
           [
@@ -378,10 +378,10 @@ export default function RadioPwaShell() {
               className={`py-3 px-1 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase cursor-pointer transition-all ${
                 isActive
                   ? "bg-[#F5C842] text-[#16181D] font-bold shadow-lg"
-                  : "text-white/60 hover:text-white hover:bg-white/[0.04] font-medium"
+                  : "text-[#CBD5E1]/80 hover:text-white hover:bg-white/[0.04] font-medium"
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${isActive ? "text-[#16181D]" : "text-[#CBD5E1]"}`} />
               <span>{label}</span>
             </button>
           );

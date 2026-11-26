@@ -52,9 +52,8 @@ export default function RadioRibbonVisualizer({
 
     let rafId = 0;
     let phase = 0;
-    let smoothBass = 0.14;
-    let smoothMid = 0.14;
-    let smoothHigh = 0.14;
+    let smoothBass = 1.0;
+    let smoothMid = 1.0;
 
     const ensureAnalyser = () => {
       const el = stateRef.current.getAudioElement?.() as AudioCaptureElement | null;
@@ -105,48 +104,13 @@ export default function RadioRibbonVisualizer({
       }
     };
 
-    const drawRibbon = (
-      w: number,
-      h: number,
-      freq: number,
-      ampScale: number,
-      phaseOffset: number,
-      color: string,
-      lineWidth: number,
-      fillAlpha: number
-    ) => {
-      const mid = h / 2;
-      ctx.beginPath();
-      for (let x = 0; x <= w; x += 3) {
-        const t = x / w;
-        const envelope = Math.pow(Math.sin(t * Math.PI), 1.3);
-        const y = mid + Math.sin(t * freq - phase + phaseOffset) * ampScale * envelope;
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = "round";
-      ctx.stroke();
-
-      if (fillAlpha > 0) {
-        ctx.lineTo(w, mid);
-        ctx.lineTo(0, mid);
-        ctx.closePath();
-        ctx.fillStyle = color;
-        ctx.globalAlpha = fillAlpha;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    };
-
     const render = () => {
       const { isPlaying: playing, isMuted: muted, volume: vol, isDropPlaying: drop } =
         stateRef.current;
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const cssW = canvas.clientWidth || 300;
-      const cssH = canvas.clientHeight || 40;
+      const cssH = canvas.clientHeight || 48;
       if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
         canvas.width = cssW * dpr;
         canvas.height = cssH * dpr;
@@ -157,9 +121,8 @@ export default function RadioRibbonVisualizer({
       ctx.clearRect(0, 0, cssW, cssH);
 
       const active = playing && !muted;
-      let targetBass = active ? Math.max(0.45, Math.min(1.25, vol * (drop ? 1.25 : 1))) : 0.38;
-      let targetMid = active ? targetBass : 0.44;
-      let targetHigh = active ? targetBass : 0.34;
+      let targetBass = active ? Math.max(0.7, Math.min(1.4, vol * (drop ? 1.3 : 1))) : 0.85;
+      let targetMid = active ? targetBass : 0.85;
 
       if (active) {
         const analyserState = ensureAnalyser();
@@ -174,33 +137,89 @@ export default function RadioRibbonVisualizer({
           };
           const liveBass = avgRange(0, 5);
           const liveMid = avgRange(5, 14);
-          const liveHigh = avgRange(14, 26);
-          if (liveBass + liveMid + liveHigh > 0.01) {
-            targetBass = 0.35 + liveBass * 1.45;
-            targetMid = 0.30 + liveMid * 1.55;
-            targetHigh = 0.25 + liveHigh * 1.65;
+          if (liveBass + liveMid > 0.01) {
+            targetBass = 0.65 + liveBass * 1.5;
+            targetMid = 0.60 + liveMid * 1.4;
           }
         }
       }
 
-      smoothBass += (targetBass - smoothBass) * 0.22;
-      smoothMid += (targetMid - smoothMid) * 0.22;
-      smoothHigh += (targetHigh - smoothHigh) * 0.22;
+      smoothBass += (targetBass - smoothBass) * 0.15;
+      smoothMid += (targetMid - smoothMid) * 0.15;
 
       if (!prefersReducedMotion) {
-        phase += active ? 0.055 + smoothBass * 0.075 : 0.022;
+        phase += active ? 0.045 + smoothBass * 0.035 : 0.022;
       }
 
-      // 1. Dark intertwining wave (creates dimensional depth from mockup)
-      drawRibbon(cssW, cssH, 5, 10 * smoothBass, 0.3, "#282D38", 2.2, 0);
+      const midY = cssH / 2;
+      const cycles = 1.8;
+      const freq = cycles * 2 * Math.PI;
+      const baseAmp = 18;
 
-      // 2. Ambient golden studio luminescence for dark deck integration
-      ctx.shadowColor = "rgba(245, 200, 66, 0.65)";
-      ctx.shadowBlur = 8;
+      // 1. Secondary Charcoal / Deep Shadow Wave (intertwines in opposite phase)
+      ctx.beginPath();
+      for (let x = 0; x <= cssW; x += 2) {
+        const t = x / cssW;
+        const envelope = Math.pow(Math.sin(t * Math.PI), 1.15);
+        const y = midY + Math.sin(t * freq - phase + Math.PI) * (baseAmp * smoothMid) * envelope;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#080A0F";
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.stroke();
 
-      // 3. Fluid champagne & vivid gold glowing waves
-      drawRibbon(cssW, cssH, 8, 12 * smoothMid, 1.3, "#DFBB7D", 1.8, 0.16);
-      drawRibbon(cssW, cssH, 11, 14 * smoothHigh, 2.1, "#F5C842", 2.4, 0.24);
+      // 2. Glowing Amber Fill Under Gold Sine Wave
+      ctx.beginPath();
+      ctx.moveTo(0, midY);
+      for (let x = 0; x <= cssW; x += 2) {
+        const t = x / cssW;
+        const envelope = Math.pow(Math.sin(t * Math.PI), 1.15);
+        const y = midY + Math.sin(t * freq - phase) * (baseAmp * smoothBass) * envelope;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(cssW, midY);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, midY - baseAmp * 1.2, 0, midY + baseAmp * 1.2);
+      grad.addColorStop(0, "rgba(245, 200, 66, 0.36)");
+      grad.addColorStop(0.5, "rgba(223, 187, 125, 0.18)");
+      grad.addColorStop(1, "rgba(245, 200, 66, 0.0)");
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 3. Primary Luminous Golden Wave with Radiant Studio Bloom
+      ctx.save();
+      ctx.shadowColor = "rgba(245, 200, 66, 0.85)";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      for (let x = 0; x <= cssW; x += 2) {
+        const t = x / cssW;
+        const envelope = Math.pow(Math.sin(t * Math.PI), 1.15);
+        const y = midY + Math.sin(t * freq - phase) * (baseAmp * smoothBass) * envelope;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#F5C842";
+      ctx.lineWidth = 2.8;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.stroke();
+      ctx.restore();
+
+      // 4. Subtle inner champagne highlight line
+      ctx.beginPath();
+      for (let x = 0; x <= cssW; x += 3) {
+        const t = x / cssW;
+        const envelope = Math.pow(Math.sin(t * Math.PI), 1.15);
+        const y = midY + Math.sin(t * freq - phase) * (baseAmp * smoothBass) * envelope - 0.5;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "rgba(255, 245, 200, 0.75)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
 
       ctx.restore();
 
@@ -216,8 +235,8 @@ export default function RadioRibbonVisualizer({
   }, [isPlaying, isMuted, volume, isDropPlaying]);
 
   return (
-    <div className="mt-2 py-0.5 h-11 flex items-center" aria-hidden="true">
-      <canvas ref={canvasRef} className="w-full h-10 block" />
+    <div className="mt-2 py-0.5 h-12 flex items-center" aria-hidden="true">
+      <canvas ref={canvasRef} className="w-full h-11 block" />
     </div>
   );
 }
