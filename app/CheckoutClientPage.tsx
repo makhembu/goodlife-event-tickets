@@ -600,6 +600,7 @@ export default function TicketCheckoutPage({
           tier.tier_category === 'bundle' ||
           tier.tag === 'EXPERIENCE' ||
           tier.tag === 'BUNDLE' ||
+          tier.tag === 'COUPLES' ||
           tier.id?.toLowerCase().includes("beer") ||
           tier.name?.toLowerCase().includes("beer");
 
