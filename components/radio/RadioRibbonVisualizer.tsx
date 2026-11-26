@@ -16,8 +16,8 @@ type AudioCaptureElement = HTMLAudioElement & {
 };
 
 /**
- * Fluid 3-ribbon soundwave visualizer rendered directly on the cream card
- * surface (no dark box) in Goodlife sand-gold, vivid gold, and charcoal ink.
+ * Fluid luminous soundwave visualizer rendered directly on the dark deck card
+ * in Goodlife sand-gold and vivid gold with ambient studio underglow.
  * Uses a read-only captureStream() -> Web Audio AnalyserNode when supported
  * so bass/mid/high ribbons react to real audio without muting cross-origin streams.
  */
@@ -191,9 +191,13 @@ export default function RadioRibbonVisualizer({
         phase += active ? 0.06 + smoothBass * 0.075 : 0.015;
       }
 
-      drawRibbon(cssW, cssH, 9, 13 * smoothHigh, 1.8, "#DFBB7D", 2, 0.18);
-      drawRibbon(cssW, cssH, 13, 15 * smoothMid, 0.7, "#F5C842", 2.4, 0.22);
-      drawRibbon(cssW, cssH, 7, 13 * smoothBass, 0, "#16181D", 2.6, 0);
+      // Ambient golden studio luminescence for dark deck integration
+      ctx.shadowColor = "rgba(245, 200, 66, 0.45)";
+      ctx.shadowBlur = 6;
+
+      drawRibbon(cssW, cssH, 8, 12 * smoothHigh, 1.6, "#DFBB7D", 1.8, 0.14);
+      drawRibbon(cssW, cssH, 12, 14 * smoothMid, 0.8, "#F5C842", 2.2, 0.22);
+      drawRibbon(cssW, cssH, 6, 9 * smoothBass, 0, "rgba(255, 226, 125, 0.45)", 1.2, 0.08);
 
       ctx.restore();
 
