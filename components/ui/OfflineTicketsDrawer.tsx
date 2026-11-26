@@ -8,12 +8,14 @@ interface OfflineTicketsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   triggerRefresh?: number;
+  currentEventId?: number | string;
 }
 
 export default function OfflineTicketsDrawer({
   isOpen,
   onClose,
   triggerRefresh = 0,
+  currentEventId,
 }: OfflineTicketsDrawerProps) {
   const [tickets, setTickets] = useState<CachedTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<CachedTicket | null>(null);
@@ -24,8 +26,13 @@ export default function OfflineTicketsDrawer({
       // Sort newest saved first
       list.sort((a, b) => b.savedAt - a.savedAt);
       setTickets(list);
-      if (list.length > 0 && !selectedTicket) {
-        setSelectedTicket(list[0]);
+      if (list.length > 0) {
+        if (currentEventId !== undefined) {
+          const match = list.find((t) => String(t.eventId) === String(currentEventId));
+          setSelectedTicket(match || list[0]);
+        } else if (!selectedTicket) {
+          setSelectedTicket(list[0]);
+        }
       }
     } catch (err) {
       console.warn("Failed to load offline tickets:", err);
@@ -36,7 +43,7 @@ export default function OfflineTicketsDrawer({
     if (isOpen) {
       loadTickets();
     }
-  }, [isOpen, triggerRefresh]);
+  }, [isOpen, triggerRefresh, currentEventId]);
 
   const handleRemove = async (ticketId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -89,6 +96,12 @@ export default function OfflineTicketsDrawer({
                 <div className="bg-white border-2 border-[#142B4C] rounded-xl p-5 shadow-[4px_4px_0px_0px_#142B4C] text-center relative overflow-hidden">
                   <div className="absolute top-0 left-0 right-0 h-2 bg-[#FF6B35]" />
                   
+                  {currentEventId !== undefined && selectedTicket.eventId !== undefined && String(selectedTicket.eventId) !== String(currentEventId) && (
+                    <div className="bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-bold px-2 py-1 rounded mb-3 inline-flex items-center gap-1 uppercase tracking-wide">
+                      <span>⚠️ Pass for different edition: {selectedTicket.eventTitle || "Other Event"}</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between text-xs text-[#556270] mb-3 mt-1">
                     <span className="font-bold text-[#FF6B35] uppercase">{selectedTicket.ticketType}</span>
                     <span className="font-mono bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
@@ -165,27 +178,45 @@ export default function OfflineTicketsDrawer({
                     All Stored Tickets ({tickets.length})
                   </p>
                   <div className="grid grid-cols-1 gap-2">
-                    {tickets.map((t) => (
-                      <div
-                        key={t.id}
-                        onClick={() => setSelectedTicket(t)}
-                        className={`p-3 rounded-lg border-2 cursor-pointer transition flex items-center justify-between ${
-                          selectedTicket?.id === t.id
-                            ? "bg-[#142B4C] text-white border-[#142B4C]"
-                            : "bg-white text-[#142B4C] border-[#142B4C]/20 hover:border-[#142B4C]"
-                        }`}
-                      >
-                        <div className="truncate">
-                          <p className="font-bold text-xs truncate">
-                            {t.eventTitle} • {t.ticketType}
-                          </p>
-                          <p className={`text-[11px] ${selectedTicket?.id === t.id ? "text-gray-300" : "text-[#556270]"}`}>
-                            Ref: {t.id} • {t.buyerName}
-                          </p>
+                    {tickets.map((t) => {
+                      const isCurrent = currentEventId !== undefined && String(t.eventId) === String(currentEventId);
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => setSelectedTicket(t)}
+                          className={`p-3 rounded-lg border-2 cursor-pointer transition flex items-center justify-between ${
+                            selectedTicket?.id === t.id
+                              ? "bg-[#142B4C] text-white border-[#142B4C]"
+                              : "bg-white text-[#142B4C] border-[#142B4C]/20 hover:border-[#142B4C]"
+                          }`}
+                        >
+                          <div className="truncate">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-xs truncate">
+                                {t.eventTitle || "GOODLIFE EVENT"} • {t.ticketType}
+                              </p>
+                              {currentEventId !== undefined && (
+                                <span className={`text-[9px] font-mono font-bold px-1 py-0.2 rounded border shrink-0 ${
+                                  isCurrent
+                                    ? selectedTicket?.id === t.id
+                                      ? "bg-green-500 text-white border-green-400"
+                                      : "bg-green-100 text-green-800 border-green-300"
+                                    : selectedTicket?.id === t.id
+                                      ? "bg-amber-400 text-black border-amber-300"
+                                      : "bg-amber-100 text-amber-800 border-amber-300"
+                                }`}>
+                                  {isCurrent ? "THIS EVENT" : "OTHER EDITION"}
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-[11px] ${selectedTicket?.id === t.id ? "text-gray-300" : "text-[#556270]"}`}>
+                              Ref: {t.id} • {t.buyerName}
+                            </p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 shrink-0 opacity-60" />
                         </div>
-                        <ChevronRight className="w-4 h-4 shrink-0 opacity-60" />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

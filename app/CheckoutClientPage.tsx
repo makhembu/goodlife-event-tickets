@@ -349,40 +349,86 @@ export default function TicketCheckoutPage({
   // Load stored tickets from IndexedDB (strictly no localStorage for offline tickets)
   useEffect(() => {
     if (typeof window === "undefined") return;
-    getAllOfflineTickets().then((tickets) => {
-      setOfflineTicketsCount(tickets.length);
-      const ids = tickets.map((t) => t.id);
-      if (ids.length > 0) {
-        setMyTickets(ids);
-        const map: Record<string, any> = {};
-        tickets.forEach((t) => {
-          map[t.id] = {
-            id: t.id,
-            ticket_type: t.ticketType,
-            amount_paid: t.amountPaid,
-            buyer_name: t.buyerName,
-            purchase_time: t.purchaseTime,
-            event_title: t.eventTitle,
-            event_date: t.eventDate,
-            venue: t.venue,
-          };
-        });
-        setTicketDetailsMap((prev) => ({ ...prev, ...map }));
+    let cancelled = false;
+
+    getAllOfflineTickets().then(async (tickets) => {
+      if (cancelled) return;
+
+      // Check all cached tickets against server if online to self-heal any cross-event drift or legacy data
+      let verifiedTickets = tickets;
+      if (tickets.length > 0 && typeof navigator !== "undefined" && navigator.onLine) {
+        try {
+          const checks = await Promise.all(
+            tickets.map(async (t) => {
+              try {
+                const res = await fetch(`/api/tickets/${encodeURIComponent(t.id)}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  return {
+                    ...t,
+                    eventId: data.event_id ?? t.eventId,
+                    eventTitle: data.event_title || t.eventTitle,
+                    eventDate: data.event_date || t.eventDate,
+                    venue: data.venue || t.venue,
+                    ticketType: data.ticket_type || t.ticketType,
+                    amountPaid: data.amount_paid ?? t.amountPaid,
+                    buyerName: data.buyer_name || t.buyerName,
+                  };
+                }
+              } catch {}
+              return t;
+            })
+          );
+          verifiedTickets = checks;
+          saveOfflineTickets(verifiedTickets).catch(() => {});
+        } catch {}
       }
+
+      if (cancelled) return;
+
+      // Filter tickets strictly belonging to this event
+      const currentEventTickets = verifiedTickets.filter(
+        (t) => t.eventId !== undefined && t.eventId !== null && String(t.eventId) === String(eventDetails.id)
+      );
+
+      setOfflineTicketsCount(currentEventTickets.length);
+      const ids = currentEventTickets.map((t) => t.id);
+      setMyTickets(ids);
+
+      const map: Record<string, any> = {};
+      verifiedTickets.forEach((t) => {
+        map[t.id] = {
+          id: t.id,
+          event_id: t.eventId,
+          ticket_type: t.ticketType,
+          amount_paid: t.amountPaid,
+          buyer_name: t.buyerName,
+          purchase_time: t.purchaseTime,
+          event_title: t.eventTitle,
+          event_date: t.eventDate,
+          venue: t.venue,
+        };
+      });
+      setTicketDetailsMap((prev) => ({ ...prev, ...map }));
     }).catch((e) => console.warn("Failed to load offline tickets from IndexedDB:", e));
 
     // Load active draft orders from IndexedDB
     getAllDraftOrders().then((drafts) => {
-      // Filter drafts within 24 hour TTL
+      if (cancelled) return;
+      // Filter drafts within 24 hour TTL for this event
       const now = Date.now();
-      const validDrafts = drafts.filter((d) => now - d.createdAt < 24 * 60 * 60 * 1000);
+      const validDrafts = drafts.filter(
+        (d) => now - d.createdAt < 24 * 60 * 60 * 1000 && String(d.eventId) === String(eventDetails.id)
+      );
       if (validDrafts.length > 0) {
         const latest = validDrafts[validDrafts.length - 1];
         setActiveDraft(latest);
         setPaymentState("QUEUED_LOCALLY");
       }
     }).catch((e) => console.warn("Failed to load drafts from IndexedDB:", e));
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [eventDetails.id]);
 
   // Set safety flag on window so service worker update prompt doesn't reload during payment
   useEffect(() => {
@@ -459,10 +505,10 @@ export default function TicketCheckoutPage({
       if (Object.keys(fresh).length > 0) {
         const toCache: CachedTicket[] = Object.values(fresh).map((f: any) => ({
           id: f.id,
-          eventId: eventDetails.id,
-          eventTitle: eventDetails.title || "GOODLIFE EVENT",
-          eventDate: eventDetails.event_date,
-          venue: eventDetails.venue,
+          eventId: f.event_id ?? eventDetails.id,
+          eventTitle: f.event_title || eventDetails.title || "GOODLIFE EVENT",
+          eventDate: f.event_date || eventDetails.event_date,
+          venue: f.venue || eventDetails.venue,
           buyerName: f.buyer_name,
           ticketType: f.ticket_type,
           amountPaid: f.amount_paid,
@@ -2539,6 +2585,7 @@ export default function TicketCheckoutPage({
         isOpen={showOfflineTickets}
         onClose={() => setShowOfflineTickets(false)}
         triggerRefresh={offlineTicketsCount}
+        currentEventId={eventDetails.id}
       />
 
       {/*

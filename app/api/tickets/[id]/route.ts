@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTicketById } from "@/lib/supabase-db";
+import { getTicketById, getEventById } from "@/lib/supabase-db";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -10,10 +10,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
     }
+
+    let eventTitle: string | null = null;
+    let eventDate: string | null = null;
+    let eventVenue: string | null = null;
+
+    if (ticket.event_id) {
+      const ev = await getEventById(ticket.event_id);
+      if (ev) {
+        eventTitle = ev.title;
+        eventDate = ev.event_date;
+        eventVenue = ev.venue;
+      }
+    }
     
     // Return only non-sensitive metadata for public rendering
     return NextResponse.json({
       id: ticket.id,
+      event_id: ticket.event_id ?? null,
+      event_title: eventTitle,
+      event_date: eventDate,
+      venue: eventVenue,
       ticket_type: ticket.ticket_type,
       amount_paid: ticket.amount_paid,
       buyer_name: ticket.buyer_name,
