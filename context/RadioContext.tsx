@@ -428,6 +428,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const availableDropsRef = useRef<RadioDrop[]>([]);
   const aiDropsEnabledRef = useRef<boolean>(true);
   const dropUnlockedRef = useRef<boolean>(false);
+  const deckBUnlockedRef = useRef<boolean>(false); // Tracks whether Deck B has been unlocked via user gesture
+  const isPrimingDeckBRef = useRef<boolean>(false); // Guard: lets silent prime bypass the Deck B onPlay suppressor
   const [isDropUnlocked, setIsDropUnlocked] = useState<boolean>(true);
   const firedDropIdsRef = useRef<Set<string | number>>(new Set());
   const firedLiveDropIdsRef = useRef<Set<string | number>>(new Set());
@@ -473,6 +475,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   const crossfadeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasFiredAutoDjCrossfadeRef = useRef(false);
   const executeCrossfadeRef = useRef<any>(null);
+  const handleEndedRef = useRef<((deck: "A" | "B") => void) | null>(null);
 
   // Stale-stream and stall detection refs
   const timingConfigRef = useRef(RADIO_TIMING);
@@ -1117,6 +1120,30 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         pollBackoffMsRef.current = timingConfigRef.current.metadataPollIntervalMs;
         fetchRadioLive();
         scheduleNextPoll();
+
+        // Audio recovery when user unlocks phone or returns to tab:
+        if (isPlayingRef.current) {
+          const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+          if (activeAudio) {
+            if (activeAudio.ended) {
+              console.debug("[RadioContext] Active audio ended while hidden; advancing to next track");
+              if (handleEndedRef.current) {
+                handleEndedRef.current(activeDeckRef.current);
+              }
+            } else if (activeAudio.paused && !isCrossfadingRef.current && activeAudio.src) {
+              console.debug("[RadioContext] Resuming paused audio on visibility change");
+              if (broadcastModeRef.current === "live" || liveActiveRef.current) {
+                if (recoverLiveRef.current) {
+                  recoverLiveRef.current("visibility_resume");
+                } else {
+                  activeAudio.play().catch(() => {});
+                }
+              } else {
+                activeAudio.play().catch(() => {});
+              }
+            }
+          }
+        }
       }
     };
 
@@ -2005,8 +2032,9 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const trackDuration = nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : (audioRef.current?.duration || 0);
-    const currentPos = audioRef.current?.currentTime || 0;
+    const activeEl = activeDeckRef.current === "B" ? preloadAudioRef.current : audioRef.current;
+    const trackDuration = nowPlayingTrack?.duration && nowPlayingTrack.duration > 0 ? nowPlayingTrack.duration : (activeEl?.duration || 0);
+    const currentPos = activeEl?.currentTime || 0;
 
     // Keep positionState accurate where it applies (non-live / recorded set)
     if ("setPositionState" in navigator.mediaSession) {
@@ -2279,6 +2307,26 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Background-safe: when page is hidden (phone locked / tab switched),
+      // skip dual-deck crossfade — mobile browsers throttle load() and block play()
+      // on the standby deck. Instead, do a same-deck instant swap on the active deck.
+      const isBackgrounded = typeof document !== "undefined" && document.hidden;
+      if (isBackgrounded && outgoing) {
+        // Same-deck source swap: change src on the ACTIVE deck to avoid NotAllowedError
+        if (outgoing.src !== targetTrackUrl) {
+          outgoing.src = targetTrackUrl;
+          // Do NOT call load() — mobile browsers block it in background
+        }
+        outgoing.currentTime = options.targetSeek || 0;
+        outgoing.volume = targetVol;
+        outgoing.play().catch((err) => {
+          console.warn("[RadioContext] Background same-deck swap play error:", err);
+        });
+        isCrossfadingRef.current = false;
+        hasFiredAutoDjCrossfadeRef.current = false;
+        return;
+      }
+
       if (crossfadeTimerRef.current) {
         clearInterval(crossfadeTimerRef.current);
         crossfadeTimerRef.current = null;
@@ -2288,7 +2336,10 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       incoming.volume = 0;
       if (incoming.src !== targetTrackUrl) {
         incoming.src = targetTrackUrl;
-        incoming.load();
+        // Only call load() in foreground — mobile browsers throttle/block it when backgrounded
+        if (typeof document === "undefined" || !document.hidden) {
+          incoming.load();
+        }
       }
       incoming.currentTime = options.targetSeek || 0;
 
@@ -2970,7 +3021,32 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
 
-    // 2. Guarantee the standby deck is PAUSED so two decks never play simultaneously
+    // 2. Prime Deck B (preload/standby) so crossfade works in background (locked screen)
+    // Without this, mobile Safari/Chrome block incoming.play() during crossfade with NotAllowedError
+    if (preloadAudioRef.current && !deckBUnlockedRef.current) {
+      try {
+        isPrimingDeckBRef.current = true; // Let silent play bypass Deck B onPlay suppressor
+        preloadAudioRef.current.src = SILENT_WAV_DATA_URI;
+        preloadAudioRef.current.volume = 0.001;
+        const playPromiseB = preloadAudioRef.current.play();
+        if (playPromiseB !== undefined) {
+          playPromiseB
+            .then(() => {
+              if (preloadAudioRef.current && preloadAudioRef.current.src.startsWith("data:")) {
+                preloadAudioRef.current.pause();
+                preloadAudioRef.current.currentTime = 0;
+              }
+              deckBUnlockedRef.current = true;
+              isPrimingDeckBRef.current = false;
+            })
+            .catch(() => { isPrimingDeckBRef.current = false; });
+        } else {
+          isPrimingDeckBRef.current = false;
+        }
+      } catch { isPrimingDeckBRef.current = false; }
+    }
+
+    // 3. Guarantee the standby deck is PAUSED so two decks never play simultaneously
     const standbyAudio = activeDeckRef.current === "A" ? preloadAudioRef.current : audioRef.current;
     if (standbyAudio && !isCrossfadingRef.current) {
       try {
@@ -3514,6 +3590,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     },
     [upNextQueue, fetchRadioLive, playDropAndAdvance]
   );
+  handleEndedRef.current = handleEnded;
 
   // 14. 3-Track Browser Cache Preloader
   // Automatically warms audio buffers for the next 3 upcoming tracks in the queue so transitions are 0ms instant
@@ -3813,6 +3890,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (isReattachingRef.current) return;
           if (activeDeckRef.current === "A") {
             if (audioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
+            // If the document is hidden (phone locked / app in background), do not destroy the playing state
+            if (typeof document !== "undefined" && document.hidden) {
+              console.debug("[Radio:Playback] Deck A paused while backgrounded/locked; preserving playing state");
+              return;
+            }
             setIsPlaying(false);
           }
         }}
@@ -3874,6 +3956,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           if (!isCrossfadingRef.current && activeDeckRef.current === "A") {
+            // Allow silent prime to pass through so Deck B gets user-gesture unlocked
+            if (isPrimingDeckBRef.current) {
+              // This is the silent WAV prime during togglePlay — let it through
+              return;
+            }
             // Deck B started unexpectedly while Deck A is active and not crossfading; suppress Deck B
             console.debug("[Radio:Playout] Suppressing unexpected Deck B play while Deck A is active");
             try { preloadAudioRef.current?.pause(); } catch {}
@@ -3985,6 +4072,11 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           if (isReattachingRef.current) return;
           if (activeDeckRef.current === "B") {
             if (preloadAudioRef.current?.ended || isDropPlayingRef.current || isTransitioningRef.current || isCrossfadingRef.current) return;
+            // If the document is hidden (phone locked / app in background), do not destroy the playing state
+            if (typeof document !== "undefined" && document.hidden) {
+              console.debug("[Radio:Playback] Deck B paused while backgrounded/locked; preserving playing state");
+              return;
+            }
             setIsPlaying(false);
           }
         }}
