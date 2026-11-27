@@ -53,6 +53,8 @@ import { KenyaListenerMap } from "@/components/admin/radio/KenyaListenerMap";
 import { AutomationHealthWidget } from "@/components/admin/radio/AutomationHealthWidget";
 import { SoundboardProvider } from "@/context/SoundboardContext";
 import AssignToPadSheet from "@/components/admin/radio/AssignToPadSheet";
+import PresenterShoutoutQueue from "@/components/presenter/PresenterShoutoutQueue";
+import RecordingsManagerPanel from "@/components/admin/radio/RecordingsManagerPanel";
 import { useRadio } from "@/context/RadioContext";
 import { formatTrackTitle } from "@/lib/radio/media-helpers";
 
@@ -63,7 +65,18 @@ export default function AdminRadioPage() {
   useEffect(() => {
     try {
       const hash = window.location.hash.replace("#", "") as ConsoleTab;
-      const validTabs: ConsoleTab[] = ["studio", "drops", "library", "playlists", "live", "telemetry", "overrides"];
+      const validTabs: ConsoleTab[] = [
+        "studio",
+        "drops",
+        "library",
+        "playlists",
+        "live",
+        "schedule",
+        "shoutouts",
+        "recordings",
+        "telemetry",
+        "overrides",
+      ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
       } else {
@@ -1502,6 +1515,20 @@ export default function AdminRadioPage() {
       {activeTab === "schedule" && (
         <div className="space-y-6">
           <ScheduleManager />
+        </div>
+      )}
+
+      {/* VIEW 4C: LISTENER SHOUTOUTS & CHAT MODERATION */}
+      {activeTab === "shoutouts" && (
+        <div className="space-y-6">
+          <PresenterShoutoutQueue />
+        </div>
+      )}
+
+      {/* VIEW 4D: BROADCAST VAULT & MASTER RECORDINGS */}
+      {activeTab === "recordings" && (
+        <div className="space-y-6">
+          <RecordingsManagerPanel />
         </div>
       )}
 

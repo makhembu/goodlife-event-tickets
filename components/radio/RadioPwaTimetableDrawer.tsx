@@ -103,14 +103,14 @@ export default function RadioPwaTimetableDrawer({
 
   return (
     <div
-      className="absolute inset-0 z-40 bg-[#16181D]/60 flex items-end"
+      className="absolute inset-0 z-40 bg-[#16181D]/60 flex items-end md:items-center md:justify-center md:p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Station Timetable"
     >
       <div
-        className="w-full bg-[#F3ECE1] border-t-4 border-[#16181D] max-h-[82dvh] flex flex-col"
+        className="w-full md:max-w-2xl bg-[#F3ECE1] border-t-4 md:border-4 border-[#16181D] max-h-[82dvh] flex flex-col md:shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drawer Header */}

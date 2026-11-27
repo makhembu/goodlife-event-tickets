@@ -15,9 +15,11 @@ import {
   X,
   ChevronRight,
   Calendar,
+  MessageSquare,
+  Archive,
 } from "lucide-react";
 
-export type ConsoleTab = "studio" | "drops" | "library" | "playlists" | "live" | "schedule" | "telemetry" | "overrides";
+export type ConsoleTab = "studio" | "drops" | "library" | "playlists" | "live" | "schedule" | "shoutouts" | "recordings" | "telemetry" | "overrides";
 
 export interface ConsoleSidebarProps {
   activeTab: ConsoleTab;
@@ -71,6 +73,18 @@ export default function ConsoleSidebar({
       desc: "Weekly shows, presenter roster & slot editor",
     },
     {
+      id: "shoutouts",
+      label: "Listener Shoutouts",
+      icon: <MessageSquare className="w-5 h-5" />,
+      desc: "Live incoming chat, song requests & on-air approval",
+    },
+    {
+      id: "recordings",
+      label: "Broadcast Vault",
+      icon: <Archive className="w-5 h-5" />,
+      desc: "Master recordings archive & public licensing approval",
+    },
+    {
       id: "telemetry",
       label: "Telemetry & Logs",
       icon: <Activity className="w-5 h-5" />,
@@ -101,6 +115,18 @@ export default function ConsoleSidebar({
       desc: "Weekly broadcast schedule, shows & presenter applications roster",
     },
     {
+      id: "shoutouts",
+      label: "Listener Shoutouts & Requests",
+      icon: <MessageSquare className="w-5 h-5 text-pink-400" />,
+      desc: "Live listener chat moderation, on-air approval & song requests",
+    },
+    {
+      id: "recordings",
+      label: "Broadcast Vault & Master Recordings",
+      icon: <Archive className="w-5 h-5 text-amber-400" />,
+      desc: "Master 320k recordings, loudnorm archives & licensing approval",
+    },
+    {
       id: "live",
       label: "Live DJ Decks",
       icon: <RadioTower className="w-5 h-5 text-emerald-400" />,
@@ -115,12 +141,12 @@ export default function ConsoleSidebar({
     {
       id: "overrides",
       label: "Station Configuration",
-      icon: <Sliders className="w-5 h-5 text-amber-400" />,
+      icon: <Sliders className="w-5 h-5 text-yellow-400" />,
       desc: "Event airplay priority, gates countdowns & confirmed acts",
     },
   ];
 
-  const isSecondaryActive = ["schedule", "live", "telemetry", "overrides"].includes(activeTab);
+  const isSecondaryActive = ["schedule", "shoutouts", "recordings", "live", "telemetry", "overrides"].includes(activeTab);
 
   return (
     <>

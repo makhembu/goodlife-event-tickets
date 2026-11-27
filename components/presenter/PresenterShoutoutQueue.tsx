@@ -69,7 +69,7 @@ export default function PresenterShoutoutQueue() {
   });
 
   return (
-    <div className="border-3 border-brand-navy bg-white p-5 shadow-[4px_4px_0px_#142B4C] space-y-4 font-mono">
+    <div className="border-3 border-brand-navy bg-white text-brand-navy p-5 shadow-[4px_4px_0px_#142B4C] space-y-4 font-mono">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-brand-navy pb-3">
         <div className="flex items-center gap-2">

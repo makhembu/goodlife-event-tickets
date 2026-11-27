@@ -132,15 +132,18 @@ export default function ShoutoutWall({
       setFeedback({ type: "success", text: data.message || "Message transmitted to the booth queue!" });
       setMessage("");
       setTrackRequest("");
+      setSubmitting(false);
 
-      // Refresh sender's own tracked submissions
-      const mineRes = await fetch("/api/radio/shoutouts/mine");
-      if (mineRes.ok) {
-        const mineData = await mineRes.json();
-        if (Array.isArray(mineData)) setMySubmissions(mineData);
-      }
+      // Refresh sender's own tracked submissions asynchronously without blocking UI
+      fetch("/api/radio/shoutouts/mine")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((mineData) => {
+          if (Array.isArray(mineData)) setMySubmissions(mineData);
+        })
+        .catch(() => {});
     } catch (err: any) {
       setFeedback({ type: "error", text: err.message || "Failed to submit shoutout." });
+      setSubmitting(false);
     } finally {
       setSubmitting(false);
     }

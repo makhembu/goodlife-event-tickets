@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Play, Pause, Disc3, Clock, Calendar, ShieldCheck, Radio, Music } from "lucide-react";
+import { Play, Pause, Disc3, Clock, Calendar, ShieldCheck, Radio } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 
 interface RecordingItem {
@@ -81,14 +81,14 @@ export default function CatchUpVault({
 
   if (loading) {
     return (
-      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-3 ${className}`}>
-        <div className="flex items-center gap-2 border-b-2 border-brand-navy/15 pb-2">
-          <Disc3 className="w-5 h-5 text-brand-navy animate-spin motion-reduce:animate-none" />
-          <h3 className="font-display text-lg uppercase tracking-wide text-brand-navy">
+      <div className={`border border-white/[0.08] bg-[#13151C] shadow-2xl rounded-none p-5 space-y-3 text-[#FBF9F6] ${className}`}>
+        <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2">
+          <Disc3 className="w-5 h-5 text-[#DFBB7D] animate-spin motion-reduce:animate-none" />
+          <h3 className="font-sans text-lg uppercase tracking-wide text-white font-bold">
             {title}
           </h3>
         </div>
-        <p className="font-mono text-xs text-brand-navy/60 animate-pulse motion-reduce:animate-none">
+        <p className="font-mono text-xs text-neutral-400 animate-pulse motion-reduce:animate-none">
           Loading approved broadcast vault...
         </p>
       </div>
@@ -97,14 +97,14 @@ export default function CatchUpVault({
 
   if (recordings.length === 0) {
     return (
-      <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-2 ${className}`}>
-        <div className="flex items-center gap-2 border-b-2 border-brand-navy/15 pb-2">
-          <Disc3 className="w-5 h-5 text-brand-navy" />
-          <h3 className="font-display text-lg uppercase tracking-wide text-brand-navy">
+      <div className={`border border-white/[0.08] bg-[#13151C] shadow-2xl rounded-none p-5 space-y-2 text-[#FBF9F6] ${className}`}>
+        <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2">
+          <Disc3 className="w-5 h-5 text-[#DFBB7D]" />
+          <h3 className="font-sans text-lg uppercase tracking-wide text-white font-bold">
             {title}
           </h3>
         </div>
-        <p className="font-mono text-xs text-brand-navy/70">
+        <p className="font-mono text-xs text-neutral-400">
           No publicly approved recordings available yet for this selection. All recorded live sets undergo strict licensing verification before public release.
         </p>
       </div>
@@ -112,25 +112,25 @@ export default function CatchUpVault({
   }
 
   return (
-    <div className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none p-5 space-y-5 ${className}`}>
+    <div className={`border border-white/[0.08] bg-[#13151C] shadow-2xl rounded-none p-5 space-y-5 text-[#FBF9F6] ${className}`}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-brand-navy/20 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-brand-navy text-white rounded-none">
-            <Radio className="w-4 h-4 text-brand-accent" />
+          <div className="p-1.5 bg-[#1C2028] text-white rounded-none border border-white/10">
+            <Radio className="w-4 h-4 text-[#DFBB7D]" />
           </div>
           <div>
-            <h3 className="font-display text-xl uppercase tracking-wide text-brand-navy">
+            <h3 className="font-sans text-xl font-bold uppercase tracking-wide text-white">
               {title}
             </h3>
-            <span className="text-xs font-mono text-brand-navy/70 block">
+            <span className="text-xs font-mono text-neutral-400 block">
               OFFICIAL ARCHIVED BROADCASTS · {recordings.length} EPISODES
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 border border-emerald-700 text-emerald-800 text-xs font-mono font-bold uppercase rounded-none">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold uppercase rounded-none">
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>LICENSED & APPROVED ONLY</span>
+          <span>LICENSED &amp; APPROVED ONLY</span>
         </div>
       </div>
 
@@ -139,11 +139,11 @@ export default function CatchUpVault({
         {Array.from(groupedByShow.entries()).map(([showGroup, showRecordings]) => (
           <div key={showGroup} className="space-y-2.5">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-brand-accent border border-brand-navy inline-block" />
-              <h4 className="font-display text-base uppercase tracking-wider text-brand-navy">
+              <span className="w-2.5 h-2.5 bg-[#DFBB7D] border border-white/20 inline-block" />
+              <h4 className="font-sans text-base uppercase tracking-wider text-white font-bold">
                 {showGroup}
               </h4>
-              <span className="text-[10px] font-mono text-brand-navy/50">
+              <span className="text-[10px] font-mono text-neutral-400">
                 ({showRecordings.length})
               </span>
             </div>
@@ -159,7 +159,7 @@ export default function CatchUpVault({
                     dj_name: rec.dj_name,
                     audio_url: rec.audio_url || rec.playback_url || "",
                     playback_url: rec.playback_url,
-                    cover_url: "/flyer.png",
+                    cover_url: "/radio-pass-3d.png",
                     genre: rec.genre || "Festival Live Set",
                     duration_sec: rec.duration || 0,
                     file_size: 0,
@@ -176,31 +176,31 @@ export default function CatchUpVault({
                 return (
                   <div
                     key={rec.id}
-                    className={`border-2 border-brand-navy p-3.5 rounded-lg flex items-center justify-between gap-3 transition-all ${
+                    className={`border p-3.5 rounded-none flex items-center justify-between gap-3 transition-all ${
                       isThisPlaying
-                        ? "bg-brand-accent/20 border-brand-navy shadow-xs ring-2 ring-brand-navy"
-                        : "bg-brand-off-white hover:bg-white hover:shadow-xs"
+                        ? "bg-[#DFBB7D]/10 border-[#DFBB7D] shadow-md ring-1 ring-[#DFBB7D]"
+                        : "bg-[#181C26]/70 border-white/[0.08] hover:border-white/20"
                     }`}
                   >
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         {isThisPlaying && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                         )}
-                        <h5 className="font-display text-base uppercase text-brand-navy truncate">
+                        <h5 className="font-sans text-base font-bold uppercase text-white truncate">
                           {rec.title}
                         </h5>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-brand-navy/75">
-                        <span className="font-bold text-brand-navy">{rec.dj_name}</span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-neutral-400">
+                        <span className="font-bold text-[#DFBB7D]">{rec.dj_name}</span>
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-brand-navy/60" />
+                          <Clock className="w-3 h-3 text-neutral-400" />
                           {rec.duration_formatted}
                         </span>
                         {rec.recorded_at && (
                           <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-brand-navy/60" />
+                            <Calendar className="w-3 h-3 text-neutral-400" />
                             {new Date(rec.recorded_at).toLocaleDateString("en-KE", {
                               day: "numeric",
                               month: "short",
@@ -213,10 +213,10 @@ export default function CatchUpVault({
                     <button
                       type="button"
                       onClick={handleTogglePlay}
-                      className={`p-2.5 rounded-full border-2 border-brand-navy cursor-pointer transition-transform active:scale-95 shrink-0 ${
+                      className={`p-2.5 rounded-none border cursor-pointer transition-transform active:scale-95 shrink-0 ${
                         isThisPlaying
-                          ? "bg-brand-navy text-brand-accent"
-                          : "bg-brand-accent hover:bg-amber-400 text-brand-navy shadow-xs"
+                          ? "bg-[#DFBB7D] text-[#0D0F12] border-[#DFBB7D]"
+                          : "bg-[#1C2028] hover:bg-[#252B36] text-white border-white/10"
                       }`}
                       title={isThisPlaying ? "Playing" : "Listen to broadcast"}
                     >

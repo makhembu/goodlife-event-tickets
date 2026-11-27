@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { useRadio } from "@/context/RadioContext";
 import FestivalSetVault from "@/components/radio/FestivalSetVault";
-import CuratedPlaylists from "@/components/radio/CuratedPlaylists";
 import { resolveCoverArt, resolveFallbackCoverArt, formatTrackTitle } from "@/lib/radio/media-helpers";
 import UpcomingEventCard from "@/components/radio/UpcomingEventCard";
 import CatchUpVault from "@/components/radio/CatchUpVault";
@@ -106,8 +105,8 @@ export default function RadioPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // View toggle between Live Station, Curated Playlists, and Vault
-  const [activeView, setActiveView] = useState<"live" | "playlists" | "vault">("live");
+  // View toggle between Live Airwaves and Recorded Vault
+  const [activeView, setActiveView] = useState<"live" | "vault">("live");
 
   // Mobile navigation tab below deck: 'on_air' or 'booth'
   const [mobileTab, setMobileTab] = useState<"on_air" | "booth">("on_air");
@@ -305,43 +304,29 @@ export default function RadioPage() {
           </div>
 
           <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
-            {/* View Switcher: Live vs Playlists vs Vault */}
+            {/* View Switcher: Live Airwaves vs Recorded Vault */}
             <div className="w-full sm:w-auto flex border-2 border-brand-navy bg-brand-off-white rounded-none overflow-hidden shadow-(--shadow-brut-xs)">
               <button
                 type="button"
                 onClick={() => setActiveView("live")}
-                className={`flex-1 sm:flex-initial px-3 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
+                className={`flex-1 sm:flex-initial px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
                   activeView === "live"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
                 }`}
               >
-                LIVE STATION
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView("playlists")}
-                className={`flex-1 sm:flex-initial px-3 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
-                  activeView === "playlists"
-                    ? "bg-brand-navy text-brand-off-white"
-                    : "text-brand-navy hover:bg-brand-accent"
-                }`}
-              >
-                <span>PLAYLISTS</span>
-                {activePlaylist && !isLive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-ping motion-reduce:animate-none" />
-                )}
+                LIVE AIRWAVES
               </button>
               <button
                 type="button"
                 onClick={() => setActiveView("vault")}
-                className={`flex-1 sm:flex-initial px-3 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
+                className={`flex-1 sm:flex-initial px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
                   activeView === "vault"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
                 }`}
               >
-                VAULT
+                RECORDED VAULT
               </button>
             </div>
 
@@ -393,15 +378,6 @@ export default function RadioPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {activePlaylist && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveView("playlists")}
-                      className="px-3 py-1 bg-white text-brand-navy font-mono text-xs font-bold uppercase border border-brand-navy hover:bg-brand-accent transition-colors cursor-pointer rounded-none focus-visible:outline-3 focus-visible:outline-brand-accent focus-visible:outline-offset-2"
-                    >
-                      VIEW TAPE
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={snapToBroadcast}
@@ -927,16 +903,7 @@ export default function RadioPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB VIEW 2: CURATED PLAYLISTS / TAPES                                     */}
-        {/* ========================================================================= */}
-        {activeView === "playlists" && (
-          <div className="space-y-4">
-            <CuratedPlaylists />
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB VIEW 3: FESTIVAL SET VAULT (ARCHIVED DJ SETS)                         */}
+        {/* TAB VIEW 2: FESTIVAL SET VAULT (ARCHIVED DJ SETS)                         */}
         {/* ========================================================================= */}
         {activeView === "vault" && (
           <div className="space-y-4">

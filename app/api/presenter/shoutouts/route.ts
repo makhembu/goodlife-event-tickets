@@ -59,10 +59,10 @@ export async function GET(req: NextRequest) {
     `;
     const values: any[] = [];
 
-    // Presenter scope: only items attached to their own slots
+    // Presenter scope: items attached to their own slots OR unslotted general station shoutouts
     if (!isAdmin && presenterId) {
       values.push(presenterId);
-      query += ` AND (ss.primary_presenter_id = $${values.length} OR ss.substitute_presenter_id = $${values.length})`;
+      query += ` AND (ss.primary_presenter_id = $${values.length} OR ss.substitute_presenter_id = $${values.length} OR s.slot_id IS NULL)`;
     }
 
     if (slotIdParam && /^\d+$/.test(slotIdParam)) {

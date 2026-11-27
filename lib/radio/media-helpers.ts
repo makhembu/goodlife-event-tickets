@@ -20,6 +20,11 @@ export function resolveCoverArt(thumbnailUrl?: string | null): string {
 
   const trimmed = thumbnailUrl.trim();
 
+  // Guard: Avoid YouTube webpage/playlist URLs or dead Apple CDN assets stored in place of image URLs
+  if (trimmed.includes("youtube.com/playlist") || trimmed.includes("youtube.com/watch") || trimmed.includes("mzstatic.com")) {
+    return "/radio-pass-3d.png";
+  }
+
   // Guard: Never expose private RFC1918 / LAN URLs to the browser (prevents Chrome Private Network Access prompt)
   if (/^(?:https?:)?\/\/(?:192\x2e168\x2e|10\x2e|172\x2e|127\x2e|localhost)/i.test(trimmed)) {
     const vidMatch = trimmed.match(/\/vi\/([a-zA-Z0-9_-]{11})/);
@@ -84,8 +89,8 @@ export function formatTrackTitle(title?: string | null): string {
   // 2. Strip trailing pipe brandings like "| ShaSha", "| Official Video", "| VEVO"
   cleaned = cleaned.replace(/\s*\|\s*.*$/i, "");
 
-  // 3. Strip leading track numbering e.g. "7. Open Mic Grooves: " or "01 - "
-  cleaned = cleaned.replace(/^\d+[\.\-\s]+(?=[A-Za-z])/i, "");
+  // 3. Strip leading track numbering e.g. "01 - " or "7. Open Mic Grooves" without mangling titles like "8 Mile"
+  cleaned = cleaned.replace(/^(?:\d+[\.\-:\)]\s*|\d{2,}\s+)(?=[A-Za-z])/i, "");
 
   // 4. Strip standalone (Audio) or [Audio]
   cleaned = cleaned.replace(/\s*[\[\(]Audio[\]\)]\s*/gi, " ");

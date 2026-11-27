@@ -136,10 +136,9 @@ async function runTests() {
     path.join(process.cwd(), "app/radio/page.tsx"),
     "utf8"
   );
-  check("Radio page imports CuratedPlaylists", listenerPageCode.includes("CuratedPlaylists"));
-  check("Radio page supports 'playlists' view switcher", listenerPageCode.includes('"playlists"') && listenerPageCode.includes("PLAYLISTS"));
-  check("Radio page renders CuratedPlaylists component", listenerPageCode.includes("<CuratedPlaylists />"));
-  check("Radio page displays on-demand tape status banner", listenerPageCode.includes("PLAYING ON-DEMAND PLAYLIST") || listenerPageCode.includes("PLAYING ON-DEMAND TAPE"));
+  check("Radio page imports FestivalSetVault", listenerPageCode.includes("FestivalSetVault"));
+  check("Radio page supports streamlined 'live' and 'vault' views", listenerPageCode.includes('"live"') && listenerPageCode.includes('"vault"'));
+  check("Radio page supports snap to live broadcast", listenerPageCode.includes("RETURN TO LIVE BROADCAST") || listenerPageCode.includes("snapToBroadcast"));
 
   // 7. Playout math unit simulation
   const nowSec = 1700000000;

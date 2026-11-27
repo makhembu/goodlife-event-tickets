@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -10,7 +10,6 @@ import {
   Radio,
   ChevronDown,
   ChevronUp,
-  Sparkles,
   ExternalLink,
   Share2,
   Check,
@@ -62,6 +61,9 @@ function formatTrackTime(sec: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+const DEFAULT_COVER = "/radio-pass-3d.png";
+const INITIAL_TRACK_LIMIT = 25;
+
 export default function CuratedPlaylists() {
   const {
     isLive,
@@ -84,6 +86,7 @@ export default function CuratedPlaylists() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedTracks, setExpandedTracks] = useState<Record<number, PlaylistTrackDetail[]>>({});
   const [loadingTracks, setLoadingTracks] = useState<Record<number, boolean>>({});
+  const [visibleCounts, setVisibleCounts] = useState<Record<number, number>>({});
 
   // Share link feedback
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -97,11 +100,7 @@ export default function CuratedPlaylists() {
       const data = await res.json();
       if (data.success && Array.isArray(data.playlists)) {
         setPlaylists(data.playlists);
-        // Automatically expand the broadcast playlist or the first playlist if available
-        if (data.playlists.length > 0 && expandedId === null) {
-          const defaultActive = data.playlists.find((p: PublicPlaylistSummary) => p.is_broadcast_active) || data.playlists[0];
-          setExpandedId(defaultActive.id);
-        }
+        // Do NOT auto-expand on load to prevent massive DOM freezes (e.g. 771 tracks in playlist #1)
       } else {
         setPlaylists([]);
       }
@@ -111,7 +110,7 @@ export default function CuratedPlaylists() {
     } finally {
       setLoading(false);
     }
-  }, [expandedId]);
+  }, []);
 
   useEffect(() => {
     loadPlaylists();
@@ -148,7 +147,18 @@ export default function CuratedPlaylists() {
   }, [expandedId, expandedTracks]);
 
   const toggleExpand = (id: number) => {
-    setExpandedId((prev) => (prev === id ? null : id));
+    setExpandedId((prev) => {
+      const next = prev === id ? null : id;
+      if (next !== null) {
+        setTimeout(() => {
+          const el = document.getElementById(`playlist-${next}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        }, 120);
+      }
+      return next;
+    });
   };
 
   const handlePlayOrTogglePlaylist = async (playlistId: number, startTrackIndex = 0) => {
@@ -177,9 +187,9 @@ export default function CuratedPlaylists() {
 
   if (loading) {
     return (
-      <div className="p-10 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) text-center space-y-3">
-        <Disc3 className="w-10 h-10 mx-auto animate-spin text-brand-navy" />
-        <p className="font-mono text-xs uppercase tracking-widest text-brand-navy/70">
+      <div className="p-10 border border-white/[0.08] bg-[#13151C] shadow-2xl text-center space-y-3">
+        <Disc3 className="w-10 h-10 mx-auto animate-spin text-[#DFBB7D]" />
+        <p className="font-mono text-xs uppercase tracking-widest text-neutral-400">
           Loading Curated Festival Tapes...
         </p>
       </div>
@@ -188,12 +198,12 @@ export default function CuratedPlaylists() {
 
   if (error && playlists.length === 0) {
     return (
-      <div className="p-8 border-4 border-brand-navy bg-brand-off-white shadow-(--shadow-brut-md) text-center space-y-4">
-        <p className="font-mono text-sm text-red-600 uppercase font-bold">{error}</p>
+      <div className="p-8 border border-red-500/30 bg-[#161214] shadow-2xl text-center space-y-4">
+        <p className="font-mono text-sm text-red-400 uppercase font-bold">{error}</p>
         <button
           type="button"
           onClick={loadPlaylists}
-          className="px-4 py-2 bg-brand-navy text-white font-mono text-xs font-bold uppercase border-2 border-brand-navy shadow-(--shadow-brut-xs) cursor-pointer"
+          className="px-4 py-2 bg-[#E84855] text-white font-mono text-xs font-bold uppercase border border-white/20 shadow-sm cursor-pointer hover:bg-[#d43f4c] transition-colors"
         >
           RETRY LOADING
         </button>
@@ -202,17 +212,17 @@ export default function CuratedPlaylists() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 text-[#FBF9F6]">
       {/* Top Banner & Control Deck */}
-      <div className="p-4 sm:p-5 border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 sm:p-5 border border-white/[0.08] bg-[#13151C] shadow-2xl rounded-none flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-brand-accent animate-pulse" />
-            <h2 className="font-display text-xl sm:text-2xl uppercase tracking-wide text-brand-navy">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#DFBB7D] animate-pulse" />
+            <h2 className="font-sans font-bold text-xl sm:text-2xl uppercase tracking-wide text-white">
               CURATED TAPES &amp; PLAYLISTS
             </h2>
           </div>
-          <p className="font-mono text-xs text-brand-navy/70">
+          <p className="font-mono text-xs text-neutral-400">
             Handpicked soundclashes, amapiano marathon tapes, and Nairobi sound selections ready for on-demand listening.
           </p>
         </div>
@@ -222,13 +232,13 @@ export default function CuratedPlaylists() {
             <button
               type="button"
               onClick={snapToBroadcast}
-              className="px-3.5 py-1.5 font-mono text-xs font-bold uppercase bg-red-600 hover:bg-red-700 text-white flex items-center gap-1.5 border-2 border-brand-navy shadow-(--shadow-brut-xs) transition-all cursor-pointer active:scale-95"
+              className="px-3.5 py-1.5 font-mono text-xs font-bold uppercase bg-[#E84855] hover:bg-[#d63c49] text-white flex items-center gap-1.5 border border-white/20 shadow-sm transition-all cursor-pointer active:scale-95"
             >
               <Radio className="w-3.5 h-3.5" />
               <span>RETURN TO LIVE ON AIR</span>
             </button>
           )}
-          <span className="font-mono text-xs font-bold px-2.5 py-1 border-2 border-brand-navy bg-brand-off-white uppercase">
+          <span className="font-mono text-xs font-bold px-3 py-1 border border-[#DFBB7D]/40 bg-[#1C2028] text-[#DFBB7D] uppercase">
             {playlists.length} Curated Tapes
           </span>
         </div>
@@ -236,39 +246,42 @@ export default function CuratedPlaylists() {
 
       {/* Active On-Demand Playlist Audio Player Banner */}
       {activePlaylist && !isLive && (
-        <div className="p-4 sm:p-5 border-4 border-brand-navy bg-brand-navy text-brand-off-white shadow-(--shadow-brut-lg) rounded-none space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-3">
+        <div className="p-4 sm:p-5 border border-[#DFBB7D]/40 bg-[#181A22] text-[#FBF9F6] shadow-2xl rounded-none space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping motion-reduce:animate-none" />
-              <span className="font-mono text-xs font-black text-brand-accent tracking-widest uppercase">
+              <span className="w-2 h-2 rounded-full bg-[#DFBB7D] animate-ping motion-reduce:animate-none" />
+              <span className="font-mono text-xs font-black text-[#DFBB7D] tracking-widest uppercase">
                 ON-DEMAND PLAYLIST PLAYBACK
               </span>
               <span className="text-white/40">•</span>
-              <span className="font-mono text-xs text-white/80 uppercase font-bold">
+              <span className="font-mono text-xs text-white/90 uppercase font-bold">
                 {activePlaylist.name}
               </span>
             </div>
 
-            <div className="font-mono text-xs text-white/60">
+            <div className="font-mono text-xs text-neutral-400">
               TRACK {activePlaylist.trackIndex + 1} OF {activePlaylist.tracks.length}
             </div>
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-none border-2 border-brand-accent bg-neutral-900 overflow-hidden shrink-0">
+              <div className="w-12 h-12 rounded-none border border-[#DFBB7D]/50 bg-neutral-900 overflow-hidden shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={resolveCoverArt(activePlaylist.tracks[activePlaylist.trackIndex]?.cover_url || activePlaylist.cover_url)}
                   alt=""
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = DEFAULT_COVER;
+                  }}
                   className="w-full h-full object-cover"
                 />
               </div>
               <div className="min-w-0">
-                <h4 className="font-display text-base sm:text-lg font-black uppercase truncate text-white">
+                <h4 className="font-sans text-base sm:text-lg font-bold uppercase truncate text-white">
                   {formatTrackTitle(activePlaylist.tracks[activePlaylist.trackIndex]?.title)}
                 </h4>
-                <p className="font-mono text-xs text-brand-accent/90 uppercase truncate">
+                <p className="font-mono text-xs text-[#DFBB7D] uppercase truncate">
                   {activePlaylist.tracks[activePlaylist.trackIndex]?.dj_name || activePlaylist.name}
                 </p>
               </div>
@@ -277,13 +290,13 @@ export default function CuratedPlaylists() {
             <button
               type="button"
               onClick={togglePlay}
-              className="w-12 h-12 border-2 border-white bg-brand-accent text-brand-navy flex items-center justify-center font-black shrink-0 hover:bg-white transition-colors cursor-pointer shadow-(--shadow-brut-xs)"
+              className="w-12 h-12 border border-white/20 bg-[#DFBB7D] text-[#0D0F12] flex items-center justify-center font-black shrink-0 hover:bg-[#edd39d] transition-colors cursor-pointer shadow-md"
               aria-label={isPlaying ? "Pause track" : "Play track"}
             >
               {isPlaying ? (
-                <Pause className="w-6 h-6 fill-brand-navy" />
+                <Pause className="w-6 h-6 fill-current" />
               ) : (
-                <Play className="w-6 h-6 fill-brand-navy ml-0.5" />
+                <Play className="w-6 h-6 fill-current ml-0.5" />
               )}
             </button>
           </div>
@@ -297,9 +310,9 @@ export default function CuratedPlaylists() {
               step="0.1"
               value={progress}
               onChange={handleSeek}
-              className="w-full h-2 bg-white/20 accent-brand-accent cursor-pointer rounded"
+              className="w-full h-2 bg-white/15 accent-[#DFBB7D] cursor-pointer rounded"
             />
-            <div className="flex justify-between font-mono text-xs text-white/60">
+            <div className="flex justify-between font-mono text-xs text-neutral-400">
               <span>{formatTrackTime(currentTime)}</span>
               <span>{formatTrackTime(duration)}</span>
             </div>
@@ -309,39 +322,46 @@ export default function CuratedPlaylists() {
 
       {/* Playlist Grid */}
       {playlists.length === 0 ? (
-        <div className="py-16 border-4 border-dashed border-brand-navy/30 bg-white text-center font-mono text-xs text-brand-navy/60 uppercase tracking-widest rounded-none">
+        <div className="py-16 border border-dashed border-white/20 bg-[#13151C] text-center font-mono text-xs text-neutral-400 uppercase tracking-widest rounded-none">
           No public curated playlists published yet. New festival tapes arriving soon!
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6">
+        <div className="grid grid-cols-1 gap-5">
           {playlists.map((pl) => {
             const isThisPlaylistPlaying = !isLive && isPlaying && activePlaylist?.id === pl.id;
             const isThisPlaylistLoaded = !isLive && activePlaylist?.id === pl.id;
             const isExpanded = expandedId === pl.id;
             const tracks = expandedTracks[pl.id] || [];
             const isLoadingThisTracks = loadingTracks[pl.id] || false;
+            const visibleCount = visibleCounts[pl.id] || INITIAL_TRACK_LIMIT;
+            const visibleTracks = tracks.slice(0, visibleCount);
 
             return (
               <div
                 key={pl.id}
                 id={`playlist-${pl.id}`}
-                className={`border-4 border-brand-navy bg-white shadow-(--shadow-brut-md) rounded-none overflow-hidden transition-all ${
-                  isThisPlaylistLoaded ? "ring-4 ring-brand-accent/50" : ""
+                className={`border rounded-none overflow-hidden transition-all bg-[#14171E] ${
+                  isThisPlaylistLoaded
+                    ? "border-[#DFBB7D] ring-2 ring-[#DFBB7D]/40"
+                    : "border-white/[0.08] shadow-xl hover:border-white/20"
                 }`}
               >
                 {/* Playlist Card Header Bar */}
-                <div className="p-4 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 bg-brand-off-white/40 border-b-2 border-brand-navy/20">
+                <div className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-[#181C26]/70 border-b border-white/[0.08]">
                   <div className="flex items-start sm:items-center gap-4 min-w-0">
                     {/* Cover Art Thumbnail */}
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-none border-2 border-brand-navy bg-neutral-900 overflow-hidden shrink-0 shadow-(--shadow-brut-xs)">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-none border border-white/10 bg-[#0D0F12] overflow-hidden shrink-0 shadow-md">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={resolveCoverArt(pl.cover_url)}
                         alt={pl.name}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = DEFAULT_COVER;
+                        }}
                         className="w-full h-full object-cover"
                       />
                       {pl.is_broadcast_active && (
-                        <div className="absolute top-1 left-1 bg-red-600 text-white font-mono text-xs font-black px-1.5 py-0.5 uppercase tracking-widest border border-brand-navy flex items-center gap-1 shadow-sm">
+                        <div className="absolute top-1 left-1 bg-[#E84855] text-white font-mono text-[10px] font-black px-1.5 py-0.5 uppercase tracking-widest border border-white/20 flex items-center gap-1 shadow-sm">
                           <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" />
                           <span>ON AIR</span>
                         </div>
@@ -352,30 +372,30 @@ export default function CuratedPlaylists() {
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         {pl.genre && (
-                          <span className="px-2 py-0.5 border border-brand-navy/40 bg-white font-mono text-[10px] font-bold uppercase text-brand-navy">
+                          <span className="px-2 py-0.5 border border-white/10 bg-[#1C2028] font-mono text-[10px] font-bold uppercase text-[#DFBB7D]">
                             {pl.genre}
                           </span>
                         )}
                         {pl.is_broadcast_active && (
-                          <span className="px-2 py-0.5 border border-red-700 bg-red-50 text-red-700 font-mono text-[10px] font-bold uppercase flex items-center gap-1">
+                          <span className="px-2 py-0.5 border border-[#E84855]/50 bg-[#E84855]/15 text-[#E84855] font-mono text-[10px] font-bold uppercase flex items-center gap-1">
                             <Radio className="w-3 h-3" />
                             LIVE ON 24/7 BROADCAST
                           </span>
                         )}
                       </div>
 
-                      <h3 className="font-display text-xl sm:text-2xl font-black uppercase text-brand-navy leading-tight truncate">
+                      <h3 className="font-sans text-lg sm:text-xl font-bold uppercase text-white leading-tight truncate">
                         {pl.name}
                       </h3>
 
                       {pl.description && (
-                        <p className="font-mono text-xs text-brand-navy/70 line-clamp-2">
+                        <p className="font-mono text-xs text-neutral-400 line-clamp-2">
                           {pl.description}
                         </p>
                       )}
 
-                      <div className="flex flex-wrap items-center gap-3 pt-1 font-mono text-xs text-brand-navy/60 font-semibold">
-                        <span className="flex items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-3 pt-1 font-mono text-xs text-neutral-400 font-semibold">
+                        <span className="flex items-center gap-1 text-[#DFBB7D]/90">
                           <Music2 className="w-3.5 h-3.5" />
                           {pl.track_count} TRACKS
                         </span>
@@ -393,10 +413,10 @@ export default function CuratedPlaylists() {
                     <button
                       type="button"
                       onClick={() => handlePlayOrTogglePlaylist(pl.id, 0)}
-                      className={`flex-1 sm:flex-none px-4 py-2.5 font-mono text-xs font-bold uppercase border-2 border-brand-navy shadow-(--shadow-brut-xs) flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
+                      className={`flex-1 sm:flex-none px-4 py-2.5 font-mono text-xs font-bold uppercase border shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
                         isThisPlaylistPlaying
-                          ? "bg-brand-accent text-brand-navy"
-                          : "bg-brand-navy text-white hover:bg-brand-navy/90"
+                          ? "bg-[#DFBB7D] text-[#0D0F12] border-[#DFBB7D]"
+                          : "bg-gradient-to-b from-[#242832] to-[#171A21] text-white border-white/15 hover:border-white/30"
                       }`}
                     >
                       {isThisPlaylistPlaying ? (
@@ -415,26 +435,26 @@ export default function CuratedPlaylists() {
                     <button
                       type="button"
                       onClick={() => toggleExpand(pl.id)}
-                      className="px-3.5 py-2.5 bg-white hover:bg-brand-off-white text-brand-navy font-mono text-xs font-bold uppercase border-2 border-brand-navy shadow-(--shadow-brut-xs) flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="px-3.5 py-2.5 bg-[#1C2028] hover:bg-[#252B36] text-white font-mono text-xs font-bold uppercase border border-white/10 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       aria-label={isExpanded ? "Collapse tracklist" : "View tracklist"}
                     >
                       <span>TRACKS</span>
                       {isExpanded ? (
-                        <ChevronUp className="w-4 h-4" />
+                        <ChevronUp className="w-4 h-4 text-[#DFBB7D]" />
                       ) : (
-                        <ChevronDown className="w-4 h-4" />
+                        <ChevronDown className="w-4 h-4 text-neutral-400" />
                       )}
                     </button>
 
                     <button
                       type="button"
                       onClick={(e) => handleSharePlaylist(pl, e)}
-                      className="p-2.5 bg-white hover:bg-brand-accent text-brand-navy border-2 border-brand-navy shadow-(--shadow-brut-xs) transition-colors cursor-pointer"
+                      className="p-2.5 bg-[#1C2028] hover:bg-[#252B36] text-neutral-300 hover:text-white border border-white/10 transition-colors cursor-pointer"
                       title="Share Playlist Link"
                       aria-label="Share Playlist Link"
                     >
                       {copiedId === pl.id ? (
-                        <Check className="w-4 h-4 text-green-700" />
+                        <Check className="w-4 h-4 text-emerald-400" />
                       ) : (
                         <Share2 className="w-4 h-4" />
                       )}
@@ -444,112 +464,140 @@ export default function CuratedPlaylists() {
 
                 {/* Expanded Tracklist Table / Drawer */}
                 {isExpanded && (
-                  <div className="p-4 sm:p-6 bg-white space-y-3">
-                    <div className="flex items-center justify-between border-b border-brand-navy/15 pb-2">
-                      <span className="font-mono text-xs font-bold uppercase text-brand-navy tracking-wider">
+                  <div className="p-4 sm:p-5 bg-[#0E1015] border-t border-white/[0.08] space-y-3">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                      <span className="font-mono text-xs font-bold uppercase text-[#DFBB7D] tracking-wider">
                         ORDERED TRACKLIST ({pl.track_count} SONGS)
                       </span>
-                      <span className="font-mono text-[11px] text-brand-navy/60">
+                      <span className="font-mono text-[11px] text-neutral-400">
                         Tap any song to play from that moment
                       </span>
                     </div>
 
                     {isLoadingThisTracks && tracks.length === 0 ? (
                       <div className="py-8 text-center space-y-2">
-                        <Disc3 className="w-6 h-6 mx-auto animate-spin text-brand-navy/40" />
-                        <p className="font-mono text-xs text-brand-navy/60 uppercase">
+                        <Disc3 className="w-6 h-6 mx-auto animate-spin text-[#DFBB7D]/70" />
+                        <p className="font-mono text-xs text-neutral-400 uppercase">
                           Fetching tracklist...
                         </p>
                       </div>
                     ) : tracks.length === 0 ? (
-                      <div className="py-6 text-center font-mono text-xs text-brand-navy/50 uppercase">
+                      <div className="py-6 text-center font-mono text-xs text-neutral-500 uppercase">
                         No tracks added to this playlist yet.
                       </div>
                     ) : (
-                      <div className="divide-y divide-brand-navy/10 max-h-[460px] overflow-y-auto pr-1">
-                        {tracks.map((track, idx) => {
-                          const isCurrentPlayingTrack =
-                            isThisPlaylistLoaded &&
-                            activePlaylist?.trackIndex === idx &&
-                            isPlaying;
-                          const isCurrentLoadedTrack =
-                            isThisPlaylistLoaded && activePlaylist?.trackIndex === idx;
+                      <>
+                        <div className="divide-y divide-white/[0.06] max-h-[460px] overflow-y-auto pr-1">
+                          {visibleTracks.map((track, idx) => {
+                            const isCurrentPlayingTrack =
+                              isThisPlaylistLoaded &&
+                              activePlaylist?.trackIndex === idx &&
+                              isPlaying;
+                            const isCurrentLoadedTrack =
+                              isThisPlaylistLoaded && activePlaylist?.trackIndex === idx;
 
-                          return (
-                            <div
-                              key={track.id}
-                              onClick={() => handlePlayOrTogglePlaylist(pl.id, idx)}
-                              className={`py-2.5 px-2 flex items-center justify-between gap-3 rounded cursor-pointer transition-colors group ${
-                                isCurrentLoadedTrack
-                                  ? "bg-brand-accent/20 border-l-4 border-brand-accent"
-                                  : "hover:bg-brand-off-white"
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {/* Track Position Number / Play Icon */}
-                                <div className="w-8 flex items-center justify-center shrink-0">
-                                  {isCurrentPlayingTrack ? (
-                                    <div className="flex items-end gap-0.5 h-4">
-                                      <span className="w-0.5 h-3 bg-brand-navy animate-pulse" />
-                                      <span className="w-0.5 h-4 bg-brand-navy animate-pulse delay-75" />
-                                      <span className="w-0.5 h-2 bg-brand-navy animate-pulse delay-150" />
-                                    </div>
-                                  ) : (
-                                    <span className="font-mono text-xs font-bold text-brand-navy/50 group-hover:hidden">
-                                      {track.position || idx + 1}
-                                    </span>
-                                  )}
-                                  <Play className="w-3.5 h-3.5 fill-brand-navy text-brand-navy hidden group-hover:block ml-0.5" />
+                            const displayNumber =
+                              track.position !== undefined && track.position !== null
+                                ? track.position + 1
+                                : idx + 1;
+
+                            return (
+                              <div
+                                key={track.id}
+                                onClick={() => handlePlayOrTogglePlaylist(pl.id, idx)}
+                                className={`py-2.5 px-2 flex items-center justify-between gap-3 rounded cursor-pointer transition-colors group ${
+                                  isCurrentLoadedTrack
+                                    ? "bg-[#DFBB7D]/10 border-l-2 border-[#DFBB7D]"
+                                    : "hover:bg-white/[0.04]"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {/* Track Position Number / Play Icon */}
+                                  <div className="w-8 flex items-center justify-center shrink-0">
+                                    {isCurrentPlayingTrack ? (
+                                      <div className="flex items-end gap-0.5 h-4">
+                                        <span className="w-0.5 h-3 bg-[#DFBB7D] animate-pulse" />
+                                        <span className="w-0.5 h-4 bg-[#DFBB7D] animate-pulse delay-75" />
+                                        <span className="w-0.5 h-2 bg-[#DFBB7D] animate-pulse delay-150" />
+                                      </div>
+                                    ) : (
+                                      <span className="font-mono text-xs font-bold text-neutral-400 group-hover:hidden">
+                                        {displayNumber}
+                                      </span>
+                                    )}
+                                    <Play className="w-3.5 h-3.5 fill-[#DFBB7D] text-[#DFBB7D] hidden group-hover:block ml-0.5" />
+                                  </div>
+
+                                  {/* Track Cover Thumbnail */}
+                                  <div className="w-9 h-9 rounded border border-white/10 overflow-hidden bg-[#13151C] shrink-0">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={resolveCoverArt(track.cover_url || pl.cover_url)}
+                                      alt=""
+                                      onError={(e) => {
+                                        (e.currentTarget as HTMLImageElement).src = DEFAULT_COVER;
+                                      }}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+
+                                  {/* Title & Artist */}
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`text-xs sm:text-sm font-bold uppercase truncate leading-tight ${
+                                        isCurrentLoadedTrack
+                                          ? "text-[#DFBB7D]"
+                                          : "text-white"
+                                      }`}
+                                    >
+                                      {formatTrackTitle(track.title)}
+                                    </p>
+                                    <p className="font-mono text-[11px] text-neutral-400 uppercase truncate mt-0.5">
+                                      {track.dj_name}
+                                    </p>
+                                  </div>
                                 </div>
 
-                                {/* Track Cover Thumbnail */}
-                                <div className="w-9 h-9 rounded border border-brand-navy/30 overflow-hidden bg-brand-off-white shrink-0">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={resolveCoverArt(track.cover_url || pl.cover_url)}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-
-                                {/* Title & Artist */}
-                                <div className="min-w-0">
-                                  <p
-                                    className={`text-xs sm:text-sm font-bold uppercase truncate leading-tight ${
-                                      isCurrentLoadedTrack
-                                        ? "text-brand-navy font-black"
-                                        : "text-brand-navy"
-                                    }`}
+                                {/* Duration & Actions */}
+                                <div className="flex items-center gap-3 shrink-0 font-mono text-xs text-neutral-400">
+                                  <span>{track.duration || formatTrackTime(track.duration_sec)}</span>
+                                  <a
+                                    href={`https://open.spotify.com/search/${encodeURIComponent(
+                                      `${track.title} ${track.dj_name}`
+                                    )}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Search on Spotify"
+                                    aria-label={`Search ${track.title} on Spotify`}
                                   >
-                                    {formatTrackTitle(track.title)}
-                                  </p>
-                                  <p className="font-mono text-[11px] text-brand-navy/70 uppercase truncate mt-0.5">
-                                    {track.dj_name}
-                                  </p>
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
                                 </div>
                               </div>
+                            );
+                          })}
+                        </div>
 
-                              {/* Duration & Actions */}
-                              <div className="flex items-center gap-3 shrink-0 font-mono text-xs text-brand-navy/70">
-                                <span>{track.duration || formatTrackTime(track.duration_sec)}</span>
-                                <a
-                                  href={`https://open.spotify.com/search/${encodeURIComponent(
-                                    `${track.title} ${track.dj_name}`
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="p-1 hover:text-brand-navy transition-colors opacity-0 group-hover:opacity-100"
-                                  title="Search on Spotify"
-                                  aria-label={`Search ${track.title} on Spotify`}
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                        {/* Chunked Loading for large playlists (e.g. Master Rotation 771 tracks) */}
+                        {tracks.length > visibleCount && (
+                          <div className="pt-2 text-center border-t border-white/[0.06]">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVisibleCounts((prev) => ({
+                                  ...prev,
+                                  [pl.id]: (prev[pl.id] || INITIAL_TRACK_LIMIT) + 50,
+                                }))
+                              }
+                              className="px-4 py-2 bg-[#1C2028] hover:bg-[#252B36] border border-white/10 text-[#DFBB7D] font-mono text-xs font-bold uppercase transition-colors cursor-pointer shadow-sm"
+                            >
+                              Load More Tracks ({tracks.length - visibleCount} remaining)
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
