@@ -35,6 +35,11 @@ export const metadata: Metadata = {
 export default function RadioLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-[#0D0F12] text-[#FBF9F6] min-h-screen w-full">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `(function(){try{if(window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true||location.search.indexOf('source=pwa')!==-1){document.documentElement.classList.add('is-pwa-standalone');}}catch(e){}})();`,
+        }}
+      />
       {children}
     </div>
   );

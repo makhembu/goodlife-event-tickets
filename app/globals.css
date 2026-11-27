@@ -213,3 +213,21 @@ html {
     #080808 24px
   );
 }
+
+/* PWA Standalone Mode FOUC Prevention (Suppresses website UI flash on PWA launch) */
+@media (display-mode: standalone) {
+  .web-radio-ui {
+    display: none !important;
+  }
+  .pwa-loading-shell {
+    display: flex !important;
+  }
+}
+
+html.is-pwa-standalone .web-radio-ui {
+  display: none !important;
+}
+
+html.is-pwa-standalone .pwa-loading-shell {
+  display: flex !important;
+}

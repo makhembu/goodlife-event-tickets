@@ -92,9 +92,13 @@ export default function RadioPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const standalone =
+      document.documentElement.classList.contains("is-pwa-standalone") ||
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as { standalone?: boolean }).standalone === true ||
       new URLSearchParams(window.location.search).get("source") === "pwa";
+    if (standalone) {
+      document.documentElement.classList.add("is-pwa-standalone");
+    }
     setIsPwaStandalone(standalone);
   }, []);
 
@@ -235,7 +239,20 @@ export default function RadioPage() {
   }
 
   return (
-    <div className="min-h-screen bg-brand-bg py-4 sm:py-6 px-3 sm:px-6 md:px-10 text-brand-navy font-sans relative selection:bg-brand-accent selection:text-brand-navy overflow-x-hidden w-full max-w-full">
+    <>
+      {/* Instant PWA Pre-Hydration Shell (active only in standalone / ?source=pwa before React mounts) */}
+      <div className="pwa-loading-shell hidden min-h-screen w-full bg-[#0D0F12] text-[#FBF9F6] flex-col items-center justify-center p-6 text-center select-none">
+        <div className="flex items-center gap-2 px-3 py-1 bg-[#E84855] text-white font-mono text-xs font-bold uppercase tracking-wider mb-6 shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          <span>GOODLIFE 254 FM · LIVE DECK</span>
+        </div>
+        <div className="w-12 h-12 border-3 border-[#DFBB7D] border-t-transparent rounded-full animate-spin mb-4" />
+        <span className="font-mono text-xs text-neutral-400 uppercase tracking-widest">
+          CONNECTING TO LIVE AIRWAVES...
+        </span>
+      </div>
+
+      <div className="web-radio-ui min-h-screen bg-brand-bg py-4 sm:py-6 px-3 sm:px-6 md:px-10 text-brand-navy font-sans relative selection:bg-brand-accent selection:text-brand-navy overflow-x-hidden w-full max-w-full">
       {/* Pre-rendered Live Announcement Region (Screen Readers) */}
       <div role="status" aria-live="polite" className="sr-only">
         {liveToast?.show ? liveToast.message : ""}
@@ -947,5 +964,6 @@ export default function RadioPage() {
         artist={activePresenterName}
       />
     </div>
+    </>
   );
 }
