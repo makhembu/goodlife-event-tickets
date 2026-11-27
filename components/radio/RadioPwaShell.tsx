@@ -64,6 +64,11 @@ export default function RadioPwaShell() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [coverError, setCoverError] = useState(false);
 
+  // Reset cover error on track/cover change so next song can display its art
+  useEffect(() => {
+    setCoverError(false);
+  }, [coverUrl, title]);
+
   // Honor ?tab= from manifest app shortcuts
   useEffect(() => {
     if (typeof window === "undefined") return;

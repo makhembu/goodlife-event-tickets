@@ -20,8 +20,14 @@ export function resolveCoverArt(thumbnailUrl?: string | null): string {
 
   const trimmed = thumbnailUrl.trim();
 
-  // Guard: Avoid YouTube webpage/playlist URLs or dead Apple CDN assets stored in place of image URLs
-  if (trimmed.includes("youtube.com/playlist") || trimmed.includes("youtube.com/watch") || trimmed.includes("mzstatic.com")) {
+  // If a YouTube watch URL was stored instead of an image, extract video ID and return crisp maxres thumbnail
+  const watchMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) {
+    return `https://i.ytimg.com/vi/${watchMatch[1]}/maxresdefault.jpg`;
+  }
+
+  // Guard: Avoid raw YouTube playlist URLs stored in place of image URLs
+  if (trimmed.includes("youtube.com/playlist")) {
     return "/radio-pass-3d.png";
   }
 
