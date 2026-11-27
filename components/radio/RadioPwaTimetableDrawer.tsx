@@ -110,7 +110,7 @@ export default function RadioPwaTimetableDrawer({
       aria-label="Station Timetable"
     >
       <div
-        className="w-full md:max-w-2xl bg-[#F3ECE1] border-t-4 md:border-4 border-[#16181D] max-h-[82dvh] flex flex-col md:shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
+        className="w-full md:max-w-2xl bg-[#F3ECE1] text-[#16181D] border-t-4 md:border-4 border-[#16181D] max-h-[82dvh] flex flex-col md:shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drawer Header */}
@@ -120,7 +120,7 @@ export default function RadioPwaTimetableDrawer({
               <Calendar className="w-3 h-3" />
               <span>WEEKLY SCHEDULE ({tzLabel})</span>
             </span>
-            <h3 className="font-display text-2xl leading-none uppercase tracking-wide mt-0.5">
+            <h3 className="font-display text-2xl leading-none uppercase tracking-wide mt-0.5 text-[#16181D]">
               STATION TIMETABLE
             </h3>
           </div>
@@ -129,7 +129,7 @@ export default function RadioPwaTimetableDrawer({
             <button
               type="button"
               onClick={() => setUseLocalTime((v) => !v)}
-              className="px-2.5 py-1.5 bg-[#F3ECE1] hover:bg-[#DFBB7D] border-2 border-[#16181D] font-mono text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
+              className="px-2.5 py-1.5 bg-[#F3ECE1] hover:bg-[#DFBB7D] text-[#16181D] border-2 border-[#16181D] font-mono text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
               title="Switch between East Africa Time and your local timezone"
             >
               <Globe className="w-3 h-3" />
@@ -138,7 +138,7 @@ export default function RadioPwaTimetableDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="px-2.5 py-1.5 bg-[#FBF9F6] hover:bg-[#F5C842] border-2 border-[#16181D] font-mono text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
+              className="px-2.5 py-1.5 bg-[#FBF9F6] hover:bg-[#F5C842] text-[#16181D] border-2 border-[#16181D] font-mono text-[10px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
             >
               <X className="w-3.5 h-3.5" />
               <span>CLOSE</span>

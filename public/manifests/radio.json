@@ -42,11 +42,6 @@
       "url": "/radio?source=pwa&tab=live"
     },
     {
-      "name": "Playlists",
-      "short_name": "Playlists",
-      "url": "/radio?source=pwa&tab=playlists"
-    },
-    {
       "name": "DJ Vault",
       "short_name": "Vault",
       "url": "/radio?source=pwa&tab=vault"

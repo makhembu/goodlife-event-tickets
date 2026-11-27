@@ -286,7 +286,7 @@ export default function RadioPage() {
           <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/"
-              className="p-2 sm:p-2.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-all shadow-(--shadow-brut-xs) flex items-center justify-center cursor-pointer shrink-0 rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2"
+              className="min-h-[44px] min-w-[44px] p-2 sm:p-2.5 border-2 border-brand-navy bg-brand-off-white hover:bg-brand-accent transition-all shadow-(--shadow-brut-xs) flex items-center justify-center cursor-pointer shrink-0 rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2"
               title="Return to Festival Gate"
               aria-label="Return to Festival Gate"
             >
@@ -309,7 +309,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("live")}
-                className={`flex-1 sm:flex-initial px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
+                className={`flex-1 sm:flex-initial min-h-[44px] px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
                   activeView === "live"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -320,7 +320,7 @@ export default function RadioPage() {
               <button
                 type="button"
                 onClick={() => setActiveView("vault")}
-                className={`flex-1 sm:flex-initial px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
+                className={`flex-1 sm:flex-initial min-h-[44px] px-4 py-2 font-mono text-xs font-bold uppercase transition-colors cursor-pointer flex items-center justify-center text-center whitespace-nowrap rounded-none focus-visible:outline-3 focus-visible:outline-brand-navy focus-visible:outline-offset-2 ${
                   activeView === "vault"
                     ? "bg-brand-navy text-brand-off-white"
                     : "text-brand-navy hover:bg-brand-accent"
@@ -708,9 +708,9 @@ export default function RadioPage() {
                   role="tab"
                   aria-selected={mobileTab === "on_air"}
                   onClick={() => setMobileTab("on_air")}
-                  className={`flex-1 py-2.5 font-mono text-xs font-black uppercase tracking-wider rounded-none transition-colors text-center cursor-pointer ${
+                  className={`flex-1 min-h-[44px] py-2.5 px-3 font-mono text-xs font-black uppercase tracking-wider rounded-none transition-colors flex items-center justify-center text-center cursor-pointer ${
                     mobileTab === "on_air"
-                      ? "bg-brand-navy text-brand-off-white"
+                      ? "bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xs)"
                       : "text-brand-navy hover:bg-brand-accent"
                   }`}
                 >
@@ -721,9 +721,9 @@ export default function RadioPage() {
                   role="tab"
                   aria-selected={mobileTab === "booth"}
                   onClick={() => setMobileTab("booth")}
-                  className={`flex-1 py-2.5 font-mono text-xs font-black uppercase tracking-wider rounded-none transition-colors text-center cursor-pointer ${
+                  className={`flex-1 min-h-[44px] py-2.5 px-3 font-mono text-xs font-black uppercase tracking-wider rounded-none transition-colors flex items-center justify-center text-center cursor-pointer ${
                     mobileTab === "booth"
-                      ? "bg-brand-navy text-brand-off-white"
+                      ? "bg-brand-navy text-brand-off-white shadow-(--shadow-brut-xs)"
                       : "text-brand-navy hover:bg-brand-accent"
                   }`}
                 >
@@ -883,6 +883,9 @@ export default function RadioPage() {
                     </div>
                   </section>
                 )}
+
+                {/* 3. RECORDED SHOWS & PAST BROADCASTS (Balancing desktop left column & on-air playback) */}
+                <CatchUpVault />
               </div>
 
               {/* RIGHT COLUMN: BOOTH HOTLINE & EVENT CARDS (5 COLS) */}
@@ -896,7 +899,6 @@ export default function RadioPage() {
                   presenterId={onAirSlot?.presenter?.id}
                 />
                 {shareCardNode}
-                <CatchUpVault />
               </div>
             </div>
           </div>

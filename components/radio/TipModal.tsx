@@ -32,6 +32,15 @@ export default function TipModal({
   const [statusMsg, setStatusMsg] = useState("");
   const [reference, setReference] = useState("");
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const effectiveAmount = customAmount ? Number(customAmount) : amount;
@@ -107,18 +116,28 @@ export default function TipModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-      <div className="bg-[#142B4C] border-2 border-[#C8A54A] text-[#F3ECE1] w-full max-w-md p-6 relative rounded shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tip-modal-title"
+        className="bg-[#142B4C] border-2 border-[#C8A54A] text-[#F3ECE1] w-full max-w-md p-6 relative rounded shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#F3ECE1]/60 hover:text-[#F3ECE1] cursor-pointer"
+          aria-label="Close support dialog"
+          className="absolute top-4 right-4 text-[#F3ECE1]/60 hover:text-[#F3ECE1] cursor-pointer p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
         >
           <X className="w-6 h-6" />
         </button>
 
-        <div className="flex items-center gap-2 mb-2">
-          <Heart className="w-6 h-6 text-[#C8A54A] fill-[#C8A54A]" />
-          <h2 className="text-xl font-black uppercase tracking-wider font-mono">
+        <div className="flex items-center gap-2 mb-2 pr-10">
+          <Heart className="w-6 h-6 text-[#C8A54A] fill-[#C8A54A] shrink-0" />
+          <h2 id="tip-modal-title" className="text-xl font-black uppercase tracking-wider font-mono">
             Support GOODLIFE Radio
           </h2>
         </div>
@@ -173,7 +192,7 @@ export default function TipModal({
                 value={customAmount}
                 onChange={(e) => setCustomAmount(e.target.value)}
                 min="10"
-                className="mt-2 w-full px-3 py-1.5 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] text-xs font-mono focus:border-[#C8A54A] outline-none"
+                className="mt-2 w-full px-3 py-1.5 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] placeholder:text-[#F3ECE1]/50 text-xs font-mono focus:border-[#C8A54A] outline-none"
               />
             </div>
 
@@ -188,7 +207,7 @@ export default function TipModal({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
-                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] text-sm font-mono focus:border-[#C8A54A] outline-none"
+                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] placeholder:text-[#F3ECE1]/50 text-sm font-mono focus:border-[#C8A54A] outline-none"
               />
             </div>
 
@@ -202,7 +221,7 @@ export default function TipModal({
                 placeholder="Anonymous Listener"
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
-                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] text-sm font-mono focus:border-[#C8A54A] outline-none"
+                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] placeholder:text-[#F3ECE1]/50 text-sm font-mono focus:border-[#C8A54A] outline-none"
               />
             </div>
 
@@ -217,7 +236,7 @@ export default function TipModal({
                 onChange={(e) => setMessage(e.target.value)}
                 rows={2}
                 maxLength={200}
-                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] text-xs font-mono focus:border-[#C8A54A] outline-none"
+                className="w-full px-3 py-2 bg-[#0F2038] border border-[#F3ECE1]/30 text-[#F3ECE1] placeholder:text-[#F3ECE1]/50 text-xs font-mono focus:border-[#C8A54A] outline-none"
               />
             </div>
 

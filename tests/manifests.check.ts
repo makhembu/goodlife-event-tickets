@@ -5,6 +5,7 @@ const manifests = [
   { file: "public/manifests/vendor.json", id: "/vendor", scope: "/vendor", start_url: "/vendor/sell", name: "GOODLIFE Vendor POS" },
   { file: "public/manifests/scanner.json", id: "/scanner", scope: "/scanner", start_url: "/scanner", name: "GOODLIFE Gate Scanner" },
   { file: "public/manifests/admin.json", id: "/admin", scope: "/admin", start_url: "/admin/dashboard", name: "GOODLIFE Admin" },
+  { file: "public/manifests/radio.json", id: "/radio", scope: "/radio", start_url: "/radio?source=pwa", name: "GOODLIFE Radio" },
 ];
 
 let failed = false;

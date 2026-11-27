@@ -1,4 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+
+export const viewport: Viewport = {
+  themeColor: "#16181D",
+  colorScheme: "dark",
+};
 
 export const metadata: Metadata = {
   manifest: "/manifests/radio.json",
@@ -28,5 +33,9 @@ export const metadata: Metadata = {
 };
 
 export default function RadioLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <div className="bg-[#0D0F12] text-[#FBF9F6] min-h-screen w-full">
+      {children}
+    </div>
+  );
 }

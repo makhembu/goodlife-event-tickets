@@ -8,6 +8,11 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const PRECACHE_ASSETS = [
   '/offline.html',
   '/site.webmanifest',
+  '/manifests/radio.json',
+  '/icons/radio-192.png',
+  '/icons/radio-512.png',
+  '/icons/radio-maskable-192.png',
+  '/icons/radio-maskable-512.png',
   '/icons/scanner-192.png',
   '/icons/scanner-512.png',
   '/icons/vendor-192.png',
