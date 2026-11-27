@@ -912,8 +912,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
           tracksSinceLastDropRef.current += 1;
         }
 
-        // If in live mode, NEVER update audio src from database playlist tracks
-        if (broadcastModeRef.current === "live" || (data as any)?.mode === "live") {
+        // If continuous stream is active or in live mode, NEVER update audio src from database playlist tracks
+        if (liveActiveRef.current || broadcastModeRef.current === "live" || (data as any)?.mode === "live") {
           return;
         }
 
@@ -1125,25 +1125,61 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         if (isPlayingRef.current) {
           const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
           if (activeAudio) {
+            // Re-assert volume to shake off stuck OS ducking from incoming notifications/alerts
+            const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+            if (!isDropPlayingRef.current) {
+              activeAudio.volume = Math.max(0, masterVol - 0.001);
+              requestAnimationFrame(() => {
+                if (activeAudio) activeAudio.volume = masterVol;
+              });
+            }
+
             if (activeAudio.ended) {
-              console.debug("[RadioContext] Active audio ended while hidden; advancing to next track");
-              if (handleEndedRef.current) {
-                handleEndedRef.current(activeDeckRef.current);
+              if (liveActiveRef.current || broadcastModeRef.current === "live") {
+                console.debug("[RadioContext] Live stream ended while hidden; reconnecting to live stream");
+                attachLiveRef.current?.({ force: true, isRecovery: true });
+              } else {
+                console.debug("[RadioContext] Active audio ended while hidden; advancing to next track");
+                if (handleEndedRef.current) {
+                  handleEndedRef.current(activeDeckRef.current);
+                }
               }
             } else if (activeAudio.paused && !isCrossfadingRef.current && activeAudio.src) {
               console.debug("[RadioContext] Resuming paused audio on visibility change");
               if (broadcastModeRef.current === "live" || liveActiveRef.current) {
-                if (recoverLiveRef.current) {
-                  recoverLiveRef.current("visibility_resume");
-                } else {
-                  activeAudio.play().catch(() => {});
+                // If paused during call or lock, snap back to live edge and resume
+                if (hlsRef.current) {
+                  try {
+                    hlsRef.current.startLoad(-1);
+                  } catch {}
                 }
+                activeAudio.play().then(() => {
+                  setEngineState("live");
+                  setIsPlaying(true);
+                }).catch((playErr) => {
+                  console.debug("[RadioContext] Direct visibility resume play rejected:", playErr);
+                  if (recoverLiveRef.current) {
+                    recoverLiveRef.current("visibility_resume");
+                  }
+                });
               } else {
                 activeAudio.play().catch(() => {});
               }
             }
           }
         }
+      }
+    };
+
+    const handleFocus = () => {
+      // Re-assert volume to shake off stuck OS ducking from incoming notifications
+      const masterVol = isMutedRef.current ? 0 : (volumeRef.current || 1);
+      const activeAudio = activeDeckRef.current === "A" ? audioRef.current : preloadAudioRef.current;
+      if (activeAudio && !isDropPlayingRef.current) {
+        activeAudio.volume = Math.max(0, masterVol - 0.001);
+        requestAnimationFrame(() => {
+          if (activeAudio) activeAudio.volume = masterVol;
+        });
       }
     };
 
@@ -1160,6 +1196,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     };
 
     window.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
@@ -1167,6 +1204,7 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       isCancelled = true;
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
       window.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
@@ -1657,8 +1695,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // If station is in autodj or mania mode, or no live stream is set: play festival track directly
-    if (currentMode !== "live" || !streamUrl || streamUrl.trim() === "") {
+    // If user is playing a curated playlist/on-demand vault, or no stream URL is configured: play track directly
+    if (activePlaylistRef.current || !streamUrl || streamUrl.trim() === "") {
       await playCurrentTrackAudio();
       return;
     }
@@ -1700,10 +1738,17 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
     audio.volume = isMutedRef.current ? 0 : volumeRef.current;
 
-    // Recovery = same URL, same element, exponential backoff. Never a song.
+    // Recovery = same URL, same element, exponential backoff. Transition to backup mix if retries exhausted.
     const rebuild = (reason: string) => {
       if (isStale() || liveRetryTimerRef.current) return;
       const n = liveRebuildCountRef.current++;
+      if (n >= 4 && backupSetsRef.current.length > 0) {
+        console.warn("[Radio:Live] Stream recovery attempts exhausted (>=4); transitioning to backup mix");
+        if (startBackupMixRef.current) {
+          startBackupMixRef.current();
+          return;
+        }
+      }
       const delay = Math.min(500 * (n === 0 ? 1 : 2 ** Math.min(n, 3)), 6000);
       console.debug("[Radio:StreamReconnect]", { timestamp: new Date().toISOString(), reason, streamUrl, attempt: n + 1, delayMs: delay });
       setEngineState("buffering");
@@ -2102,6 +2147,16 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
         swellIntervalRef.current = null;
       }
     }, 25);
+
+    // Guaranteed failsafe: restore volume even if OS throttles the 25ms timer during an incoming alert banner
+    setTimeout(() => {
+      if (swellIntervalRef.current) {
+        clearInterval(swellIntervalRef.current);
+        swellIntervalRef.current = null;
+      }
+      if (activeAudio) activeAudio.volume = target;
+      if (audioRef.current) audioRef.current.volume = target;
+    }, swellDuration + 150);
   }, []);
 
   // Live Drop Injection Engine: ducks current track mid-song, plays voice drop for all listeners, then swells back

@@ -517,6 +517,7 @@ async function getTimelineFallback() {
         )
       ),
       history: [],
+      stream_url: process.env.RADIO_STREAM_URL?.trim() || "https://dj.darajadigital.com/hls/stream.m3u8",
       live_drop: liveDrop ? withPlayback(liveDrop, "drop") : null,
       live_since: null,
       target_duration_sec: 2.0,
