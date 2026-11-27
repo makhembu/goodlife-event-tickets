@@ -3056,22 +3056,32 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
   // User gesture drop audio unlocking for mobile Safari/Chrome autoplay policy
   const primeAudioPipeline = useCallback(() => {
     // 0. Prime Deck A (primary deck) so mobile Safari/Chrome unlock audio element on initial tap
-    if (audioRef.current && !audioRef.current.src) {
-      try {
-        audioRef.current.src = SILENT_WAV_DATA_URI;
-        audioRef.current.volume = 0.001;
-        const playPromiseA = audioRef.current.play();
-        if (playPromiseA !== undefined) {
-          playPromiseA
-            .then(() => {
-              if (audioRef.current && audioRef.current.src.startsWith("data:")) {
-                audioRef.current.pause();
-                audioRef.current.currentTime = 0;
-              }
-            })
-            .catch(() => {});
-        }
-      } catch {}
+    if (audioRef.current) {
+      if (!audioRef.current.src) {
+        try {
+          audioRef.current.src = SILENT_WAV_DATA_URI;
+          audioRef.current.volume = 0.001;
+          const playPromiseA = audioRef.current.play();
+          if (playPromiseA !== undefined) {
+            playPromiseA
+              .then(() => {
+                if (audioRef.current && audioRef.current.src.startsWith("data:")) {
+                  audioRef.current.pause();
+                  audioRef.current.currentTime = 0;
+                }
+              })
+              .catch(() => {});
+          }
+        } catch {}
+      } else if (audioRef.current.paused) {
+        // If src is already assigned, calling play() immediately inside the user gesture unlocks the media element
+        try {
+          const playPromiseA = audioRef.current.play();
+          if (playPromiseA !== undefined) {
+            playPromiseA.catch(() => {});
+          }
+        } catch {}
+      }
     }
 
     // 1. Prime drop audio element
@@ -3168,12 +3178,12 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
     // Prime the audio elements synchronously inside the user click gesture
     primeAudioPipeline();
 
-    if (isModeFresh()) {
-      attachAndPlayLiveStream();
-    } else {
-      resolveBroadcastMode(2500).finally(() => {
-        if (isPlayingRef.current) attachAndPlayLiveStream();
-      });
+    // Start playback immediately inside the user click gesture so mobile autoplay policy never blocks
+    attachAndPlayLiveStream();
+
+    // Refresh mode in background if stale, but never block initial playback gesture on network I/O
+    if (!isModeFresh()) {
+      resolveBroadcastMode(2500).catch(() => {});
     }
 
     Promise.all([fetchRadioState(), fetchRadioLive()]).catch(() => {});
