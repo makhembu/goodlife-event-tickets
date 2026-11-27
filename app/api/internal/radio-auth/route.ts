@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rawUsername = String(payload.username || "").trim();
-  const rawKey = String(payload.key || "").trim();
+  const rawKey = String(payload.key || payload.stream_key || payload.password || "").trim();
   const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || payload.client_ip || null;
 
   if (!rawUsername || !rawKey) {
