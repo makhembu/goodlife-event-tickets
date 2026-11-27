@@ -1695,8 +1695,8 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // If user is playing a curated playlist/on-demand vault, or no stream URL is configured: play track directly
-    if (activePlaylistRef.current || !streamUrl || streamUrl.trim() === "") {
+    // If station is in autodj or mania mode, or user is playing a curated playlist, or no live stream is set: play track directly
+    if (currentMode !== "live" || activePlaylistRef.current || !streamUrl || streamUrl.trim() === "") {
       await playCurrentTrackAudio();
       return;
     }
@@ -3055,6 +3055,25 @@ export function RadioProvider({ children }: { children: React.ReactNode }) {
 
   // User gesture drop audio unlocking for mobile Safari/Chrome autoplay policy
   const primeAudioPipeline = useCallback(() => {
+    // 0. Prime Deck A (primary deck) so mobile Safari/Chrome unlock audio element on initial tap
+    if (audioRef.current && !audioRef.current.src) {
+      try {
+        audioRef.current.src = SILENT_WAV_DATA_URI;
+        audioRef.current.volume = 0.001;
+        const playPromiseA = audioRef.current.play();
+        if (playPromiseA !== undefined) {
+          playPromiseA
+            .then(() => {
+              if (audioRef.current && audioRef.current.src.startsWith("data:")) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
+
     // 1. Prime drop audio element
     if (dropAudioRef.current && !dropUnlockedRef.current) {
       try {

@@ -112,43 +112,46 @@ async function resolveLiveTrackThumbnail(
 
 async function queryRecentLiveDrop() {
   try {
-    // 1. Check for any due scheduled drop in radio_schedules
+    // 1. Check for any due scheduled drop in radio_schedules (with 90s broadcast window matching manual drops)
     const schedDropRes = await neonQuery(
-      `SELECT id, title, artist_or_persona, audio_url, created_at, scheduled_for, recurrence
+      `SELECT id, title, artist_or_persona, audio_url, created_at, scheduled_for, executed_at, recurrence, status,
+              ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(executed_at, scheduled_for, created_at)))) as age_seconds
        FROM radio_schedules
-       WHERE status = 'pending'
+       WHERE ((status = 'pending' AND (scheduled_for IS NULL OR scheduled_for <= NOW()))
+              OR (status = 'executed' AND executed_at > NOW() - INTERVAL '90 seconds'))
          AND target_type = 'drop'
-         AND trigger_type IN ('clock_duck', 'next_transition')
-         AND (scheduled_for IS NULL OR scheduled_for <= NOW())
-       ORDER BY COALESCE(scheduled_for, created_at) ASC
+         AND trigger_type IN ('clock_duck', 'next_transition', 'song_cue')
+       ORDER BY COALESCE(executed_at, scheduled_for, created_at) DESC
        LIMIT 1`
     );
 
     if (schedDropRes && schedDropRes.length > 0) {
       const sd = schedDropRes[0];
-      // Mark as executed immediately so it does not fire repeatedly
-      await neonQuery(
-        `UPDATE radio_schedules 
-         SET status = 'executed', executed_at = NOW() 
-         WHERE id = $1`,
-        [sd.id]
-      ).catch(() => {});
-
-      // Handle recurrence if configured
-      if (sd.recurrence && sd.recurrence !== "once") {
-        let intervalSql = "INTERVAL '1 day'";
-        if (sd.recurrence === "hourly") intervalSql = "INTERVAL '1 hour'";
-        if (sd.recurrence === "weekly") intervalSql = "INTERVAL '1 week'";
+      // Mark as executed immediately if still pending
+      if (sd.status === "pending") {
         await neonQuery(
-          `INSERT INTO radio_schedules (
-             target_type, target_id, title, artist_or_persona, audio_url,
-             trigger_type, scheduled_for, recurrence, status, created_by
-           ) VALUES (
-             'drop', null, $1, $2, $3,
-             'clock_duck', $4::timestamptz + ${intervalSql}, $5, 'pending', 'system_repeat'
-           )`,
-          [sd.title, sd.artist_or_persona, sd.audio_url, sd.scheduled_for || new Date().toISOString(), sd.recurrence]
+          `UPDATE radio_schedules 
+           SET status = 'executed', executed_at = NOW() 
+           WHERE id = $1`,
+          [sd.id]
         ).catch(() => {});
+
+        // Handle recurrence if configured
+        if (sd.recurrence && sd.recurrence !== "once") {
+          let intervalSql = "INTERVAL '1 day'";
+          if (sd.recurrence === "hourly") intervalSql = "INTERVAL '1 hour'";
+          if (sd.recurrence === "weekly") intervalSql = "INTERVAL '1 week'";
+          await neonQuery(
+            `INSERT INTO radio_schedules (
+               target_type, target_id, title, artist_or_persona, audio_url,
+               trigger_type, scheduled_for, recurrence, status, created_by
+             ) VALUES (
+               'drop', null, $1, $2, $3,
+               'clock_duck', $4::timestamptz + ${intervalSql}, $5, 'pending', 'system_repeat'
+             )`,
+            [sd.title, sd.artist_or_persona, sd.audio_url, sd.scheduled_for || new Date().toISOString(), sd.recurrence]
+          ).catch(() => {});
+        }
       }
 
       return {
@@ -157,8 +160,8 @@ async function queryRecentLiveDrop() {
         title: sd.title,
         script: sd.title,
         audio_url: sd.audio_url,
-        fired_at: new Date().toISOString(),
-        age_seconds: 0,
+        fired_at: sd.executed_at || sd.scheduled_for || new Date().toISOString(),
+        age_seconds: Number(sd.age_seconds) || 0,
       };
     }
 
